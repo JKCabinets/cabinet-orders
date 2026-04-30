@@ -5,7 +5,7 @@ import { supabase } from "@/lib/supabase";
 const SHOPIFY_SECRET = process.env.SHOPIFY_WEBHOOK_SECRET ?? "";
 
 function verifyShopifyHmac(body: string, hmacHeader: string): boolean {
-  if (!SHOPIFY_SECRET) return false; // reject if secret not configured
+  if (!SHOPIFY_SECRET) return false;
   const digest = crypto.createHmac("sha256", SHOPIFY_SECRET).update(body, "utf8").digest("base64");
   try { return crypto.timingSafeEqual(Buffer.from(digest), Buffer.from(hmacHeader)); }
   catch { return false; }
@@ -25,7 +25,6 @@ function buildOrder(payload: Record<string, unknown>) {
   const customerEmail = String(customer.email ?? payload.email ?? "");
   const customerPhone = String(customer.phone ?? billingAddress.phone ?? shippingAddress.phone ?? "");
 
-  // Build full ship-to address from shipping address
   const sa = shippingAddress;
   const shipParts = [
     String(sa.address1 ?? ""),
@@ -36,32 +35,42 @@ function buildOrder(payload: Record<string, unknown>) {
   ].filter(Boolean);
   const shipTo = shipParts.length > 0 ? shipParts.join(", ") : "";
 
-  const itemNames = lineItems.map(i => String(i.name ?? "")).filter(Boolean);
+  const itemNames = lineItems.map((i) => String(i.name ?? "")).filter(Boolean);
   const detail = itemNames.length > 1
     ? `${itemNames.slice(0, 2).join(", ")}${itemNames.length > 2 ? ` +${itemNames.length - 2} more` : ""}`
     : itemNames[0] ?? "Shopify order";
 
-  const skus = lineItems.map(i => String(i.sku ?? "")).filter(Boolean).join(", ");
-  const skuItems = lineItems.map(i => ({
+  const skus = lineItems.map((i) => String(i.sku ?? "")).filter(Boolean).join(", ");
+  const skuItems = lineItems.map((i) => ({
     sku: String(i.sku ?? i.variant_id ?? ""),
     quantity: Number(i.quantity ?? 1),
     description: String(i.name ?? ""),
-  })).filter(i => i.sku);
+  })).filter((i) => i.sku);
 
   const orderNumber = String(payload.order_number ?? payload.name ?? "");
-  const note = String(payload.note ?? "");
-  // Keep notes clean — just the customer note, not address (that's in ship_to now)
-  const notes = note || "";
+  const notes = String(payload.note ?? "");
 
-  // Delivery method from shipping lines
   const shippingLines = (payload.shipping_lines as Array<Record<string, unknown>>) ?? [];
-  const deliveryMethod = shippingLines.length > 0
-    ? String(shippingLines[0].title ?? "")
-    : "";
+  const deliveryMethod = shippingLines.length > 0 ? String(shippingLines[0].title ?? "") : "";
 
-  const today = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "America/Phoenix" });
+  const today = new Date().toLocaleDateString("en-US", {
+    month: "short", day: "numeric", timeZone: "America/Phoenix",
+  });
 
-  return { customerName, customerEmail, customerPhone, shipTo, deliveryMethod, detail, skus, skuItems, notes, today, orderNumber };
+  // Vendor: read directly from Shopify line item (no DB lookup needed)
+  const vendorName = lineItems.length > 0 ? String(lineItems[0].vendor ?? "") : "";
+
+  // Door style and color: read from SKU picker line item properties
+  const firstItem = lineItems[0] ?? {};
+  const lineProps = (firstItem.properties as Array<{ name: string; value: string }>) ?? [];
+  const doorStyle = lineProps.find((p) => p.name === "Door Style")?.value ?? "";
+  const color = lineProps.find((p) => p.name === "Color Selection")?.value ?? "";
+
+  return {
+    customerName, customerEmail, customerPhone, shipTo, deliveryMethod,
+    detail, skus, skuItems, notes, today, orderNumber,
+    vendorName, doorStyle, color,
+  };
 }
 
 export async function POST(req: NextRequest) {
@@ -79,27 +88,19 @@ export async function POST(req: NextRequest) {
 
   const shopifyId = String(payload.id ?? "");
 
-  // ─── New order ────────────────────────────────────────────────────────────
+  // New order
   if (topic === "orders/create") {
-    // Check if already exists
     const { data: existing } = await supabase
       .from("orders").select("id").eq("shopify_id", shopifyId).single();
     if (existing) return NextResponse.json({ received: true, skipped: "duplicate" });
 
-    const { customerName, customerEmail, customerPhone, shipTo, deliveryMethod, detail, skus, skuItems, notes, today, orderNumber } = buildOrder(payload);
-    const orderId = orderNumber ? `SHO-${orderNumber}` : `SHO-${shopifyId.slice(-6)}`;
+    const {
+      customerName, customerEmail, customerPhone, shipTo, deliveryMethod,
+      detail, skus, skuItems, notes, today, orderNumber,
+      vendorName, doorStyle, color,
+    } = buildOrder(payload);
 
-    // Look up vendor from shopify_products using first SKU
-    let vendorName = "";
-    const firstSku = skuItems.find(i => i.sku)?.sku ?? "";
-    if (firstSku) {
-      const { data: product } = await supabase
-        .from("shopify_products")
-        .select("vendor")
-        .eq("sku", firstSku)
-        .single();
-      if (product?.vendor) vendorName = product.vendor;
-    }
+    const orderId = orderNumber ? `SHO-${orderNumber}` : `SHO-${shopifyId.slice(-6)}`;
 
     const { error } = await supabase.from("orders").insert({
       id: orderId,
@@ -115,8 +116,8 @@ export async function POST(req: NextRequest) {
       archived: false,
       shopify_id: shopifyId,
       sku_items: skuItems,
-      door_style: "",
-      color: "",
+      door_style: doorStyle,
+      color: color,
       delivery_window: "",
       delivery_notes: "",
       vendor: vendorName,
@@ -135,32 +136,26 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // ─── Order updated ────────────────────────────────────────────────────────
+  // Order updated
   if (topic === "orders/updated") {
-    // Ignore if the order is being cancelled — the cancelled webhook will handle it
     if (payload.cancelled_at) return NextResponse.json({ received: true, skipped: "cancelled" });
 
     const { data: existing } = await supabase
       .from("orders").select("id, stage").eq("shopify_id", shopifyId).single();
 
     if (existing) {
-      const today = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "America/Phoenix" });
+      const today = new Date().toLocaleDateString("en-US", {
+        month: "short", day: "numeric", timeZone: "America/Phoenix",
+      });
       const { detail, skus, skuItems, notes, shipTo, customerPhone, customerEmail, deliveryMethod } = buildOrder(payload);
 
-      // Update line items and notes but don't override stage if user moved it
       const fulfillmentStatus = String(payload.fulfillment_status ?? "");
       const updates: Record<string, unknown> = {
-        detail,
-        sku: skus || "—",
-        notes,
-        sku_items: skuItems,
-        ship_to: shipTo,
-        customer_phone: customerPhone,
-        customer_email: customerEmail,
-        delivery_method: deliveryMethod,
+        detail, sku: skus || "—", notes, sku_items: skuItems,
+        ship_to: shipTo, customer_phone: customerPhone,
+        customer_email: customerEmail, delivery_method: deliveryMethod,
       };
 
-      // Only auto-advance stage if Shopify fulfilled
       if (fulfillmentStatus === "fulfilled" && existing.stage !== "Delivered") {
         updates.stage = "Delivered";
       }
@@ -174,22 +169,20 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // ─── Order cancelled ──────────────────────────────────────────────────────
+  // Order cancelled
   if (topic === "orders/cancelled") {
     const { data: existing } = await supabase
       .from("orders").select("id").eq("shopify_id", shopifyId).single();
-
     if (existing) {
       await supabase.from("order_activity").delete().eq("order_id", existing.id);
       await supabase.from("orders").delete().eq("id", existing.id);
     }
   }
 
-  // ─── Order deleted ────────────────────────────────────────────────────────
+  // Order deleted
   if (topic === "orders/deleted") {
     const { data: existing } = await supabase
       .from("orders").select("id").eq("shopify_id", shopifyId).single();
-
     if (existing) {
       await supabase.from("order_activity").delete().eq("order_id", existing.id);
       await supabase.from("orders").delete().eq("id", existing.id);
