@@ -171,7 +171,7 @@ export function NewOrderModal({ tab, onClose }: NewOrderModalProps) {
           style={{ borderBottom: "0.5px solid rgba(255,255,255,0.15)" }}
         >
           <h2 className="text-sm font-semibold text-[#e8e3da]">
-            {tab === "orders" ? "New order" : "New warranty claim"}
+            {tab === "orders" ? "Add Custom Order" : "New warranty claim"}
           </h2>
           <button
             onClick={onClose}
