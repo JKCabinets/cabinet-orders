@@ -26,6 +26,10 @@ export function OrderCard({ order, onClick, style }: OrderCardProps) {
   const { data: session } = useSession();
   const [claimError, setClaimError] = useState(false);
   const [completing, setCompleting] = useState(false);
+  const [showDateInput, setShowDateInput] = useState(false);
+  const [prodStartDate, setProdStartDate] = useState("");
+  const [prodEndDate, setProdEndDate] = useState("");
+  const [savingDates, setSavingDates] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const stageBorder = STAGE_BORDER[order.stage] ?? "rgba(255,255,255,0.15)";
   const member = team.find((m) => m.initials === order.member);
@@ -35,7 +39,8 @@ export function OrderCard({ order, onClick, style }: OrderCardProps) {
   const displayDate = formatDateWithYear(order.date);
 
   // ── Age indicator ────────────────────────────────────────────────────────
-  const isNewStage = order.stage === "New";
+  const isNewStage     = order.stage === "New";
+  const isEnteredStage = order.stage === "Entered";
   const ageDays = isNewStage ? getOrderAgeDays(order.date) : null;
   const isOverdue = ageDays !== null && ageDays > 5;
 
@@ -73,7 +78,25 @@ export function OrderCard({ order, onClick, style }: OrderCardProps) {
     fileInputRef.current?.click();
   }
 
-  async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleSaveDates(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!prodStartDate || !prodEndDate) return;
+    setSavingDates(true);
+    try {
+      await fetch(`/api/orders/${order.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          production_start_date: prodStartDate,
+          production_est_finish_date: prodEndDate,
+        }),
+      });
+      await moveStage(order.id, "In production");
+    } finally {
+      setSavingDates(false);
+      setShowDateInput(false);
+    }
+  }
     const file = e.target.files?.[0];
     if (!file) return;
     setCompleting(true);
@@ -266,6 +289,90 @@ export function OrderCard({ order, onClick, style }: OrderCardProps) {
             >
               <span className="text-[10px] font-medium">＋ Claim order</span>
             </button>
+          )}
+        </div>
+      )}
+
+      {/* ── Production Dates strip — only in Entered stage ─────────────────── */}
+      {isEnteredStage && (
+        <div className="px-2 pb-2 pt-0" onClick={(e) => e.stopPropagation()}>
+          {!showDateInput ? (
+            <button
+              onClick={(e) => { e.stopPropagation(); setShowDateInput(true); }}
+              className="w-full flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 transition-all duration-150"
+              style={{
+                background: "rgba(74,111,143,0.14)",
+                border: "0.5px solid rgba(74,111,143,0.40)",
+                color: "rgba(110,170,230,0.90)",
+              }}
+              onMouseEnter={(e) => { const el = e.currentTarget as HTMLButtonElement; el.style.background = "rgba(74,111,143,0.24)"; }}
+              onMouseLeave={(e) => { const el = e.currentTarget as HTMLButtonElement; el.style.background = "rgba(74,111,143,0.14)"; }}
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                <line x1="16" y1="2" x2="16" y2="6"/>
+                <line x1="8" y1="2" x2="8" y2="6"/>
+                <line x1="3" y1="10" x2="21" y2="10"/>
+              </svg>
+              <span className="text-[10px] font-semibold tracking-wide">Input Production Dates</span>
+            </button>
+          ) : (
+            <div className="flex flex-col gap-1.5" onClick={(e) => e.stopPropagation()}>
+              <div className="flex flex-col gap-1">
+                <label className="text-[9px]" style={{ color: "rgba(232,227,218,0.50)" }}>Production Start</label>
+                <input
+                  type="date"
+                  value={prodStartDate}
+                  onChange={(e) => setProdStartDate(e.target.value)}
+                  onClick={(e) => e.stopPropagation()}
+                  className="w-full rounded-md px-2 py-1 text-[10px] outline-none"
+                  style={{
+                    background: "rgba(255,255,255,0.07)",
+                    border: "0.5px solid rgba(255,255,255,0.18)",
+                    color: "#e8e3da",
+                    colorScheme: "dark",
+                  }}
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[9px]" style={{ color: "rgba(232,227,218,0.50)" }}>Est. Finish Date</label>
+                <input
+                  type="date"
+                  value={prodEndDate}
+                  onChange={(e) => setProdEndDate(e.target.value)}
+                  onClick={(e) => e.stopPropagation()}
+                  className="w-full rounded-md px-2 py-1 text-[10px] outline-none"
+                  style={{
+                    background: "rgba(255,255,255,0.07)",
+                    border: "0.5px solid rgba(255,255,255,0.18)",
+                    color: "#e8e3da",
+                    colorScheme: "dark",
+                  }}
+                />
+              </div>
+              <div className="flex gap-1">
+                <button
+                  onClick={(e) => { e.stopPropagation(); setShowDateInput(false); setProdStartDate(""); setProdEndDate(""); }}
+                  className="flex-1 rounded-md px-2 py-1 text-[10px] transition-colors"
+                  style={{ background: "rgba(255,255,255,0.06)", border: "0.5px solid rgba(255,255,255,0.12)", color: "rgba(232,227,218,0.50)" }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveDates}
+                  disabled={!prodStartDate || !prodEndDate || savingDates}
+                  className="flex-1 rounded-md px-2 py-1 text-[10px] font-semibold transition-colors"
+                  style={{
+                    background: (!prodStartDate || !prodEndDate || savingDates) ? "rgba(74,111,143,0.08)" : "rgba(74,111,143,0.25)",
+                    border: "0.5px solid rgba(74,111,143,0.40)",
+                    color: (!prodStartDate || !prodEndDate || savingDates) ? "rgba(110,170,230,0.35)" : "rgba(110,170,230,0.90)",
+                    cursor: (!prodStartDate || !prodEndDate || savingDates) ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {savingDates ? "Saving…" : "Save & Move"}
+                </button>
+              </div>
+            </div>
           )}
         </div>
       )}
