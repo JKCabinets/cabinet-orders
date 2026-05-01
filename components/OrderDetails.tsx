@@ -13,9 +13,10 @@ interface OrderDetailsProps {
   productionStartDate?: string | null;
   productionEstFinishDate?: string | null;
   scheduledDeliveryDate?: string | null;
+  readOnly?: boolean;
 }
 
-export function OrderDetails({ orderId, doorStyle, color, skuItems, productionStartDate, productionEstFinishDate, scheduledDeliveryDate }: OrderDetailsProps) {
+export function OrderDetails({ orderId, doorStyle, color, skuItems, productionStartDate, productionEstFinishDate, scheduledDeliveryDate, readOnly = false }: OrderDetailsProps) {
   const { updateOrderDetails } = useStore();
 
   const [editingField, setEditingField] = useState<"door_style" | "color" | null>(null);
@@ -88,22 +89,24 @@ export function OrderDetails({ orderId, doorStyle, color, skuItems, productionSt
           value={doorStyle}
           isEditing={editingField === "door_style"}
           editValue={fieldValue}
-          onEdit={() => startEdit("door_style")}
+          onEdit={() => !readOnly && startEdit("door_style")}
           onEditChange={setFieldValue}
           onSave={saveField}
           onCancel={() => setEditingField(null)}
           placeholder="e.g. Shaker"
+          readOnly={readOnly}
         />
         <DetailField
           label="Color"
           value={color}
           isEditing={editingField === "color"}
           editValue={fieldValue}
-          onEdit={() => startEdit("color")}
+          onEdit={() => !readOnly && startEdit("color")}
           onEditChange={setFieldValue}
           onSave={saveField}
           onCancel={() => setEditingField(null)}
           placeholder="e.g. White"
+          readOnly={readOnly}
         />
       </div>
 
@@ -111,12 +114,14 @@ export function OrderDetails({ orderId, doorStyle, color, skuItems, productionSt
       <div>
         <div className="flex items-center justify-between mb-2">
           <p className="text-[10px] uppercase tracking-widest text-[rgba(232,227,218,0.30)]">SKUs & quantities</p>
+          {!readOnly && (
           <button
             onClick={() => setAddingItem(true)}
             className="flex items-center gap-1 text-[10px] text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] transition-colors"
           >
             <Plus className="w-3 h-3" /> Add SKU
           </button>
+          )}
         </div>
 
         {/* Add SKU form */}
@@ -158,12 +163,16 @@ export function OrderDetails({ orderId, doorStyle, color, skuItems, productionSt
 
         {/* SKU list */}
         {localSkuItems.length === 0 && !addingItem ? (
+          readOnly ? (
+            <p className="text-[11px] text-[rgba(232,227,218,0.25)] px-2 py-3">No SKUs recorded</p>
+          ) : (
           <button
             onClick={() => setAddingItem(true)}
             className="w-full border border-dashed border-[rgba(255,255,255,0.10)] rounded-lg py-3 text-[11px] text-[rgba(232,227,218,0.30)] hover:text-[rgba(232,227,218,0.50)] hover:border-[rgba(86,100,72,0.55)] transition-colors"
           >
             + Add SKUs and quantities
           </button>
+          )
         ) : (
           <div className="flex flex-col gap-1">
             {/* Header */}
@@ -186,7 +195,8 @@ export function OrderDetails({ orderId, doorStyle, color, skuItems, productionSt
                   <div className="grid grid-cols-12 gap-1.5 items-center px-2 py-1.5 rounded-lg hover:bg-[rgba(255,255,255,0.04)] group transition-colors">
                     <span className="col-span-3 text-[11px] font-mono text-[#e8e3da] truncate">{item.sku}</span>
                     <span className="col-span-1 text-[11px] text-[rgba(232,227,218,0.50)] text-center font-medium">{item.quantity}</span>
-                    <span className="col-span-6 text-[11px] text-[rgba(232,227,218,0.50)] truncate">{item.description ?? "—"}</span>
+                    <span className={`text-[11px] text-[rgba(232,227,218,0.50)] truncate ${readOnly ? "col-span-8" : "col-span-6"}`}>{item.description ?? "—"}</span>
+                    {!readOnly && (
                     <div className="col-span-2 flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button onClick={() => setEditingItemIdx(idx)} className="p-0.5 text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] transition-colors">
                         <Pencil className="w-3 h-3" />
@@ -195,6 +205,7 @@ export function OrderDetails({ orderId, doorStyle, color, skuItems, productionSt
                         <Trash2 className="w-3 h-3" />
                       </button>
                     </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -214,10 +225,11 @@ export function OrderDetails({ orderId, doorStyle, color, skuItems, productionSt
   );
 }
 
-function DetailField({ label, value, isEditing, editValue, onEdit, onEditChange, onSave, onCancel, placeholder }: {
+function DetailField({ label, value, isEditing, editValue, onEdit, onEditChange, onSave, onCancel, placeholder, readOnly }: {
   label: string; value: string; isEditing: boolean; editValue: string;
   onEdit: () => void; onEditChange: (v: string) => void;
   onSave: () => void; onCancel: () => void; placeholder: string;
+  readOnly?: boolean;
 }) {
   return (
     <div>
@@ -240,17 +252,17 @@ function DetailField({ label, value, isEditing, editValue, onEdit, onEditChange,
           </button>
         </div>
       ) : (
-        <button
-          onClick={onEdit}
-          className="w-full text-left px-2.5 py-1.5 rounded-lg bg-[#111] border border-[rgba(255,255,255,0.10)] text-xs hover:border-[rgba(86,100,72,0.55)] transition-colors group"
+        <div
+          onClick={readOnly ? undefined : onEdit}
+          className={`w-full text-left px-2.5 py-1.5 rounded-lg bg-[#111] border border-[rgba(255,255,255,0.10)] text-xs transition-colors group ${readOnly ? "cursor-default" : "hover:border-[rgba(86,100,72,0.55)] cursor-pointer"}`}
         >
           {value ? (
             <span className="text-[#e8e3da]">{value}</span>
           ) : (
             <span className="text-[#3e3e3e]">{placeholder}</span>
           )}
-          <Pencil className="w-2.5 h-2.5 text-[rgba(232,227,218,0.30)] float-right mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity" />
-        </button>
+          {!readOnly && <Pencil className="w-2.5 h-2.5 text-[rgba(232,227,218,0.30)] float-right mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity" />}
+        </div>
       )}
     </div>
   );
