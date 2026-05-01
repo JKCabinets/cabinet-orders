@@ -437,6 +437,9 @@ export function OrderModal({ order, tab, onClose, onStageChange }: OrderModalPro
               doorStyle={liveOrder.door_style ?? ""}
               color={liveOrder.color ?? ""}
               skuItems={liveOrder.sku_items ?? []}
+              productionStartDate={liveOrder.production_start_date}
+              productionEstFinishDate={liveOrder.production_est_finish_date}
+              scheduledDeliveryDate={liveOrder.scheduled_delivery_date}
             />
           )}
 
