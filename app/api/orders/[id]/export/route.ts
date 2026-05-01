@@ -120,11 +120,11 @@ export async function GET(
 
     body {
       font-family: 'Inter', Arial, sans-serif;
-      font-size: 11px;
+      font-size: 10px;
       color: #222;
       background: #fff;
-      padding: 32px 40px;
-      max-width: 860px;
+      padding: 24px 32px;
+      max-width: 760px;
       margin: 0 auto;
     }
 
@@ -132,7 +132,7 @@ export async function GET(
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 24px;
+      margin-bottom: 16px;
     }
     .logo-box {
       width: 48px; height: 48px;
@@ -141,39 +141,39 @@ export async function GET(
       align-items: center; justify-content: center;
       line-height: 1;
     }
-    .logo-jk       { font-size: 17px; font-weight: 800; letter-spacing: -1px; color: #1a1a1a; }
-    .logo-cabinets { font-size: 5.5px; font-weight: 600; letter-spacing: 1.5px; color: #1a1a1a; text-transform: uppercase; margin-top: 2px; }
-    .order-title   { font-size: 22px; font-weight: 700; color: #1a1a1a; letter-spacing: -0.5px; }
+    .logo-jk       { font-size: 15px; font-weight: 800; letter-spacing: -1px; color: #1a1a1a; }
+    .logo-cabinets { font-size: 5px; font-weight: 600; letter-spacing: 1.5px; color: #1a1a1a; text-transform: uppercase; margin-top: 2px; }
+    .order-title   { font-size: 18px; font-weight: 700; color: #1a1a1a; letter-spacing: -0.5px; }
     .order-title span { font-weight: 400; }
 
-    .info-table { width: 100%; border-collapse: collapse; border: 1px solid #d0d0d0; margin-bottom: 14px; }
-    .info-table td { padding: 5px 10px; border: 1px solid #d0d0d0; vertical-align: top; }
-    .info-table .lbl { font-weight: 700; white-space: nowrap; width: 90px; color: #111; }
+    .info-table { width: 100%; border-collapse: collapse; border: 1px solid #d0d0d0; margin-bottom: 10px; }
+    .info-table td { padding: 4px 8px; border: 1px solid #d0d0d0; vertical-align: top; }
+    .info-table .lbl { font-weight: 700; white-space: nowrap; width: 80px; color: #111; }
     .info-table .val { color: #333; }
 
-    .customer-block { border: 1px solid #d0d0d0; padding: 10px 12px; margin-bottom: 14px; }
-    .cust-row { display: flex; gap: 6px; margin-bottom: 6px; align-items: baseline; line-height: 1.4; }
+    .customer-block { border: 1px solid #d0d0d0; padding: 8px 10px; margin-bottom: 10px; }
+    .cust-row { display: flex; gap: 6px; margin-bottom: 4px; align-items: baseline; line-height: 1.3; }
     .cust-row:last-child { margin-bottom: 0; }
-    .cust-lbl { font-weight: 700; white-space: nowrap; min-width: 138px; color: #111; }
-    .cust-val { color: #333; border-bottom: 1px solid #ccc; flex: 1; min-height: 14px; }
+    .cust-lbl { font-weight: 700; white-space: nowrap; min-width: 120px; color: #111; }
+    .cust-val { color: #333; border-bottom: 1px solid #ccc; flex: 1; min-height: 12px; }
 
     .items-table { width: 100%; border-collapse: collapse; border: 1px solid #d0d0d0; }
-    .items-table th { background: #f5f5f5; font-weight: 700; padding: 6px 8px; border: 1px solid #d0d0d0; text-align: left; font-size: 10.5px; }
-    .items-table td { padding: 6px 8px; border: 1px solid #d0d0d0; vertical-align: top; }
-    .items-table .mono { font-family: 'Courier New', monospace; font-size: 10px; }
+    .items-table th { background: #f5f5f5; font-weight: 700; padding: 5px 7px; border: 1px solid #d0d0d0; text-align: left; font-size: 9.5px; }
+    .items-table td { padding: 5px 7px; border: 1px solid #d0d0d0; vertical-align: top; }
+    .items-table .mono { font-family: 'Courier New', monospace; font-size: 9px; }
     .right  { text-align: right; }
     .center { text-align: center; }
 
-    .section-row td { background: #fafafa; padding: 5px 8px; font-size: 10px; color: #444; }
+    .section-row td { background: #fafafa; padding: 4px 7px; font-size: 9px; color: #444; }
     .section-label { display: inline-flex; align-items: center; gap: 4px; text-decoration: underline; font-weight: 500; }
     .section-style { font-weight: 600; }
-    .sku-code { font-family: 'Courier New', monospace; font-weight: 400; font-size: 9.5px; color: #555; }
+    .sku-code { font-family: 'Courier New', monospace; font-weight: 400; font-size: 8.5px; color: #555; }
 
-    .footer { margin-top: 18px; font-size: 9px; color: #aaa; text-align: center; }
+    .footer { margin-top: 12px; font-size: 8px; color: #aaa; text-align: center; }
 
     @media print {
-      body { padding: 0; }
-      @page { margin: 16mm 12mm; size: letter; }
+      body { padding: 0; max-width: 100%; }
+      @page { margin: 10mm 10mm; size: letter portrait; }
       .no-print { display: none !important; }
     }
   </style>
