@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { supabase } from "@/lib/supabase";
-import { decodeSku } from "@/lib/skuDecoder";
+import { decodeSku, buildSkuFromAvisNames } from "@/lib/skuDecoder";
 
 const SHOPIFY_SECRET = process.env.SHOPIFY_WEBHOOK_SECRET ?? "";
 
@@ -43,15 +43,33 @@ function buildOrder(payload: Record<string, unknown>) {
     : itemNames[0] ?? "Shopify order";
 
   // Read _sku from line item properties (written by sku-avis-bridge.js)
-  // Fall back to the Shopify variant SKU if not present
+  // Also read Avis door style + color properties as fallback
   const skuItems = lineItems.map(i => {
     const props = (i.properties as Array<{ name: string; value: string }>) ?? [];
+
+    const getProp = (...names: string[]) =>
+      props.find(p => names.includes(p.name))?.value ?? "";
+
     const skuProp = props.find(p => p.name === "_sku");
-    const sku = skuProp?.value || String(i.sku ?? i.variant_id ?? "");
+    const baseVariantSku = String(i.sku ?? i.variant_id ?? "");
+
+    // Read Avis door/color option names from line item properties
+    const avisDoorStyle   = getProp("_Door Style", "Door Style");
+    const avisColorSelect = getProp("_Color Selection", "Color Selection");
+
+    // Use _sku if bridge wrote it, otherwise try to build it from Avis names
+    let sku = skuProp?.value || "";
+    if (!sku && baseVariantSku && avisDoorStyle && avisColorSelect) {
+      sku = buildSkuFromAvisNames(baseVariantSku, avisDoorStyle, avisColorSelect) ?? baseVariantSku;
+    }
+    if (!sku) sku = baseVariantSku;
+
     return {
       sku,
       quantity: Number(i.quantity ?? 1),
       description: String(i.name ?? ""),
+      door_style: avisDoorStyle,
+      color: avisColorSelect,
     };
   }).filter(i => i.sku);
 
