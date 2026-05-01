@@ -251,7 +251,7 @@ export function OrderModal({ order, tab, onClose, onStageChange }: OrderModalPro
                   <button
                     key={s}
                     onClick={() => handleMoveStage(s as Stage)}
-                    disabled={checkingAttachments || liveOrder.source === "Shopify"}
+                    disabled={checkingAttachments}
                     className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs transition-all duration-150 text-left hover:brightness-110 disabled:opacity-60"
                     style={
                       isActive
@@ -429,11 +429,6 @@ export function OrderModal({ order, tab, onClose, onStageChange }: OrderModalPro
             {/* Notes */}
             <div>
               <p className={LABEL}>Notes</p>
-              {liveOrder.source === "Shopify" ? (
-                <p className="text-xs rounded-lg p-2.5" style={{ background: "rgba(255,255,255,0.03)", border: "0.5px solid rgba(255,255,255,0.10)", color: "rgba(232,227,218,0.50)", minHeight: "60px" }}>
-                  {notes || <span style={{ color: "rgba(232,227,218,0.20)" }}>No notes</span>}
-                </p>
-              ) : (
               <textarea
                 value={notes}
                 onChange={(e) => { setNotes(e.target.value); setNotesChanged(true); }}
@@ -447,8 +442,7 @@ export function OrderModal({ order, tab, onClose, onStageChange }: OrderModalPro
                   fontSize: "16px",
                 }}
               />
-              )}
-              {notesChanged && liveOrder.source !== "Shopify" && (
+              {notesChanged && (
                 <button
                   onClick={handleSaveNotes}
                   className="mt-1.5 text-[11px] transition-colors"
