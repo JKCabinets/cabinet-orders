@@ -121,9 +121,14 @@ export async function POST(req: NextRequest) {
     const { customerName, customerEmail, customerPhone, shipTo, deliveryMethod, detail, skus, skuItems, notes, today, orderNumber, decodedDoorStyle, decodedColor } = buildOrder(payload);
     const orderId = orderNumber ? `SHO-${orderNumber}` : `SHO-${shopifyId.slice(-6)}`;
 
-    // Look up vendor from shopify_products using first SKU
+    // Look up vendor from shopify_products using base SKU (strip door/color codes)
     let vendorName = "";
-    const firstSku = skuItems.find(i => i.sku)?.sku ?? "";
+    const firstSkuFull = skuItems.find(i => i.sku)?.sku ?? "";
+    // shopify_products stores the base variant SKU (e.g. "W930"), not the full built SKU
+    const firstSkuParts = firstSkuFull.split("-");
+    const firstSku = firstSkuParts.length >= 3
+      ? firstSkuParts.slice(0, firstSkuParts.length - 2).join("-")
+      : firstSkuFull;
     if (firstSku) {
       const { data: product } = await supabase
         .from("shopify_products")

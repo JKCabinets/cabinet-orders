@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
-import { groupSkuItemsByStyle, decodeSku } from "@/lib/skuDecoder";
+import { groupSkuItemsByStyle } from "@/lib/skuDecoder";
 
 export async function GET(
   _req: NextRequest,
@@ -34,8 +34,13 @@ export async function GET(
   // ── Vendor: stored on order, or look up from shopify_products by SKU ─────
   let vendor = order.vendor || "";
   if (!vendor) {
-    const skuItems: { sku: string }[] = Array.isArray(order.sku_items) ? order.sku_items : [];
-    const firstSku = skuItems.find(i => i.sku)?.sku ?? "";
+    const skuItemsForVendor: { sku: string }[] = Array.isArray(order.sku_items) ? order.sku_items : [];
+    const firstSkuFull = skuItemsForVendor.find(i => i.sku)?.sku ?? "";
+    // shopify_products stores base variant SKU — strip door/color codes
+    const firstSkuParts = firstSkuFull.split("-");
+    const firstSku = firstSkuParts.length >= 3
+      ? firstSkuParts.slice(0, firstSkuParts.length - 2).join("-")
+      : firstSkuFull;
     if (firstSku) {
       const { data: product } = await supabase
         .from("shopify_products")
@@ -75,8 +80,7 @@ export async function GET(
     </tr>`;
 
     const itemRows = group.items.map(item => {
-      const decoded = decodeSku(item.sku);
-      const displaySku = decoded?.baseSku ?? item.sku;
+      const displaySku = item.sku ?? "—";
       return `
     <tr>
       <td>${rowIndex++}</td>
