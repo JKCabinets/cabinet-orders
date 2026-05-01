@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
+import { groupSkuItemsByStyle, decodeSku } from "@/lib/skuDecoder";
 
 export async function GET(
   _req: NextRequest,
@@ -56,22 +57,39 @@ export async function GET(
   const status              = order.stage           || "—";
   const orderedOn           = order.date            || "—";
 
-  // ── Line items ────────────────────────────────────────────────────────────
+  // ── Line items grouped by door style + color decoded from SKU ────────────
   const skuItems: { sku: string; quantity: number; description?: string }[] =
     Array.isArray(order.sku_items) ? order.sku_items : [];
 
-  const sectionLabel = [order.door_style, order.color].filter(Boolean).join(" - ") || null;
+  const groups = groupSkuItemsByStyle(skuItems);
 
-  const lineRows = skuItems.map((item, i) => `
+  let rowIndex = 1;
+  const lineRows = groups.map(group => {
+    const sectionRow = `
+    <tr class="section-row">
+      <td colspan="6">
+        <span class="section-label">Section by groups</span>
+        &nbsp;→&nbsp;
+        <span class="section-style">Style: ${group.label}</span>
+      </td>
+    </tr>`;
+
+    const itemRows = group.items.map(item => {
+      const decoded = decodeSku(item.sku);
+      const displaySku = decoded?.baseSku ?? item.sku;
+      return `
     <tr>
-      <td>${i + 1}</td>
-      <td class="mono">${item.sku ?? "—"}</td>
+      <td>${rowIndex++}</td>
+      <td class="mono">${displaySku}</td>
       <td>${item.description ?? "—"}</td>
       <td class="right">—</td>
       <td class="center">${item.quantity ?? 1}</td>
       <td class="right">—</td>
-    </tr>
-  `).join("");
+    </tr>`;
+    }).join("");
+
+    return sectionRow + itemRows;
+  }).join("");
 
   const exportedAt = new Date().toLocaleDateString("en-US", {
     month: "long", day: "numeric", year: "numeric",
@@ -226,14 +244,6 @@ export async function GET(
       </tr>
     </thead>
     <tbody>
-      ${sectionLabel ? `
-      <tr class="section-row">
-        <td colspan="6">
-          <span class="section-label">Section by groups</span>
-          &nbsp;→&nbsp;
-          <span class="section-style">Style: ${sectionLabel}</span>
-        </td>
-      </tr>` : ""}
       ${lineRows || `<tr><td colspan="6" style="text-align:center;color:#aaa;padding:18px;">No line items recorded</td></tr>`}
     </tbody>
   </table>
