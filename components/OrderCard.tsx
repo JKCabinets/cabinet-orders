@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Order, AVATAR_COLOR_STYLES } from "@/lib/data";
 import { useStore } from "@/lib/store";
 import { formatDateWithYear, parseOrderDate } from "@/lib/dateUtils";
@@ -22,9 +22,11 @@ function getOrderAgeDays(dateStr: string): number | null {
 }
 
 export function OrderCard({ order, onClick, style }: OrderCardProps) {
-  const { team, claimOrder } = useStore();
+  const { team, claimOrder, moveStage } = useStore();
   const { data: session } = useSession();
   const [claimError, setClaimError] = useState(false);
+  const [completing, setCompleting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const stageBorder = STAGE_BORDER[order.stage] ?? "rgba(255,255,255,0.15)";
   const member = team.find((m) => m.initials === order.member);
   const memberStyle = member ? AVATAR_COLOR_STYLES[member.avatarColor]
@@ -64,6 +66,27 @@ export function OrderCard({ order, onClick, style }: OrderCardProps) {
   function handleExport(e: React.MouseEvent) {
     e.stopPropagation();
     window.open(`/api/orders/${order.id}/export`, "_blank", "noopener");
+  }
+
+  function handleCompleteClick(e: React.MouseEvent) {
+    e.stopPropagation();
+    fileInputRef.current?.click();
+  }
+
+  async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCompleting(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("orderId", order.id);
+      await fetch("/api/orders/attachments", { method: "POST", body: fd });
+      await moveStage(order.id, "Entered", currentUserName ?? undefined);
+    } finally {
+      setCompleting(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   }
 
   return (
@@ -155,33 +178,63 @@ export function OrderCard({ order, onClick, style }: OrderCardProps) {
                 </button>
               </div>
 
-              {/* Export button */}
-              <button
-                onClick={handleExport}
-                className="w-full flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 transition-all duration-150"
-                style={{
-                  background: "rgba(255,255,255,0.08)",
-                  border: "0.5px solid rgba(255,255,255,0.18)",
-                  color: "rgba(232,227,218,0.75)",
-                }}
-                onMouseEnter={(e) => {
-                  const el = e.currentTarget as HTMLButtonElement;
-                  el.style.background = "rgba(255,255,255,0.14)";
-                  el.style.color = "#e8e3da";
-                }}
-                onMouseLeave={(e) => {
-                  const el = e.currentTarget as HTMLButtonElement;
-                  el.style.background = "rgba(255,255,255,0.08)";
-                  el.style.color = "rgba(232,227,218,0.75)";
-                }}
-              >
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                  <polyline points="7 10 12 15 17 10"/>
-                  <line x1="12" y1="15" x2="12" y2="3"/>
-                </svg>
-                <span className="text-[10px] font-semibold tracking-wide">Export Order</span>
-              </button>
+              {/* Split: Export + Complete Order */}
+              <div className="flex gap-1">
+                {/* Export half */}
+                <button
+                  onClick={handleExport}
+                  className="flex-1 flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 transition-all duration-150"
+                  style={{
+                    background: "rgba(255,255,255,0.08)",
+                    border: "0.5px solid rgba(255,255,255,0.18)",
+                    color: "rgba(232,227,218,0.75)",
+                  }}
+                  onMouseEnter={(e) => { const el = e.currentTarget as HTMLButtonElement; el.style.background = "rgba(255,255,255,0.14)"; el.style.color = "#e8e3da"; }}
+                  onMouseLeave={(e) => { const el = e.currentTarget as HTMLButtonElement; el.style.background = "rgba(255,255,255,0.08)"; el.style.color = "rgba(232,227,218,0.75)"; }}
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                  </svg>
+                  <span className="text-[10px] font-semibold tracking-wide">Export Order</span>
+                </button>
+
+                {/* Complete Order half */}
+                <button
+                  onClick={handleCompleteClick}
+                  disabled={completing}
+                  className="flex-1 flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 transition-all duration-150"
+                  style={{
+                    background: completing ? "rgba(76,175,122,0.10)" : "rgba(76,175,122,0.14)",
+                    border: "0.5px solid rgba(76,175,122,0.35)",
+                    color: completing ? "rgba(109,214,160,0.50)" : "#6dd6a0",
+                    cursor: completing ? "not-allowed" : "pointer",
+                  }}
+                  onMouseEnter={(e) => { if (!completing) { const el = e.currentTarget as HTMLButtonElement; el.style.background = "rgba(76,175,122,0.24)"; } }}
+                  onMouseLeave={(e) => { if (!completing) { const el = e.currentTarget as HTMLButtonElement; el.style.background = "rgba(76,175,122,0.14)"; } }}
+                >
+                  {completing ? (
+                    <span className="text-[10px] font-semibold tracking-wide">Moving…</span>
+                  ) : (
+                    <>
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                      </svg>
+                      <span className="text-[10px] font-semibold tracking-wide">Complete Order</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Hidden file input */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                onChange={handleFileSelected}
+                onClick={(e) => e.stopPropagation()}
+              />
             </div>
           ) : isClaimedByOther ? (
             /* Claimed by someone else */
