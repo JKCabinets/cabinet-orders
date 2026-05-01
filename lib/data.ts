@@ -105,6 +105,8 @@ export interface Order {
   // Production timeline
   production_start_date?: string | null;
   production_est_finish_date?: string | null;
+  // Delivery
+  scheduled_delivery_date?: string | null;
   // Claim system
   claimed_by?: string | null;
   // Who moved the order to Entered (set server-side, permanent record)

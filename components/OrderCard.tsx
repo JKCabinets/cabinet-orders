@@ -22,7 +22,7 @@ function getOrderAgeDays(dateStr: string): number | null {
 }
 
 export function OrderCard({ order, onClick, style }: OrderCardProps) {
-  const { team, claimOrder, moveStage } = useStore();
+  const { team, claimOrder, moveStage, archiveOrder } = useStore();
   const { data: session } = useSession();
   const [claimError, setClaimError] = useState(false);
   const [completing, setCompleting] = useState(false);
@@ -30,6 +30,10 @@ export function OrderCard({ order, onClick, style }: OrderCardProps) {
   const [prodStartDate, setProdStartDate] = useState("");
   const [prodEndDate, setProdEndDate] = useState("");
   const [savingDates, setSavingDates] = useState(false);
+  const [showDeliveryInput, setShowDeliveryInput] = useState(false);
+  const [deliveryDate, setDeliveryDate] = useState(order.scheduled_delivery_date ?? "");
+  const [savingDelivery, setSavingDelivery] = useState(false);
+  const [confirmingDelivery, setConfirmingDelivery] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const stageBorder = STAGE_BORDER[order.stage] ?? "rgba(255,255,255,0.15)";
   const member = team.find((m) => m.initials === order.member);
@@ -39,8 +43,11 @@ export function OrderCard({ order, onClick, style }: OrderCardProps) {
   const displayDate = formatDateWithYear(order.date);
 
   // ── Age indicator ────────────────────────────────────────────────────────
-  const isNewStage     = order.stage === "New";
-  const isEnteredStage = order.stage === "Entered";
+  const isNewStage        = order.stage === "New";
+  const isEnteredStage    = order.stage === "Entered";
+  const isInProductionStage = order.stage === "In production";
+  const isCrossDockStage  = order.stage === "At cross dock";
+  const isDeliveredStage  = order.stage === "Delivered";
   const ageDays = isNewStage ? getOrderAgeDays(order.date) : null;
   const isOverdue = ageDays !== null && ageDays > 5;
 
@@ -98,7 +105,31 @@ export function OrderCard({ order, onClick, style }: OrderCardProps) {
     }
   }
 
-  async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleSaveDeliveryDate(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!deliveryDate) return;
+    setSavingDelivery(true);
+    try {
+      await fetch(`/api/orders/${order.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scheduled_delivery_date: deliveryDate }),
+      });
+      setShowDeliveryInput(false);
+    } finally {
+      setSavingDelivery(false);
+    }
+  }
+
+  async function handleConfirmDelivery(e: React.MouseEvent) {
+    e.stopPropagation();
+    setConfirmingDelivery(true);
+    try {
+      await archiveOrder(order.id);
+    } finally {
+      setConfirmingDelivery(false);
+    }
+  }
     const file = e.target.files?.[0];
     if (!file) return;
     setCompleting(true);
@@ -376,6 +407,111 @@ export function OrderCard({ order, onClick, style }: OrderCardProps) {
               </div>
             </div>
           )}
+        </div>
+      )}
+      {/* ── Production dates — only in In production stage ──────────────────── */}
+      {isInProductionStage && (order.production_start_date || order.production_est_finish_date) && (
+        <div className="px-2 pb-2 pt-0">
+          <div className="rounded-md px-2 py-1.5 flex flex-col gap-1"
+            style={{ background: "rgba(200,184,74,0.10)", border: "0.5px solid rgba(200,184,74,0.30)" }}>
+            {order.production_start_date && (
+              <div className="flex items-center justify-between">
+                <span className="text-[9px]" style={{ color: "rgba(232,227,218,0.45)" }}>Start</span>
+                <span className="text-[9px] font-semibold" style={{ color: "rgba(200,184,74,0.90)" }}>{order.production_start_date}</span>
+              </div>
+            )}
+            {order.production_est_finish_date && (
+              <div className="flex items-center justify-between">
+                <span className="text-[9px]" style={{ color: "rgba(232,227,218,0.45)" }}>Est. Finish</span>
+                <span className="text-[9px] font-semibold" style={{ color: "rgba(200,184,74,0.90)" }}>{order.production_est_finish_date}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Delivery date — only in At cross dock stage ───────────────────────── */}
+      {isCrossDockStage && (
+        <div className="px-2 pb-2 pt-0" onClick={(e) => e.stopPropagation()}>
+          {!showDeliveryInput ? (
+            <button
+              onClick={(e) => { e.stopPropagation(); setShowDeliveryInput(true); }}
+              className="w-full flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 transition-all duration-150"
+              style={{
+                background: deliveryDate ? "rgba(74,143,212,0.14)" : "rgba(74,143,212,0.08)",
+                border: "0.5px solid rgba(74,143,212,0.40)",
+                color: "rgba(110,170,230,0.90)",
+              }}
+              onMouseEnter={(e) => { const el = e.currentTarget as HTMLButtonElement; el.style.background = "rgba(74,143,212,0.24)"; }}
+              onMouseLeave={(e) => { const el = e.currentTarget as HTMLButtonElement; el.style.background = deliveryDate ? "rgba(74,143,212,0.14)" : "rgba(74,143,212,0.08)"; }}
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                <line x1="16" y1="2" x2="16" y2="6"/>
+                <line x1="8" y1="2" x2="8" y2="6"/>
+                <line x1="3" y1="10" x2="21" y2="10"/>
+              </svg>
+              <span className="text-[10px] font-semibold tracking-wide">
+                {deliveryDate ? `Delivery: ${deliveryDate}` : "Delivery Date Scheduled"}
+              </span>
+            </button>
+          ) : (
+            <div className="flex flex-col gap-1.5" onClick={(e) => e.stopPropagation()}>
+              <label className="text-[9px]" style={{ color: "rgba(232,227,218,0.50)" }}>Scheduled Delivery Date</label>
+              <input
+                type="date"
+                value={deliveryDate}
+                onChange={(e) => setDeliveryDate(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full rounded-md px-2 py-1 text-[10px] outline-none"
+                style={{ background: "rgba(255,255,255,0.07)", border: "0.5px solid rgba(255,255,255,0.18)", color: "#e8e3da", colorScheme: "dark" }}
+              />
+              <div className="flex gap-1">
+                <button
+                  onClick={(e) => { e.stopPropagation(); setShowDeliveryInput(false); setDeliveryDate(order.scheduled_delivery_date ?? ""); }}
+                  className="flex-1 rounded-md px-2 py-1 text-[10px] transition-colors"
+                  style={{ background: "rgba(255,255,255,0.06)", border: "0.5px solid rgba(255,255,255,0.12)", color: "rgba(232,227,218,0.50)" }}
+                >Cancel</button>
+                <button
+                  onClick={handleSaveDeliveryDate}
+                  disabled={!deliveryDate || savingDelivery}
+                  className="flex-1 rounded-md px-2 py-1 text-[10px] font-semibold"
+                  style={{
+                    background: (!deliveryDate || savingDelivery) ? "rgba(74,143,212,0.08)" : "rgba(74,143,212,0.25)",
+                    border: "0.5px solid rgba(74,143,212,0.40)",
+                    color: (!deliveryDate || savingDelivery) ? "rgba(110,170,230,0.35)" : "rgba(110,170,230,0.90)",
+                    cursor: (!deliveryDate || savingDelivery) ? "not-allowed" : "pointer",
+                  }}
+                >{savingDelivery ? "Saving…" : "Save Date"}</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Confirmed Delivery — only in Delivered stage ─────────────────────── */}
+      {isDeliveredStage && (
+        <div className="px-2 pb-2 pt-0" onClick={(e) => e.stopPropagation()}>
+          <button
+            onClick={handleConfirmDelivery}
+            disabled={confirmingDelivery}
+            className="w-full flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 transition-all duration-150"
+            style={{
+              background: confirmingDelivery ? "rgba(76,175,122,0.08)" : "rgba(76,175,122,0.14)",
+              border: "0.5px solid rgba(76,175,122,0.35)",
+              color: confirmingDelivery ? "rgba(109,214,160,0.40)" : "#6dd6a0",
+              cursor: confirmingDelivery ? "not-allowed" : "pointer",
+            }}
+            onMouseEnter={(e) => { if (!confirmingDelivery) { const el = e.currentTarget as HTMLButtonElement; el.style.background = "rgba(76,175,122,0.24)"; } }}
+            onMouseLeave={(e) => { if (!confirmingDelivery) { const el = e.currentTarget as HTMLButtonElement; el.style.background = "rgba(76,175,122,0.14)"; } }}
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            <span className="text-[10px] font-semibold tracking-wide">
+              {confirmingDelivery ? "Archiving…" : "Confirmed Delivery"}
+            </span>
+          </button>
         </div>
       )}
     </div>

@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/production-complete",
       "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/delivery-complete",
+      "schedule": "0 9 * * *"
     }
   ]
 }

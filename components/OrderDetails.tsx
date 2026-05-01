@@ -104,6 +104,30 @@ export function OrderDetails({ orderId, doorStyle, color, skuItems }: OrderDetai
         />
       </div>
 
+      {/* Production & Delivery Dates */}
+      {(order.production_start_date || order.production_est_finish_date || order.scheduled_delivery_date) && (
+        <div className="mb-4 grid grid-cols-3 gap-2">
+          {order.production_start_date && (
+            <div className="rounded-md px-2 py-1.5" style={{ background: "rgba(200,184,74,0.08)", border: "0.5px solid rgba(200,184,74,0.25)" }}>
+              <p className="text-[9px] uppercase tracking-widest mb-0.5" style={{ color: "rgba(232,227,218,0.35)" }}>Prod. Start</p>
+              <p className="text-[10px] font-semibold" style={{ color: "rgba(200,184,74,0.90)" }}>{order.production_start_date}</p>
+            </div>
+          )}
+          {order.production_est_finish_date && (
+            <div className="rounded-md px-2 py-1.5" style={{ background: "rgba(200,184,74,0.08)", border: "0.5px solid rgba(200,184,74,0.25)" }}>
+              <p className="text-[9px] uppercase tracking-widest mb-0.5" style={{ color: "rgba(232,227,218,0.35)" }}>Est. Finish</p>
+              <p className="text-[10px] font-semibold" style={{ color: "rgba(200,184,74,0.90)" }}>{order.production_est_finish_date}</p>
+            </div>
+          )}
+          {order.scheduled_delivery_date && (
+            <div className="rounded-md px-2 py-1.5" style={{ background: "rgba(74,143,212,0.08)", border: "0.5px solid rgba(74,143,212,0.25)" }}>
+              <p className="text-[9px] uppercase tracking-widest mb-0.5" style={{ color: "rgba(232,227,218,0.35)" }}>Delivery Date</p>
+              <p className="text-[10px] font-semibold" style={{ color: "rgba(110,170,230,0.90)" }}>{order.scheduled_delivery_date}</p>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* SKU Items */}
       <div>
         <div className="flex items-center justify-between mb-2">
