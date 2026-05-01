@@ -65,7 +65,14 @@ export default function CalendarPage() {
     try {
       const res = await fetch("/api/orders?type=order");
       const data = await res.json();
-      if (data.data) setOrders(data.data);
+      if (data.data) {
+        // Merge scheduled_delivery_date into delivery_date so the calendar
+        // shows dates set from the order card's delivery scheduler
+        setOrders(data.data.map((o: CalendarOrder & { scheduled_delivery_date?: string | null }) => ({
+          ...o,
+          delivery_date: o.delivery_date || o.scheduled_delivery_date || "",
+        })));
+      }
     } catch {}
     setLoading(false);
   }
@@ -78,6 +85,7 @@ export default function CalendarPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           delivery_date: editDeliveryDate || null,
+          scheduled_delivery_date: editDeliveryDate || null,
           delivery_window: editWindow,
           delivery_notes: editNotes,
         }),

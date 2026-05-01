@@ -140,6 +140,7 @@ export async function PATCH(
   if (body.color !== undefined)    updates.color      = sanitize(body.color as string);
   if (body.sku_items !== undefined) updates.sku_items = body.sku_items;
   if (body.delivery_date !== undefined) updates.delivery_date = body.delivery_date;
+  if (body.scheduled_delivery_date !== undefined) updates.scheduled_delivery_date = body.scheduled_delivery_date;
   if (body.delivery_window !== undefined) updates.delivery_window = sanitize(body.delivery_window as string);
   if (body.delivery_notes !== undefined) updates.delivery_notes = sanitize(body.delivery_notes as string);
   if (body.production_start_date !== undefined) updates.production_start_date = body.production_start_date;
