@@ -21,7 +21,7 @@ interface StoreCtx {
   archiveOrder: (id: string) => Promise<void>;
   unarchiveOrder: (id: string) => Promise<void>;
   deleteOrder: (id: string) => Promise<void>;
-  updateOrderDetails: (id: string, details: { door_style?: string; color?: string; sku_items?: { sku: string; quantity: number; description?: string }[] }) => Promise<void>;
+  updateOrderDetails: (id: string, details: { door_style?: string; color?: string; sku_items?: { sku: string; quantity: number; description?: string }[]; production_start_date?: string | null; production_est_finish_date?: string | null; scheduled_delivery_date?: string | null }) => Promise<void>;
   claimOrder: (id: string, claimedBy: string | null) => Promise<boolean>;
   addTeamMember: (m: Omit<TeamMember, "id">) => Promise<void>;
   updateTeamMember: (id: string, updates: Partial<TeamMember> & { password?: string }) => Promise<void>;
