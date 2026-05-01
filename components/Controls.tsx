@@ -86,7 +86,7 @@ export function Controls({ search, onSearch, filterSource, onFilterSource, filte
             color: "#a8dd80",
           }}>
           <Plus className="w-3.5 h-3.5" />
-          {tab === "orders" ? "New order" : "New claim"}
+          {tab === "orders" ? "Add Custom Order" : "New claim"}
         </button>
       </div>
       <div className="flex gap-2">
