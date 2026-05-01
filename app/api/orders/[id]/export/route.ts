@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
-import { groupSkuItemsByStyle } from "@/lib/skuDecoder";
+import { groupSkuItemsByStyle, decodeSku } from "@/lib/skuDecoder";
 
 export async function GET(
   _req: NextRequest,
@@ -63,19 +63,28 @@ export async function GET(
   const orderedOn           = order.date            || "—";
 
   // ── Line items grouped by door style + color decoded from SKU ────────────
-  const skuItems: { sku: string; quantity: number; description?: string }[] =
+  const skuItems: { sku: string; quantity: number; description?: string; door_style?: string; color?: string }[] =
     Array.isArray(order.sku_items) ? order.sku_items : [];
 
   const groups = groupSkuItemsByStyle(skuItems);
 
   let rowIndex = 1;
   const lineRows = groups.map(group => {
+    // Get the door/color codes from the first item in the group
+    const firstItem = group.items[0];
+    const decoded = firstItem ? decodeSku(firstItem.sku) : null;
+    const doorCode  = decoded?.doorCode  ?? "";
+    const colorCode = decoded?.colorCode ?? "";
+
+    const doorLabel  = doorCode  ? `${group.doorStyle} <span class="sku-code">"${doorCode}"</span>`  : group.doorStyle;
+    const colorLabel = colorCode ? `${group.color} <span class="sku-code">"${colorCode}"</span>`     : group.color;
+
     const sectionRow = `
     <tr class="section-row">
       <td colspan="6">
-        <span class="section-label">Section by groups</span>
+        <span class="section-label">Group Style and Color</span>
         &nbsp;→&nbsp;
-        <span class="section-style">Style: ${group.label}</span>
+        <span class="section-style">Style: ${doorLabel} - ${colorLabel}</span>
       </td>
     </tr>`;
 
@@ -158,6 +167,7 @@ export async function GET(
     .section-row td { background: #fafafa; padding: 5px 8px; font-size: 10px; color: #444; }
     .section-label { display: inline-flex; align-items: center; gap: 4px; text-decoration: underline; font-weight: 500; }
     .section-style { font-weight: 600; }
+    .sku-code { font-family: 'Courier New', monospace; font-weight: 400; font-size: 9.5px; color: #555; }
 
     .footer { margin-top: 18px; font-size: 9px; color: #aaa; text-align: center; }
 
@@ -256,9 +266,7 @@ export async function GET(
     Exported ${exportedAt} · JK Cabinets Order Management
   </div>
 
-  <script>
-    window.addEventListener('load', () => setTimeout(() => window.print(), 350));
-  </script>
+
 </body>
 </html>`;
 
