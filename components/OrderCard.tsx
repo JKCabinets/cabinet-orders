@@ -97,6 +97,8 @@ export function OrderCard({ order, onClick, style }: OrderCardProps) {
       setShowDateInput(false);
     }
   }
+
+  async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     setCompleting(true);
