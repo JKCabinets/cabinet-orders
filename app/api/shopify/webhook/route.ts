@@ -75,7 +75,7 @@ function buildOrder(payload: Record<string, unknown>) {
 
   const today = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "America/Phoenix" });
 
-  return { customerName, customerEmail, customerPhone, shipTo, deliveryMethod, detail, skus, skuItems, notes, today, orderNumber };
+  return { customerName, customerEmail, customerPhone, shipTo, deliveryMethod, detail, skus, skuItems, notes, today, orderNumber, decodedDoorStyle, decodedColor };
 }
 
 export async function POST(req: NextRequest) {
@@ -100,7 +100,7 @@ export async function POST(req: NextRequest) {
       .from("orders").select("id").eq("shopify_id", shopifyId).single();
     if (existing) return NextResponse.json({ received: true, skipped: "duplicate" });
 
-    const { customerName, customerEmail, customerPhone, shipTo, deliveryMethod, detail, skus, skuItems, notes, today, orderNumber } = buildOrder(payload);
+    const { customerName, customerEmail, customerPhone, shipTo, deliveryMethod, detail, skus, skuItems, notes, today, orderNumber, decodedDoorStyle, decodedColor } = buildOrder(payload);
     const orderId = orderNumber ? `SHO-${orderNumber}` : `SHO-${shopifyId.slice(-6)}`;
 
     // Look up vendor from shopify_products using first SKU
