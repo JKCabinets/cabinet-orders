@@ -22,7 +22,7 @@ function getOrderAgeDays(dateStr: string): number | null {
 }
 
 export function OrderCard({ order, onClick, style }: OrderCardProps) {
-  const { team, claimOrder, moveStage, archiveOrder } = useStore();
+  const { team, claimOrder, moveStage, archiveOrder, updateOrderDetails } = useStore();
   const { data: session } = useSession();
   const [claimError, setClaimError] = useState(false);
   const [completing, setCompleting] = useState(false);
@@ -90,13 +90,9 @@ export function OrderCard({ order, onClick, style }: OrderCardProps) {
     if (!prodStartDate || !prodEndDate) return;
     setSavingDates(true);
     try {
-      await fetch(`/api/orders/${order.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          production_start_date: prodStartDate,
-          production_est_finish_date: prodEndDate,
-        }),
+      await updateOrderDetails(order.id, {
+        production_start_date: prodStartDate,
+        production_est_finish_date: prodEndDate,
       });
       await moveStage(order.id, "In production");
     } finally {
@@ -110,11 +106,7 @@ export function OrderCard({ order, onClick, style }: OrderCardProps) {
     if (!deliveryDate) return;
     setSavingDelivery(true);
     try {
-      await fetch(`/api/orders/${order.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scheduled_delivery_date: deliveryDate }),
-      });
+      await updateOrderDetails(order.id, { scheduled_delivery_date: deliveryDate });
       setShowDeliveryInput(false);
     } finally {
       setSavingDelivery(false);

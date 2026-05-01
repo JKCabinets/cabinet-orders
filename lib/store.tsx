@@ -188,7 +188,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     await apiCall(`/api/orders/${id}`, "PATCH", { archived: false });
   }, []);
 
-  const updateOrderDetails = useCallback(async (id: string, details: { door_style?: string; color?: string; sku_items?: { sku: string; quantity: number; description?: string }[] }) => {
+  const updateOrderDetails = useCallback(async (id: string, details: { door_style?: string; color?: string; sku_items?: { sku: string; quantity: number; description?: string }[]; production_start_date?: string | null; production_est_finish_date?: string | null; scheduled_delivery_date?: string | null }) => {
     const update = (list: Order[]) => list.map(o => o.id === id ? { ...o, ...details } : o);
     setOrders(prev => update(prev));
     setWarranties(prev => update(prev));
