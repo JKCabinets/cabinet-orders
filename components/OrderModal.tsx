@@ -402,6 +402,30 @@ export function OrderModal({ order, tab, onClose, onStageChange }: OrderModalPro
               </div>
             </div>
 
+            {/* Production & Delivery Dates — shown above notes when dates exist */}
+            {liveOrder.type === "order" && (liveOrder.production_start_date || liveOrder.production_est_finish_date || liveOrder.scheduled_delivery_date) && (
+              <div className="grid grid-cols-3 gap-2 mb-1">
+                {liveOrder.production_start_date && (
+                  <div className="rounded-md px-2 py-1.5" style={{ background: "rgba(200,184,74,0.08)", border: "0.5px solid rgba(200,184,74,0.25)" }}>
+                    <p className="text-[9px] uppercase tracking-widest mb-0.5" style={{ color: "rgba(232,227,218,0.35)" }}>Prod. Start</p>
+                    <p className="text-[10px] font-semibold" style={{ color: "rgba(200,184,74,0.90)" }}>{liveOrder.production_start_date}</p>
+                  </div>
+                )}
+                {liveOrder.production_est_finish_date && (
+                  <div className="rounded-md px-2 py-1.5" style={{ background: "rgba(200,184,74,0.08)", border: "0.5px solid rgba(200,184,74,0.25)" }}>
+                    <p className="text-[9px] uppercase tracking-widest mb-0.5" style={{ color: "rgba(232,227,218,0.35)" }}>Est. Finish</p>
+                    <p className="text-[10px] font-semibold" style={{ color: "rgba(200,184,74,0.90)" }}>{liveOrder.production_est_finish_date}</p>
+                  </div>
+                )}
+                {liveOrder.scheduled_delivery_date && (
+                  <div className="rounded-md px-2 py-1.5" style={{ background: "rgba(74,143,212,0.08)", border: "0.5px solid rgba(74,143,212,0.25)" }}>
+                    <p className="text-[9px] uppercase tracking-widest mb-0.5" style={{ color: "rgba(232,227,218,0.35)" }}>Delivery Date</p>
+                    <p className="text-[10px] font-semibold" style={{ color: "rgba(110,170,230,0.90)" }}>{liveOrder.scheduled_delivery_date}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Notes */}
             <div>
               <p className={LABEL}>Notes</p>
