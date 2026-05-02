@@ -112,13 +112,23 @@ export async function POST(req: NextRequest) {
   const orderId = `QUO-${Date.now()}`;
 
   // Build clean structured notes
+  // Extract attachment URL from email body if not passed directly
+  const attachmentUrl = body.attachment_url || (() => {
+    const urlMatch = plainText.match(/https?:\/\/[^\s\n]+\.(?:pdf|png|jpg|jpeg|heic)/i);
+    return urlMatch ? urlMatch[0] : "";
+  })();
+
   const notesParts: string[] = [];
+  notesParts.push(`📋 QUOTE REQUEST — ${today}`);
+  notesParts.push(`Customer: ${name}`);
+  if (phone)   notesParts.push(`Phone: ${phone}`);
+  if (email)   notesParts.push(`Email: ${email}`);
+  if (address) notesParts.push(`Address: ${address}`);
   if (cabinetLine) notesParts.push(`Cabinet Line: ${cabinetLine}`);
   if (doorStyle)   notesParts.push(`Door Style: ${doorStyle}`);
   if (color)       notesParts.push(`Color: ${color}`);
-  if (extractedDetails) notesParts.push(`Customer Notes: ${extractedDetails}`);
-  if (body.attachment_url) notesParts.push(`Measuring Guide: ${body.attachment_url}`);
-  notesParts.push(`\nForm submission received — ${today}`);
+  if (extractedDetails) notesParts.push(`Notes: ${extractedDetails}`);
+  if (attachmentUrl) notesParts.push(`📎 Attachment: ${attachmentUrl}`);
   const notes = notesParts.join("\n");
 
   const { error } = await supabase.from("orders").insert({
@@ -152,6 +162,19 @@ export async function POST(req: NextRequest) {
     text: "Quote request received from website form",
     time: today,
   });
+
+  // Save attachment if present
+  if (attachmentUrl) {
+    const fileName = attachmentUrl.split("/").pop()?.split("?")[0] || "Customer Attachment";
+    await supabase.from("order_attachments").insert({
+      order_id: orderId,
+      file_name: fileName,
+      file_path: attachmentUrl,
+      file_size: 0,
+      file_type: attachmentUrl.toLowerCase().endsWith(".pdf") ? "application/pdf" : "image/jpeg",
+      uploaded_by: "Customer (form submission)",
+    });
+  }
 
   return NextResponse.json({ ok: true, order_id: orderId }, { status: 201, headers: CORS });
 }

@@ -433,7 +433,7 @@ export function OrderModal({ order, tab, onClose, onStageChange }: OrderModalPro
                 value={notes}
                 onChange={(e) => { setNotes(e.target.value); setNotesChanged(true); }}
                 placeholder="Add notes…"
-                rows={3}
+                rows={8}
                 className="w-full rounded-lg p-2.5 text-xs resize-none transition-colors placeholder:text-[rgba(232,227,218,0.20)]"
                 style={{
                   background: "rgba(255,255,255,0.03)",
