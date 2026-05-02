@@ -92,6 +92,7 @@ export async function POST(req: NextRequest) {
   const extractedEmail   = extractField(plainText, "Email");
   const extractedPhone   = extractField(plainText, "Phone");
   const extractedAddress = extractField(plainText, "Address");
+  const extractedBudget  = body.budget || extractField(plainText, "Budget");
   const extractedCabinet = extractField(plainText, "Cabinet Line", "Cabinet", "Select Your Cabinet Line");
   const extractedDoor    = extractField(plainText, "Door Style", "Choose Your Door Style", "Door");
   const extractedColor   = extractField(plainText, "Color", "Select Your Color", "Colour");
@@ -124,6 +125,7 @@ export async function POST(req: NextRequest) {
   if (phone)   notesParts.push(`Phone: ${phone}`);
   if (email)   notesParts.push(`Email: ${email}`);
   if (address) notesParts.push(`Address: ${address}`);
+  if (extractedBudget) notesParts.push(`Budget: ${extractedBudget}`);
   if (cabinetLine) notesParts.push(`Cabinet Line: ${cabinetLine}`);
   if (doorStyle)   notesParts.push(`Door Style: ${doorStyle}`);
   if (color)       notesParts.push(`Color: ${color}`);
