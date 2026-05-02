@@ -377,10 +377,12 @@ export function OrderModal({ order, tab, onClose, onStageChange }: OrderModalPro
                   style={
                     liveOrder.source === "Shopify"
                       ? { background: "rgba(86,100,72,0.20)", color: "#8fbe70", border: "0.5px solid rgba(86,100,72,0.28)" }
+                      : liveOrder.source === "Manual"
+                      ? { background: "rgba(145,165,151,0.20)", color: "rgba(180,210,190,0.95)", border: "0.5px solid rgba(145,165,151,0.50)" }
                       : { background: "rgba(74,111,143,0.15)", color: "rgba(74,143,212,0.85)", border: "0.5px solid rgba(74,111,143,0.35)" }
                   }
                 >
-                  {liveOrder.source}
+                  {liveOrder.source === "Manual" ? "Custom Quote" : liveOrder.source}
                 </span>
               </div>
               <div>
@@ -426,32 +428,36 @@ export function OrderModal({ order, tab, onClose, onStageChange }: OrderModalPro
               </div>
             )}
 
-            {/* Notes */}
-            <div>
-              <p className={LABEL}>Notes</p>
-              <textarea
-                value={notes}
-                onChange={(e) => { setNotes(e.target.value); setNotesChanged(true); }}
-                placeholder="Add notes…"
-                rows={8}
-                className="w-full rounded-lg p-2.5 text-xs resize-none transition-colors placeholder:text-[rgba(232,227,218,0.20)]"
-                style={{
-                  background: "rgba(255,255,255,0.03)",
-                  border: "0.5px solid rgba(255,255,255,0.18)",
-                  color: "rgba(232,227,218,0.75)",
-                  fontSize: "16px",
-                }}
-              />
-              {notesChanged && (
-                <button
-                  onClick={handleSaveNotes}
-                  className="mt-1.5 text-[11px] transition-colors"
-                  style={{ color: "#8fbe70" }}
-                >
-                  Save notes →
-                </button>
-              )}
-            </div>
+            {/* Notes — Quote orders get structured display, others get plain textarea */}
+            {liveOrder.source === "Manual" && liveOrder.notes?.includes("QUOTE REQUEST") ? (
+              <QuoteInfoPanel notes={liveOrder.notes} />
+            ) : (
+              <div>
+                <p className={LABEL}>Notes</p>
+                <textarea
+                  value={notes}
+                  onChange={(e) => { setNotes(e.target.value); setNotesChanged(true); }}
+                  placeholder="Add notes…"
+                  rows={8}
+                  className="w-full rounded-lg p-2.5 text-xs resize-none transition-colors placeholder:text-[rgba(232,227,218,0.20)]"
+                  style={{
+                    background: "rgba(255,255,255,0.03)",
+                    border: "0.5px solid rgba(255,255,255,0.18)",
+                    color: "rgba(232,227,218,0.75)",
+                    fontSize: "16px",
+                  }}
+                />
+                {notesChanged && (
+                  <button
+                    onClick={handleSaveNotes}
+                    className="mt-1.5 text-[11px] transition-colors"
+                    style={{ color: "#8fbe70" }}
+                  >
+                    Save notes →
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Order details */}
@@ -501,6 +507,69 @@ export function OrderModal({ order, tab, onClose, onStageChange }: OrderModalPro
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function QuoteInfoPanel({ notes }: { notes: string }) {
+  function extract(label: string): string {
+    const regex = new RegExp(`${label}:\\s*(.+)`, "i");
+    const match = notes.match(regex);
+    return match ? match[1].trim() : "";
+  }
+
+  const phone    = extract("Phone");
+  const email    = extract("Email");
+  const address  = extract("Address");
+  const budget   = extract("Budget");
+  const door     = extract("Door Style");
+  const color    = extract("Color");
+  const notesTxt = extract("Notes");
+  const attach   = extract("📎 Attachment");
+
+  const ROW = "flex flex-col gap-0.5";
+  const LBL = "text-[9px] uppercase tracking-widest font-semibold" as const;
+  const VAL = "text-sm" as const;
+
+  return (
+    <div className="space-y-4">
+      {/* Contact info */}
+      <div className="rounded-lg p-3 space-y-3" style={{ background: "rgba(255,255,255,0.04)", border: "0.5px solid rgba(255,255,255,0.10)" }}>
+        <p className="text-[9px] uppercase tracking-widest font-semibold mb-2" style={{ color: "rgba(232,227,218,0.40)" }}>Contact</p>
+        <div className="grid grid-cols-2 gap-3">
+          {phone && <div className={ROW}><span className={LBL} style={{ color: "rgba(232,227,218,0.35)" }}>Phone</span><span className={VAL} style={{ color: "rgba(232,227,218,0.85)" }}>{phone}</span></div>}
+          {email && <div className={ROW}><span className={LBL} style={{ color: "rgba(232,227,218,0.35)" }}>Email</span><span className={VAL} style={{ color: "rgba(232,227,218,0.85)", wordBreak: "break-all" }}>{email}</span></div>}
+          {address && <div className={ROW + " col-span-2"}><span className={LBL} style={{ color: "rgba(232,227,218,0.35)" }}>Address</span><span className={VAL} style={{ color: "rgba(232,227,218,0.85)" }}>{address}</span></div>}
+        </div>
+      </div>
+
+      {/* Quote selections */}
+      {(budget || door || color) && (
+        <div className="rounded-lg p-3 space-y-3" style={{ background: "rgba(255,255,255,0.04)", border: "0.5px solid rgba(255,255,255,0.10)" }}>
+          <p className="text-[9px] uppercase tracking-widest font-semibold mb-2" style={{ color: "rgba(232,227,218,0.40)" }}>Selections</p>
+          <div className="space-y-2.5">
+            {budget && <div className={ROW}><span className={LBL} style={{ color: "rgba(232,227,218,0.35)" }}>Budget</span><span className={VAL} style={{ color: "#8fbe70" }}>{budget}</span></div>}
+            {door && <div className={ROW}><span className={LBL} style={{ color: "rgba(232,227,218,0.35)" }}>Door Style</span><span className={VAL} style={{ color: "rgba(232,227,218,0.85)" }}>{door}</span></div>}
+            {color && <div className={ROW}><span className={LBL} style={{ color: "rgba(232,227,218,0.35)" }}>Color</span><span className={VAL} style={{ color: "rgba(232,227,218,0.85)" }}>{color}</span></div>}
+          </div>
+        </div>
+      )}
+
+      {/* Customer notes */}
+      {notesTxt && (
+        <div className="rounded-lg p-3" style={{ background: "rgba(255,255,255,0.04)", border: "0.5px solid rgba(255,255,255,0.10)" }}>
+          <p className="text-[9px] uppercase tracking-widest font-semibold mb-2" style={{ color: "rgba(232,227,218,0.40)" }}>Customer Notes</p>
+          <p className="text-sm" style={{ color: "rgba(232,227,218,0.75)", lineHeight: "1.5" }}>{notesTxt}</p>
+        </div>
+      )}
+
+      {/* Attachment link */}
+      {attach && (
+        <div className="rounded-lg p-3" style={{ background: "rgba(255,255,255,0.04)", border: "0.5px solid rgba(255,255,255,0.10)" }}>
+          <p className="text-[9px] uppercase tracking-widest font-semibold mb-2" style={{ color: "rgba(232,227,218,0.40)" }}>Attachment</p>
+          <a href={attach} target="_blank" rel="noopener noreferrer" className="text-sm underline" style={{ color: "rgba(110,170,230,0.90)" }}>View uploaded file</a>
+        </div>
+      )}
     </div>
   );
 }

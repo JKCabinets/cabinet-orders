@@ -513,12 +513,15 @@ export function OrderCard({ order, onClick, style }: OrderCardProps) {
 }
 
 function SourceBadge({ source }: { source: string }) {
+  const label = source === "Manual" ? "Custom Quote" : source;
+  const style = source === "Shopify"
+    ? { background: "rgba(86,100,72,0.25)", color: "#a0cc7a", border: "0.5px solid rgba(86,100,72,0.75)" }
+    : source === "Manual"
+    ? { background: "rgba(145,165,151,0.20)", color: "rgba(180,210,190,0.95)", border: "0.5px solid rgba(145,165,151,0.50)" }
+    : { background: "rgba(74,111,143,0.22)", color: "rgba(110,170,230,0.95)", border: "0.5px solid rgba(74,111,143,0.45)" };
   return (
-    <span className="text-[9px] px-1.5 py-px rounded font-semibold flex-shrink-0"
-      style={source === "Shopify"
-        ? { background: "rgba(86,100,72,0.25)", color: "#a0cc7a", border: "0.5px solid rgba(86,100,72,0.75)" }
-        : { background: "rgba(74,111,143,0.22)", color: "rgba(110,170,230,0.95)", border: "0.5px solid rgba(74,111,143,0.45)" }}>
-      {source}
+    <span className="text-[9px] px-1.5 py-px rounded font-semibold flex-shrink-0" style={style}>
+      {label}
     </span>
   );
 }
