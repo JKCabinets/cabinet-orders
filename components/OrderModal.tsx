@@ -513,14 +513,18 @@ export function OrderModal({ order, tab, onClose, onStageChange }: OrderModalPro
 
 function QuoteInfoPanel({ notes }: { notes: string }) {
   function extract(label: string): string {
-    const regex = new RegExp(`${label}:\\s*(.+)`, "i");
+    const regex = new RegExp(`^${label}:\\s*(.+)`, "im");
     const match = notes.match(regex);
     return match ? match[1].trim() : "";
   }
 
+  const customerName = extract("Customer");
   const phone    = extract("Phone");
   const email    = extract("Email");
   const address  = extract("Address");
+  const city     = extract("City");
+  const state    = extract("State");
+  const zip      = extract("Zip");
   const budget   = extract("Budget");
   const door     = extract("Door Style");
   const color    = extract("Color");
@@ -534,19 +538,26 @@ function QuoteInfoPanel({ notes }: { notes: string }) {
   return (
     <div className="space-y-4">
       {/* Contact info */}
-      <div className="rounded-lg p-3 space-y-3" style={{ background: "rgba(255,255,255,0.04)", border: "0.5px solid rgba(255,255,255,0.10)" }}>
-        <p className="text-[9px] uppercase tracking-widest font-semibold mb-2" style={{ color: "rgba(232,227,218,0.40)" }}>Contact</p>
+      <div className="rounded-lg p-3" style={{ background: "rgba(255,255,255,0.04)", border: "0.5px solid rgba(255,255,255,0.10)" }}>
+        <p className="text-[9px] uppercase tracking-widest font-semibold mb-3" style={{ color: "rgba(232,227,218,0.40)" }}>Contact</p>
         <div className="grid grid-cols-2 gap-3">
+          {customerName && <div className={ROW + " col-span-2"}><span className={LBL} style={{ color: "rgba(232,227,218,0.35)" }}>Name</span><span className={VAL} style={{ color: "rgba(232,227,218,0.95)", fontWeight: 500 }}>{customerName}</span></div>}
           {phone && <div className={ROW}><span className={LBL} style={{ color: "rgba(232,227,218,0.35)" }}>Phone</span><span className={VAL} style={{ color: "rgba(232,227,218,0.85)" }}>{phone}</span></div>}
           {email && <div className={ROW}><span className={LBL} style={{ color: "rgba(232,227,218,0.35)" }}>Email</span><span className={VAL} style={{ color: "rgba(232,227,218,0.85)", wordBreak: "break-all" }}>{email}</span></div>}
           {address && <div className={ROW + " col-span-2"}><span className={LBL} style={{ color: "rgba(232,227,218,0.35)" }}>Address</span><span className={VAL} style={{ color: "rgba(232,227,218,0.85)" }}>{address}</span></div>}
+          {(city || state || zip) && (
+            <div className={ROW + " col-span-2"}>
+              <span className={LBL} style={{ color: "rgba(232,227,218,0.35)" }}>City / State / Zip</span>
+              <span className={VAL} style={{ color: "rgba(232,227,218,0.85)" }}>{[city, state, zip].filter(Boolean).join(", ")}</span>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Quote selections */}
       {(budget || door || color) && (
-        <div className="rounded-lg p-3 space-y-3" style={{ background: "rgba(255,255,255,0.04)", border: "0.5px solid rgba(255,255,255,0.10)" }}>
-          <p className="text-[9px] uppercase tracking-widest font-semibold mb-2" style={{ color: "rgba(232,227,218,0.40)" }}>Selections</p>
+        <div className="rounded-lg p-3" style={{ background: "rgba(255,255,255,0.04)", border: "0.5px solid rgba(255,255,255,0.10)" }}>
+          <p className="text-[9px] uppercase tracking-widest font-semibold mb-3" style={{ color: "rgba(232,227,218,0.40)" }}>Selections</p>
           <div className="space-y-2.5">
             {budget && <div className={ROW}><span className={LBL} style={{ color: "rgba(232,227,218,0.35)" }}>Budget</span><span className={VAL} style={{ color: "#8fbe70" }}>{budget}</span></div>}
             {door && <div className={ROW}><span className={LBL} style={{ color: "rgba(232,227,218,0.35)" }}>Door Style</span><span className={VAL} style={{ color: "rgba(232,227,218,0.85)" }}>{door}</span></div>}
