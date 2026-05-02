@@ -98,14 +98,18 @@ export async function POST(req: NextRequest) {
   const extractedColor   = extractField(plainText, "Color", "Select Your Color", "Colour");
   const extractedDetails = extractField(plainText, "More Details", "Details", "Additional Details", "Notes");
 
-  // Use extracted values, fall back to directly passed fields
-  const name    = extractedName    || body.name    || "Quote Request";
-  const email   = extractedEmail   || body.email   || "";
-  const phone   = extractedPhone   || body.phone   || "";
-  const address = extractedAddress || body.address || "";
-  const doorStyle  = extractedDoor    || body.door_style   || "";
-  const color      = extractedColor   || body.color        || "";
-  const cabinetLine = extractedCabinet || body.cabinet_line || "";
+  // Use directly passed fields first (custom form), fall back to email parsing
+  const name    = body.name    || extractedName    || "Quote Request";
+  const email   = body.email   || extractedEmail   || "";
+  const phone   = body.phone   || extractedPhone   || "";
+  const address = body.address || extractedAddress || "";
+  const city    = body.city    || "";
+  const state   = body.state   || "";
+  const zip     = body.zip     || "";
+  const doorStyle  = body.door_style   || extractedDoor    || "";
+  const color      = body.color        || extractedColor   || "";
+  const cabinetLine = body.cabinet_line || extractedCabinet || "";
+  const customerNotes = body.notes_text || body.customer_notes || extractedDetails || "";
 
   const today = new Date().toLocaleDateString("en-US", {
     month: "short", day: "numeric", timeZone: "America/Phoenix",
@@ -125,11 +129,16 @@ export async function POST(req: NextRequest) {
   if (phone)   notesParts.push(`Phone: ${phone}`);
   if (email)   notesParts.push(`Email: ${email}`);
   if (address) notesParts.push(`Address: ${address}`);
+  if (city)    notesParts.push(`City: ${city}`);
+  if (state)   notesParts.push(`State: ${state}`);
+  if (zip)     notesParts.push(`Zip: ${zip}`);
   if (extractedBudget) notesParts.push(`Budget: ${extractedBudget}`);
   if (cabinetLine) notesParts.push(`Cabinet Line: ${cabinetLine}`);
   if (doorStyle)   notesParts.push(`Door Style: ${doorStyle}`);
   if (color)       notesParts.push(`Color: ${color}`);
-  if (extractedDetails) notesParts.push(`Notes: ${extractedDetails}`);
+  const rawNotes = body.notes || "";
+  const customerNotesFinal = rawNotes || extractedDetails || "";
+  if (customerNotesFinal) notesParts.push(`Notes: ${customerNotesFinal}`);
   if (attachmentUrl) notesParts.push(`📎 Attachment: ${attachmentUrl}`);
   const notes = notesParts.join("\n");
 
