@@ -11,29 +11,37 @@ export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS });
 }
 
-/**
- * Parse field value from email body text
- * Handles formats like "Name: John Smith" or "Name:John Smith"
- */
-function extractField(text: string, fieldName: string): string {
-  const regex = new RegExp(`${fieldName}\\s*:\\s*([^\\n]+)`, "i");
-  const match = text.match(regex);
-  return match ? match[1].trim() : "";
+function extractField(text: string, ...fieldNames: string[]): string {
+  for (const fieldName of fieldNames) {
+    // Try newline-separated format first: "Name: John\n"
+    const regexNewline = new RegExp(`${fieldName}\\s*:\\s*([^\\n\\r]+)`, "i");
+    const matchNewline = text.match(regexNewline);
+    if (matchNewline) {
+      // Make sure we only get the value up to the next field name
+      const value = matchNewline[1].trim();
+      // Stop at next known field label
+      const nextField = value.match(/^(.*?)\s+(?:Phone|Email|Address|Name|More Details|Cabinet|Door|Color)\s*:/i);
+      return nextField ? nextField[1].trim() : value;
+    }
+  }
+  return "";
 }
 
-/**
- * Strip HTML tags from email body
- */
 function stripHtml(html: string): string {
   return html
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/p>/gi, "\n")
+    .replace(/<\/div>/gi, "\n")
+    .replace(/<\/tr>/gi, "\n")
+    .replace(/<\/td>/gi, " ")
     .replace(/<[^>]+>/g, "")
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&nbsp;/g, " ")
+    .replace(/&#\d+;/g, " ")
     .replace(/\r\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
 
@@ -62,43 +70,56 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Could not parse body" }, { status: 400, headers: CORS });
   }
 
-  // Verify secret
   const secret = process.env.QUOTE_WEBHOOK_SECRET;
   if (secret && body.secret !== secret) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: CORS });
   }
 
-  // Get the email body — try plain text first, then strip HTML
-  const rawNotes = body.notes || body.html || body.text || "";
-  const plainText = rawNotes.includes("<") ? stripHtml(rawNotes) : rawNotes;
+  // Get email body — strip HTML if needed
+  const rawBody = body.notes || body.html || body.text || "";
+  const fullText = rawBody.includes("<") ? stripHtml(rawBody) : rawBody;
 
-  // If name/email/phone weren't passed as separate fields, extract from email body
-  const name    = body.name    || extractField(plainText, "Name")    || "Unknown Customer";
-  const email   = body.email   || extractField(plainText, "Email")   || "";
-  const phone   = body.phone   || extractField(plainText, "Phone")   || "";
-  const address = body.address || extractField(plainText, "Address") || "";
+  // Strip email boilerplate — only keep the "More information" section
+  let plainText = fullText;
+  const moreInfoMatch = fullText.match(/More information\s*([\s\S]+?)(?:If you have any questions|Click here to unsubscribe|$)/i);
+  if (moreInfoMatch) {
+    plainText = moreInfoMatch[1].trim();
+  }
 
-  // Also try to extract form-specific fields from the email body
-  const cabinetLine = body.cabinet_line || extractField(plainText, "Cabinet Line") || extractField(plainText, "Cabinet") || "";
-  const doorStyle   = body.door_style   || extractField(plainText, "Door Style")   || extractField(plainText, "Door")    || "";
-  const color       = body.color        || extractField(plainText, "Color")        || extractField(plainText, "Colour")  || "";
-  const moreDetails = body.more_details || extractField(plainText, "More Details") || extractField(plainText, "Details") || "";
+  // Extract fields from email body text
+  // Powerful Form Builder email format: "Name: John\nPhone: 480...\nEmail: ...\nAddress: ..."
+  const extractedName    = extractField(plainText, "Name");
+  const extractedEmail   = extractField(plainText, "Email");
+  const extractedPhone   = extractField(plainText, "Phone");
+  const extractedAddress = extractField(plainText, "Address");
+  const extractedCabinet = extractField(plainText, "Cabinet Line", "Cabinet", "Select Your Cabinet Line");
+  const extractedDoor    = extractField(plainText, "Door Style", "Choose Your Door Style", "Door");
+  const extractedColor   = extractField(plainText, "Color", "Select Your Color", "Colour");
+  const extractedDetails = extractField(plainText, "More Details", "Details", "Additional Details", "Notes");
+
+  // Use extracted values, fall back to directly passed fields
+  const name    = extractedName    || body.name    || "Quote Request";
+  const email   = extractedEmail   || body.email   || "";
+  const phone   = extractedPhone   || body.phone   || "";
+  const address = extractedAddress || body.address || "";
+  const doorStyle  = extractedDoor    || body.door_style   || "";
+  const color      = extractedColor   || body.color        || "";
+  const cabinetLine = extractedCabinet || body.cabinet_line || "";
 
   const today = new Date().toLocaleDateString("en-US", {
     month: "short", day: "numeric", timeZone: "America/Phoenix",
   });
   const orderId = `QUO-${Date.now()}`;
 
-  // Build clean notes
+  // Build clean structured notes
   const notesParts: string[] = [];
   if (cabinetLine) notesParts.push(`Cabinet Line: ${cabinetLine}`);
   if (doorStyle)   notesParts.push(`Door Style: ${doorStyle}`);
   if (color)       notesParts.push(`Color: ${color}`);
-  if (moreDetails) notesParts.push(`Customer Notes: ${moreDetails}`);
+  if (extractedDetails) notesParts.push(`Customer Notes: ${extractedDetails}`);
   if (body.attachment_url) notesParts.push(`Measuring Guide: ${body.attachment_url}`);
-  // Always include full email body as reference
-  if (plainText)   notesParts.push(`\n--- Full Form Submission ---\n${plainText}`);
-  const notes = notesParts.join("\n\n");
+  notesParts.push(`\nForm submission received — ${today}`);
+  const notes = notesParts.join("\n");
 
   const { error } = await supabase.from("orders").insert({
     id: orderId,
