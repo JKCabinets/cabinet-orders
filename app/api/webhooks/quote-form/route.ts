@@ -7,6 +7,9 @@ const CORS = {
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
+const STORAGE_BUCKET = "order-attachments";
+const MAX_FILE_BYTES = 20 * 1024 * 1024; // match existing admin upload limit (20 MB)
+
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS });
 }
@@ -45,8 +48,17 @@ function stripHtml(html: string): string {
     .trim();
 }
 
+function sanitizeFileName(name: string): string {
+  // Match the convention used by app/api/orders/attachments/route.ts so
+  // filenames stored by the admin upload endpoint and by the public
+  // webhook follow the same rules.
+  return name.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
 export async function POST(req: NextRequest) {
   let body: Record<string, string> = {};
+  // Files attached on multipart submissions. Empty for JSON submissions.
+  const incomingFiles: File[] = [];
 
   const contentType = req.headers.get("content-type") ?? "";
   try {
@@ -56,7 +68,15 @@ export async function POST(req: NextRequest) {
       body = JSON.parse(cleaned);
     } else if (contentType.includes("form")) {
       const fd = await req.formData();
-      fd.forEach((v, k) => { body[k] = String(v); });
+      fd.forEach((v, k) => {
+        if (v instanceof File) {
+          // Skip empty File entries (browsers sometimes include zero-byte
+          // file inputs even when nothing was selected)
+          if (v.size > 0) incomingFiles.push(v);
+        } else {
+          body[k] = String(v);
+        }
+      });
     } else {
       const raw = await req.text();
       try {
@@ -73,6 +93,16 @@ export async function POST(req: NextRequest) {
   const secret = process.env.QUOTE_WEBHOOK_SECRET;
   if (secret && body.secret !== secret) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: CORS });
+  }
+
+  // Reject anything that exceeds the per-file size limit before doing further work.
+  for (const file of incomingFiles) {
+    if (file.size > MAX_FILE_BYTES) {
+      return NextResponse.json(
+        { error: `File "${file.name}" is too large (max 20 MB)` },
+        { status: 413, headers: CORS },
+      );
+    }
   }
 
   // Get email body — strip HTML if needed
@@ -109,7 +139,6 @@ export async function POST(req: NextRequest) {
   const doorStyle  = body.door_style   || extractedDoor    || "";
   const color      = body.color        || extractedColor   || "";
   const cabinetLine = body.cabinet_line || extractedCabinet || "";
-  const customerNotes = body.notes_text || body.customer_notes || extractedDetails || "";
 
   const today = new Date().toLocaleDateString("en-US", {
     month: "short", day: "numeric", timeZone: "America/Phoenix",
@@ -117,8 +146,9 @@ export async function POST(req: NextRequest) {
   const orderId = `QUO-${Date.now()}`;
 
   // Build clean structured notes
-  // Extract attachment URL from email body if not passed directly
-  const attachmentUrl = body.attachment_url || (() => {
+  // Extract attachment URL from email body if not passed directly. (Legacy
+  // PowerfulForm path — they email a link to the uploaded file.)
+  const legacyAttachmentUrl = body.attachment_url || (() => {
     const urlMatch = plainText.match(/https?:\/\/[^\s\n]+\.(?:pdf|png|jpg|jpeg|heic)/i);
     return urlMatch ? urlMatch[0] : "";
   })();
@@ -139,7 +169,11 @@ export async function POST(req: NextRequest) {
   const rawNotes = body.notes || "";
   const customerNotesFinal = rawNotes || extractedDetails || "";
   if (customerNotesFinal) notesParts.push(`Notes: ${customerNotesFinal}`);
-  if (attachmentUrl) notesParts.push(`📎 Attachment: ${attachmentUrl}`);
+  if (incomingFiles.length > 0) {
+    notesParts.push(`📎 ${incomingFiles.length} file${incomingFiles.length === 1 ? "" : "s"} attached`);
+  } else if (legacyAttachmentUrl) {
+    notesParts.push(`📎 Attachment: ${legacyAttachmentUrl}`);
+  }
   const notes = notesParts.join("\n");
 
   const { error } = await supabase.from("orders").insert({
@@ -174,18 +208,81 @@ export async function POST(req: NextRequest) {
     time: today,
   });
 
-  // Save attachment if present
-  if (attachmentUrl) {
-    const fileName = attachmentUrl.split("/").pop()?.split("?")[0] || "Customer Attachment";
+  // === Save uploaded files (multipart submissions) ===
+  // For each File entry from the form, upload binary to the same Supabase
+  // bucket used by the admin attachments route, then insert a row into
+  // order_attachments with the relative storage path. Storing the relative
+  // path (not a URL) is what the admin GET-attachment route expects so it
+  // can call createSignedUrl successfully.
+  const uploadedFiles: { name: string; path: string }[] = [];
+  for (const file of incomingFiles) {
+    const safeName = sanitizeFileName(file.name);
+    const filePath = `${orderId}/${Date.now()}-${safeName}`;
+    const arrayBuffer = await file.arrayBuffer();
+
+    const { error: uploadError } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .upload(filePath, arrayBuffer, {
+        contentType: file.type || "application/octet-stream",
+        upsert: false,
+      });
+
+    if (uploadError) {
+      // Don't 500 the whole request — the order was already saved. Log a
+      // breadcrumb in order_activity so the team knows the file didn't make
+      // it and they can follow up with the customer.
+      await supabase.from("order_activity").insert({
+        order_id: orderId,
+        text: `⚠️ Failed to save attachment "${file.name}": ${uploadError.message}`,
+        time: today,
+      });
+      continue;
+    }
+
+    const { error: dbError } = await supabase.from("order_attachments").insert({
+      order_id: orderId,
+      file_name: file.name,
+      file_path: filePath,
+      file_size: file.size,
+      file_type: file.type || "application/octet-stream",
+      uploaded_by: "Customer (form submission)",
+    });
+
+    if (dbError) {
+      await supabase.from("order_activity").insert({
+        order_id: orderId,
+        text: `⚠️ File "${file.name}" uploaded but DB row failed: ${dbError.message}`,
+        time: today,
+      });
+      continue;
+    }
+
+    uploadedFiles.push({ name: file.name, path: filePath });
+  }
+
+  // === Legacy: save attachment URL if present (no file upload, JSON path) ===
+  // Kept for backwards compatibility with any inbound integration that still
+  // passes an attachment_url. Storing the URL in file_path means it won't be
+  // downloadable through the admin's signed-URL flow, but it'll still appear
+  // in the order_attachments listing as a reference.
+  if (legacyAttachmentUrl && incomingFiles.length === 0) {
+    const fileName = legacyAttachmentUrl.split("/").pop()?.split("?")[0] || "Customer Attachment";
     await supabase.from("order_attachments").insert({
       order_id: orderId,
       file_name: fileName,
-      file_path: attachmentUrl,
+      file_path: legacyAttachmentUrl,
       file_size: 0,
-      file_type: attachmentUrl.toLowerCase().endsWith(".pdf") ? "application/pdf" : "image/jpeg",
-      uploaded_by: "Customer (form submission)",
+      file_type: legacyAttachmentUrl.toLowerCase().endsWith(".pdf") ? "application/pdf" : "image/jpeg",
+      uploaded_by: "Customer (form submission, legacy URL)",
     });
   }
 
-  return NextResponse.json({ ok: true, order_id: orderId }, { status: 201, headers: CORS });
+  return NextResponse.json(
+    {
+      ok: true,
+      order_id: orderId,
+      attachments_saved: uploadedFiles.length,
+    },
+    { status: 201, headers: CORS },
+  );
 }
