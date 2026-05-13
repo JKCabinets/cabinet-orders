@@ -9,6 +9,7 @@ import {
   AVATAR_COLOR_STYLES,
 } from "@/lib/data";
 import { useStore } from "@/lib/store";
+import { checkAttachmentGate } from "@/lib/stageGates";
 import { AttachmentsPanel } from "./AttachmentsPanel";
 import { OrderDetails } from "./OrderDetails";
 import { DamageReportPanel } from "./DamageReportPanel";
@@ -122,21 +123,12 @@ export function OrderModal({ order, tab, onClose, onStageChange }: OrderModalPro
     if (stage === "Entered" && liveOrder.stage === "New") {
       setCheckingAttachments(true);
       setEnteredGateError(false);
-      try {
-        const res = await fetch(`/api/orders/attachments?orderId=${encodeURIComponent(liveOrder.id)}`);
-        const data = await res.json();
-        const count = (data.data ?? []).length;
-        if (count === 0) {
-          setEnteredGateError(true);
-          setCheckingAttachments(false);
-          return;
-        }
-      } catch {
+      const result = await checkAttachmentGate(liveOrder.id);
+      setCheckingAttachments(false);
+      if (!result.ok) {
         setEnteredGateError(true);
-        setCheckingAttachments(false);
         return;
       }
-      setCheckingAttachments(false);
     }
     setEnteredGateError(false);
     moveStage(liveOrder.id, stage, currentUserName);
@@ -206,9 +198,8 @@ export function OrderModal({ order, tab, onClose, onStageChange }: OrderModalPro
           <div>
             <p className="text-[10px] uppercase tracking-[0.16em] text-cream/45 mb-1.5 font-mono">{liveOrder.id}</p>
             <h2 className="font-display text-[26px] text-cream leading-tight">{liveOrder.name}</h2>
-            {liveOrder.detail && (
-              <p className="text-xs text-cream/45 mt-1">{liveOrder.detail}</p>
-            )}
+            {/* Detail line (SKU description list) intentionally hidden — it's
+                noisy and the SKU table below is the source of truth. */}
           </div>
           <div className="flex items-center gap-1.5 flex-shrink-0 ml-3">
             {isCompleted && (

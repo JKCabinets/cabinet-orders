@@ -5,6 +5,7 @@ import { Order, AVATAR_COLOR_STYLES, getBackorderStatus } from "@/lib/data";
 import { useStore } from "@/lib/store";
 import { useSession } from "next-auth/react";
 import { formatDateWithYear, parseOrderDate } from "@/lib/dateUtils";
+import { checkAttachmentGate } from "@/lib/stageGates";
 import { ArrowUp, ArrowDown, RotateCcw, ChevronRight, Download } from "lucide-react";
 
 /**
@@ -230,15 +231,14 @@ function OrderRow({
       <td className="px-3 py-2.5 text-cream/75 text-[11px]">{formatDateWithYear(order.date)}</td>
       <td className="px-3 py-2.5">
         <div className="font-display text-[15px] leading-tight text-cream truncate">{order.name}</div>
-        {order.detail && (
-          <div className="text-[10px] text-cream/40 truncate">{order.detail}</div>
-        )}
+        {/* SKU detail line hidden — too noisy for a list view. The SKU
+            breakdown is available in the modal. */}
       </td>
       <td className="px-3 py-2.5">
         <TypePill source={order.source} />
       </td>
       <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
-        <StatusCell order={order} stage={stage} />
+        <StatusCell order={order} stage={stage} onOpenModal={onSelect} />
       </td>
       <td className="px-3 py-2.5">
         <PaymentPill status={order.payment_status} />
@@ -288,7 +288,7 @@ function MobileRow({
         <div className="text-[10px] text-cream/45 truncate">{formatDateWithYear(order.date)}</div>
       </div>
       <div onClick={(e) => e.stopPropagation()} className="flex-shrink-0">
-        <StatusCell order={order} stage={stage} mobile />
+        <StatusCell order={order} stage={stage} mobile onOpenModal={onSelect} />
       </div>
       <ChevronRight className="w-3.5 h-3.5 text-cream/40 flex-shrink-0" />
     </button>
@@ -331,15 +331,47 @@ function PaymentPill({ status }: { status?: string | null }) {
 
 /* ─── Status cell — text + primary action button ─────────────────── */
 
-function StatusCell({ order, stage, mobile = false }: { order: Order; stage: string; mobile?: boolean }) {
+function StatusCell({
+  order, stage, mobile = false, onOpenModal,
+}: {
+  order: Order; stage: string; mobile?: boolean;
+  /** Called when a gate fails so the user can fix it in the modal. */
+  onOpenModal?: (o: Order) => void;
+}) {
   const { data: session } = useSession();
   const { claimOrder, moveStage, archiveOrder, unarchiveOrder } = useStore();
   const currentUserName = session?.user?.name ?? null;
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function withBusy(fn: () => Promise<unknown>) {
     setBusy(true);
+    setError(null);
     try { await fn(); } finally { setBusy(false); }
+  }
+
+  /**
+   * Run the New→Entered attachment gate. If it fails, surface the error
+   * inline AND open the modal so the user can attach a file directly.
+   */
+  async function markEntered() {
+    setBusy(true);
+    setError(null);
+    try {
+      const gate = await checkAttachmentGate(order.id);
+      if (!gate.ok) {
+        setError(gate.message);
+        // Open the modal so the user can resolve the missing attachment
+        onOpenModal?.(order);
+        // Clear the inline error after a few seconds — the modal is now
+        // the source of truth
+        setTimeout(() => setError(null), 4000);
+        return;
+      }
+      await moveStage(order.id, "Entered", currentUserName ?? undefined);
+    } finally {
+      setBusy(false);
+    }
   }
 
   // ── Archived ──
@@ -378,15 +410,21 @@ function StatusCell({ order, stage, mobile = false }: { order: Order; stage: str
     }
     if (isClaimedByMe) {
       return (
-        <div className="flex items-center gap-1.5">
-          <span className="text-[10px] text-cream/55">Yours —</span>
-          <button
-            onClick={() => withBusy(() => moveStage(order.id, "Entered", currentUserName ?? undefined))}
-            disabled={busy}
-            className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30"
-          >
-            {busy ? "..." : (mobile ? "Enter" : "Mark Entered")}
-          </button>
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] text-cream/55">Yours —</span>
+            <button
+              onClick={markEntered}
+              disabled={busy}
+              className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30"
+              title="Requires an attached PDF"
+            >
+              {busy ? "..." : (mobile ? "Enter" : "Mark Entered")}
+            </button>
+          </div>
+          {error && (
+            <span className="text-[9px] text-red-300 max-w-[200px] leading-tight">{error}</span>
+          )}
         </div>
       );
     }

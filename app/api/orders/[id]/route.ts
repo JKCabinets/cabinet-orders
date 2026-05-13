@@ -133,6 +133,35 @@ export async function PATCH(
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
+  // ── Server-side stage gate ────────────────────────────────────────────
+  // Moving an order to "Entered" requires at least one attachment. This
+  // matches the client-side gate in lib/stageGates.ts and prevents direct
+  // API calls from bypassing the rule. Admin role override is NOT provided —
+  // attachments are a hard requirement.
+  if (body.stage === "Entered") {
+    // Look up the current stage so we don't run the gate on no-op writes
+    // (e.g. an Entered order being patched with stage="Entered" while
+    // editing notes — shouldn't trigger the gate).
+    const { data: current } = await supabase
+      .from("orders")
+      .select("stage")
+      .eq("id", id)
+      .single();
+    if (current?.stage === "New") {
+      const { data: attachments } = await supabase
+        .from("order_attachments")
+        .select("id")
+        .eq("order_id", id)
+        .limit(1);
+      if (!attachments || attachments.length === 0) {
+        return NextResponse.json(
+          { error: "Attach at least one file before marking this order as Entered" },
+          { status: 400 },
+        );
+      }
+    }
+  }
+
   const updates: Record<string, unknown> = {};
   if (body.stage)                  updates.stage      = body.stage;
   // Auto-clear claim when order leaves New; set entered_by when moving to Entered
