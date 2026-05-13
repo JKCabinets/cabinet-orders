@@ -6,7 +6,13 @@ import { useStore } from "@/lib/store";
 import { formatDateWithYear, parseOrderDate } from "@/lib/dateUtils";
 import { useSession } from "next-auth/react";
 
-interface OrderCardProps { order: Order; onClick: () => void; style?: React.CSSProperties; }
+interface OrderCardProps {
+  order: Order;
+  onClick: () => void;
+  style?: React.CSSProperties;
+  selectMode?: boolean;
+  selected?: boolean;
+}
 
 const STAGE_BORDER: Record<string, string> = {
   "New": "#e05555", "Entered": "#d4922a", "In production": "#c8b84a",
@@ -21,7 +27,7 @@ function getOrderAgeDays(dateStr: string): number | null {
   return Math.floor((Date.now() - ms) / (1000 * 60 * 60 * 24));
 }
 
-export function OrderCard({ order, onClick, style }: OrderCardProps) {
+export function OrderCard({ order, onClick, style, selectMode = false, selected = false }: OrderCardProps) {
   const { team, claimOrder, moveStage, archiveOrder, updateOrderDetails } = useStore();
   const { data: session } = useSession();
   const [claimError, setClaimError] = useState(false);
@@ -141,16 +147,51 @@ export function OrderCard({ order, onClick, style }: OrderCardProps) {
 
   return (
     <div
-      className="w-full rounded-xl transition-all duration-150 animate-card-in"
+      className="w-full rounded-xl transition-all duration-150 animate-card-in relative"
       style={{
         ...style,
-        background: isClaimedByOther ? "rgba(255,255,255,0.09)" : "rgba(255,255,255,0.15)",
-        border: isOverdue ? "0.5px solid rgba(255,160,60,0.45)" : "0.5px solid rgba(255,255,255,0.15)",
-        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.20), inset 0 -1px 0 rgba(0,0,0,0.10), 0 4px 16px rgba(0,0,0,0.28)",
+        background: selected
+          ? "rgba(74,143,212,0.18)"
+          : isClaimedByOther ? "rgba(255,255,255,0.09)" : "rgba(255,255,255,0.15)",
+        border: selected
+          ? "0.5px solid rgba(74,143,212,0.75)"
+          : isOverdue ? "0.5px solid rgba(255,160,60,0.45)" : "0.5px solid rgba(255,255,255,0.15)",
+        boxShadow: selected
+          ? "inset 0 1px 0 rgba(255,255,255,0.20), 0 4px 16px rgba(74,143,212,0.30)"
+          : "inset 0 1px 0 rgba(255,255,255,0.20), inset 0 -1px 0 rgba(0,0,0,0.10), 0 4px 16px rgba(0,0,0,0.28)",
         borderTopColor: isOverdue ? "#e08030" : stageBorder,
         borderTopWidth: "2px",
       }}
     >
+      {/* Selection checkbox — appears in the top-right when select mode is active */}
+      {selectMode && (
+        <>
+          {/* Full-card overlay swallows clicks on inner controls (claim, export,
+              date inputs, etc.) so the only action in select mode is toggling. */}
+          <button
+            onClick={onClick}
+            className="absolute inset-0 z-20 cursor-pointer rounded-xl"
+            style={{ background: "transparent" }}
+            aria-label={selected ? "Deselect order" : "Select order"}
+          />
+          <div
+            aria-hidden
+            className="absolute top-1.5 right-1.5 w-5 h-5 rounded-md flex items-center justify-center pointer-events-none z-30"
+            style={{
+              background: selected ? "rgba(74,143,212,0.85)" : "rgba(0,0,0,0.35)",
+              border: `1px solid ${selected ? "rgba(74,143,212,1)" : "rgba(255,255,255,0.35)"}`,
+              boxShadow: selected ? "0 2px 8px rgba(74,143,212,0.40)" : "none",
+              transition: "all 120ms ease",
+            }}
+          >
+            {selected && (
+              <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="3,8 7,12 13,4" />
+              </svg>
+            )}
+          </div>
+        </>
+      )}
       {/* ── Main clickable area ─────────────────────────────────────────── */}
       <button
         onClick={onClick}

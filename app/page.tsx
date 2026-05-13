@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { TopBar } from "@/components/TopBar";
 import { StatsBar } from "@/components/StatsBar";
 import { Controls } from "@/components/Controls";
@@ -8,6 +8,7 @@ import { Board } from "@/components/Board";
 import { OrderModal } from "@/components/OrderModal";
 import { NewOrderModal } from "@/components/NewOrderModal";
 import { ArchiveSection } from "@/components/ArchiveSection";
+import { BulkActionBar } from "@/components/BulkActionBar";
 import { useStore } from "@/lib/store";
 import { Order } from "@/lib/data";
 
@@ -18,6 +19,11 @@ export default function Home() {
   const [filterMember, setFilterMember] = useState("");
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [showNewForm, setShowNewForm] = useState(false);
+
+  // Bulk-select mode + selection state. Selection is keyed by order id and
+  // clears whenever the user leaves select mode or switches tab.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const { orders, warranties, loading } = useStore();
   const allItems = tab === "orders" ? orders : warranties;
@@ -38,9 +44,56 @@ export default function Home() {
     return true;
   });
 
+  // Selected order objects, drawn from the live store so stage/state stays current
+  const selectedOrders = useMemo(
+    () => filtered.filter(o => selectedIds.has(o.id)),
+    [filtered, selectedIds]
+  );
+
+  function toggleSelectMode() {
+    setSelectMode(prev => {
+      if (prev) setSelectedIds(new Set()); // leaving select mode clears selection
+      return !prev;
+    });
+  }
+
+  function toggleSelection(id: string) {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function clearSelection() {
+    setSelectedIds(new Set());
+  }
+
+  function exitSelectMode() {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  }
+
+  function handleCardClick(order: Order) {
+    if (selectMode) {
+      toggleSelection(order.id);
+    } else {
+      setSelectedOrder(order);
+    }
+  }
+
+  function handleTabChange(newTab: "orders" | "warranty") {
+    // Clear selection on tab switch — selections don't carry across tabs
+    if (newTab !== tab) {
+      setSelectedIds(new Set());
+    }
+    setTab(newTab);
+  }
+
   return (
     <div className="flex flex-col min-h-screen">
-      <TopBar tab={tab} onTabChange={setTab} />
+      <TopBar tab={tab} onTabChange={handleTabChange} />
       <StatsBar items={activeItems} tab={tab} />
       <Controls
         search={search}
@@ -51,6 +104,9 @@ export default function Home() {
         onFilterMember={setFilterMember}
         onNewOrder={() => setShowNewForm(true)}
         tab={tab}
+        selectMode={selectMode}
+        onToggleSelectMode={toggleSelectMode}
+        selectedCount={selectedIds.size}
       />
       {loading ? (
         <div className="flex items-center justify-center flex-1 py-20">
@@ -60,11 +116,13 @@ export default function Home() {
         <Board
           items={filtered}
           tab={tab}
-          onCardClick={setSelectedOrder}
+          onCardClick={handleCardClick}
+          selectMode={selectMode}
+          selectedIds={selectedIds}
         />
       )}
 
-      {/* Archive section below the board */}
+      {/* Archive section below the board — selection doesn't extend here */}
       <ArchiveSection
         items={allItems}
         tab={tab}
@@ -88,6 +146,14 @@ export default function Home() {
           onClose={() => setShowNewForm(false)}
         />
       )}
+
+      {/* Floating bulk action bar — slides up from the bottom when items are selected */}
+      <BulkActionBar
+        selectedOrders={selectedOrders}
+        tab={tab}
+        onClear={clearSelection}
+        onDone={exitSelectMode}
+      />
     </div>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Search, Plus, ChevronDown } from "lucide-react";
+import { Search, Plus, ChevronDown, CheckSquare, X } from "lucide-react";
 import { useStore } from "@/lib/store";
 
 interface ControlsProps {
@@ -9,6 +9,10 @@ interface ControlsProps {
   filterSource: string; onFilterSource: (v: string) => void;
   filterMember: string; onFilterMember: (v: string) => void;
   onNewOrder: () => void; tab: "orders" | "warranty";
+  // Bulk-select controls
+  selectMode: boolean;
+  onToggleSelectMode: () => void;
+  selectedCount: number;
 }
 
 const GI: React.CSSProperties = {
@@ -64,7 +68,7 @@ function Dropdown({ value, onChange, options, placeholder }: {
   );
 }
 
-export function Controls({ search, onSearch, filterSource, onFilterSource, filterMember, onFilterMember, onNewOrder, tab }: ControlsProps) {
+export function Controls({ search, onSearch, filterSource, onFilterSource, filterMember, onFilterMember, onNewOrder, tab, selectMode, onToggleSelectMode, selectedCount }: ControlsProps) {
   const { team } = useStore();
   const activeTeam = team.filter(m => m.active);
   return (
@@ -77,6 +81,27 @@ export function Controls({ search, onSearch, filterSource, onFilterSource, filte
             className="w-full pl-9 pr-4 py-2 rounded-xl text-sm placeholder:text-[rgba(232,227,218,0.40)] focus:border-[rgba(86,100,72,0.75)] transition-colors"
             style={{ ...GI, fontSize: "16px" }} />
         </div>
+
+        {/* Select-mode toggle — visual state changes to indicate active mode */}
+        <button
+          onClick={onToggleSelectMode}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all duration-150 hover:-translate-y-px whitespace-nowrap"
+          style={{
+            background: selectMode ? "rgba(74,143,212,0.22)" : "rgba(255,255,255,0.05)",
+            border: `0.5px solid ${selectMode ? "rgba(74,143,212,0.75)" : "rgba(255,255,255,0.18)"}`,
+            boxShadow: selectMode
+              ? "inset 0 1px 0 rgba(255,255,255,0.18), 0 4px 16px rgba(74,143,212,0.20)"
+              : "inset 0 1px 0 rgba(255,255,255,0.10)",
+            color: selectMode ? "#7ab5e8" : "rgba(232,227,218,0.70)",
+          }}
+          title={selectMode ? "Exit select mode" : "Enter select mode for bulk actions"}
+        >
+          {selectMode ? <X className="w-3.5 h-3.5" /> : <CheckSquare className="w-3.5 h-3.5" />}
+          {selectMode
+            ? (selectedCount > 0 ? `${selectedCount} selected` : "Cancel")
+            : "Select"}
+        </button>
+
         <button onClick={onNewOrder}
           className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold transition-all duration-150 hover:-translate-y-px hover:brightness-115 whitespace-nowrap"
           style={{

@@ -3,7 +3,13 @@
 import { Order, ORDER_STAGES, WARRANTY_STAGES } from "@/lib/data";
 import { OrderCard } from "./OrderCard";
 
-interface BoardProps { items: Order[]; tab: "orders" | "warranty"; onCardClick: (order: Order) => void; }
+interface BoardProps {
+  items: Order[];
+  tab: "orders" | "warranty";
+  onCardClick: (order: Order) => void;
+  selectMode?: boolean;
+  selectedIds?: Set<string>;
+}
 
 const STAGE_COLOR: Record<string, string> = {
   "New": "#e05555", "Entered": "#d4922a", "In production": "#c8b84a",
@@ -12,20 +18,33 @@ const STAGE_COLOR: Record<string, string> = {
   "Shipped": "#4a8fd4", "Resolved": "#4caf7a",
 };
 
-export function Board({ items, tab, onCardClick }: BoardProps) {
+export function Board({ items, tab, onCardClick, selectMode = false, selectedIds }: BoardProps) {
   const stages = tab === "orders" ? ORDER_STAGES : WARRANTY_STAGES;
   return (
     <div className="flex-1 overflow-x-auto px-3 md:px-5">
       <div className="flex gap-2.5 md:gap-3 pb-6 min-w-max md:min-w-0 md:w-full snap-x snap-mandatory md:snap-none">
         {stages.map((stage) => (
-          <Column key={stage} stage={stage} items={items.filter(o => o.stage === stage)} onCardClick={onCardClick} />
+          <Column
+            key={stage}
+            stage={stage}
+            items={items.filter(o => o.stage === stage)}
+            onCardClick={onCardClick}
+            selectMode={selectMode}
+            selectedIds={selectedIds}
+          />
         ))}
       </div>
     </div>
   );
 }
 
-function Column({ stage, items, onCardClick }: { stage: string; items: Order[]; onCardClick: (o: Order) => void }) {
+function Column({ stage, items, onCardClick, selectMode, selectedIds }: {
+  stage: string;
+  items: Order[];
+  onCardClick: (o: Order) => void;
+  selectMode: boolean;
+  selectedIds?: Set<string>;
+}) {
   const color = STAGE_COLOR[stage] ?? "#566448";
   return (
     <div className="w-[160px] flex-shrink-0 md:flex-1 md:min-w-0 md:w-auto flex flex-col gap-2 snap-start">
@@ -55,7 +74,14 @@ function Column({ stage, items, onCardClick }: { stage: string; items: Order[]; 
           </div>
         )}
         {items.map((item, i) => (
-          <OrderCard key={item.id} order={item} onClick={() => onCardClick(item)} style={{ animationDelay: `${i * 25}ms` }} />
+          <OrderCard
+            key={item.id}
+            order={item}
+            onClick={() => onCardClick(item)}
+            style={{ animationDelay: `${i * 25}ms` }}
+            selectMode={selectMode}
+            selected={selectedIds?.has(item.id) ?? false}
+          />
         ))}
       </div>
     </div>
