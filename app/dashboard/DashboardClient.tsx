@@ -417,7 +417,10 @@ function SLAMiniPanel({ byStage }: { byStage: Record<OrderStage, Order[]> }) {
           const ageColor = isAtRisk ? "#e89090" : (avg === null ? "#a0a09a" : "#e8e3da");
           return (
             <div key={stage} className="flex flex-col gap-1.5">
-              <div className="flex items-baseline justify-between">
+              {/* Label + target on one tight line — previously used
+                  justify-between, which spread them to opposite edges on
+                  wide screens and left a huge gap between them. */}
+              <div className="flex items-baseline gap-2 flex-wrap">
                 <div className="text-[10px] uppercase tracking-[0.13em] text-cream/55">{label}</div>
                 {isFinite(target) && (
                   <div className="text-[9px] text-cream/40 font-mono">tgt {target}d</div>
