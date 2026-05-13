@@ -34,18 +34,19 @@ const STAGE_COLOR: Record<string, string> = {
 };
 
 const PANEL: React.CSSProperties = {
-  background: "rgba(38,55,70,0.96)",
-  backdropFilter: "blur(40px)",
-  WebkitBackdropFilter: "blur(40px)",
-  borderLeft: "0.5px solid rgba(255,255,255,0.18)",
-  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.20), -24px 0 80px rgba(0,0,0,0.4)",
+  // Brand: signature frosted sage glass — sage at ~35% with backdrop blur
+  background: "rgba(58, 66, 57, 0.42)",
+  backdropFilter: "blur(20px) saturate(140%)",
+  WebkitBackdropFilter: "blur(20px) saturate(140%)",
+  border: "0.5px solid rgba(145,165,151,0.30)",
+  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.12), 0 24px 60px rgba(0,0,0,0.55)",
 };
 
 const SECTION_BORDER: React.CSSProperties = {
-  borderBottom: "0.5px solid rgba(255,255,255,0.20)",
+  borderBottom: "0.5px solid rgba(255,255,255,0.10)",
 };
 
-const LABEL = "text-[10px] uppercase tracking-widest text-[rgba(232,227,218,0.35)] mb-1";
+const LABEL = "text-[10px] uppercase tracking-[0.16em] text-cream/50 mb-1.5";
 
 const ADMIN_CODE = "4951";
 
@@ -192,34 +193,29 @@ export function OrderModal({ order, tab, onClose, onStageChange }: OrderModalPro
     <div
       ref={overlayRef}
       onClick={(e) => e.target === overlayRef.current && onClose()}
-      className="fixed inset-0 z-50 flex items-end md:items-start justify-end animate-fade-in"
-      style={{ background: "rgba(0,0,0,0.60)" }}
+      className="fixed inset-0 z-50 flex items-stretch justify-center animate-fade-in p-4 md:p-8"
+      style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(8px)" }}
     >
       <div
-        className="w-full md:w-[420px] h-[92vh] md:h-full flex flex-col animate-slide-in overflow-hidden rounded-t-2xl md:rounded-none"
+        className="w-full max-w-[1100px] h-full flex flex-col animate-slide-in overflow-hidden rounded-panel"
         style={PANEL}
         onKeyDown={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-start justify-between p-5 flex-shrink-0" style={SECTION_BORDER}>
+        <div className="flex items-start justify-between px-6 py-5 flex-shrink-0" style={SECTION_BORDER}>
           <div>
-            <p className="text-[11px] font-mono text-[rgba(232,227,218,0.50)] mb-1">{liveOrder.id}</p>
-            <h2 className="text-base font-medium text-[#e8e3da]">{liveOrder.name}</h2>
+            <p className="text-[10px] uppercase tracking-[0.16em] text-cream/45 mb-1.5 font-mono">{liveOrder.id}</p>
+            <h2 className="font-display text-[26px] text-cream leading-tight">{liveOrder.name}</h2>
             {liveOrder.detail && (
-              <p className="text-xs text-[rgba(232,227,218,0.45)] mt-0.5">{liveOrder.detail}</p>
+              <p className="text-xs text-cream/45 mt-1">{liveOrder.detail}</p>
             )}
           </div>
-          <div className="flex items-center gap-1 flex-shrink-0 ml-3">
+          <div className="flex items-center gap-1.5 flex-shrink-0 ml-3">
             {isCompleted && (
               <button
                 onClick={handleArchive}
                 title={liveOrder.archived ? "Restore" : "Archive"}
-                className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-[10px] transition-all"
-                style={{
-                  background: "rgba(255,255,255,0.18)",
-                  border: "0.5px solid rgba(255,255,255,0.18)",
-                  color: "rgba(232,227,218,0.45)",
-                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider transition-all bg-white/8 border border-white/15 text-cream/70 hover:bg-white/12 hover:text-cream"
               >
                 {liveOrder.archived ? <><RotateCcw className="w-3 h-3" /> Restore</> : <><Archive className="w-3 h-3" /> Archive</>}
               </button>

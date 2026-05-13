@@ -15,10 +15,10 @@ interface OrderCardProps {
 }
 
 const STAGE_BORDER: Record<string, string> = {
-  "New": "#e05555", "Entered": "#d4922a", "In production": "#c8b84a",
-  "At cross dock": "#4a8fd4", "Delivered": "#4caf7a",
-  "New claim": "#e05555", "In review": "#d4922a", "Parts ordered": "#c8b84a",
-  "Shipped": "#4a8fd4", "Resolved": "#4caf7a",
+  "New": "#c97070", "Entered": "#d4922a", "In production": "#c8b84a",
+  "At cross dock": "#5a8db8", "Delivered": "#8fbe70",
+  "New claim": "#c97070", "In review": "#d4922a", "Parts ordered": "#c8b84a",
+  "Shipped": "#5a8db8", "Resolved": "#8fbe70",
 };
 
 function getOrderAgeDays(dateStr: string): number | null {
@@ -148,20 +148,37 @@ export function OrderCard({ order, onClick, style, selectMode = false, selected 
 
   return (
     <div
-      className="w-full rounded-xl transition-all duration-150 animate-card-in relative"
+      className="w-full rounded-brand transition-all duration-300 ease-brand animate-card-in relative group"
       style={{
         ...style,
         background: selected
-          ? "rgba(74,143,212,0.18)"
-          : isClaimedByOther ? "rgba(255,255,255,0.09)" : "rgba(255,255,255,0.15)",
+          ? "rgba(184,130,106,0.15)"
+          : isClaimedByOther ? "rgba(255,255,255,0.04)" : "rgba(255,255,255,0.06)",
+        backdropFilter: "blur(20px) saturate(140%)",
+        WebkitBackdropFilter: "blur(20px) saturate(140%)",
         border: selected
-          ? "0.5px solid rgba(74,143,212,0.75)"
-          : isOverdue ? "0.5px solid rgba(255,160,60,0.45)" : "0.5px solid rgba(255,255,255,0.15)",
+          ? "0.5px solid rgba(184,130,106,0.65)"
+          : isOverdue ? "0.5px solid rgba(245,160,69,0.40)" : "0.5px solid rgba(255,255,255,0.12)",
         boxShadow: selected
-          ? "inset 0 1px 0 rgba(255,255,255,0.20), 0 4px 16px rgba(74,143,212,0.30)"
-          : "inset 0 1px 0 rgba(255,255,255,0.20), inset 0 -1px 0 rgba(0,0,0,0.10), 0 4px 16px rgba(0,0,0,0.28)",
-        borderTopColor: isOverdue ? "#e08030" : stageBorder,
+          ? "inset 0 1px 0 rgba(255,255,255,0.12), 0 8px 24px rgba(184,130,106,0.25)"
+          : "inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -1px 0 rgba(0,0,0,0.10), 0 6px 18px rgba(0,0,0,0.28)",
+        borderTopColor: isOverdue ? "#e8a070" : stageBorder,
         borderTopWidth: "2px",
+      }}
+      onMouseEnter={(e) => {
+        if (selectMode) return;
+        const el = e.currentTarget as HTMLDivElement;
+        el.style.transform = "translateY(-3px)";
+        el.style.boxShadow = selected
+          ? "inset 0 1px 0 rgba(255,255,255,0.12), 0 14px 36px rgba(184,130,106,0.30)"
+          : "inset 0 1px 0 rgba(255,255,255,0.15), inset 0 -1px 0 rgba(0,0,0,0.10), 0 14px 32px rgba(0,0,0,0.40)";
+      }}
+      onMouseLeave={(e) => {
+        const el = e.currentTarget as HTMLDivElement;
+        el.style.transform = "translateY(0)";
+        el.style.boxShadow = selected
+          ? "inset 0 1px 0 rgba(255,255,255,0.12), 0 8px 24px rgba(184,130,106,0.25)"
+          : "inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -1px 0 rgba(0,0,0,0.10), 0 6px 18px rgba(0,0,0,0.28)";
       }}
     >
       {/* Selection checkbox — appears in the top-right when select mode is active */}
@@ -179,9 +196,9 @@ export function OrderCard({ order, onClick, style, selectMode = false, selected 
             aria-hidden
             className="absolute top-1.5 right-1.5 w-5 h-5 rounded-md flex items-center justify-center pointer-events-none z-30"
             style={{
-              background: selected ? "rgba(74,143,212,0.85)" : "rgba(0,0,0,0.35)",
-              border: `1px solid ${selected ? "rgba(74,143,212,1)" : "rgba(255,255,255,0.35)"}`,
-              boxShadow: selected ? "0 2px 8px rgba(74,143,212,0.40)" : "none",
+              background: selected ? "rgba(184,130,106,0.85)" : "rgba(0,0,0,0.35)",
+              border: `1px solid ${selected ? "rgba(184,130,106,1)" : "rgba(255,255,255,0.35)"}`,
+              boxShadow: selected ? "0 2px 8px rgba(184,130,106,0.40)" : "none",
               transition: "all 120ms ease",
             }}
           >
@@ -196,11 +213,11 @@ export function OrderCard({ order, onClick, style, selectMode = false, selected 
       {/* ── Main clickable area ─────────────────────────────────────────── */}
       <button
         onClick={onClick}
-        className="w-full text-left p-2 cursor-pointer hover:-translate-y-0.5 transition-transform duration-150 rounded-xl"
+        className="w-full text-left p-2.5 cursor-pointer rounded-brand"
       >
-        <div className="flex items-center gap-1.5 mb-1">
-          <span className="text-[9px] font-mono text-[rgba(232,227,218,0.45)] flex-shrink-0">{order.id}</span>
-          <span className="text-[11px] font-semibold text-[#e8e3da] truncate flex-1">{order.name}</span>
+        <div className="flex items-center gap-1.5 mb-1.5">
+          <span className="font-mono text-[9px] text-cream/45 flex-shrink-0">{order.id}</span>
+          <span className="font-display text-[15px] leading-tight text-cream truncate flex-1">{order.name}</span>
           <SourceBadge source={order.source} />
         </div>
         <div className="flex items-center gap-1.5">
@@ -208,41 +225,41 @@ export function OrderCard({ order, onClick, style, selectMode = false, selected 
             className="w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold flex-shrink-0">
             {order.member}
           </div>
-          <span className="text-[10px] text-[rgba(232,227,218,0.60)] truncate flex-1">{memberName}</span>
+          <span className="text-[10px] text-cream/55 truncate flex-1">{memberName}</span>
           {isOverdue && (
             <span
-              className="text-[8px] font-bold px-1 py-px rounded flex-shrink-0"
-              style={{ background: "rgba(224,128,48,0.20)", color: "#f5a045", border: "0.5px solid rgba(224,128,48,0.45)" }}
+              className="text-[8px] font-medium px-1.5 py-px rounded-full flex-shrink-0 uppercase tracking-wider"
+              style={{ background: "rgba(245,160,69,0.15)", color: "#f5b070", border: "0.5px solid rgba(245,160,69,0.40)" }}
               title={`This order has been in New for ${ageDays} days without being entered`}
             >
-              ⚠ {ageDays}d old
+              {ageDays}d old
             </span>
           )}
-          <span className="text-[9px] text-[rgba(232,227,218,0.45)]">{displayDate}</span>
+          <span className="text-[9px] text-cream/40">{displayDate}</span>
         </div>
         {/* Entered-by + backorder badges — shown once order has moved past New */}
         {(enteredBy || showBackorderBadge) && (
           <div className="mt-1.5 flex items-center gap-1 flex-wrap">
             {enteredBy && (
               <span
-                className="text-[9px] px-1.5 py-px rounded-md font-medium truncate"
+                className="text-[9px] px-1.5 py-px rounded-full font-medium truncate uppercase tracking-wider"
                 style={{
                   background: "rgba(212,146,42,0.13)",
-                  color: "rgba(212,180,100,0.90)",
+                  color: "#e8b56a",
                   border: "0.5px solid rgba(212,146,42,0.30)",
                 }}
                 title={`Entered by ${enteredBy}`}
               >
-                ✓ Entered by {enteredBy}
+                ✓ {enteredBy}
               </span>
             )}
             {showBackorderBadge && backorder.status === "pending" && (
               <span
-                className="text-[9px] px-1.5 py-px rounded-md font-semibold flex-shrink-0"
+                className="text-[9px] px-1.5 py-px rounded-full font-medium flex-shrink-0 uppercase tracking-wider"
                 style={{
-                  background: "rgba(224,85,85,0.15)",
-                  color: "#e87070",
-                  border: "0.5px solid rgba(224,85,85,0.40)",
+                  background: "rgba(232,144,144,0.15)",
+                  color: "#e89090",
+                  border: "0.5px solid rgba(232,144,144,0.40)",
                 }}
                 title={`${backorder.count} SKU${backorder.count === 1 ? "" : "s"} backordered — see order details for dates`}
               >
@@ -251,11 +268,11 @@ export function OrderCard({ order, onClick, style, selectMode = false, selected 
             )}
             {showBackorderBadge && backorder.status === "ready" && (
               <span
-                className="text-[9px] px-1.5 py-px rounded-md font-semibold flex-shrink-0"
+                className="text-[9px] px-1.5 py-px rounded-full font-medium flex-shrink-0 uppercase tracking-wider"
                 style={{
-                  background: "rgba(76,175,122,0.14)",
-                  color: "#6dd6a0",
-                  border: "0.5px solid rgba(76,175,122,0.35)",
+                  background: "rgba(143,190,112,0.14)",
+                  color: "#a0cc7a",
+                  border: "0.5px solid rgba(143,190,112,0.35)",
                 }}
                 title={`All ${backorder.count} backordered SKU${backorder.count === 1 ? "" : "s"} have reached their expected ready date`}
               >
@@ -566,14 +583,17 @@ export function OrderCard({ order, onClick, style, selectMode = false, selected 
 }
 
 function SourceBadge({ source }: { source: string }) {
-  const label = source === "Manual" ? "Custom Quote" : source;
+  const label = source === "Manual" ? "Custom" : source;
   const style = source === "Shopify"
-    ? { background: "rgba(86,100,72,0.25)", color: "#a0cc7a", border: "0.5px solid rgba(86,100,72,0.75)" }
+    ? { background: "rgba(184,130,106,0.15)", color: "#d9a888", border: "0.5px solid rgba(184,130,106,0.40)" }
     : source === "Manual"
-    ? { background: "rgba(145,165,151,0.20)", color: "rgba(180,210,190,0.95)", border: "0.5px solid rgba(145,165,151,0.50)" }
-    : { background: "rgba(74,111,143,0.22)", color: "rgba(110,170,230,0.95)", border: "0.5px solid rgba(74,111,143,0.45)" };
+    ? { background: "rgba(145,165,151,0.18)", color: "#b8d0bd", border: "0.5px solid rgba(145,165,151,0.45)" }
+    : { background: "rgba(140,170,200,0.18)", color: "#a8c8e0", border: "0.5px solid rgba(140,170,200,0.40)" };
   return (
-    <span className="text-[9px] px-1.5 py-px rounded font-semibold flex-shrink-0" style={style}>
+    <span
+      className="text-[9px] px-1.5 py-px rounded-full font-medium flex-shrink-0 uppercase tracking-wider"
+      style={style}
+    >
       {label}
     </span>
   );

@@ -201,10 +201,10 @@ export function OrderDetails({ orderId, doorStyle, color, skuItems, readOnly = f
             {/* Header */}
             {localSkuItems.length > 0 && (
               <div className="grid grid-cols-12 gap-1.5 px-2 mb-0.5">
-                <span className="col-span-3 text-[9px] uppercase tracking-widest text-[#3e3e3e]">SKU</span>
-                <span className="col-span-1 text-[9px] uppercase tracking-widest text-[#3e3e3e] text-center">Qty</span>
-                <span className="col-span-6 text-[9px] uppercase tracking-widest text-[#3e3e3e]">Description</span>
-                <span className="col-span-2 text-[9px] uppercase tracking-widest text-[#3e3e3e] text-right pr-1">Status</span>
+                <span className="col-span-3 text-[9px] uppercase tracking-widest text-cream/35">SKU</span>
+                <span className="col-span-1 text-[9px] uppercase tracking-widest text-cream/35 text-center">Qty</span>
+                <span className="col-span-5 text-[9px] uppercase tracking-widest text-cream/35">Description</span>
+                <span className="col-span-3 text-[9px] uppercase tracking-widest text-cream/35 text-right pr-1">Status</span>
               </div>
             )}
             {localSkuItems.map((item, idx) => {
@@ -229,35 +229,37 @@ export function OrderDetails({ orderId, doorStyle, color, skuItems, readOnly = f
                       <div className={`grid grid-cols-12 gap-1.5 items-center px-2 py-1.5 rounded-lg group transition-colors ${rowTint}`}>
                         <span className="col-span-3 text-[11px] font-mono text-[#e8e3da] truncate">{item.sku}</span>
                         <span className="col-span-1 text-[11px] text-[rgba(232,227,218,0.50)] text-center font-medium">{item.quantity}</span>
-                        <span className={`text-[11px] text-[rgba(232,227,218,0.50)] truncate ${readOnly ? "col-span-8" : "col-span-5"}`}>
+                        <span className="col-span-5 text-[11px] text-[rgba(232,227,218,0.50)] truncate">
                           {item.description ?? "—"}
                         </span>
 
-                        {/* Status column — backorder toggle + edit/delete */}
-                        {!readOnly && (
-                          <div className="col-span-3 flex items-center justify-end gap-1">
-                            {/* Backorder toggle / chip */}
-                            <button
-                              onClick={() => setBackorderIdx(backorderIdx === idx ? null : idx)}
-                              className="flex items-center gap-1 text-[9px] font-semibold px-1.5 py-0.5 rounded-md transition-colors"
-                              style={
-                                isBackordered
-                                  ? (isReady
-                                      ? { background: "rgba(76,175,122,0.14)", color: "#6dd6a0", border: "0.5px solid rgba(76,175,122,0.35)" }
-                                      : { background: "rgba(224,128,48,0.14)", color: "#f5a045", border: "0.5px solid rgba(224,128,48,0.40)" })
-                                  : { background: "transparent", color: "rgba(232,227,218,0.30)", border: "0.5px solid rgba(255,255,255,0.10)" }
-                              }
-                              title={
-                                isBackordered
-                                  ? (isReady
-                                      ? `Ready (expected ${item.expected_ready_date})`
-                                      : `Backordered${item.expected_ready_date ? ` until ${item.expected_ready_date}` : ""}`)
-                                  : "Mark as backordered"
-                              }
-                            >
-                              <AlertTriangle className="w-2.5 h-2.5" />
-                              {isBackordered ? (isReady ? "ready" : "back") : "ok"}
-                            </button>
+                        {/* Status column — backorder toggle is ALWAYS available
+                            so staff can mark Shopify-sourced SKUs as backordered
+                            (backorder data lives staff-side, not in Shopify).
+                            Edit/delete are hidden in read-only mode. */}
+                        <div className="col-span-3 flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => setBackorderIdx(backorderIdx === idx ? null : idx)}
+                            className="flex items-center gap-1 text-[9px] font-medium px-2 py-0.5 rounded-full transition-colors uppercase tracking-wider"
+                            style={
+                              isBackordered
+                                ? (isReady
+                                    ? { background: "rgba(143,190,112,0.14)", color: "#a0cc7a", border: "0.5px solid rgba(143,190,112,0.35)" }
+                                    : { background: "rgba(245,160,69,0.14)", color: "#f5b070", border: "0.5px solid rgba(245,160,69,0.40)" })
+                                : { background: "rgba(255,255,255,0.04)", color: "rgba(232,227,218,0.45)", border: "0.5px solid rgba(255,255,255,0.12)" }
+                            }
+                            title={
+                              isBackordered
+                                ? (isReady
+                                    ? `Ready (expected ${item.expected_ready_date})`
+                                    : `Backordered${item.expected_ready_date ? ` until ${item.expected_ready_date}` : ""}`)
+                                : "Mark as backordered"
+                            }
+                          >
+                            <AlertTriangle className="w-2.5 h-2.5" />
+                            {isBackordered ? (isReady ? "ready" : "back") : "ok"}
+                          </button>
+                          {!readOnly && (
                             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                               <button onClick={() => setEditingItemIdx(idx)} className="p-0.5 text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] transition-colors">
                                 <Pencil className="w-3 h-3" />
@@ -266,26 +268,12 @@ export function OrderDetails({ orderId, doorStyle, color, skuItems, readOnly = f
                                 <Trash2 className="w-3 h-3" />
                               </button>
                             </div>
-                          </div>
-                        )}
-                        {readOnly && isBackordered && (
-                          <div className="col-span-2 flex items-center justify-end">
-                            <span
-                              className="text-[9px] font-semibold px-1.5 py-0.5 rounded-md"
-                              style={
-                                isReady
-                                  ? { background: "rgba(76,175,122,0.14)", color: "#6dd6a0", border: "0.5px solid rgba(76,175,122,0.35)" }
-                                  : { background: "rgba(224,128,48,0.14)", color: "#f5a045", border: "0.5px solid rgba(224,128,48,0.40)" }
-                              }
-                            >
-                              {isReady ? "✓ ready" : "⚠ back"}
-                            </span>
-                          </div>
-                        )}
+                          )}
+                        </div>
                       </div>
 
-                      {/* Backorder editor (expanded) */}
-                      {backorderIdx === idx && !readOnly && (
+                      {/* Backorder editor (expanded) — also available in read-only mode */}
+                      {backorderIdx === idx && (
                         <BackorderEditor
                           item={item}
                           onSave={(data) => saveBackorder(idx, data)}

@@ -3,7 +3,7 @@
 import { useState, FormEvent } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Package, Eye, EyeOff, AlertCircle } from "lucide-react";
+import { Eye, EyeOff, AlertCircle } from "lucide-react";
 
 export default function LoginForm() {
   const router = useRouter();
@@ -58,15 +58,19 @@ export default function LoginForm() {
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
-          <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4" style={{
-            background: "rgba(86,100,72,0.28)",
-            border: "0.5px solid rgba(86,100,72,0.65)",
-            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.20), 0 4px 20px rgba(86,100,72,0.20)",
+          <div className="w-12 h-12 border-[1.5px] border-cream flex flex-col items-center justify-center mb-4 rounded-brand" style={{
+            background: "rgba(87,98,87,0.32)",
+            backdropFilter: "blur(14px)",
+            WebkitBackdropFilter: "blur(14px)",
+            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.18), 0 8px 24px rgba(0,0,0,0.30)",
           }}>
-            <Package className="w-6 h-6" style={{ color: "#a0cc7a" }} />
+            <span className="text-[14px] font-medium text-cream leading-none">JK</span>
+            <span className="text-[6px] font-medium tracking-[0.15em] text-cream/80 mt-0.5 uppercase">Cabinets</span>
           </div>
-          <h1 className="text-xl font-bold tracking-wide text-[#f0ece4]">JK Cabinets</h1>
-          <p className="text-sm text-[rgba(240,236,228,0.55)] mt-1">Sign in to your team account</p>
+          <h1 className="font-display text-[32px] text-cream leading-tight">
+            Welcome <em className="italic-storm">back</em>
+          </h1>
+          <p className="text-[11px] uppercase tracking-[0.16em] text-cream/55 mt-2">Sign in to continue</p>
         </div>
 
         {/* Card */}
@@ -134,12 +138,12 @@ export default function LoginForm() {
             <button
               type="submit"
               disabled={loading || !username || !password}
-              className="w-full py-3 rounded-xl text-sm font-bold transition-all duration-150 mt-1 hover:brightness-115 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
+              className="w-full py-3 rounded-full text-[12px] font-medium uppercase tracking-[0.05em] transition-all duration-300 ease-brand mt-2 hover:brightness-115 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
               style={{
-                background: "rgba(86,100,72,0.50)",
-                border: "0.5px solid rgba(120,160,90,0.80)",
-                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.22), 0 4px 16px rgba(86,100,72,0.30)",
-                color: "#c8f0a0",
+                background: "rgba(87,98,87,0.65)",
+                border: "1.5px solid #91a597",
+                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.18), 0 4px 16px rgba(58,66,57,0.30)",
+                color: "#ffffff",
               }}
             >
               {loading ? "Signing in…" : "Sign in"}

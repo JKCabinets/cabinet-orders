@@ -7,10 +7,10 @@ import {
   TeamMember, AvatarColor, Role,
   AVATAR_COLOR_STYLES, AVATAR_COLOR_SWATCH_STYLES, AVATAR_COLOR_OPTIONS,
 } from "@/lib/data";
-import { Users, Plus, Pencil, UserX, Trash2, ChevronLeft, Shield, User, Check, X, KeyRound, Eye, EyeOff } from "lucide-react";
+import { Users, Plus, Pencil, UserX, Trash2, Shield, User, Check, X, KeyRound, Eye, EyeOff } from "lucide-react";
 import clsx from "clsx";
-import Link from "next/link";
 import { AuditLog } from "@/components/AuditLog";
+import { AppShell, PageHeader } from "@/components/AppShell";
 
 export default function AdminPage() {
   const { data: session } = useSession();
@@ -31,9 +31,11 @@ export default function AdminPage() {
 
   if (session && !isAdmin) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p className="text-[rgba(232,227,218,0.50)] text-sm">Access denied. Admins only.</p>
-      </div>
+      <AppShell>
+        <div className="min-h-[60vh] flex items-center justify-center">
+          <p className="text-cream/55 text-sm">Access denied. Admins only.</p>
+        </div>
+      </AppShell>
     );
   }
 
@@ -42,36 +44,35 @@ export default function AdminPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p className="text-sm text-[rgba(232,227,218,0.30)]">Loading team...</p>
-      </div>
+      <AppShell>
+        <div className="min-h-[60vh] flex items-center justify-center">
+          <p className="text-sm text-cream/35">Loading team...</p>
+        </div>
+      </AppShell>
     );
   }
 
   return (
-    <div className="min-h-screen">
+    <AppShell>
       {toast && (
-        <div className="fixed top-4 right-4 z-50 rounded-xl px-4 py-3 text-sm text-[#e8e3da] shadow-lg animate-slide-in" style={{background:"rgba(255,255,255,0.07)",backdropFilter:"blur(40px)",WebkitBackdropFilter:"blur(40px)",border:"0.5px solid rgba(255,255,255,0.14)",boxShadow:"inset 0 1px 0 rgba(255,255,255,0.12), 0 16px 40px rgba(0,0,0,0.4)"}}>
+        <div className="fixed top-4 right-4 z-50 rounded-xl px-4 py-3 text-sm text-cream shadow-lg animate-slide-in" style={{background:"rgba(255,255,255,0.07)",backdropFilter:"blur(40px)",WebkitBackdropFilter:"blur(40px)",border:"0.5px solid rgba(255,255,255,0.14)",boxShadow:"inset 0 1px 0 rgba(255,255,255,0.12), 0 16px 40px rgba(0,0,0,0.4)"}}>
           {toast}
         </div>
       )}
 
-      <header className="sticky top-0 z-40 flex items-center justify-between px-6 py-3.5" style={{background:"rgba(30,42,53,0.85)",backdropFilter:"blur(40px)",WebkitBackdropFilter:"blur(40px)",borderBottom:"0.5px solid rgba(255,255,255,0.10)",boxShadow:"inset 0 1px 0 rgba(255,255,255,0.08)"}}>
-        <div className="flex items-center gap-3">
-          <Link href="/" className="flex items-center gap-1.5 text-xs text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] transition-colors mr-2">
-            <ChevronLeft className="w-3.5 h-3.5" />Back
-          </Link>
-          <div className="w-px h-4 bg-[rgba(255,255,255,0.12)]" />
-          <Users className="w-4 h-4 text-[rgba(232,227,218,0.50)] ml-2" />
-          <h1 className="text-sm font-medium text-[#e8e3da]">Team admin</h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] px-2 py-1 rounded-md bg-amber-900/60 text-amber-300 border border-amber-700">Admin</span>
-          <span className="text-xs text-[rgba(232,227,218,0.50)]">{user?.name}</span>
-        </div>
-      </header>
+      <PageHeader
+        eyebrow="Settings"
+        title="Team"
+        accent="admin"
+        right={
+          <div className="flex items-center gap-2">
+            <Users className="w-4 h-4 text-cream/50" />
+            <span className="text-[10px] px-2 py-1 rounded-full bg-amber-900/30 text-amber-300 border border-amber-700/40 uppercase tracking-wider">Admin</span>
+          </div>
+        }
+      />
 
-      <div className="max-w-3xl mx-auto px-6 py-8">
+      <div className="max-w-3xl mx-auto px-6 lg:px-8 pb-12">
         <div className="grid grid-cols-3 gap-3 mb-8">
           {[
             { label: "Active members", value: activeMembers.length },
@@ -168,7 +169,7 @@ export default function AdminPage() {
 
         <AuditLog />
       </div>
-    </div>
+    </AppShell>
   );
 }
 
