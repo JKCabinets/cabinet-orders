@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import {
   LayoutDashboard, LineChart, ShieldCheck, Archive, Settings, LogOut,
-  RefreshCw, Calendar, ChevronDown, Menu, X,
+  Calendar, ChevronDown, Menu, X,
 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { ORDER_STAGES, OrderStage } from "@/lib/data";
@@ -146,19 +146,6 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                 <NavItem href="/admin" icon={<Settings className="w-3.5 h-3.5" />} label="Admin" pathname={pathname} />
               )}
             </SidebarSection>
-
-            {/* ── External tools ── */}
-            <div className="mt-3 pt-3 border-t border-white/10 flex flex-col gap-0.5">
-              <a
-                href="https://admin.shopify.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2.5 px-3 py-1.5 rounded-md text-xs text-cream/65 hover:text-cream hover:bg-white/8 transition-all"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                Shopify
-              </a>
-            </div>
           </nav>
 
           {/* User footer */}
