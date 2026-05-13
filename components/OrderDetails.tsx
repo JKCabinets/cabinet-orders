@@ -99,10 +99,10 @@ export function OrderDetails({ orderId, doorStyle, color, skuItems, readOnly = f
   }
 
   return (
-    <div className="p-5 border-b border-[rgba(255,255,255,0.10)]">
+    <div className="px-6 py-5 border-b border-white/10">
       <div className="flex items-center justify-between mb-4">
-        <p className="text-[10px] uppercase tracking-widest text-[rgba(232,227,218,0.30)]">Order details</p>
-        {saved && <span className="text-[10px] text-green-400">Saved ✓</span>}
+        <p className="text-[10px] uppercase tracking-[0.16em] text-cream/50 font-medium">Order details</p>
+        {saved && <span className="text-[10px] text-cream/55 italic">Saved</span>}
       </div>
 
       {/* Door Style & Color */}

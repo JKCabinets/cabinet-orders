@@ -13,10 +13,10 @@ interface BulkActionBarProps {
 }
 
 const STAGE_COLOR: Record<string, string> = {
-  "New": "#e05555", "Entered": "#d4922a", "In production": "#c8b84a",
-  "At cross dock": "#4a8fd4", "Delivered": "#4caf7a",
-  "New claim": "#e05555", "In review": "#d4922a", "Parts ordered": "#c8b84a",
-  "Shipped": "#4a8fd4", "Resolved": "#4caf7a",
+  "New": "#c97070", "Entered": "#d4922a", "In production": "#c8b84a",
+  "At cross dock": "#5a8db8", "Delivered": "#8fbe70",
+  "New claim": "#c97070", "In review": "#d4922a", "Parts ordered": "#c8b84a",
+  "Shipped": "#5a8db8", "Resolved": "#8fbe70",
 };
 
 // Map a server-returned `reason` code to a user-friendly label.
@@ -171,22 +171,23 @@ export function BulkActionBar({ selectedOrders, tab, onClear, onDone }: BulkActi
     <>
       {/* Floating action bar — bottom center, above everything */}
       <div
-        className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 rounded-2xl px-3 py-2.5 flex items-center gap-2 animate-card-in"
+        className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 rounded-panel px-4 py-3 flex items-center gap-2 animate-card-in"
         style={{
-          background: "rgba(22,36,50,0.97)",
-          backdropFilter: "blur(28px) saturate(160%)",
-          WebkitBackdropFilter: "blur(28px) saturate(160%)",
-          border: "0.5px solid rgba(255,255,255,0.18)",
-          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.20), 0 16px 48px rgba(0,0,0,0.55)",
+          // Sage glass to match the rest of the chrome
+          background: "rgba(87, 98, 87, 0.32)",
+          backdropFilter: "blur(20px) saturate(140%)",
+          WebkitBackdropFilter: "blur(20px) saturate(140%)",
+          border: "0.5px solid rgba(145, 165, 151, 0.35)",
+          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.10), 0 16px 48px rgba(0,0,0,0.50)",
           maxWidth: "calc(100vw - 24px)",
         }}
       >
         {/* Count */}
-        <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg" style={{
-          background: "rgba(74,143,212,0.18)",
-          border: "0.5px solid rgba(74,143,212,0.45)",
+        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full" style={{
+          background: "rgba(184,130,106,0.20)",
+          border: "0.5px solid rgba(184,130,106,0.45)",
         }}>
-          <span className="text-[11px] font-semibold" style={{ color: "#7ab5e8" }}>
+          <span className="text-[11px] font-medium uppercase tracking-wider" style={{ color: "#d9a888" }}>
             {count} selected
           </span>
         </div>
@@ -194,11 +195,11 @@ export function BulkActionBar({ selectedOrders, tab, onClear, onDone }: BulkActi
         {/* Stage indicator */}
         {commonStage ? (
           <span
-            className="text-[9px] font-bold tracking-widest uppercase px-1.5 py-0.5 rounded"
+            className="text-[9px] font-medium tracking-wider uppercase px-2 py-px rounded-full"
             style={{
-              color: STAGE_COLOR[commonStage] ?? "#888",
-              background: `${STAGE_COLOR[commonStage] ?? "#888"}20`,
-              border: `0.5px solid ${STAGE_COLOR[commonStage] ?? "#888"}55`,
+              color: STAGE_COLOR[commonStage] ?? "#a0a09a",
+              background: `${STAGE_COLOR[commonStage] ?? "#a0a09a"}20`,
+              border: `0.5px solid ${STAGE_COLOR[commonStage] ?? "#a0a09a"}55`,
             }}
             title={`All ${count} selected orders are in "${commonStage}"`}
           >
@@ -206,15 +207,15 @@ export function BulkActionBar({ selectedOrders, tab, onClear, onDone }: BulkActi
           </span>
         ) : (
           <span
-            className="text-[10px] px-1.5 py-0.5 rounded"
+            className="text-[10px] px-2 py-px rounded-full uppercase tracking-wider"
             style={{
-              color: "rgba(255,170,80,0.95)",
-              background: "rgba(255,170,80,0.10)",
-              border: "0.5px solid rgba(255,170,80,0.40)",
+              color: "#e8b56a",
+              background: "rgba(232,181,106,0.12)",
+              border: "0.5px solid rgba(232,181,106,0.40)",
             }}
             title="Selected orders are in different stages — clear selection to pick one stage"
           >
-            ⚠ mixed stages
+            mixed stages
           </span>
         )}
 
@@ -231,12 +232,7 @@ export function BulkActionBar({ selectedOrders, tab, onClear, onDone }: BulkActi
         <button
           onClick={openArchiveConfirm}
           disabled={working}
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all hover:brightness-110 disabled:opacity-50"
-          style={{
-            background: "rgba(255,255,255,0.05)",
-            border: "0.5px solid rgba(255,255,255,0.20)",
-            color: "rgba(232,227,218,0.85)",
-          }}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all disabled:opacity-50 bg-white/6 border border-cream/15 text-cream/85 hover:bg-white/10"
           title="Archive all selected orders"
         >
           <Archive className="w-3 h-3" />
@@ -247,15 +243,15 @@ export function BulkActionBar({ selectedOrders, tab, onClear, onDone }: BulkActi
         <button
           onClick={onClear}
           disabled={working}
-          className="p-1 rounded-md transition-colors hover:bg-[rgba(255,255,255,0.10)] disabled:opacity-50"
+          className="p-1.5 rounded-full transition-colors hover:bg-white/10 disabled:opacity-50"
           title="Clear selection"
         >
-          <X className="w-3.5 h-3.5" style={{ color: "rgba(232,227,218,0.55)" }} />
+          <X className="w-3.5 h-3.5 text-cream/55" />
         </button>
 
         {/* Inline result message */}
         {resultMsg && (
-          <span className="text-[11px] pl-1" style={{ color: resultMsg.startsWith("✓") ? "#8fbe70" : "#e08030" }}>
+          <span className="text-[11px] pl-1" style={{ color: resultMsg.startsWith("✓") ? "#a0cc7a" : "#e8b56a" }}>
             {resultMsg}
           </span>
         )}

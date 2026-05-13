@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ChevronLeft, ChevronRight, Calendar, Package, ArrowLeft, Factory, CheckCircle2 } from "lucide-react";
-import Link from "next/link";
+import { ChevronLeft, ChevronRight, Package, Factory, CheckCircle2 } from "lucide-react";
 import clsx from "clsx";
+import { AppShell, PageHeader } from "@/components/AppShell";
 
 interface CalendarOrder {
   id: string;
@@ -165,73 +165,64 @@ export default function CalendarPage() {
   }
 
   return (
-    <div className="min-h-screen">
-      {/* Header */}
-      <header className="sticky top-0 z-40 flex items-center justify-between px-4 md:px-6 py-3.5" style={{background:"rgba(30,42,53,0.85)",backdropFilter:"blur(40px)",WebkitBackdropFilter:"blur(40px)",borderBottom:"0.5px solid rgba(255,255,255,0.10)",boxShadow:"inset 0 1px 0 rgba(255,255,255,0.08)"}}>
-        <div className="flex items-center gap-3">
-          <Link href="/" className="flex items-center gap-1.5 text-xs text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] transition-colors">
-            <ArrowLeft className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Back</span>
-          </Link>
-          <div className="w-px h-4 bg-[rgba(255,255,255,0.12)]" />
-          <Calendar className="w-4 h-4 text-[rgba(232,227,218,0.50)]" />
-          <h1 className="text-sm font-medium text-[#e8e3da]">Calendar</h1>
-        </div>
+    <AppShell>
+      <PageHeader
+        eyebrow={view === "production" ? "Production schedule" : "Delivery schedule"}
+        title={MONTHS[currentMonth]}
+        accent={String(currentYear)}
+        right={
+          <>
+            {/* View toggle */}
+            <div className="flex items-center gap-1 bg-white/6 border border-cream/15 rounded-full p-0.5">
+              <button
+                onClick={() => { setView("production"); setSelectedDay(null); }}
+                className={clsx("flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all",
+                  view === "production"
+                    ? "bg-cream/12 text-cream"
+                    : "text-cream/55 hover:text-cream/85"
+                )}
+              >
+                <Factory className="w-3 h-3" />
+                Production
+              </button>
+              <button
+                onClick={() => { setView("delivery"); setSelectedDay(null); }}
+                className={clsx("flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all",
+                  view === "delivery"
+                    ? "bg-cream/12 text-cream"
+                    : "text-cream/55 hover:text-cream/85"
+                )}
+              >
+                <Package className="w-3 h-3" />
+                Delivery
+              </button>
+            </div>
 
-        <div className="flex items-center gap-2">
-          {/* View toggle */}
-          <div className="flex items-center gap-1 bg-[rgba(255,255,255,0.06)] border border-[rgba(255,255,255,0.10)] rounded-lg p-0.5">
-            <button
-              onClick={() => { setView("production"); setSelectedDay(null); }}
-              className={clsx("flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all",
-                view === "production"
-                  ? "bg-[rgba(255,255,255,0.10)] text-[#e8e3da]"
-                  : "text-[rgba(232,227,218,0.40)] hover:text-[rgba(232,227,218,0.70)]"
-              )}
-            >
-              <Factory className="w-3 h-3" />
-              Production
+            <button onClick={prevMonth} className="p-1.5 rounded-full border border-cream/15 bg-white/4 text-cream/65 hover:bg-white/8 hover:text-cream transition-all">
+              <ChevronLeft className="w-4 h-4" />
             </button>
-            <button
-              onClick={() => { setView("delivery"); setSelectedDay(null); }}
-              className={clsx("flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all",
-                view === "delivery"
-                  ? "bg-[rgba(255,255,255,0.10)] text-[#e8e3da]"
-                  : "text-[rgba(232,227,218,0.40)] hover:text-[rgba(232,227,218,0.70)]"
-              )}
-            >
-              <Package className="w-3 h-3" />
-              Delivery
+            <button onClick={nextMonth} className="p-1.5 rounded-full border border-cream/15 bg-white/4 text-cream/65 hover:bg-white/8 hover:text-cream transition-all">
+              <ChevronRight className="w-4 h-4" />
             </button>
-          </div>
-
-          <button onClick={prevMonth} className="p-1.5 rounded-lg border border-[rgba(255,255,255,0.10)] text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] hover:border-[rgba(86,100,72,0.55)] transition-all">
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-          <span className="text-sm text-[#e8e3da] min-w-[140px] text-center font-medium">
-            {MONTHS[currentMonth]} {currentYear}
-          </span>
-          <button onClick={nextMonth} className="p-1.5 rounded-lg border border-[rgba(255,255,255,0.10)] text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] hover:border-[rgba(86,100,72,0.55)] transition-all">
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
-      </header>
+          </>
+        }
+      />
 
       {/* Legend */}
       {view === "production" && (
-        <div className="flex items-center gap-4 px-4 md:px-6 pt-3 pb-1">
+        <div className="flex items-center gap-4 px-6 lg:px-8 pb-3">
           <div className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-violet-500 inline-block" />
-            <span className="text-[10px] text-[rgba(232,227,218,0.40)]">Production start</span>
+            <span className="text-[10px] uppercase tracking-wider text-cream/45">Production start</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
-            <span className="text-[10px] text-[rgba(232,227,218,0.40)]">Est. finish</span>
+            <span className="text-[10px] uppercase tracking-wider text-cream/45">Est. finish</span>
           </div>
         </div>
       )}
 
-      <div className="flex flex-col lg:flex-row gap-0 lg:gap-4 p-4 md:p-6">
+      <div className="flex flex-col lg:flex-row gap-0 lg:gap-4 px-6 lg:px-8 pb-12">
         {/* Calendar grid */}
         <div className="flex-1">
           <div className="grid grid-cols-7 mb-2">
@@ -495,7 +486,7 @@ export default function CalendarPage() {
           })()}
         </div>
       </div>
-    </div>
+    </AppShell>
   );
 }
 

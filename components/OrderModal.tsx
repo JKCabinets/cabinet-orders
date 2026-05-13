@@ -28,16 +28,16 @@ interface OrderModalProps {
 }
 
 const STAGE_COLOR: Record<string, string> = {
-  "New":              "#e05555",
+  "New":              "#c97070",
   "Entered":          "#d4922a",
   "In production":    "#c8b84a",
-  "At cross dock":    "#4a8fd4",
-  "Delivered":        "#4caf7a",
-  "New claim":        "#e05555",
+  "At cross dock":    "#5a8db8",
+  "Delivered":        "#8fbe70",
+  "New claim":        "#c97070",
   "In review":        "#d4922a",
   "Parts ordered":    "#c8b84a",
-  "Shipped": "#4a8fd4",
-  "Resolved":         "#4caf7a",
+  "Shipped":          "#5a8db8",
+  "Resolved":         "#8fbe70",
 };
 
 const PANEL: React.CSSProperties = {
@@ -317,57 +317,68 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
           )}
 
           {/* Pipeline stage */}
-          <div className="p-5" style={SECTION_BORDER}>
+          <div className="px-6 py-5" style={SECTION_BORDER}>
             <p className={LABEL}>Pipeline stage</p>
-            <div className="flex flex-col gap-1">
+            <div className="flex flex-col gap-1.5">
               {stages.map((s, i) => {
                 const isActive = liveOrder.stage === s;
                 const isPast = stageIdx > i;
                 const isBackwards = i < stageIdx && !isActive;
-                const color = STAGE_COLOR[s] ?? "#566448";
+                const color = STAGE_COLOR[s] ?? "#91a597";
                 const isEnteredGate = s === "Entered" && liveOrder.stage === "New";
                 return (
                   <button
                     key={s}
                     onClick={() => handleMoveStage(s as Stage)}
                     disabled={checkingAttachments}
-                    className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs transition-all duration-150 text-left hover:brightness-110 disabled:opacity-60"
+                    className="flex items-center gap-3 px-3.5 py-2.5 rounded-brand text-[12px] transition-all duration-300 ease-brand text-left disabled:opacity-60"
                     style={
                       isActive
                         ? {
-                            background: `${color}18`,
-                            border: `0.5px solid ${color}55`,
-                            boxShadow: `inset 0 1px 0 rgba(255,255,255,0.20)`,
+                            background: `${color}1f`,
+                            border: `0.5px solid ${color}66`,
+                            boxShadow: `inset 0 1px 0 rgba(255,255,255,0.10)`,
                             color: color,
                           }
                         : {
-                            background: "transparent",
-                            border: "0.5px solid transparent",
-                            color: isPast
-                              ? "rgba(232,227,218,0.45)"
-                              : "rgba(232,227,218,0.70)",
+                            background: "rgba(255,255,255,0.04)",
+                            border: "0.5px solid rgba(255,255,255,0.08)",
+                            color: isPast ? "rgba(240,236,228,0.50)" : "rgba(240,236,228,0.75)",
                           }
                     }
+                    onMouseEnter={(e) => {
+                      if (isActive) return;
+                      const el = e.currentTarget as HTMLButtonElement;
+                      el.style.background = "rgba(255,255,255,0.07)";
+                      el.style.borderColor = "rgba(255,255,255,0.15)";
+                    }}
+                    onMouseLeave={(e) => {
+                      if (isActive) return;
+                      const el = e.currentTarget as HTMLButtonElement;
+                      el.style.background = "rgba(255,255,255,0.04)";
+                      el.style.borderColor = "rgba(255,255,255,0.08)";
+                    }}
                   >
                     <span
-                      className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                      className="w-2 h-2 rounded-full flex-shrink-0"
                       style={{
-                        background: isActive ? color : isPast ? "rgba(255,255,255,0.20)" : "rgba(255,255,255,0.18)",
+                        background: isActive ? color : isPast ? color + "55" : "rgba(255,255,255,0.18)",
+                        boxShadow: isActive ? `0 0 6px ${color}88` : "none",
                       }}
                     />
-                    <span className="flex-1">{s}</span>
-                    {isActive && !checkingAttachments && <ChevronRight className="w-3 h-3 opacity-60" />}
-                    {isActive && checkingAttachments && <Loader2 className="w-3 h-3 opacity-60 animate-spin" />}
+                    <span className="flex-1 font-medium tracking-wide">{s}</span>
+                    {isActive && !checkingAttachments && <ChevronRight className="w-3.5 h-3.5 opacity-65" />}
+                    {isActive && checkingAttachments && <Loader2 className="w-3.5 h-3.5 opacity-65 animate-spin" />}
                     {isEnteredGate && !isActive && (
-                      <span className="text-[9px] px-1.5 py-px rounded flex-shrink-0"
-                        style={{ background: "rgba(212,146,42,0.15)", color: "#d4922a", border: "0.5px solid rgba(212,146,42,0.35)" }}>
+                      <span className="text-[9px] px-2 py-px rounded-full flex-shrink-0 uppercase tracking-wider font-medium"
+                        style={{ background: "rgba(212,146,42,0.15)", color: "#e8b56a", border: "0.5px solid rgba(212,146,42,0.40)" }}>
                         PDF req.
                       </span>
                     )}
                     {isBackwards && (
-                      <span className="text-[9px] px-1.5 py-px rounded flex-shrink-0"
-                        style={{ background: "rgba(224,85,85,0.12)", color: "rgba(224,120,120,0.80)", border: "0.5px solid rgba(224,85,85,0.25)" }}>
-                        🔒 admin
+                      <span className="text-[9px] px-2 py-px rounded-full flex-shrink-0 uppercase tracking-wider font-medium"
+                        style={{ background: "rgba(232,144,144,0.12)", color: "#e89090", border: "0.5px solid rgba(232,144,144,0.35)" }}>
+                        Admin
                       </span>
                     )}
                   </button>
@@ -377,13 +388,17 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
 
             {/* PIN prompt for backwards moves */}
             {pendingStage && (
-              <div className="mt-3 rounded-lg px-3 py-3"
-                style={{ background: "rgba(224,85,85,0.10)", border: "0.5px solid rgba(224,85,85,0.35)" }}>
-                <p className="text-xs font-semibold mb-0.5" style={{ color: "#e07070" }}>
-                  🔒 Admin code required
+              <div className="mt-4 rounded-brand px-4 py-3.5"
+                style={{
+                  background: "rgba(232,144,144,0.10)",
+                  border: "0.5px solid rgba(232,144,144,0.35)",
+                  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.05)",
+                }}>
+                <p className="font-display text-[16px] mb-1" style={{ color: "#e89090" }}>
+                  Admin code <em className="italic-storm">required</em>
                 </p>
-                <p className="text-[11px] mb-2.5" style={{ color: "rgba(232,227,218,0.55)" }}>
-                  Moving back to &ldquo;{pendingStage}&rdquo; requires an admin code.
+                <p className="text-[11px] mb-3 text-cream/55">
+                  Moving back to &ldquo;{pendingStage}&rdquo; requires the admin override code.
                 </p>
                 <div className="flex gap-2">
                   <input
@@ -404,11 +419,11 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
                     onChange={(e) => { setAdminPin(e.target.value.replace(/\D/g, "")); setPinError(false); }}
                     onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Enter") handlePinSubmit(); }}
                     placeholder="••••"
-                    className="flex-1 rounded-md px-3 py-1.5 text-sm text-center tracking-[0.4em] font-mono transition-colors"
+                    className="flex-1 rounded-full px-4 py-2 text-sm text-center tracking-[0.4em] font-mono transition-colors"
                     style={{
-                      background: pinError ? "rgba(224,85,85,0.18)" : "rgba(255,255,255,0.08)",
-                      border: pinError ? "0.5px solid rgba(224,85,85,0.60)" : "0.5px solid rgba(255,255,255,0.18)",
-                      color: "#e8e3da",
+                      background: pinError ? "rgba(232,144,144,0.18)" : "rgba(255,255,255,0.08)",
+                      border: pinError ? "0.5px solid rgba(232,144,144,0.60)" : "0.5px solid rgba(255,255,255,0.18)",
+                      color: "#f0ece4",
                       outline: "none",
                       WebkitTextSecurity: "disc",
                       textSecurity: "disc",
@@ -416,41 +431,36 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
                   />
                   <button
                     onClick={handlePinSubmit}
-                    className="px-3 py-1.5 rounded-md text-xs font-semibold transition-all"
+                    className="px-4 py-2 rounded-full text-[11px] uppercase tracking-wider font-medium transition-all"
                     style={{
-                      background: "rgba(224,85,85,0.20)",
-                      border: "0.5px solid rgba(224,85,85,0.45)",
-                      color: "#e07070",
+                      background: "rgba(232,144,144,0.22)",
+                      border: "0.5px solid rgba(232,144,144,0.50)",
+                      color: "#e89090",
                     }}
                   >
                     Confirm
                   </button>
                   <button
                     onClick={() => { setPendingStage(null); setAdminPin(""); setPinError(false); }}
-                    className="px-3 py-1.5 rounded-md text-xs transition-all"
-                    style={{
-                      background: "rgba(255,255,255,0.05)",
-                      border: "0.5px solid rgba(255,255,255,0.12)",
-                      color: "rgba(232,227,218,0.45)",
-                    }}
+                    className="px-4 py-2 rounded-full text-[11px] uppercase tracking-wider transition-all bg-white/4 border border-white/12 text-cream/55 hover:bg-white/8 hover:text-cream/85"
                   >
                     Cancel
                   </button>
                 </div>
                 {pinError && (
-                  <p className="text-[10px] mt-1.5" style={{ color: "#e07070" }}>Incorrect code. Try again.</p>
+                  <p className="text-[11px] mt-2" style={{ color: "#e89090" }}>Incorrect code. Try again.</p>
                 )}
               </div>
             )}
 
             {/* Attachment gate error */}
             {enteredGateError && (
-              <div className="mt-3 rounded-lg px-3 py-2.5"
+              <div className="mt-4 rounded-brand px-4 py-3"
                 style={{ background: "rgba(212,146,42,0.12)", border: "0.5px solid rgba(212,146,42,0.40)" }}>
-                <p className="text-xs font-semibold mb-1" style={{ color: "#d4922a" }}>
-                  📎 Acknowledgment required
+                <p className="font-display text-[15px] mb-1" style={{ color: "#e8b56a" }}>
+                  Acknowledgment <em className="italic-storm">required</em>
                 </p>
-                <p className="text-[11px]" style={{ color: "rgba(232,227,218,0.65)" }}>
+                <p className="text-[11px] text-cream/65">
                   Upload the manufacturer&apos;s acknowledgment PDF in the Attachments section below before moving to Entered.
                 </p>
               </div>
@@ -458,26 +468,26 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
           </div>
 
           {/* Details grid */}
-          <div className="p-5 space-y-4" style={SECTION_BORDER}>
+          <div className="px-6 py-5 space-y-4" style={SECTION_BORDER}>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <p className={LABEL}>Source</p>
                 <span
-                  className="text-xs px-2 py-0.5 rounded font-medium"
+                  className="text-[10px] uppercase tracking-wider px-2 py-px rounded-full font-medium"
                   style={
                     liveOrder.source === "Shopify"
-                      ? { background: "rgba(86,100,72,0.20)", color: "#8fbe70", border: "0.5px solid rgba(86,100,72,0.28)" }
+                      ? { background: "rgba(184,130,106,0.15)", color: "#d9a888", border: "0.5px solid rgba(184,130,106,0.40)" }
                       : liveOrder.source === "Manual"
-                      ? { background: "rgba(145,165,151,0.20)", color: "rgba(180,210,190,0.95)", border: "0.5px solid rgba(145,165,151,0.50)" }
-                      : { background: "rgba(74,111,143,0.15)", color: "rgba(74,143,212,0.85)", border: "0.5px solid rgba(74,111,143,0.35)" }
+                      ? { background: "rgba(145,165,151,0.18)", color: "#b8d0bd", border: "0.5px solid rgba(145,165,151,0.45)" }
+                      : { background: "rgba(140,170,200,0.18)", color: "#a8c8e0", border: "0.5px solid rgba(140,170,200,0.40)" }
                   }
                 >
-                  {liveOrder.source === "Manual" ? "Custom Quote" : liveOrder.source}
+                  {liveOrder.source === "Manual" ? "Custom" : liveOrder.source}
                 </span>
               </div>
               <div>
                 <p className={LABEL}>SKU</p>
-                <p className="text-xs font-mono text-[rgba(232,227,218,0.55)]">{liveOrder.sku || "—"}</p>
+                <p className="text-xs font-mono text-cream/65">{liveOrder.sku || "—"}</p>
               </div>
               <div>
                 <p className={LABEL}>Team member</p>
@@ -519,7 +529,7 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
               </div>
               <div>
                 <p className={LABEL}>Date</p>
-                <p className="text-xs text-[rgba(232,227,218,0.55)]">{liveOrder.date}</p>
+                <p className="text-xs text-cream/65">{liveOrder.date}</p>
               </div>
             </div>
 
@@ -527,21 +537,21 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
             {liveOrder.type === "order" && (liveOrder.production_start_date || liveOrder.production_est_finish_date || liveOrder.scheduled_delivery_date) && (
               <div className="grid grid-cols-3 gap-2 mb-1">
                 {liveOrder.production_start_date && (
-                  <div className="rounded-md px-2 py-1.5" style={{ background: "rgba(200,184,74,0.08)", border: "0.5px solid rgba(200,184,74,0.25)" }}>
-                    <p className="text-[9px] uppercase tracking-widest mb-0.5" style={{ color: "rgba(232,227,218,0.35)" }}>Prod. Start</p>
-                    <p className="text-[10px] font-semibold" style={{ color: "rgba(200,184,74,0.90)" }}>{liveOrder.production_start_date}</p>
+                  <div className="rounded-brand px-3 py-2" style={{ background: "rgba(200,184,74,0.10)", border: "0.5px solid rgba(200,184,74,0.30)" }}>
+                    <p className="text-[9px] uppercase tracking-[0.13em] mb-0.5 text-cream/45">Prod. Start</p>
+                    <p className="text-[11px] font-medium" style={{ color: "#d4cc70" }}>{liveOrder.production_start_date}</p>
                   </div>
                 )}
                 {liveOrder.production_est_finish_date && (
-                  <div className="rounded-md px-2 py-1.5" style={{ background: "rgba(200,184,74,0.08)", border: "0.5px solid rgba(200,184,74,0.25)" }}>
-                    <p className="text-[9px] uppercase tracking-widest mb-0.5" style={{ color: "rgba(232,227,218,0.35)" }}>Est. Finish</p>
-                    <p className="text-[10px] font-semibold" style={{ color: "rgba(200,184,74,0.90)" }}>{liveOrder.production_est_finish_date}</p>
+                  <div className="rounded-brand px-3 py-2" style={{ background: "rgba(200,184,74,0.10)", border: "0.5px solid rgba(200,184,74,0.30)" }}>
+                    <p className="text-[9px] uppercase tracking-[0.13em] mb-0.5 text-cream/45">Est. Finish</p>
+                    <p className="text-[11px] font-medium" style={{ color: "#d4cc70" }}>{liveOrder.production_est_finish_date}</p>
                   </div>
                 )}
                 {liveOrder.scheduled_delivery_date && (
-                  <div className="rounded-md px-2 py-1.5" style={{ background: "rgba(74,143,212,0.08)", border: "0.5px solid rgba(74,143,212,0.25)" }}>
-                    <p className="text-[9px] uppercase tracking-widest mb-0.5" style={{ color: "rgba(232,227,218,0.35)" }}>Delivery Date</p>
-                    <p className="text-[10px] font-semibold" style={{ color: "rgba(110,170,230,0.90)" }}>{liveOrder.scheduled_delivery_date}</p>
+                  <div className="rounded-brand px-3 py-2" style={{ background: "rgba(90,141,184,0.10)", border: "0.5px solid rgba(90,141,184,0.30)" }}>
+                    <p className="text-[9px] uppercase tracking-[0.13em] mb-0.5 text-cream/45">Delivery Date</p>
+                    <p className="text-[11px] font-medium" style={{ color: "#a8c8e0" }}>{liveOrder.scheduled_delivery_date}</p>
                   </div>
                 )}
               </div>
@@ -558,19 +568,18 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
                   onChange={(e) => { setNotes(e.target.value); setNotesChanged(true); }}
                   placeholder="Add notes visible to the customer / written into the Shopify order…"
                   rows={6}
-                  className="w-full rounded-lg p-2.5 text-xs resize-none transition-colors placeholder:text-[rgba(232,227,218,0.20)]"
+                  className="w-full rounded-brand p-3 text-[12px] resize-none transition-colors placeholder:text-cream/25"
                   style={{
-                    background: "rgba(255,255,255,0.03)",
-                    border: "0.5px solid rgba(255,255,255,0.18)",
-                    color: "rgba(232,227,218,0.75)",
+                    background: "rgba(255,255,255,0.04)",
+                    border: "0.5px solid rgba(255,255,255,0.15)",
+                    color: "rgba(240,236,228,0.85)",
                     fontSize: "16px",
                   }}
                 />
                 {notesChanged && (
                   <button
                     onClick={handleSaveNotes}
-                    className="mt-1.5 text-[11px] transition-colors"
-                    style={{ color: "#8fbe70" }}
+                    className="mt-2 text-[11px] uppercase tracking-wider font-medium transition-colors text-terracotta hover:brightness-110"
                   >
                     Save notes →
                   </button>
@@ -580,16 +589,16 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
 
             {/* Internal notes — staff-only, never sent to Shopify, shown in red on export PDF */}
             <div className="mt-3">
-              <div className="flex items-center gap-1.5 mb-1">
-                <p className={`${LABEL} mb-0`} style={{ color: "rgba(224,85,85,0.65)" }}>
+              <div className="flex items-center gap-2 mb-2">
+                <p className="text-[10px] uppercase tracking-[0.16em] font-medium" style={{ color: "rgba(232,144,144,0.75)" }}>
                   Internal Notes
                 </p>
                 <span
-                  className="text-[8px] uppercase tracking-widest px-1 py-px rounded"
+                  className="text-[8px] uppercase tracking-wider px-1.5 py-px rounded-full font-medium"
                   style={{
-                    background: "rgba(224,85,85,0.12)",
-                    color: "rgba(224,85,85,0.85)",
-                    border: "0.5px solid rgba(224,85,85,0.3)",
+                    background: "rgba(232,144,144,0.12)",
+                    color: "rgba(232,144,144,0.85)",
+                    border: "0.5px solid rgba(232,144,144,0.30)",
                   }}
                 >
                   staff only
@@ -600,19 +609,18 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
                 onChange={(e) => { setInternalNotes(e.target.value); setInternalNotesChanged(true); }}
                 placeholder="Visible to staff and on the export PDF. Never sent to Shopify or the customer."
                 rows={4}
-                className="w-full rounded-lg p-2.5 text-xs resize-none transition-colors placeholder:text-[rgba(232,227,218,0.20)]"
+                className="w-full rounded-brand p-3 text-[12px] resize-none transition-colors placeholder:text-cream/25"
                 style={{
-                  background: "rgba(224,85,85,0.04)",
-                  border: "0.5px dashed rgba(224,85,85,0.3)",
-                  color: "rgba(232,227,218,0.85)",
+                  background: "rgba(232,144,144,0.04)",
+                  border: "0.5px dashed rgba(232,144,144,0.30)",
+                  color: "rgba(240,236,228,0.90)",
                   fontSize: "16px",
                 }}
               />
               {internalNotesChanged && (
                 <button
                   onClick={handleSaveInternalNotes}
-                  className="mt-1.5 text-[11px] transition-colors"
-                  style={{ color: "#8fbe70" }}
+                  className="mt-2 text-[11px] uppercase tracking-wider font-medium transition-colors text-terracotta hover:brightness-110"
                 >
                   Save internal notes →
                 </button>
@@ -648,20 +656,20 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
           </div>
 
           {/* Activity */}
-          <div className="p-5">
+          <div className="px-6 py-5">
             <p className={LABEL}>Activity</p>
             <div className="flex flex-col gap-3">
               {[...liveOrder.activity].reverse().map((a, i) => (
                 <div key={i} className="flex gap-3">
                   <div className="flex flex-col items-center gap-1 flex-shrink-0 pt-0.5">
-                    <Clock className="w-3 h-3 text-[rgba(232,227,218,0.45)]" />
+                    <Clock className="w-3 h-3 text-cream/45" />
                     {i < liveOrder.activity.length - 1 && (
-                      <div className="w-px flex-1 min-h-[12px]" style={{ background: "rgba(255,255,255,0.20)" }} />
+                      <div className="w-px flex-1 min-h-[12px]" style={{ background: "rgba(255,255,255,0.15)" }} />
                     )}
                   </div>
                   <div className="pb-1">
-                    <p className="text-xs text-[rgba(232,227,218,0.55)]">{a.text}</p>
-                    <p className="text-[10px] text-[rgba(232,227,218,0.45)] mt-0.5">{a.time}</p>
+                    <p className="text-[12px] text-cream/70 leading-snug">{a.text}</p>
+                    <p className="text-[10px] text-cream/40 mt-0.5">{a.time}</p>
                   </div>
                 </div>
               ))}
@@ -694,23 +702,23 @@ function QuoteInfoPanel({ notes }: { notes: string }) {
   const attach   = extract("📎 Attachment");
 
   const ROW = "flex flex-col gap-0.5";
-  const LBL = "text-[9px] uppercase tracking-widest font-semibold" as const;
-  const VAL = "text-sm" as const;
+  const LBL = "text-[9px] uppercase tracking-[0.13em] font-medium text-cream/45" as const;
+  const VAL = "text-[13px]" as const;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* Contact info */}
-      <div className="rounded-lg p-3" style={{ background: "rgba(255,255,255,0.04)", border: "0.5px solid rgba(255,255,255,0.10)" }}>
-        <p className="text-[9px] uppercase tracking-widest font-semibold mb-3" style={{ color: "rgba(232,227,218,0.40)" }}>Contact</p>
+      <div className="rounded-brand p-4" style={{ background: "rgba(255,255,255,0.04)", border: "0.5px solid rgba(255,255,255,0.12)" }}>
+        <p className="eyebrow mb-3">Contact</p>
         <div className="grid grid-cols-2 gap-3">
-          {customerName && <div className={ROW + " col-span-2"}><span className={LBL} style={{ color: "rgba(232,227,218,0.35)" }}>Name</span><span className={VAL} style={{ color: "rgba(232,227,218,0.95)", fontWeight: 500 }}>{customerName}</span></div>}
-          {phone && <div className={ROW}><span className={LBL} style={{ color: "rgba(232,227,218,0.35)" }}>Phone</span><span className={VAL} style={{ color: "rgba(232,227,218,0.85)" }}>{phone}</span></div>}
-          {email && <div className={ROW}><span className={LBL} style={{ color: "rgba(232,227,218,0.35)" }}>Email</span><span className={VAL} style={{ color: "rgba(232,227,218,0.85)", wordBreak: "break-all" }}>{email}</span></div>}
-          {address && <div className={ROW + " col-span-2"}><span className={LBL} style={{ color: "rgba(232,227,218,0.35)" }}>Address</span><span className={VAL} style={{ color: "rgba(232,227,218,0.85)" }}>{address}</span></div>}
+          {customerName && <div className={ROW + " col-span-2"}><span className={LBL}>Name</span><span className={VAL} style={{ color: "#f0ece4", fontWeight: 500 }}>{customerName}</span></div>}
+          {phone && <div className={ROW}><span className={LBL}>Phone</span><span className={VAL} style={{ color: "rgba(240,236,228,0.85)" }}>{phone}</span></div>}
+          {email && <div className={ROW}><span className={LBL}>Email</span><span className={VAL} style={{ color: "rgba(240,236,228,0.85)", wordBreak: "break-all" }}>{email}</span></div>}
+          {address && <div className={ROW + " col-span-2"}><span className={LBL}>Address</span><span className={VAL} style={{ color: "rgba(240,236,228,0.85)" }}>{address}</span></div>}
           {(city || state || zip) && (
             <div className={ROW + " col-span-2"}>
-              <span className={LBL} style={{ color: "rgba(232,227,218,0.35)" }}>City / State / Zip</span>
-              <span className={VAL} style={{ color: "rgba(232,227,218,0.85)" }}>{[city, state, zip].filter(Boolean).join(", ")}</span>
+              <span className={LBL}>City / State / Zip</span>
+              <span className={VAL} style={{ color: "rgba(240,236,228,0.85)" }}>{[city, state, zip].filter(Boolean).join(", ")}</span>
             </div>
           )}
         </div>
@@ -718,29 +726,29 @@ function QuoteInfoPanel({ notes }: { notes: string }) {
 
       {/* Quote selections */}
       {(budget || door || color) && (
-        <div className="rounded-lg p-3" style={{ background: "rgba(255,255,255,0.04)", border: "0.5px solid rgba(255,255,255,0.10)" }}>
-          <p className="text-[9px] uppercase tracking-widest font-semibold mb-3" style={{ color: "rgba(232,227,218,0.40)" }}>Selections</p>
+        <div className="rounded-brand p-4" style={{ background: "rgba(255,255,255,0.04)", border: "0.5px solid rgba(255,255,255,0.12)" }}>
+          <p className="eyebrow mb-3">Selections</p>
           <div className="space-y-2.5">
-            {budget && <div className={ROW}><span className={LBL} style={{ color: "rgba(232,227,218,0.35)" }}>Budget</span><span className={VAL} style={{ color: "#8fbe70" }}>{budget}</span></div>}
-            {door && <div className={ROW}><span className={LBL} style={{ color: "rgba(232,227,218,0.35)" }}>Door Style</span><span className={VAL} style={{ color: "rgba(232,227,218,0.85)" }}>{door}</span></div>}
-            {color && <div className={ROW}><span className={LBL} style={{ color: "rgba(232,227,218,0.35)" }}>Color</span><span className={VAL} style={{ color: "rgba(232,227,218,0.85)" }}>{color}</span></div>}
+            {budget && <div className={ROW}><span className={LBL}>Budget</span><span className={VAL} style={{ color: "#a0cc7a" }}>{budget}</span></div>}
+            {door && <div className={ROW}><span className={LBL}>Door Style</span><span className={VAL} style={{ color: "rgba(240,236,228,0.85)" }}>{door}</span></div>}
+            {color && <div className={ROW}><span className={LBL}>Color</span><span className={VAL} style={{ color: "rgba(240,236,228,0.85)" }}>{color}</span></div>}
           </div>
         </div>
       )}
 
       {/* Customer notes */}
       {notesTxt && (
-        <div className="rounded-lg p-3" style={{ background: "rgba(255,255,255,0.04)", border: "0.5px solid rgba(255,255,255,0.10)" }}>
-          <p className="text-[9px] uppercase tracking-widest font-semibold mb-2" style={{ color: "rgba(232,227,218,0.40)" }}>Customer Notes</p>
-          <p className="text-sm" style={{ color: "rgba(232,227,218,0.75)", lineHeight: "1.5" }}>{notesTxt}</p>
+        <div className="rounded-brand p-4" style={{ background: "rgba(255,255,255,0.04)", border: "0.5px solid rgba(255,255,255,0.12)" }}>
+          <p className="eyebrow mb-2">Customer Notes</p>
+          <p className="text-[13px] leading-relaxed" style={{ color: "rgba(240,236,228,0.80)" }}>{notesTxt}</p>
         </div>
       )}
 
       {/* Attachment link */}
       {attach && (
-        <div className="rounded-lg p-3" style={{ background: "rgba(255,255,255,0.04)", border: "0.5px solid rgba(255,255,255,0.10)" }}>
-          <p className="text-[9px] uppercase tracking-widest font-semibold mb-2" style={{ color: "rgba(232,227,218,0.40)" }}>Attachment</p>
-          <a href={attach} target="_blank" rel="noopener noreferrer" className="text-sm underline" style={{ color: "rgba(110,170,230,0.90)" }}>View uploaded file</a>
+        <div className="rounded-brand p-4" style={{ background: "rgba(255,255,255,0.04)", border: "0.5px solid rgba(255,255,255,0.12)" }}>
+          <p className="eyebrow mb-2">Attachment</p>
+          <a href={attach} target="_blank" rel="noopener noreferrer" className="text-[13px] underline text-terracotta hover:brightness-110 transition-all">View uploaded file</a>
         </div>
       )}
     </div>

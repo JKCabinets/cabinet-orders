@@ -128,18 +128,18 @@ export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPa
   }
 
   return (
-    <div className="p-5 border-b border-[rgba(255,255,255,0.10)]">
+    <div className="px-6 py-5 border-b border-white/10">
       <div className="flex items-center justify-between mb-3">
-        <p className="text-[10px] uppercase tracking-widest text-[rgba(232,227,218,0.30)]">
-          Attachments {attachments.length > 0 && <span className="text-[rgba(232,227,218,0.50)]">({attachments.length})</span>}
+        <p className="text-[10px] uppercase tracking-[0.16em] text-cream/50 font-medium">
+          Attachments {attachments.length > 0 && <span className="text-cream/65 ml-1">({attachments.length})</span>}
         </p>
         <button
           onClick={() => fileInputRef.current?.click()}
           disabled={uploading}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-[rgba(255,255,255,0.10)] text-[11px] text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] hover:border-[rgba(86,100,72,0.55)] transition-all disabled:opacity-50"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-cream/18 bg-white/4 text-[11px] uppercase tracking-wider text-cream/85 hover:bg-white/8 hover:border-terracotta/40 transition-all disabled:opacity-50"
         >
           {uploading ? (
-            <><Loader2 className="w-3 h-3 animate-spin" /> Uploading...</>
+            <><Loader2 className="w-3 h-3 animate-spin" /> Uploading…</>
           ) : (
             <><Upload className="w-3 h-3" /> Upload</>
           )}
