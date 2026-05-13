@@ -27,6 +27,7 @@ export function StagePageClient({ stage }: Props) {
   const { orders } = useStore();
   const [search, setSearch] = useState("");
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [modalReason, setModalReason] = useState<"needs-attachment" | undefined>(undefined);
   const [showNewForm, setShowNewForm] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -141,7 +142,7 @@ export function StagePageClient({ stage }: Props) {
           <OrderTable
             orders={filtered}
             stage={stage}
-            onSelect={(o) => setSelectedOrder(o)}
+            onSelect={(o, reason) => { setSelectedOrder(o); setModalReason(reason); }}
             selectMode={selectMode}
             selectedIds={selectedIds}
             onToggleSelect={toggleSelection}
@@ -153,7 +154,8 @@ export function StagePageClient({ stage }: Props) {
         <OrderModal
           order={selectedOrder}
           tab="orders"
-          onClose={() => setSelectedOrder(null)}
+          initialReason={modalReason}
+          onClose={() => { setSelectedOrder(null); setModalReason(undefined); }}
           onStageChange={(s) => setSelectedOrder(prev => prev ? { ...prev, stage: s } : null)}
         />
       )}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from "react";
 import { Paperclip, Upload, X, Download, FileText, Image, File, Loader2, Trash2 } from "lucide-react";
 import clsx from "clsx";
 
@@ -19,6 +19,16 @@ interface AttachmentsPanelProps {
   orderId: string;
 }
 
+/**
+ * Imperative handle exposed by AttachmentsPanel. Parent components can call
+ * `ref.current?.openFilePicker()` to programmatically open the OS file
+ * picker — used when the modal opens because of a missing-attachment gate
+ * failure and we want to land the user directly on "add a file".
+ */
+export interface AttachmentsPanelHandle {
+  openFilePicker: () => void;
+}
+
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -31,7 +41,8 @@ function FileIcon({ type }: { type: string }) {
   return <File className="w-3.5 h-3.5 text-[rgba(232,227,218,0.50)]" />;
 }
 
-export function AttachmentsPanel({ orderId }: AttachmentsPanelProps) {
+export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPanelProps>(
+  function AttachmentsPanel({ orderId }, ref) {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -39,6 +50,10 @@ export function AttachmentsPanel({ orderId }: AttachmentsPanelProps) {
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useImperativeHandle(ref, () => ({
+    openFilePicker: () => fileInputRef.current?.click(),
+  }), []);
 
   useEffect(() => {
     async function fetchAttachments() {
@@ -207,4 +222,4 @@ export function AttachmentsPanel({ orderId }: AttachmentsPanelProps) {
       )}
     </div>
   );
-}
+});

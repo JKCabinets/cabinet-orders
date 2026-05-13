@@ -27,8 +27,12 @@ type SortDir = "asc" | "desc";
 interface OrderTableProps {
   orders: Order[];
   stage: string;
-  /** Called when a row is clicked (opens the modal in the parent). */
-  onSelect: (order: Order) => void;
+  /**
+   * Called when a row is clicked (opens the modal in the parent). The
+   * optional `reason` is passed to the modal so it can render a
+   * contextual banner / auto-focus action.
+   */
+  onSelect: (order: Order, reason?: "needs-attachment") => void;
   /** Bulk-select mode props */
   selectMode?: boolean;
   selectedIds?: Set<string>;
@@ -186,7 +190,8 @@ function SortableHeader({
 function OrderRow({
   order, stage, onSelect, selectMode, selected, onToggleSelect, rowIdx,
 }: {
-  order: Order; stage: string; onSelect: (o: Order) => void;
+  order: Order; stage: string;
+  onSelect: (o: Order, reason?: "needs-attachment") => void;
   selectMode: boolean; selected: boolean; onToggleSelect?: (id: string) => void;
   rowIdx: number;
 }) {
@@ -265,7 +270,8 @@ function OrderRow({
 function MobileRow({
   order, stage, onSelect, selectMode, selected, onToggleSelect,
 }: {
-  order: Order; stage: string; onSelect: (o: Order) => void;
+  order: Order; stage: string;
+  onSelect: (o: Order, reason?: "needs-attachment") => void;
   selectMode: boolean; selected: boolean; onToggleSelect?: (id: string) => void;
 }) {
   function handleClick() {
@@ -336,17 +342,15 @@ function StatusCell({
 }: {
   order: Order; stage: string; mobile?: boolean;
   /** Called when a gate fails so the user can fix it in the modal. */
-  onOpenModal?: (o: Order) => void;
+  onOpenModal?: (o: Order, reason?: "needs-attachment") => void;
 }) {
   const { data: session } = useSession();
   const { claimOrder, moveStage, archiveOrder, unarchiveOrder } = useStore();
   const currentUserName = session?.user?.name ?? null;
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   async function withBusy(fn: () => Promise<unknown>) {
     setBusy(true);
-    setError(null);
     try { await fn(); } finally { setBusy(false); }
   }
 
@@ -356,16 +360,12 @@ function StatusCell({
    */
   async function markEntered() {
     setBusy(true);
-    setError(null);
     try {
       const gate = await checkAttachmentGate(order.id);
       if (!gate.ok) {
-        setError(gate.message);
-        // Open the modal so the user can resolve the missing attachment
-        onOpenModal?.(order);
-        // Clear the inline error after a few seconds — the modal is now
-        // the source of truth
-        setTimeout(() => setError(null), 4000);
+        // Open the modal pre-flagged so it shows the banner + opens the
+        // file picker automatically.
+        onOpenModal?.(order, "needs-attachment");
         return;
       }
       await moveStage(order.id, "Entered", currentUserName ?? undefined);
@@ -410,21 +410,16 @@ function StatusCell({
     }
     if (isClaimedByMe) {
       return (
-        <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-1.5">
-            <span className="text-[10px] text-cream/55">Yours —</span>
-            <button
-              onClick={markEntered}
-              disabled={busy}
-              className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30"
-              title="Requires an attached PDF"
-            >
-              {busy ? "..." : (mobile ? "Enter" : "Mark Entered")}
-            </button>
-          </div>
-          {error && (
-            <span className="text-[9px] text-red-300 max-w-[200px] leading-tight">{error}</span>
-          )}
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] text-cream/55">Yours —</span>
+          <button
+            onClick={markEntered}
+            disabled={busy}
+            className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30"
+            title="Requires an attached PDF"
+          >
+            {busy ? "..." : (mobile ? "Enter" : "Mark Entered")}
+          </button>
         </div>
       );
     }

@@ -10,7 +10,7 @@ import {
 } from "@/lib/data";
 import { useStore } from "@/lib/store";
 import { checkAttachmentGate } from "@/lib/stageGates";
-import { AttachmentsPanel } from "./AttachmentsPanel";
+import { AttachmentsPanel, type AttachmentsPanelHandle } from "./AttachmentsPanel";
 import { OrderDetails } from "./OrderDetails";
 import { DamageReportPanel } from "./DamageReportPanel";
 
@@ -19,6 +19,12 @@ interface OrderModalProps {
   tab: "orders" | "warranty";
   onClose: () => void;
   onStageChange: (stage: Stage) => void;
+  /**
+   * Optional reason explaining why the modal was opened. When set to
+   * "needs-attachment", the modal shows a prominent banner at the top and
+   * auto-opens the file picker so the user can attach the required PDF.
+   */
+  initialReason?: "needs-attachment";
 }
 
 const STAGE_COLOR: Record<string, string> = {
@@ -35,12 +41,16 @@ const STAGE_COLOR: Record<string, string> = {
 };
 
 const PANEL: React.CSSProperties = {
-  // Brand: signature frosted sage glass — sage at ~35% with backdrop blur
-  background: "rgba(58, 66, 57, 0.42)",
+  // Brand: signature frosted sage glass — matches the sidebar's sage tone
+  // exactly so the modal feels like the same material as the chrome.
+  // Keeping a slightly heavier shadow than the sidebar since the modal is
+  // a larger floating surface over a darkened overlay.
+  background: "rgba(87, 98, 87, 0.28)",
   backdropFilter: "blur(20px) saturate(140%)",
   WebkitBackdropFilter: "blur(20px) saturate(140%)",
-  border: "0.5px solid rgba(145,165,151,0.30)",
-  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.12), 0 24px 60px rgba(0,0,0,0.55)",
+  border: "0.5px solid rgba(145, 165, 151, 0.30)",
+  boxShadow:
+    "inset 0 1px 0 rgba(255,255,255,0.10), 0 24px 60px rgba(0,0,0,0.55)",
 };
 
 const SECTION_BORDER: React.CSSProperties = {
@@ -51,7 +61,7 @@ const LABEL = "text-[10px] uppercase tracking-[0.16em] text-cream/50 mb-1.5";
 
 const ADMIN_CODE = "4951";
 
-export function OrderModal({ order, tab, onClose, onStageChange }: OrderModalProps) {
+export function OrderModal({ order, tab, onClose, onStageChange, initialReason }: OrderModalProps) {
   const { moveStage, updateNotes, updateInternalNotes, archiveOrder, unarchiveOrder, deleteOrder, orders, warranties, team } = useStore();
   const { data: session } = useSession();
   const currentUserName = session?.user?.name ?? undefined;
@@ -67,6 +77,28 @@ export function OrderModal({ order, tab, onClose, onStageChange }: OrderModalPro
   const [pinError, setPinError] = useState(false);
   const pinInputRef = useRef<HTMLInputElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
+  const attachmentsRef = useRef<AttachmentsPanelHandle>(null);
+  const attachmentsAnchorRef = useRef<HTMLDivElement>(null);
+
+  // When the modal opens because of a missing-attachment gate, show a
+  // banner and auto-jump to the attachment area. The banner stays visible
+  // until the user uploads a file (the attachment panel re-renders, the
+  // gate would now pass) or they dismiss it manually.
+  const [showGateBanner, setShowGateBanner] = useState(
+    initialReason === "needs-attachment",
+  );
+
+  useEffect(() => {
+    if (initialReason !== "needs-attachment") return;
+    // Wait one frame so refs are mounted, then scroll to the attachment
+    // section and pop the OS file picker. Slight delay on the click so
+    // the scroll animation has a chance to land before the picker steals
+    // focus.
+    requestAnimationFrame(() => {
+      attachmentsAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      setTimeout(() => attachmentsRef.current?.openFilePicker(), 350);
+    });
+  }, [initialReason]);
 
   const liveOrder =
     (tab === "orders" ? orders : warranties).find((o) => o.id === order.id) ?? order;
@@ -236,6 +268,60 @@ export function OrderModal({ order, tab, onClose, onStageChange }: OrderModalPro
         </div>
 
         <div className="flex-1 overflow-y-auto">
+          {/* Gate banner — shown when the modal opens because of a missing
+              attachment. Prominent, terracotta accent, with a CTA that
+              re-triggers the file picker. */}
+          {showGateBanner && (
+            <div
+              className="m-5 mb-0 rounded-brand p-4 flex items-start gap-3 animate-slide-in"
+              style={{
+                background: "rgba(184,130,106,0.16)",
+                border: "0.5px solid rgba(184,130,106,0.50)",
+                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.10)",
+              }}
+            >
+              <div
+                className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5"
+                style={{ background: "rgba(184,130,106,0.25)", border: "0.5px solid rgba(184,130,106,0.45)" }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#d9a888" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                </svg>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-display text-[18px] text-cream leading-tight mb-1">
+                  Attach an <em className="italic-storm">acknowledgment</em> first
+                </p>
+                <p className="text-[12px] text-cream/65 leading-snug mb-3">
+                  Before this order can be marked Entered, upload the manufacturer&apos;s
+                  acknowledgment PDF (or any confirming document). The file picker
+                  should open automatically — if not, use the button below.
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => attachmentsRef.current?.openFilePicker()}
+                    className="px-3 py-1.5 rounded-full text-[11px] uppercase tracking-wider font-medium transition-all bg-terracotta/25 border border-terracotta/55 text-terracotta hover:bg-terracotta/35"
+                  >
+                    Choose file…
+                  </button>
+                  <button
+                    onClick={() => setShowGateBanner(false)}
+                    className="px-3 py-1.5 rounded-full text-[11px] uppercase tracking-wider font-medium transition-all text-cream/55 hover:text-cream/85"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowGateBanner(false)}
+                className="p-1 rounded-md hover:bg-white/8 transition-colors flex-shrink-0"
+                aria-label="Dismiss"
+              >
+                <X className="w-3.5 h-3.5 text-cream/55" />
+              </button>
+            </div>
+          )}
+
           {/* Pipeline stage */}
           <div className="p-5" style={SECTION_BORDER}>
             <p className={LABEL}>Pipeline stage</p>
@@ -534,7 +620,9 @@ export function OrderModal({ order, tab, onClose, onStageChange }: OrderModalPro
           )}
 
           {/* Attachments */}
-          <AttachmentsPanel orderId={liveOrder.id} />
+          <div ref={attachmentsAnchorRef}>
+            <AttachmentsPanel ref={attachmentsRef} orderId={liveOrder.id} />
+          </div>
 
           {/* Activity */}
           <div className="p-5">
