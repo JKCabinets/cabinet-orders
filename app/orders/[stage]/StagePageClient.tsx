@@ -4,20 +4,11 @@ import { useState, useMemo } from "react";
 import { useStore } from "@/lib/store";
 import { Order, OrderStage } from "@/lib/data";
 import { PageHeader } from "@/components/AppShell";
-import { OrderCard } from "@/components/OrderCard";
+import { OrderTable } from "@/components/OrderTable";
 import { OrderModal } from "@/components/OrderModal";
 import { NewOrderModal } from "@/components/NewOrderModal";
 import { BulkActionBar } from "@/components/BulkActionBar";
 import { Plus, Search, CheckSquare, X } from "lucide-react";
-
-const STAGE_ACCENT: Record<string, string> = {
-  "New":            "#c97070",
-  "Entered":        "#d4922a",
-  "In production":  "#c8b84a",
-  "At cross dock":  "#5a8db8",
-  "Delivered":      "#8fbe70",
-  "Archived":       "#91a597",
-};
 
 const STAGE_DESCRIPTION: Record<string, { eyebrow: string; accent: string }> = {
   "New":            { eyebrow: "Orders awaiting entry",         accent: "orders" },
@@ -74,17 +65,12 @@ export function StagePageClient({ stage }: Props) {
       return next;
     });
   }
-  function handleCardClick(order: Order) {
-    if (selectMode) toggleSelection(order.id);
-    else setSelectedOrder(order);
-  }
   const selectedOrders = useMemo(
     () => filtered.filter(o => selectedIds.has(o.id)),
     [filtered, selectedIds],
   );
 
   const desc = STAGE_DESCRIPTION[stage] ?? { eyebrow: "Orders", accent: "" };
-  const accent = STAGE_ACCENT[stage];
 
   return (
     <>
@@ -152,27 +138,14 @@ export function StagePageClient({ stage }: Props) {
             </div>
           </div>
         ) : (
-          <div
-            className="grid gap-3"
-            style={{
-              gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
-              // Subtle column divider — reinforces the stage's accent color
-              // without overpowering the cards
-              borderTop: `1px solid ${accent}24`,
-              paddingTop: "1rem",
-            }}
-          >
-            {filtered.map((order, i) => (
-              <OrderCard
-                key={order.id}
-                order={order}
-                onClick={() => handleCardClick(order)}
-                style={{ animationDelay: `${Math.min(i * 20, 400)}ms` }}
-                selectMode={selectMode}
-                selected={selectedIds.has(order.id)}
-              />
-            ))}
-          </div>
+          <OrderTable
+            orders={filtered}
+            stage={stage}
+            onSelect={(o) => setSelectedOrder(o)}
+            selectMode={selectMode}
+            selectedIds={selectedIds}
+            onToggleSelect={toggleSelection}
+          />
         )}
       </div>
 

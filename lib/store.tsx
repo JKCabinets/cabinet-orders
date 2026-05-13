@@ -75,6 +75,7 @@ function shapeOrder(raw: Record<string, unknown>): Order {
     customer_phone: (raw.customer_phone as string) ?? "",
     customer_email: (raw.customer_email as string) ?? "",
     delivery_method: (raw.delivery_method as string) ?? "",
+    payment_status: (raw.payment_status as string | null) ?? null,
     production_start_date: (raw.production_start_date as string | null) ?? null,
     production_est_finish_date: (raw.production_est_finish_date as string | null) ?? null,
     scheduled_delivery_date: (raw.scheduled_delivery_date as string | null) ?? null,

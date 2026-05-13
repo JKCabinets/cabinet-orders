@@ -164,6 +164,10 @@ export interface Order {
   customer_phone?: string;
   customer_email?: string;
   delivery_method?: string;
+  // Shopify payment status — financial_status from the Shopify order.
+  // One of: paid, partially_paid, pending, refunded, partially_refunded,
+  // voided, authorized. NULL for custom (manual) orders.
+  payment_status?: string | null;
 }
 
 export const ORDER_STAGES: OrderStage[] = [

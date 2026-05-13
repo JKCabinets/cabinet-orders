@@ -216,6 +216,9 @@ export async function POST(req: NextRequest) {
       customer_phone: customerPhone,
       customer_email: customerEmail,
       delivery_method: deliveryMethod,
+      // Shopify financial_status — drives the Payment column on order tables.
+      // Common values: paid, partially_paid, pending, refunded, voided.
+      payment_status: payload.financial_status ?? null,
     });
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -248,6 +251,9 @@ export async function POST(req: NextRequest) {
         customer_phone: customerPhone,
         customer_email: customerEmail,
         delivery_method: deliveryMethod,
+        // Refresh payment status on every update — covers the case where a
+        // pending order gets paid later.
+        payment_status: payload.financial_status ?? null,
       };
 
       if (fulfillmentStatus === "fulfilled" && existing.stage !== "Delivered") {

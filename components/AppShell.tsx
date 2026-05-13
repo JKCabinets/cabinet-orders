@@ -21,7 +21,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <Sidebar open={drawerOpen} onClose={() => setDrawerOpen(false)} />
 
       {/* Main content area, offset to make room for the sidebar on desktop */}
-      <div className="lg:pl-[256px]">
+      <div className="lg:pl-[252px]">
         {/* Mobile bar with hamburger — visible only on mobile/tablet */}
         <div className="lg:hidden sticky top-0 z-20 px-3 py-2 flex items-center gap-2 bg-[#162432]/80 backdrop-blur-xl border-b border-white/8">
           <SidebarMobileTrigger onClick={() => setDrawerOpen(true)} />

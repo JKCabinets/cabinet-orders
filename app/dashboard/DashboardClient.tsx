@@ -8,7 +8,7 @@ import { parseOrderDate } from "@/lib/dateUtils";
 import { PageHeader } from "@/components/AppShell";
 import { OrderModal } from "@/components/OrderModal";
 import { NewOrderModal } from "@/components/NewOrderModal";
-import { ArrowRight, Plus, Search } from "lucide-react";
+import { Plus, Search } from "lucide-react";
 
 const STAGE_ACCENT: Record<OrderStage, string> = {
   "New":            "#c97070",
@@ -225,6 +225,16 @@ function StageCard({
 
 /* ─── SLA mini panel ──────────────────────────────────────────────── */
 
+// SLA targets in days per stage. An order is "overdue" if its current age in
+// its current stage exceeds this target. Tune these as your team's SLAs evolve.
+const SLA_TARGETS: Record<OrderStage, number> = {
+  "New":            3,
+  "Entered":        2,
+  "In production":  14,
+  "At cross dock":  5,
+  "Delivered":      Infinity, // no SLA on Delivered
+};
+
 function SLAMiniPanel({ byStage }: { byStage: Record<OrderStage, Order[]> }) {
   // Average age in each stage (in days). Useful as a glanceable SLA view.
   function avgDays(orders: Order[]): number | null {
@@ -238,19 +248,26 @@ function SLAMiniPanel({ byStage }: { byStage: Record<OrderStage, Order[]> }) {
     return Math.round(total / orders.length);
   }
 
-  // Overdue: anything in New >5d (matches OrderCard logic)
-  const overdueCount = byStage["New"].filter(o => {
-    const t = parseOrderDate(o.date);
-    if (t === null) return false;
-    return Math.floor((Date.now() - t) / (1000 * 60 * 60 * 24)) > 5;
-  }).length;
+  // Per-stage overdue counts — orders past the SLA target for their stage
+  function overdueInStage(stage: OrderStage): number {
+    const target = SLA_TARGETS[stage];
+    if (!isFinite(target)) return 0;
+    return byStage[stage].filter(o => {
+      const t = parseOrderDate(o.date);
+      if (t === null) return false;
+      const age = Math.floor((Date.now() - t) / (1000 * 60 * 60 * 24));
+      return age > target;
+    }).length;
+  }
 
-  const cells = [
-    { label: "New age",        value: avgDays(byStage["New"]) },
-    { label: "Entered age",    value: avgDays(byStage["Entered"]) },
-    { label: "Production",     value: avgDays(byStage["In production"]) },
-    { label: "Cross dock",     value: avgDays(byStage["At cross dock"]) },
+  const cells: { stage: OrderStage; label: string }[] = [
+    { stage: "New",            label: "New" },
+    { stage: "Entered",        label: "Entered" },
+    { stage: "In production",  label: "Production" },
+    { stage: "At cross dock",  label: "Cross dock" },
   ];
+
+  const totalOverdue = cells.reduce((sum, c) => sum + overdueInStage(c.stage), 0);
 
   return (
     <div className="glass-sage rounded-panel p-5 lg:p-6">
@@ -261,35 +278,50 @@ function SLAMiniPanel({ byStage }: { byStage: Record<OrderStage, Order[]> }) {
             SLA at <em className="italic-storm">a glance</em>
           </h2>
         </div>
-        <button
-          disabled
-          className="flex items-center gap-1.5 text-[11px] text-cream/55 cursor-not-allowed"
-          title="SLA dashboard coming soon"
-        >
-          Full report
-          <ArrowRight className="w-3 h-3" />
-        </button>
-      </div>
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        {cells.map(c => (
-          <div key={c.label}>
-            <div className="text-[10px] uppercase tracking-[0.13em] text-cream/55 mb-1">{c.label}</div>
-            <div className="font-display text-[28px] text-cream">
-              {c.value ?? "—"}
-              {c.value !== null && <span className="text-[12px] text-cream/55 ml-1.5 font-sans">days</span>}
-            </div>
-          </div>
-        ))}
-        <div>
-          <div className="text-[10px] uppercase tracking-[0.13em] text-cream/55 mb-1">Overdue</div>
+        <div className="text-right">
+          <div className="text-[10px] uppercase tracking-[0.13em] text-cream/55 mb-0.5">Total overdue</div>
           <div
-            className="font-display text-[28px]"
-            style={{ color: overdueCount > 0 ? "#e89090" : "#8fbe70" }}
+            className="font-display text-[20px]"
+            style={{ color: totalOverdue > 0 ? "#e89090" : "#a0cc7a" }}
           >
-            {overdueCount}
-            <span className="text-[12px] text-cream/55 ml-1.5 font-sans">orders</span>
+            {totalOverdue}
+            <span className="text-[11px] text-cream/55 ml-1.5 font-sans">orders</span>
           </div>
         </div>
+      </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {cells.map(({ stage, label }) => {
+          const avg = avgDays(byStage[stage]);
+          const target = SLA_TARGETS[stage];
+          const overdue = overdueInStage(stage);
+          const isAtRisk = avg !== null && isFinite(target) && avg > target;
+          const ageColor = isAtRisk ? "#e89090" : (avg === null ? "#a0a09a" : "#e8e3da");
+          return (
+            <div key={stage} className="flex flex-col gap-1.5">
+              <div className="flex items-baseline justify-between">
+                <div className="text-[10px] uppercase tracking-[0.13em] text-cream/55">{label}</div>
+                {isFinite(target) && (
+                  <div className="text-[9px] text-cream/40 font-mono">tgt {target}d</div>
+                )}
+              </div>
+              <div className="flex items-baseline gap-2">
+                <div className="font-display text-[26px] leading-none" style={{ color: ageColor }}>
+                  {avg ?? "—"}
+                </div>
+                <div className="text-[11px] text-cream/55">
+                  {avg !== null && "days avg"}
+                </div>
+              </div>
+              <div className="text-[10px]">
+                {overdue > 0 ? (
+                  <span style={{ color: "#e89090" }}>{overdue} overdue</span>
+                ) : (
+                  <span className="text-cream/40">on track</span>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

@@ -68,12 +68,14 @@ export function Sidebar({ open, onClose }: SidebarProps) {
       <aside
         className={clsx(
           // Mobile: full-height slide-in drawer. Desktop: fixed sidebar.
-          "fixed lg:fixed top-0 left-0 z-40 h-full w-[240px]",
+          // Use inset-y-3 + left-3 instead of h-full + margin so the panel
+          // doesn't overflow the viewport when the margin is applied.
+          "fixed top-3 bottom-3 left-3 z-40 w-[232px]",
           "transition-transform duration-300 ease-out",
-          open ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
+          open ? "translate-x-0" : "-translate-x-[calc(100%+1rem)] lg:translate-x-0",
         )}
       >
-        <div className="h-full m-3 lg:m-4 glass-sage rounded-panel flex flex-col">
+        <div className="h-full glass-sage rounded-panel flex flex-col overflow-hidden">
 
           {/* Logo + close (mobile) */}
           <div className="flex items-center justify-between px-4 py-4 border-b border-white/10">
