@@ -24,8 +24,8 @@ interface StoreCtx {
   deleteOrder: (id: string) => Promise<void>;
   bulkAction: (
     ids: string[],
-    action: { type: "move"; stage: Stage } | { type: "archive"; archived: boolean }
-  ) => Promise<{ succeeded: number; failed: number; results: { id: string; ok: boolean; error?: string }[] } | null>;
+    action: { type: "move"; stage: Stage; adminPin?: string } | { type: "archive"; archived: boolean }
+  ) => Promise<{ succeeded: number; failed: number; results: { id: string; ok: boolean; error?: string }[]; pinRequired?: boolean } | null>;
   updateOrderDetails: (id: string, details: { door_style?: string; color?: string; sku_items?: { sku: string; quantity: number; description?: string }[]; production_start_date?: string | null; production_est_finish_date?: string | null; scheduled_delivery_date?: string | null }) => Promise<void>;
   claimOrder: (id: string, claimedBy: string | null) => Promise<boolean>;
   addTeamMember: (m: Omit<TeamMember, "id">) => Promise<void>;
@@ -217,62 +217,59 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const bulkAction = useCallback(async (
     ids: string[],
-    action: { type: "move"; stage: Stage } | { type: "archive"; archived: boolean }
+    action: { type: "move"; stage: Stage; adminPin?: string } | { type: "archive"; archived: boolean }
   ) => {
-    // Optimistic update — apply local changes immediately
-    const t = today();
-    if (action.type === "move") {
-      const apply = (list: Order[]) => list.map(o => ids.includes(o.id)
-        ? {
-            ...o,
-            stage: action.stage,
-            claimed_by: action.stage !== "New" ? null : o.claimed_by,
-            activity: [...o.activity, { text: `Moved to "${action.stage}" (bulk)`, time: t }],
-          }
-        : o);
-      setOrders(prev => apply(prev));
-      setWarranties(prev => apply(prev));
-    } else {
-      const apply = (list: Order[]) => list.map(o => ids.includes(o.id)
-        ? {
-            ...o,
-            archived: action.archived,
-            activity: [...o.activity, { text: `${action.archived ? "Archived" : "Restored"} (bulk)`, time: t }],
-          }
-        : o);
-      setOrders(prev => apply(prev));
-      setWarranties(prev => apply(prev));
+    // No optimistic update for bulk moves — gate failures (missing
+    // attachments, etc.) are common enough that flicker would be worse than
+    // a small delay. We refresh from the server after the response.
+    const payload = action.type === "move"
+      ? { ids, action: "move", stage: action.stage, admin_pin: action.adminPin }
+      : { ids, action: "archive", archived: action.archived };
+
+    // Direct fetch instead of apiCall — we need to inspect the response on
+    // non-2xx so the UI can prompt for PIN when the server says it's needed.
+    let res: Response;
+    try {
+      res = await fetch("/api/orders/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    } catch {
+      return null; // network error
     }
 
-    // Server call
-    const payload = action.type === "move"
-      ? { ids, action: "move", stage: action.stage }
-      : { ids, action: "archive", archived: action.archived };
-    const res = await apiCall("/api/orders/bulk", "POST", payload);
+    let data: { ok?: boolean; succeeded?: number; failed?: number; results?: { id: string; ok: boolean; error?: string }[]; error?: string } = {};
+    try { data = await res.json(); } catch { /* leave as empty */ }
 
-    if (!res) {
-      // Network failure — refresh data from server to undo the optimistic update
-      const [ordersRes, warrantiesRes] = await Promise.all([
-        apiCall("/api/orders?type=order"),
-        apiCall("/api/orders?type=warranty"),
-      ]);
-      if (ordersRes?.data) setOrders(ordersRes.data.map(shapeOrder));
-      if (warrantiesRes?.data) setWarranties(warrantiesRes.data.map(shapeOrder));
+    // 403 with admin_pin_required → tell caller to prompt for PIN
+    if (res.status === 403 && data.error === "admin_pin_required") {
+      return {
+        succeeded: 0,
+        failed: ids.length,
+        results: [],
+        pinRequired: true,
+      };
+    }
+
+    if (!res.ok) {
       return null;
     }
 
-    // If any rows failed, sync the affected ones from the server to revert
-    // their optimistic state. This is cheap (one round-trip per tab).
-    if (res.failed > 0) {
-      const [ordersRes, warrantiesRes] = await Promise.all([
-        apiCall("/api/orders?type=order"),
-        apiCall("/api/orders?type=warranty"),
-      ]);
-      if (ordersRes?.data) setOrders(ordersRes.data.map(shapeOrder));
-      if (warrantiesRes?.data) setWarranties(warrantiesRes.data.map(shapeOrder));
-    }
+    // Always refresh from server so local state matches reality. This is
+    // simpler and safer than trying to reconcile per-row optimistic updates.
+    const [ordersRes, warrantiesRes] = await Promise.all([
+      apiCall("/api/orders?type=order"),
+      apiCall("/api/orders?type=warranty"),
+    ]);
+    if (ordersRes?.data) setOrders(ordersRes.data.map(shapeOrder));
+    if (warrantiesRes?.data) setWarranties(warrantiesRes.data.map(shapeOrder));
 
-    return res;
+    return {
+      succeeded: data.succeeded ?? 0,
+      failed: data.failed ?? 0,
+      results: data.results ?? [],
+    };
   }, []);
 
   const claimOrder = useCallback(async (id: string, claimedBy: string | null) => {

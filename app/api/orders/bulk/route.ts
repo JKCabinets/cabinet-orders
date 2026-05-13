@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import crypto from "crypto";
 import { requireAuth, rateLimitOr429 } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import { getShopifyToken } from "@/lib/shopify";
@@ -7,12 +8,33 @@ import { getShopifyToken } from "@/lib/shopify";
 // batches client-side to keep request times reasonable.
 const MAX_BULK_IDS = 50;
 
-const ALLOWED_STAGES = new Set([
-  // Order stages
-  "New", "Entered", "In production", "At cross dock", "Delivered",
-  // Warranty stages
-  "New claim", "In review", "Parts ordered", "Shipped", "Resolved",
-]);
+// Stage orderings — used to detect backwards moves (target index < current index).
+// Mirrors ORDER_STAGES / WARRANTY_STAGES from lib/data.ts.
+const ORDER_STAGE_ORDER = ["New", "Entered", "In production", "At cross dock", "Delivered"] as const;
+const WARRANTY_STAGE_ORDER = ["New claim", "In review", "Parts ordered", "Shipped", "Resolved"] as const;
+const ORDER_STAGE_SET = new Set<string>(ORDER_STAGE_ORDER);
+const WARRANTY_STAGE_SET = new Set<string>(WARRANTY_STAGE_ORDER);
+const ALLOWED_STAGES = new Set<string>([...ORDER_STAGE_ORDER, ...WARRANTY_STAGE_ORDER]);
+
+// Admin PIN for backwards moves. Reads from env first; falls back to the
+// legacy hardcoded value so existing deployments keep working until
+// ADMIN_BACKWARD_PIN is configured. Constant-time compared on every check.
+const ADMIN_PIN = process.env.ADMIN_BACKWARD_PIN || "4951";
+
+function stageIndex(stage: string): { idx: number; flow: "order" | "warranty" | "unknown" } {
+  const orderIdx = ORDER_STAGE_ORDER.indexOf(stage as typeof ORDER_STAGE_ORDER[number]);
+  if (orderIdx >= 0) return { idx: orderIdx, flow: "order" };
+  const warrantyIdx = WARRANTY_STAGE_ORDER.indexOf(stage as typeof WARRANTY_STAGE_ORDER[number]);
+  if (warrantyIdx >= 0) return { idx: warrantyIdx, flow: "warranty" };
+  return { idx: -1, flow: "unknown" };
+}
+
+function timingSafeStringEqual(a: string, b: string): boolean {
+  const ab = Buffer.from(a, "utf8");
+  const bb = Buffer.from(b, "utf8");
+  if (ab.length !== bb.length) return false;
+  return crypto.timingSafeEqual(ab, bb);
+}
 
 interface BulkResult {
   id: string;
@@ -76,7 +98,7 @@ export async function POST(req: NextRequest) {
   const limited = await rateLimitOr429(req, 10, 60_000, "orders:bulk");
   if (limited) return limited;
 
-  let body: { ids?: unknown; action?: unknown; stage?: unknown; archived?: unknown };
+  let body: { ids?: unknown; action?: unknown; stage?: unknown; archived?: unknown; admin_pin?: unknown };
   try { body = await req.json(); } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
@@ -117,10 +139,10 @@ export async function POST(req: NextRequest) {
     targetArchived = body.archived;
   }
 
-  // ── Load all affected orders in one round-trip so we can do per-row auth ──
+  // ── Load all affected orders in one round-trip so we can do per-row checks ──
   const { data: orders, error: fetchError } = await supabase
     .from("orders")
-    .select("id, source, created_by, stage, shopify_id, archived")
+    .select("id, source, created_by, stage, shopify_id, archived, type")
     .in("id", ids);
 
   if (fetchError) {
@@ -133,9 +155,36 @@ export async function POST(req: NextRequest) {
   const displayName = auth.session.user.name ?? username;
   const today = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
+  // ── PRE-FLIGHT: if move involves any backwards transitions, require PIN ───
+  // We check this ONCE for the whole batch so the user enters their PIN once.
+  // The PIN is constant-time compared. We don't enumerate which orders would
+  // require it — the batch is admin-gated or not.
+  let backwardsMoveDetected = false;
+  if (action === "move" && targetStage) {
+    const targetInfo = stageIndex(targetStage);
+    for (const id of ids) {
+      const order = orderMap.get(id);
+      if (!order) continue;
+      const currentInfo = stageIndex(order.stage);
+      // Backwards if in the same flow and target idx < current idx
+      if (currentInfo.flow === targetInfo.flow && targetInfo.idx < currentInfo.idx) {
+        backwardsMoveDetected = true;
+        break;
+      }
+    }
+  }
+
+  if (backwardsMoveDetected) {
+    const providedPin = typeof body.admin_pin === "string" ? body.admin_pin : "";
+    if (!timingSafeStringEqual(providedPin, ADMIN_PIN)) {
+      return NextResponse.json(
+        { error: "admin_pin_required", message: "Backwards moves require admin PIN" },
+        { status: 403 }
+      );
+    }
+  }
+
   // ── Process each id, collecting per-row results ───────────────────────────
-  // We do these serially rather than in parallel to keep Shopify API calls
-  // (and DB writes) sequential. Bulk = 50 max, this is still fast.
   const results: BulkResult[] = [];
   const activityInserts: { order_id: string; text: string; time: string }[] = [];
 
@@ -146,9 +195,8 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
-    // Permission check — mirrors the single-action rules. Stage moves work
-    // like the single PATCH (any authenticated user). Archive follows the
-    // stricter rule from /api/orders/archive (admin or own manual orders).
+    // Permission check — only restrictive for archive. Stage moves match the
+    // single-order PATCH (any authenticated user).
     if (action === "archive" && !isAdmin) {
       if (order.source !== "Manual") {
         results.push({ id, ok: false, error: "forbidden: only admins can archive non-manual orders" });
@@ -165,6 +213,29 @@ export async function POST(req: NextRequest) {
       if (order.stage === targetStage) {
         results.push({ id, ok: true, shopify_synced: false });
         continue;
+      }
+
+      // ── GATE: moving New → Entered requires at least one attachment ───────
+      // Mirrors the gate in OrderModal.tsx (doMoveStage). Per-row failure
+      // mode: report it, continue with the rest.
+      if (targetStage === "Entered" && order.stage === "New") {
+        const { count, error: countError } = await supabase
+          .from("order_attachments")
+          .select("id", { count: "exact", head: true })
+          .eq("order_id", id);
+
+        if (countError) {
+          results.push({ id, ok: false, error: `failed to verify attachments: ${countError.message}` });
+          continue;
+        }
+        if (!count || count === 0) {
+          results.push({
+            id,
+            ok: false,
+            error: "needs_attachment: New → Entered requires at least one attachment (e.g. the manufacturer's acknowledgment PDF)",
+          });
+          continue;
+        }
       }
 
       const updates: Record<string, unknown> = { stage: targetStage };
@@ -234,6 +305,7 @@ export async function POST(req: NextRequest) {
         requested: ids.length,
         succeeded: results.filter(r => r.ok).length,
         failed: results.filter(r => !r.ok).length,
+        backwards_move: backwardsMoveDetected,
       },
     });
   } catch { /* non-critical */ }
@@ -243,5 +315,95 @@ export async function POST(req: NextRequest) {
     succeeded: results.filter(r => r.ok).length,
     failed: results.filter(r => !r.ok).length,
     results,
+  });
+}
+
+/**
+ * GET /api/orders/bulk?ids=a,b,c&stage=Entered
+ *
+ * Pre-flight check — returns whether each provided id would pass the stage
+ * gates for the given target stage. The UI uses this to show a preview
+ * before the user clicks "Move N orders" in the confirm dialog, so they
+ * know up front which ones will succeed and which won't.
+ *
+ * This does NOT do any writes. PIN-gated backwards moves return
+ * `{ requires_pin: true }` at the top level.
+ */
+export async function GET(req: NextRequest) {
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
+  const limited = await rateLimitOr429(req, 30, 60_000, "orders:bulk-preflight");
+  if (limited) return limited;
+
+  const url = new URL(req.url);
+  const idsParam = url.searchParams.get("ids") ?? "";
+  const targetStage = url.searchParams.get("stage") ?? "";
+  const ids = idsParam.split(",").map(s => s.trim()).filter(s => s.length > 0 && s.length < 100);
+
+  if (ids.length === 0 || ids.length > MAX_BULK_IDS) {
+    return NextResponse.json({ error: "1 to 50 ids required" }, { status: 422 });
+  }
+  if (!ALLOWED_STAGES.has(targetStage)) {
+    return NextResponse.json({ error: "valid stage required" }, { status: 422 });
+  }
+
+  const { data: orders, error } = await supabase
+    .from("orders")
+    .select("id, stage")
+    .in("id", ids);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  const targetInfo = stageIndex(targetStage);
+  let requiresPin = false;
+  const checks: { id: string; will_pass: boolean; reason?: string }[] = [];
+
+  // Pre-load attachment counts in one round-trip for orders moving to Entered
+  let attachmentMap = new Map<string, number>();
+  if (targetStage === "Entered") {
+    const newOrderIds = (orders ?? []).filter(o => o.stage === "New").map(o => o.id);
+    if (newOrderIds.length > 0) {
+      const { data: atts } = await supabase
+        .from("order_attachments")
+        .select("order_id")
+        .in("order_id", newOrderIds);
+      attachmentMap = new Map();
+      for (const a of (atts ?? [])) {
+        attachmentMap.set(a.order_id as string, (attachmentMap.get(a.order_id as string) ?? 0) + 1);
+      }
+    }
+  }
+
+  for (const id of ids) {
+    const order = (orders ?? []).find(o => o.id === id);
+    if (!order) {
+      checks.push({ id, will_pass: false, reason: "not_found" });
+      continue;
+    }
+
+    if (order.stage === targetStage) {
+      checks.push({ id, will_pass: true, reason: "no_change" });
+      continue;
+    }
+
+    const currentInfo = stageIndex(order.stage);
+    if (currentInfo.flow === targetInfo.flow && targetInfo.idx < currentInfo.idx) {
+      requiresPin = true;
+    }
+
+    if (targetStage === "Entered" && order.stage === "New") {
+      const attCount = attachmentMap.get(id) ?? 0;
+      if (attCount === 0) {
+        checks.push({ id, will_pass: false, reason: "needs_attachment" });
+        continue;
+      }
+    }
+
+    checks.push({ id, will_pass: true });
+  }
+
+  return NextResponse.json({
+    ok: true,
+    requires_pin: requiresPin,
+    checks,
   });
 }

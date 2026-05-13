@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { Archive, ChevronDown, Loader2, X } from "lucide-react";
+import { useState, useMemo, useRef, useEffect } from "react";
+import { Archive, ChevronDown, Loader2, X, AlertCircle } from "lucide-react";
 import { Order, ORDER_STAGES, WARRANTY_STAGES, Stage } from "@/lib/data";
 import { useStore } from "@/lib/store";
 
@@ -19,13 +19,46 @@ const STAGE_COLOR: Record<string, string> = {
   "Shipped": "#4a8fd4", "Resolved": "#4caf7a",
 };
 
+// Map a server-returned `reason` code to a user-friendly label.
+function reasonLabel(reason: string | undefined): string {
+  if (!reason) return "will move";
+  if (reason === "needs_attachment") return "needs attachment first";
+  if (reason === "no_change") return "already in target stage";
+  if (reason === "not_found") return "not found";
+  return reason;
+}
+
+interface PreflightCheck {
+  id: string;
+  will_pass: boolean;
+  reason?: string;
+}
+
+interface ConfirmState {
+  kind: "move" | "archive";
+  stage?: Stage;          // present when kind === "move"
+  checks?: PreflightCheck[];
+  requiresPin: boolean;
+}
+
 export function BulkActionBar({ selectedOrders, tab, onClear, onDone }: BulkActionBarProps) {
   const { bulkAction } = useStore();
-  const [confirming, setConfirming] = useState<null | { kind: "move"; stage: Stage } | { kind: "archive" }>(null);
+  const [confirming, setConfirming] = useState<ConfirmState | null>(null);
+  const [adminPin, setAdminPin] = useState("");
+  const [pinError, setPinError] = useState(false);
   const [working, setWorking] = useState(false);
+  const [preflighting, setPreflighting] = useState(false);
   const [resultMsg, setResultMsg] = useState<string | null>(null);
+  const pinInputRef = useRef<HTMLInputElement>(null);
 
   const count = selectedOrders.length;
+
+  // Auto-focus PIN field when the confirm dialog needs one
+  useEffect(() => {
+    if (confirming?.requiresPin) {
+      requestAnimationFrame(() => pinInputRef.current?.focus());
+    }
+  }, [confirming?.requiresPin]);
 
   // Determine the common stage — null if mixed
   const commonStage = useMemo<Stage | null>(() => {
@@ -39,42 +72,99 @@ export function BulkActionBar({ selectedOrders, tab, onClear, onDone }: BulkActi
   // Hide entirely when nothing selected
   if (count === 0) return null;
 
-  async function runMove(stage: Stage) {
-    setWorking(true);
+  // ── Pre-flight: ask the server which orders would pass the gates ─────────
+  async function preflightMove(stage: Stage) {
+    setPreflighting(true);
     setResultMsg(null);
-    const res = await bulkAction(selectedOrders.map(o => o.id), { type: "move", stage });
-    setWorking(false);
-    setConfirming(null);
-
-    if (!res) {
-      setResultMsg("⚠ Network error — please refresh");
-      return;
-    }
-    if (res.failed > 0) {
-      setResultMsg(`Moved ${res.succeeded}, ${res.failed} failed (likely permission)`);
-    } else {
-      setResultMsg(`✓ Moved ${res.succeeded} order${res.succeeded === 1 ? "" : "s"}`);
-      setTimeout(() => { setResultMsg(null); onDone(); }, 1500);
+    try {
+      const idsParam = selectedOrders.map(o => o.id).join(",");
+      const res = await fetch(`/api/orders/bulk?ids=${encodeURIComponent(idsParam)}&stage=${encodeURIComponent(stage)}`);
+      if (!res.ok) {
+        setResultMsg("⚠ Couldn't preview — try again");
+        return;
+      }
+      const data = await res.json() as { checks?: PreflightCheck[]; requires_pin?: boolean };
+      setConfirming({
+        kind: "move",
+        stage,
+        checks: data.checks ?? [],
+        requiresPin: data.requires_pin ?? false,
+      });
+      setAdminPin("");
+      setPinError(false);
+    } catch {
+      setResultMsg("⚠ Network error");
+    } finally {
+      setPreflighting(false);
     }
   }
 
-  async function runArchive() {
+  function openArchiveConfirm() {
+    setConfirming({ kind: "archive", requiresPin: false });
+    setAdminPin("");
+    setPinError(false);
+  }
+
+  // ── Execute the action after confirm ─────────────────────────────────────
+  async function execute() {
+    if (!confirming) return;
+
+    if (confirming.requiresPin && !adminPin) {
+      setPinError(true);
+      return;
+    }
+
     setWorking(true);
     setResultMsg(null);
-    const res = await bulkAction(selectedOrders.map(o => o.id), { type: "archive", archived: true });
+
+    let res;
+    if (confirming.kind === "move" && confirming.stage) {
+      res = await bulkAction(selectedOrders.map(o => o.id), {
+        type: "move",
+        stage: confirming.stage,
+        adminPin: confirming.requiresPin ? adminPin : undefined,
+      });
+    } else {
+      res = await bulkAction(selectedOrders.map(o => o.id), {
+        type: "archive",
+        archived: true,
+      });
+    }
+
     setWorking(false);
-    setConfirming(null);
 
     if (!res) {
       setResultMsg("⚠ Network error — please refresh");
+      setConfirming(null);
       return;
     }
-    if (res.failed > 0) {
-      setResultMsg(`Archived ${res.succeeded}, ${res.failed} failed (likely permission)`);
-    } else {
-      setResultMsg(`✓ Archived ${res.succeeded} order${res.succeeded === 1 ? "" : "s"}`);
-      setTimeout(() => { setResultMsg(null); onDone(); }, 1500);
+
+    // Defensive: server says PIN is needed (e.g. user wiped it mid-flight)
+    if (res.pinRequired) {
+      setPinError(true);
+      return;
     }
+
+    setConfirming(null);
+
+    const verb = confirming.kind === "move" ? "Moved" : "Archived";
+    if (res.failed > 0) {
+      setResultMsg(`${verb} ${res.succeeded} · ${res.failed} skipped (see card details)`);
+    } else if (res.succeeded === 0) {
+      setResultMsg(`No orders were modified`);
+    } else {
+      setResultMsg(`✓ ${verb} ${res.succeeded} order${res.succeeded === 1 ? "" : "s"}`);
+      setTimeout(() => { setResultMsg(null); onDone(); }, 1800);
+    }
+  }
+
+  // Pre-flight breakdown counts
+  const willPass = confirming?.checks?.filter(c => c.will_pass).length ?? count;
+  const willFail = confirming?.checks?.filter(c => !c.will_pass) ?? [];
+  const reasonCounts: Record<string, number> = {};
+  for (const c of willFail) {
+    const label = reasonLabel(c.reason);
+    reasonCounts[label] = (reasonCounts[label] ?? 0) + 1;
   }
 
   return (
@@ -132,13 +222,14 @@ export function BulkActionBar({ selectedOrders, tab, onClear, onDone }: BulkActi
         <MoveToDropdown
           stages={stages}
           currentStage={commonStage}
-          disabled={!commonStage || working}
-          onPick={(stage) => setConfirming({ kind: "move", stage })}
+          disabled={!commonStage || working || preflighting}
+          loading={preflighting}
+          onPick={preflightMove}
         />
 
         {/* Archive button */}
         <button
-          onClick={() => setConfirming({ kind: "archive" })}
+          onClick={openArchiveConfirm}
           disabled={working}
           className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all hover:brightness-110 disabled:opacity-50"
           style={{
@@ -187,13 +278,39 @@ export function BulkActionBar({ selectedOrders, tab, onClear, onDone }: BulkActi
             onClick={(e) => e.stopPropagation()}
           >
             <h2 className="text-sm font-semibold mb-2" style={{ color: "#f0ece4" }}>
-              {confirming.kind === "move" ? `Move ${count} order${count === 1 ? "" : "s"}?` : `Archive ${count} order${count === 1 ? "" : "s"}?`}
-            </h2>
-            <p className="text-xs mb-4" style={{ color: "rgba(232,227,218,0.65)" }}>
               {confirming.kind === "move"
-                ? <>All {count} orders will move from <strong>{commonStage}</strong> to <strong>{confirming.stage}</strong>. Stage changes sync to Shopify.</>
-                : <>All {count} selected orders will be moved to the archive. You can restore them later.</>}
+                ? `Move orders to "${confirming.stage}"?`
+                : `Archive ${count} order${count === 1 ? "" : "s"}?`}
+            </h2>
+
+            {/* Description */}
+            <p className="text-xs mb-3" style={{ color: "rgba(232,227,218,0.65)" }}>
+              {confirming.kind === "move" ? (
+                <>From <strong>{commonStage}</strong> to <strong>{confirming.stage}</strong>. Stage changes sync to Shopify.</>
+              ) : (
+                <>Selected orders will be moved to the archive. You can restore them later.</>
+              )}
             </p>
+
+            {/* Pre-flight breakdown for moves */}
+            {confirming.kind === "move" && confirming.checks && (
+              <div className="mb-3 space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full" style={{ background: "#8fbe70" }} />
+                  <span className="text-xs" style={{ color: "rgba(232,227,218,0.85)" }}>
+                    <strong>{willPass}</strong> will move
+                  </span>
+                </div>
+                {Object.entries(reasonCounts).map(([reason, n]) => (
+                  <div key={reason} className="flex items-start gap-2">
+                    <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" style={{ color: "#e08030" }} />
+                    <span className="text-xs" style={{ color: "rgba(255,170,80,0.95)" }}>
+                      <strong>{n}</strong> will be skipped — {reason}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* Order preview */}
             <div
@@ -204,15 +321,55 @@ export function BulkActionBar({ selectedOrders, tab, onClear, onDone }: BulkActi
                 color: "rgba(232,227,218,0.55)",
               }}
             >
-              {selectedOrders.slice(0, 8).map(o => (
-                <div key={o.id} className="truncate">
-                  {o.id} — {o.name}
-                </div>
-              ))}
+              {selectedOrders.slice(0, 8).map(o => {
+                const check = confirming.checks?.find(c => c.id === o.id);
+                const willFailThis = check && !check.will_pass;
+                return (
+                  <div key={o.id} className="truncate flex items-center gap-1.5">
+                    {willFailThis && <span style={{ color: "#e08030" }}>⊗</span>}
+                    {check?.will_pass && confirming.kind === "move" && <span style={{ color: "#8fbe70" }}>→</span>}
+                    <span style={{ color: willFailThis ? "rgba(255,170,80,0.85)" : "rgba(232,227,218,0.55)" }}>
+                      {o.id} — {o.name}
+                    </span>
+                  </div>
+                );
+              })}
               {selectedOrders.length > 8 && (
                 <div className="italic">…and {selectedOrders.length - 8} more</div>
               )}
             </div>
+
+            {/* PIN input for backwards moves */}
+            {confirming.requiresPin && (
+              <div className="mb-4">
+                <p className="text-[11px] mb-1.5 uppercase tracking-widest" style={{ color: "rgba(224,85,85,0.85)" }}>
+                  ⚠ Backwards move — Admin PIN required
+                </p>
+                <input
+                  ref={pinInputRef}
+                  type="password"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  autoComplete="off"
+                  value={adminPin}
+                  onChange={(e) => { setAdminPin(e.target.value); setPinError(false); }}
+                  onKeyDown={(e) => { if (e.key === "Enter" && adminPin) execute(); }}
+                  placeholder="Enter admin PIN"
+                  className="w-full px-3 py-2 rounded-lg text-sm transition-colors"
+                  style={{
+                    background: pinError ? "rgba(224,85,85,0.18)" : "rgba(255,255,255,0.08)",
+                    border: pinError ? "0.5px solid rgba(224,85,85,0.60)" : "0.5px solid rgba(255,255,255,0.18)",
+                    color: "#f0ece4",
+                    fontSize: "16px",
+                  }}
+                />
+                {pinError && (
+                  <p className="text-[10px] mt-1" style={{ color: "rgba(224,85,85,0.85)" }}>
+                    Incorrect PIN
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="flex gap-2 justify-end">
               <button
@@ -228,12 +385,9 @@ export function BulkActionBar({ selectedOrders, tab, onClear, onDone }: BulkActi
                 Cancel
               </button>
               <button
-                onClick={() => {
-                  if (confirming.kind === "move") runMove(confirming.stage);
-                  else runArchive();
-                }}
-                disabled={working}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 disabled:opacity-70"
+                onClick={execute}
+                disabled={working || willPass === 0}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 disabled:opacity-50"
                 style={{
                   background: "rgba(86,100,72,0.30)",
                   border: "0.5px solid rgba(86,100,72,0.85)",
@@ -241,7 +395,9 @@ export function BulkActionBar({ selectedOrders, tab, onClear, onDone }: BulkActi
                 }}
               >
                 {working && <Loader2 className="w-3 h-3 animate-spin" />}
-                {confirming.kind === "move" ? "Move" : "Archive"} {count}
+                {confirming.kind === "move"
+                  ? (willPass === count ? `Move ${count}` : `Move ${willPass} of ${count}`)
+                  : `Archive ${count}`}
               </button>
             </div>
           </div>
@@ -251,10 +407,11 @@ export function BulkActionBar({ selectedOrders, tab, onClear, onDone }: BulkActi
   );
 }
 
-function MoveToDropdown({ stages, currentStage, disabled, onPick }: {
+function MoveToDropdown({ stages, currentStage, disabled, loading, onPick }: {
   stages: readonly string[];
   currentStage: Stage | null;
   disabled: boolean;
+  loading: boolean;
   onPick: (stage: Stage) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -272,8 +429,8 @@ function MoveToDropdown({ stages, currentStage, disabled, onPick }: {
         }}
         title={disabled ? "Selected orders must all be in the same stage" : "Move to…"}
       >
-        Move to…
-        <ChevronDown className="w-3 h-3" />
+        {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : "Move to…"}
+        {!loading && <ChevronDown className="w-3 h-3" />}
       </button>
       {open && !disabled && (
         <div
