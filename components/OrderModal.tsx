@@ -205,12 +205,6 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
     }
   }
 
-  function getMemberAvatarStyle(initials: string) {
-    const member = team.find((m) => m.initials === initials);
-    if (member) return AVATAR_COLOR_STYLES[member.avatarColor];
-    return { backgroundColor: "rgba(86,100,72,0.20)", color: "#8fbe70", borderColor: "rgba(86,100,72,0.28)" };
-  }
-
   const isCompleted = liveOrder.stage === "Delivered" || liveOrder.stage === "Resolved";
 
   return (
@@ -487,12 +481,35 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
               </div>
               <div>
                 <p className={LABEL}>Team member</p>
-                <div
-                  style={{ ...getMemberAvatarStyle(liveOrder.member), borderWidth: 1, borderStyle: "solid" }}
-                  className="inline-flex items-center justify-center w-7 h-7 rounded-full text-[11px] font-semibold"
-                >
-                  {liveOrder.member}
-                </div>
+                {(() => {
+                  // Same logic as the table: prefer claimed_by → entered_by →
+                  // explicit member field. Empty when nobody owns it.
+                  const ownerName = liveOrder.claimed_by ?? liveOrder.entered_by ?? null;
+                  const ownerMember = ownerName
+                    ? team.find(m => m.name === ownerName)
+                    : (liveOrder.member ? team.find(m => m.initials === liveOrder.member) : null);
+                  if (!ownerName && !ownerMember) {
+                    return (
+                      <p className="text-xs text-cream/35 italic">unclaimed</p>
+                    );
+                  }
+                  const initials = ownerMember?.initials ?? (ownerName ? ownerName.slice(0, 2).toUpperCase() : "");
+                  const displayName = ownerMember?.name ?? ownerName ?? "";
+                  const style = ownerMember
+                    ? AVATAR_COLOR_STYLES[ownerMember.avatarColor]
+                    : { backgroundColor: "rgba(86,100,72,0.20)", color: "#8fbe70", borderColor: "rgba(86,100,72,0.28)" };
+                  return (
+                    <div className="flex items-center gap-2">
+                      <div
+                        style={{ ...style, borderWidth: 1, borderStyle: "solid" }}
+                        className="inline-flex items-center justify-center w-7 h-7 rounded-full text-[11px] font-semibold"
+                      >
+                        {initials}
+                      </div>
+                      <span className="text-xs text-cream/65">{displayName}</span>
+                    </div>
+                  );
+                })()}
               </div>
               <div>
                 <p className={LABEL}>Date</p>

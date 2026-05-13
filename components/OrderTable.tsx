@@ -6,7 +6,7 @@ import { useStore } from "@/lib/store";
 import { useSession } from "next-auth/react";
 import { formatDateWithYear, parseOrderDate } from "@/lib/dateUtils";
 import { checkAttachmentGate } from "@/lib/stageGates";
-import { ArrowUp, ArrowDown, RotateCcw, ChevronRight, Download } from "lucide-react";
+import { ArrowUp, ArrowDown, RotateCcw, ChevronRight, Download, X } from "lucide-react";
 
 /**
  * Sortable, dense, brand-styled table view of orders. Used on each stage
@@ -196,11 +196,21 @@ function OrderRow({
   rowIdx: number;
 }) {
   const { team } = useStore();
-  const member = team.find(m => m.initials === order.member);
-  const memberStyle = member
-    ? AVATAR_COLOR_STYLES[member.avatarColor]
+
+  // The team avatar follows whoever currently owns the order: the claimer
+  // (while in New) → the person who entered it → anyone explicitly set on
+  // the `member` field later. We deliberately ignore `order.member` when
+  // the order is unclaimed — older orders had a placeholder default that
+  // we don't want surfacing on otherwise-unclaimed rows.
+  const ownerName = order.claimed_by ?? order.entered_by ?? null;
+  const ownerMember = ownerName
+    ? team.find(m => m.name === ownerName)
+    : (order.member ? team.find(m => m.initials === order.member) : null);
+  const ownerInitials = ownerMember?.initials ?? (ownerName ? ownerName.slice(0, 2).toUpperCase() : "");
+  const ownerStyle = ownerMember
+    ? AVATAR_COLOR_STYLES[ownerMember.avatarColor]
     : { backgroundColor: "rgba(86,100,72,0.20)", color: "#8fbe70", borderColor: "rgba(86,100,72,0.28)" };
-  const memberName = member?.name ?? order.member;
+  const ownerDisplayName = ownerMember?.name ?? ownerName ?? "";
 
   function handleRowClick() {
     if (selectMode) onToggleSelect?.(order.id);
@@ -249,13 +259,13 @@ function OrderRow({
         <PaymentPill status={order.payment_status} />
       </td>
       <td className="px-3 py-2.5">
-        {order.claimed_by ? (
-          <div className="flex items-center gap-1.5" title={`Claimed by ${order.claimed_by}`}>
-            <div style={{ ...memberStyle, borderWidth: 1, borderStyle: "solid" }}
+        {ownerName ? (
+          <div className="flex items-center gap-1.5" title={`Owned by ${ownerDisplayName}`}>
+            <div style={{ ...ownerStyle, borderWidth: 1, borderStyle: "solid" }}
               className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold flex-shrink-0">
-              {order.member}
+              {ownerInitials}
             </div>
-            <span className="text-[10px] text-cream/55 truncate hidden xl:inline">{memberName}</span>
+            <span className="text-[10px] text-cream/55 truncate hidden xl:inline">{ownerDisplayName}</span>
           </div>
         ) : (
           <span className="text-[10px] text-cream/30 italic">unclaimed</span>
@@ -419,6 +429,15 @@ function StatusCell({
             title="Requires an attached PDF"
           >
             {busy ? "..." : (mobile ? "Enter" : "Mark Entered")}
+          </button>
+          <button
+            onClick={() => withBusy(() => claimOrder(order.id, null))}
+            disabled={busy}
+            title="Release claim"
+            aria-label="Release claim"
+            className="w-6 h-6 flex items-center justify-center rounded-full text-cream/55 hover:text-cream hover:bg-white/10 transition-all"
+          >
+            <X className="w-3 h-3" />
           </button>
         </div>
       );

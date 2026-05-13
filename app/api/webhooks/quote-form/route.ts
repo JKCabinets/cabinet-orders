@@ -251,7 +251,7 @@ export async function POST(req: NextRequest) {
     source: "Manual",
     detail: "Custom quote request",
     stage: "New",
-    member: "GB",
+    member: "",
     date: today,
     sku: "—",
     notes,

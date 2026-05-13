@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import Link from "next/link";
 import { useStore } from "@/lib/store";
 import { Order, ORDER_STAGES, OrderStage, getBackorderStatus } from "@/lib/data";
@@ -8,7 +8,7 @@ import { parseOrderDate } from "@/lib/dateUtils";
 import { PageHeader } from "@/components/AppShell";
 import { OrderModal } from "@/components/OrderModal";
 import { NewOrderModal } from "@/components/NewOrderModal";
-import { Plus, Search } from "lucide-react";
+import { Plus, Search, ChevronRight } from "lucide-react";
 
 const STAGE_ACCENT: Record<OrderStage, string> = {
   "New":            "#c97070",
@@ -26,6 +26,8 @@ export function DashboardClient() {
   const { orders } = useStore();
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [showNewForm, setShowNewForm] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const active = useMemo(() => orders.filter(o => !o.archived), [orders]);
 
@@ -118,9 +120,9 @@ export function DashboardClient() {
         right={
           <>
             <button
+              onClick={() => setSearchOpen(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] uppercase tracking-wider border border-cream/18 bg-white/4 text-cream/85 hover:bg-white/8 transition-all"
-              title="Search (coming soon)"
-              disabled
+              title="Search all orders"
             >
               <Search className="w-3.5 h-3.5" />
               Search
@@ -194,7 +196,124 @@ export function DashboardClient() {
       {showNewForm && (
         <NewOrderModal tab="orders" onClose={() => setShowNewForm(false)} />
       )}
+      {searchOpen && (
+        <SearchOverlay
+          orders={orders}
+          query={searchQuery}
+          onQueryChange={setSearchQuery}
+          onSelectOrder={(o) => {
+            setSelectedOrder(o);
+            setSearchOpen(false);
+          }}
+          onClose={() => { setSearchOpen(false); setSearchQuery(""); }}
+        />
+      )}
     </>
+  );
+}
+
+/* ─── Search overlay ────────────────────────────────────────────────── */
+
+/**
+ * Full-page search across all orders (active + archived). Opens from the
+ * dashboard "Search" button. Results filter live as the user types; pick
+ * one to open it in the modal.
+ */
+function SearchOverlay({
+  orders, query, onQueryChange, onSelectOrder, onClose,
+}: {
+  orders: Order[];
+  query: string;
+  onQueryChange: (q: string) => void;
+  onSelectOrder: (o: Order) => void;
+  onClose: () => void;
+}) {
+  // Close on Escape
+  React.useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  const results = useMemo(() => {
+    if (!query.trim()) return [] as Order[];
+    const q = query.trim().toLowerCase();
+    return orders
+      .filter(o =>
+        o.id.toLowerCase().includes(q) ||
+        o.name.toLowerCase().includes(q) ||
+        (o.sku ?? "").toLowerCase().includes(q) ||
+        (o.detail ?? "").toLowerCase().includes(q)
+      )
+      .slice(0, 30);
+  }, [orders, query]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center pt-[12vh] px-4 animate-fade-in"
+      style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(8px)" }}
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-[640px] rounded-panel overflow-hidden flex flex-col animate-slide-in"
+        style={{
+          background: "rgba(87, 98, 87, 0.28)",
+          backdropFilter: "blur(20px) saturate(140%)",
+          WebkitBackdropFilter: "blur(20px) saturate(140%)",
+          border: "0.5px solid rgba(145, 165, 151, 0.30)",
+          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.10), 0 24px 60px rgba(0,0,0,0.55)",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-white/10">
+          <Search className="w-4 h-4 text-cream/55 flex-shrink-0" />
+          <input
+            autoFocus
+            value={query}
+            onChange={(e) => onQueryChange(e.target.value)}
+            placeholder="Search by order #, customer, SKU…"
+            autoComplete="off"
+            data-1p-ignore="true"
+            data-lpignore="true"
+            data-form-type="other"
+            name="global-search-no-autofill"
+            className="flex-1 bg-transparent text-cream placeholder:text-cream/40 focus:outline-none text-[15px]"
+          />
+          <kbd className="text-[10px] text-cream/45 px-1.5 py-0.5 rounded border border-white/15 bg-white/5">ESC</kbd>
+        </div>
+        <div className="max-h-[60vh] overflow-y-auto">
+          {!query.trim() && (
+            <div className="px-5 py-12 text-center text-cream/40 text-sm">
+              Start typing to search across all orders.
+            </div>
+          )}
+          {query.trim() && results.length === 0 && (
+            <div className="px-5 py-12 text-center text-cream/40 text-sm">
+              No orders match <span className="text-cream/65">&ldquo;{query}&rdquo;</span>.
+            </div>
+          )}
+          {results.map(o => (
+            <button
+              key={o.id}
+              onClick={() => onSelectOrder(o)}
+              className="w-full text-left px-5 py-3 border-b border-white/5 hover:bg-white/8 transition-colors flex items-center gap-3"
+            >
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-0.5">
+                  <span className="font-mono text-[10px] text-cream/45">{o.id}</span>
+                  <span className="text-[9px] uppercase tracking-wider text-cream/55">{o.stage}</span>
+                  {o.archived && (
+                    <span className="text-[9px] uppercase tracking-wider text-cream/45 px-1.5 py-px rounded-full border border-white/15">archived</span>
+                  )}
+                </div>
+                <div className="font-display text-[16px] text-cream truncate">{o.name}</div>
+              </div>
+              <ChevronRight className="w-3.5 h-3.5 text-cream/40 flex-shrink-0" />
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 

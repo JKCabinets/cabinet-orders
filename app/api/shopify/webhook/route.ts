@@ -200,7 +200,10 @@ export async function POST(req: NextRequest) {
       source: "Shopify",
       detail,
       stage: "New",
-      member: "GB",
+      // No team member assigned at ingest — the order is "unclaimed" until
+      // someone clicks Claim. The avatar will populate from claimed_by /
+      // entered_by, not from this field.
+      member: "",
       date: today,
       sku: skus || "—",
       notes,
