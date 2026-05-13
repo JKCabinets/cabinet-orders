@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Trash2, Check, X, Pencil } from "lucide-react";
+import { Plus, Trash2, Check, X, Pencil, AlertTriangle } from "lucide-react";
 import { SkuItem } from "@/lib/data";
 import { useStore } from "@/lib/store";
 
@@ -16,7 +16,7 @@ interface OrderDetailsProps {
   readOnly?: boolean;
 }
 
-export function OrderDetails({ orderId, doorStyle, color, skuItems, productionStartDate, productionEstFinishDate, scheduledDeliveryDate, readOnly = false }: OrderDetailsProps) {
+export function OrderDetails({ orderId, doorStyle, color, skuItems, readOnly = false }: OrderDetailsProps) {
   const { updateOrderDetails } = useStore();
 
   const [editingField, setEditingField] = useState<"door_style" | "color" | null>(null);
@@ -27,6 +27,7 @@ export function OrderDetails({ orderId, doorStyle, color, skuItems, productionSt
   const [newQty, setNewQty] = useState("1");
   const [newDesc, setNewDesc] = useState("");
   const [editingItemIdx, setEditingItemIdx] = useState<number | null>(null);
+  const [backorderIdx, setBackorderIdx] = useState<number | null>(null);
   const [saved, setSaved] = useState(false);
 
   function startEdit(field: "door_style" | "color") {
@@ -75,6 +76,28 @@ export function OrderDetails({ orderId, doorStyle, color, skuItems, productionSt
     setEditingItemIdx(null);
   }
 
+  /**
+   * Save the backorder data for one SKU. Called from the inline editor.
+   * Setting backordered=false also clears the date & notes so a re-toggle
+   * later starts fresh.
+   */
+  async function saveBackorder(idx: number, data: { backordered: boolean; expected_ready_date?: string | null; backorder_notes?: string }) {
+    const updates: Partial<SkuItem> = data.backordered
+      ? {
+          backordered: true,
+          expected_ready_date: data.expected_ready_date || null,
+          backorder_notes: data.backorder_notes ?? "",
+        }
+      : {
+          backordered: false,
+          expected_ready_date: null,
+          backorder_notes: "",
+        };
+    const updated = localSkuItems.map((item, i) => i === idx ? { ...item, ...updates } : item);
+    await saveSkuItems(updated);
+    setBackorderIdx(null);
+  }
+
   return (
     <div className="p-5 border-b border-[rgba(255,255,255,0.10)]">
       <div className="flex items-center justify-between mb-4">
@@ -113,7 +136,7 @@ export function OrderDetails({ orderId, doorStyle, color, skuItems, productionSt
       {/* SKU Items */}
       <div>
         <div className="flex items-center justify-between mb-2">
-          <p className="text-[10px] uppercase tracking-widest text-[rgba(232,227,218,0.30)]">SKUs & quantities</p>
+          <p className="text-[10px] uppercase tracking-widest text-[rgba(232,227,218,0.30)]">SKUs &amp; quantities</p>
           {!readOnly && (
           <button
             onClick={() => setAddingItem(true)}
@@ -180,36 +203,100 @@ export function OrderDetails({ orderId, doorStyle, color, skuItems, productionSt
               <div className="grid grid-cols-12 gap-1.5 px-2 mb-0.5">
                 <span className="col-span-3 text-[9px] uppercase tracking-widest text-[#3e3e3e]">SKU</span>
                 <span className="col-span-1 text-[9px] uppercase tracking-widest text-[#3e3e3e] text-center">Qty</span>
-                <span className="col-span-7 text-[9px] uppercase tracking-widest text-[#3e3e3e]">Description</span>
+                <span className="col-span-6 text-[9px] uppercase tracking-widest text-[#3e3e3e]">Description</span>
+                <span className="col-span-2 text-[9px] uppercase tracking-widest text-[#3e3e3e] text-right pr-1">Status</span>
               </div>
             )}
-            {localSkuItems.map((item, idx) => (
-              <div key={idx}>
-                {editingItemIdx === idx ? (
-                  <EditSkuRow
-                    item={item}
-                    onSave={(updates) => updateSkuItem(idx, updates)}
-                    onCancel={() => setEditingItemIdx(null)}
-                  />
-                ) : (
-                  <div className="grid grid-cols-12 gap-1.5 items-center px-2 py-1.5 rounded-lg hover:bg-[rgba(255,255,255,0.04)] group transition-colors">
-                    <span className="col-span-3 text-[11px] font-mono text-[#e8e3da] truncate">{item.sku}</span>
-                    <span className="col-span-1 text-[11px] text-[rgba(232,227,218,0.50)] text-center font-medium">{item.quantity}</span>
-                    <span className={`text-[11px] text-[rgba(232,227,218,0.50)] truncate ${readOnly ? "col-span-8" : "col-span-6"}`}>{item.description ?? "—"}</span>
-                    {!readOnly && (
-                    <div className="col-span-2 flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => setEditingItemIdx(idx)} className="p-0.5 text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] transition-colors">
-                        <Pencil className="w-3 h-3" />
-                      </button>
-                      <button onClick={() => removeSkuItem(idx)} className="p-0.5 text-[rgba(232,227,218,0.50)] hover:text-red-400 transition-colors">
-                        <Trash2 className="w-3 h-3" />
-                      </button>
-                    </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
+            {localSkuItems.map((item, idx) => {
+              const isBackordered = !!item.backordered;
+              const todayIso = new Date().toISOString().split("T")[0];
+              const isReady = isBackordered && item.expected_ready_date && item.expected_ready_date <= todayIso;
+              const rowTint = isBackordered
+                ? (isReady
+                    ? "bg-[rgba(76,175,122,0.06)] hover:bg-[rgba(76,175,122,0.10)]"
+                    : "bg-[rgba(224,128,48,0.06)] hover:bg-[rgba(224,128,48,0.10)]")
+                : "hover:bg-[rgba(255,255,255,0.04)]";
+              return (
+                <div key={idx}>
+                  {editingItemIdx === idx ? (
+                    <EditSkuRow
+                      item={item}
+                      onSave={(updates) => updateSkuItem(idx, updates)}
+                      onCancel={() => setEditingItemIdx(null)}
+                    />
+                  ) : (
+                    <>
+                      <div className={`grid grid-cols-12 gap-1.5 items-center px-2 py-1.5 rounded-lg group transition-colors ${rowTint}`}>
+                        <span className="col-span-3 text-[11px] font-mono text-[#e8e3da] truncate">{item.sku}</span>
+                        <span className="col-span-1 text-[11px] text-[rgba(232,227,218,0.50)] text-center font-medium">{item.quantity}</span>
+                        <span className={`text-[11px] text-[rgba(232,227,218,0.50)] truncate ${readOnly ? "col-span-8" : "col-span-5"}`}>
+                          {item.description ?? "—"}
+                        </span>
+
+                        {/* Status column — backorder toggle + edit/delete */}
+                        {!readOnly && (
+                          <div className="col-span-3 flex items-center justify-end gap-1">
+                            {/* Backorder toggle / chip */}
+                            <button
+                              onClick={() => setBackorderIdx(backorderIdx === idx ? null : idx)}
+                              className="flex items-center gap-1 text-[9px] font-semibold px-1.5 py-0.5 rounded-md transition-colors"
+                              style={
+                                isBackordered
+                                  ? (isReady
+                                      ? { background: "rgba(76,175,122,0.14)", color: "#6dd6a0", border: "0.5px solid rgba(76,175,122,0.35)" }
+                                      : { background: "rgba(224,128,48,0.14)", color: "#f5a045", border: "0.5px solid rgba(224,128,48,0.40)" })
+                                  : { background: "transparent", color: "rgba(232,227,218,0.30)", border: "0.5px solid rgba(255,255,255,0.10)" }
+                              }
+                              title={
+                                isBackordered
+                                  ? (isReady
+                                      ? `Ready (expected ${item.expected_ready_date})`
+                                      : `Backordered${item.expected_ready_date ? ` until ${item.expected_ready_date}` : ""}`)
+                                  : "Mark as backordered"
+                              }
+                            >
+                              <AlertTriangle className="w-2.5 h-2.5" />
+                              {isBackordered ? (isReady ? "ready" : "back") : "ok"}
+                            </button>
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button onClick={() => setEditingItemIdx(idx)} className="p-0.5 text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] transition-colors">
+                                <Pencil className="w-3 h-3" />
+                              </button>
+                              <button onClick={() => removeSkuItem(idx)} className="p-0.5 text-[rgba(232,227,218,0.50)] hover:text-red-400 transition-colors">
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                        {readOnly && isBackordered && (
+                          <div className="col-span-2 flex items-center justify-end">
+                            <span
+                              className="text-[9px] font-semibold px-1.5 py-0.5 rounded-md"
+                              style={
+                                isReady
+                                  ? { background: "rgba(76,175,122,0.14)", color: "#6dd6a0", border: "0.5px solid rgba(76,175,122,0.35)" }
+                                  : { background: "rgba(224,128,48,0.14)", color: "#f5a045", border: "0.5px solid rgba(224,128,48,0.40)" }
+                              }
+                            >
+                              {isReady ? "✓ ready" : "⚠ back"}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Backorder editor (expanded) */}
+                      {backorderIdx === idx && !readOnly && (
+                        <BackorderEditor
+                          item={item}
+                          onSave={(data) => saveBackorder(idx, data)}
+                          onCancel={() => setBackorderIdx(null)}
+                        />
+                      )}
+                    </>
+                  )}
+                </div>
+              );
+            })}
             {localSkuItems.length > 0 && (
               <div className="flex items-center justify-between px-2 mt-1 pt-1.5 border-t border-[rgba(255,255,255,0.10)]">
                 <span className="text-[10px] text-[rgba(232,227,218,0.30)]">Total pieces</span>
@@ -281,6 +368,89 @@ function EditSkuRow({ item, onSave, onCancel }: { item: SkuItem; onSave: (u: Par
       <div className="col-span-2 flex gap-1">
         <button onClick={() => onSave({ sku, quantity: parseInt(qty) || 1, description: desc || undefined })} className="p-1 text-green-400 hover:text-green-300"><Check className="w-3 h-3" /></button>
         <button onClick={onCancel} className="p-1 text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da]"><X className="w-3 h-3" /></button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Inline editor for a single SKU's backorder state. Lets staff toggle the
+ * backorder flag, set an expected ready date, and write a quick note.
+ * Saving immediately persists via the parent's saveBackorder().
+ */
+function BackorderEditor({ item, onSave, onCancel }: {
+  item: SkuItem;
+  onSave: (data: { backordered: boolean; expected_ready_date?: string | null; backorder_notes?: string }) => void;
+  onCancel: () => void;
+}) {
+  const [backordered, setBackordered] = useState(!!item.backordered);
+  const [date, setDate] = useState(item.expected_ready_date ?? "");
+  const [notes, setNotes] = useState(item.backorder_notes ?? "");
+
+  return (
+    <div
+      className="mx-2 mt-1 mb-1 p-3 rounded-lg"
+      style={{
+        background: "rgba(224,128,48,0.05)",
+        border: "0.5px dashed rgba(224,128,48,0.35)",
+      }}
+    >
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-[10px] uppercase tracking-widest" style={{ color: "rgba(245,160,69,0.85)" }}>
+          Backorder · <span className="font-mono normal-case text-[10px]">{item.sku}</span>
+        </p>
+        <label className="flex items-center gap-1.5 text-[10px] cursor-pointer" style={{ color: "rgba(232,227,218,0.75)" }}>
+          <input
+            type="checkbox"
+            checked={backordered}
+            onChange={(e) => setBackordered(e.target.checked)}
+            className="accent-orange-500"
+          />
+          Mark as backordered
+        </label>
+      </div>
+
+      {backordered && (
+        <div className="grid grid-cols-3 gap-2 mb-2">
+          <div className="col-span-1">
+            <p className="text-[9px] uppercase tracking-widest text-[rgba(232,227,218,0.40)] mb-1">Expected ready</p>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="w-full field-input text-[11px] py-1 px-2"
+            />
+          </div>
+          <div className="col-span-2">
+            <p className="text-[9px] uppercase tracking-widest text-[rgba(232,227,218,0.40)] mb-1">Notes (internal)</p>
+            <input
+              type="text"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="e.g. vendor said 3 weeks"
+              className="w-full field-input text-[11px] py-1 px-2"
+            />
+          </div>
+        </div>
+      )}
+
+      <div className="flex gap-1.5 justify-end">
+        <button
+          onClick={onCancel}
+          className="flex items-center gap-1 px-2.5 py-1 rounded-md border border-[rgba(255,255,255,0.10)] text-[11px] text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] transition-all"
+        >
+          <X className="w-3 h-3" /> Cancel
+        </button>
+        <button
+          onClick={() => onSave({
+            backordered,
+            expected_ready_date: backordered ? (date || null) : null,
+            backorder_notes: backordered ? notes : "",
+          })}
+          className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-[rgba(255,255,255,0.04)] border border-[rgba(86,100,72,0.55)] text-[11px] text-[#e8e3da] hover:bg-[rgba(255,255,255,0.06)] transition-all"
+        >
+          <Check className="w-3 h-3" /> Save
+        </button>
       </div>
     </div>
   );

@@ -83,6 +83,46 @@ export interface SkuItem {
   sku: string;
   quantity: number;
   description?: string;
+  /**
+   * Backorder tracking. Set by the team after the vendor confirms a delay.
+   * `backordered: true` means this specific SKU is delayed beyond the order's
+   * normal production timeline. `expected_ready_date` is the vendor's
+   * commitment for when the SKU will be available. `backorder_notes` is
+   * staff-only context (e.g. "vendor said wait list is 3 weeks").
+   */
+  backordered?: boolean;
+  expected_ready_date?: string | null; // YYYY-MM-DD
+  backorder_notes?: string;
+}
+
+export type BackorderStatus = "none" | "pending" | "ready";
+
+/**
+ * Compute the order-level backorder status from its SKU items.
+ *   - "none"    → no SKUs are marked backordered
+ *   - "pending" → at least one backordered SKU's expected date is in the future
+ *                 (or has no date set)
+ *   - "ready"   → every backordered SKU has an expected_ready_date and they
+ *                 have all passed; the order is ready to advance.
+ *
+ * `todayIso` is optional for testing; defaults to the local YYYY-MM-DD.
+ */
+export function getBackorderStatus(
+  skuItems: SkuItem[] | undefined,
+  todayIso?: string
+): { status: BackorderStatus; count: number } {
+  const items = skuItems ?? [];
+  const backordered = items.filter(i => i.backordered);
+  if (backordered.length === 0) return { status: "none", count: 0 };
+
+  const today = todayIso ?? new Date().toISOString().split("T")[0];
+
+  // Pending if any backordered SKU has no date OR a future date
+  const allReady = backordered.every(i =>
+    i.expected_ready_date && i.expected_ready_date <= today
+  );
+
+  return { status: allReady ? "ready" : "pending", count: backordered.length };
 }
 
 export interface Order {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Order, AVATAR_COLOR_STYLES } from "@/lib/data";
+import { Order, AVATAR_COLOR_STYLES, getBackorderStatus } from "@/lib/data";
 import { useStore } from "@/lib/store";
 import { formatDateWithYear, parseOrderDate } from "@/lib/dateUtils";
 import { useSession } from "next-auth/react";
@@ -59,6 +59,12 @@ export function OrderCard({ order, onClick, style, selectMode = false, selected 
 
   // ── Entered-by: stored directly on the order ─────────────────────────────
   const enteredBy = order.entered_by ?? null;
+
+  // ── Backorder status ─────────────────────────────────────────────────────
+  // Only surface backorder badges once the order has been entered — before
+  // that, backorder data wouldn't make sense (nothing's been ordered yet).
+  const backorder = getBackorderStatus(order.sku_items);
+  const showBackorderBadge = !!enteredBy && backorder.status !== "none";
 
   // ── Claim logic ──────────────────────────────────────────────────────────
   const currentUserName = session?.user?.name ?? null;
@@ -214,20 +220,48 @@ export function OrderCard({ order, onClick, style, selectMode = false, selected 
           )}
           <span className="text-[9px] text-[rgba(232,227,218,0.45)]">{displayDate}</span>
         </div>
-        {/* Entered-by badge — shown once order has moved past New */}
-        {enteredBy && (
-          <div className="mt-1.5 flex items-center gap-1">
-            <span
-              className="text-[9px] px-1.5 py-px rounded-md font-medium truncate"
-              style={{
-                background: "rgba(212,146,42,0.13)",
-                color: "rgba(212,180,100,0.90)",
-                border: "0.5px solid rgba(212,146,42,0.30)",
-              }}
-              title={`Entered by ${enteredBy}`}
-            >
-              ✓ Entered by {enteredBy}
-            </span>
+        {/* Entered-by + backorder badges — shown once order has moved past New */}
+        {(enteredBy || showBackorderBadge) && (
+          <div className="mt-1.5 flex items-center gap-1 flex-wrap">
+            {enteredBy && (
+              <span
+                className="text-[9px] px-1.5 py-px rounded-md font-medium truncate"
+                style={{
+                  background: "rgba(212,146,42,0.13)",
+                  color: "rgba(212,180,100,0.90)",
+                  border: "0.5px solid rgba(212,146,42,0.30)",
+                }}
+                title={`Entered by ${enteredBy}`}
+              >
+                ✓ Entered by {enteredBy}
+              </span>
+            )}
+            {showBackorderBadge && backorder.status === "pending" && (
+              <span
+                className="text-[9px] px-1.5 py-px rounded-md font-semibold flex-shrink-0"
+                style={{
+                  background: "rgba(224,85,85,0.15)",
+                  color: "#e87070",
+                  border: "0.5px solid rgba(224,85,85,0.40)",
+                }}
+                title={`${backorder.count} SKU${backorder.count === 1 ? "" : "s"} backordered — see order details for dates`}
+              >
+                ⚠ {backorder.count} backordered
+              </span>
+            )}
+            {showBackorderBadge && backorder.status === "ready" && (
+              <span
+                className="text-[9px] px-1.5 py-px rounded-md font-semibold flex-shrink-0"
+                style={{
+                  background: "rgba(76,175,122,0.14)",
+                  color: "#6dd6a0",
+                  border: "0.5px solid rgba(76,175,122,0.35)",
+                }}
+                title={`All ${backorder.count} backordered SKU${backorder.count === 1 ? "" : "s"} have reached their expected ready date`}
+              >
+                ✓ Ready to advance
+              </span>
+            )}
           </div>
         )}
       </button>
