@@ -76,10 +76,22 @@ export function Controls({ search, onSearch, filterSource, onFilterSource, filte
       <div className="flex gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[rgba(232,227,218,0.45)]" />
-          <input type="text" value={search} onChange={e => onSearch(e.target.value)}
+          <input
+            type="text"
+            value={search}
+            onChange={e => onSearch(e.target.value)}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            name="board-search-no-autofill"
+            data-1p-ignore="true"
+            data-lpignore="true"
+            data-form-type="other"
             placeholder="Search by name, order ID, or SKU…"
             className="w-full pl-9 pr-4 py-2 rounded-xl text-sm placeholder:text-[rgba(232,227,218,0.40)] focus:border-[rgba(86,100,72,0.75)] transition-colors"
-            style={{ ...GI, fontSize: "16px" }} />
+            style={{ ...GI, fontSize: "16px" }}
+          />
         </div>
 
         {/* Select-mode toggle — visual state changes to indicate active mode */}

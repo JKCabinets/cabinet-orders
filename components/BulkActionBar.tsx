@@ -347,13 +347,20 @@ export function BulkActionBar({ selectedOrders, tab, onClear, onDone }: BulkActi
                 </p>
                 <input
                   ref={pinInputRef}
-                  type="password"
+                  type="text"
                   inputMode="numeric"
                   pattern="[0-9]*"
                   autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  name="bulk-action-pin-no-autofill"
+                  data-1p-ignore="true"
+                  data-lpignore="true"
+                  data-form-type="other"
                   value={adminPin}
-                  onChange={(e) => { setAdminPin(e.target.value); setPinError(false); }}
-                  onKeyDown={(e) => { if (e.key === "Enter" && adminPin) execute(); }}
+                  onChange={(e) => { setAdminPin(e.target.value.replace(/\D/g, "")); setPinError(false); }}
+                  onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Enter" && adminPin) execute(); }}
                   placeholder="Enter admin PIN"
                   className="w-full px-3 py-2 rounded-lg text-sm transition-colors"
                   style={{
@@ -361,7 +368,12 @@ export function BulkActionBar({ selectedOrders, tab, onClear, onDone }: BulkActi
                     border: pinError ? "0.5px solid rgba(224,85,85,0.60)" : "0.5px solid rgba(255,255,255,0.18)",
                     color: "#f0ece4",
                     fontSize: "16px",
-                  }}
+                    // CSS dot masking — visually masked without `type="password"`
+                    // which triggers Chrome's autofill heuristics on the rest of
+                    // the page.
+                    WebkitTextSecurity: "disc",
+                    textSecurity: "disc",
+                  } as React.CSSProperties}
                 />
                 {pinError && (
                   <p className="text-[10px] mt-1" style={{ color: "rgba(224,85,85,0.85)" }}>

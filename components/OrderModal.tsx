@@ -321,8 +321,17 @@ export function OrderModal({ order, tab, onClose, onStageChange }: OrderModalPro
                 <div className="flex gap-2">
                   <input
                     ref={pinInputRef}
-                    type="password"
+                    type="text"
                     inputMode="numeric"
+                    pattern="[0-9]*"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                    name="order-modal-pin-no-autofill"
+                    data-1p-ignore="true"
+                    data-lpignore="true"
+                    data-form-type="other"
                     maxLength={4}
                     value={adminPin}
                     onChange={(e) => { setAdminPin(e.target.value.replace(/\D/g, "")); setPinError(false); }}
@@ -334,7 +343,9 @@ export function OrderModal({ order, tab, onClose, onStageChange }: OrderModalPro
                       border: pinError ? "0.5px solid rgba(224,85,85,0.60)" : "0.5px solid rgba(255,255,255,0.18)",
                       color: "#e8e3da",
                       outline: "none",
-                    }}
+                      WebkitTextSecurity: "disc",
+                      textSecurity: "disc",
+                    } as React.CSSProperties}
                   />
                   <button
                     onClick={handlePinSubmit}
