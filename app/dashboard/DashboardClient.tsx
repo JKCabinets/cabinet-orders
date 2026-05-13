@@ -386,27 +386,13 @@ function SLAMiniPanel({ byStage }: { byStage: Record<OrderStage, Order[]> }) {
     { stage: "At cross dock",  label: "Cross dock" },
   ];
 
-  const totalOverdue = cells.reduce((sum, c) => sum + overdueInStage(c.stage), 0);
-
   return (
     <div className="glass-sage rounded-panel p-5 lg:p-6">
-      <div className="flex items-end justify-between mb-4">
-        <div>
-          <div className="eyebrow mb-1">Service levels</div>
-          <h2 className="font-display text-[22px] text-cream">
-            SLA at <em className="italic-storm">a glance</em>
-          </h2>
-        </div>
-        <div className="text-right">
-          <div className="text-[10px] uppercase tracking-[0.13em] text-cream/55 mb-1">Total overdue</div>
-          <div
-            className="font-display text-[22px] leading-none"
-            style={{ color: totalOverdue > 0 ? "#e89090" : "#a0cc7a" }}
-          >
-            {totalOverdue}
-            <span className="text-[11px] text-cream/55 ml-1.5 font-sans">orders</span>
-          </div>
-        </div>
+      <div className="mb-4">
+        <div className="eyebrow mb-1">Service levels</div>
+        <h2 className="font-display text-[22px] text-cream">
+          SLA at <em className="italic-storm">a glance</em>
+        </h2>
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {cells.map(({ stage, label }) => {
