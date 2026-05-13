@@ -50,11 +50,13 @@ const LABEL = "text-[10px] uppercase tracking-widest text-[rgba(232,227,218,0.35
 const ADMIN_CODE = "4951";
 
 export function OrderModal({ order, tab, onClose, onStageChange }: OrderModalProps) {
-  const { moveStage, updateNotes, archiveOrder, unarchiveOrder, deleteOrder, orders, warranties, team } = useStore();
+  const { moveStage, updateNotes, updateInternalNotes, archiveOrder, unarchiveOrder, deleteOrder, orders, warranties, team } = useStore();
   const { data: session } = useSession();
   const currentUserName = session?.user?.name ?? undefined;
   const [notes, setNotes] = useState(order.notes);
   const [notesChanged, setNotesChanged] = useState(false);
+  const [internalNotes, setInternalNotes] = useState(order.internal_notes ?? "");
+  const [internalNotesChanged, setInternalNotesChanged] = useState(false);
   const [enteredGateError, setEnteredGateError] = useState(false);
   const [checkingAttachments, setCheckingAttachments] = useState(false);
   // Admin PIN for backwards moves
@@ -84,6 +86,11 @@ export function OrderModal({ order, tab, onClose, onStageChange }: OrderModalPro
     setNotes(liveOrder.notes);
     setNotesChanged(false);
   }, [liveOrder.notes]);
+
+  useEffect(() => {
+    setInternalNotes(liveOrder.internal_notes ?? "");
+    setInternalNotesChanged(false);
+  }, [liveOrder.internal_notes]);
 
   // When PIN prompt appears: blur whatever has focus, then claim it
   useEffect(() => {
@@ -152,6 +159,11 @@ export function OrderModal({ order, tab, onClose, onStageChange }: OrderModalPro
   function handleSaveNotes() {
     updateNotes(liveOrder.id, notes);
     setNotesChanged(false);
+  }
+
+  function handleSaveInternalNotes() {
+    updateInternalNotes(liveOrder.id, internalNotes);
+    setInternalNotesChanged(false);
   }
 
   function handleDelete() {
@@ -428,17 +440,17 @@ export function OrderModal({ order, tab, onClose, onStageChange }: OrderModalPro
               </div>
             )}
 
-            {/* Notes — Quote orders get structured display, others get plain textarea */}
+            {/* Customer-facing notes — Quote orders get structured display, others get plain textarea */}
             {liveOrder.source === "Manual" && liveOrder.notes?.includes("QUOTE REQUEST") ? (
               <QuoteInfoPanel notes={liveOrder.notes} />
             ) : (
               <div>
-                <p className={LABEL}>Notes</p>
+                <p className={LABEL}>Customer Notes</p>
                 <textarea
                   value={notes}
                   onChange={(e) => { setNotes(e.target.value); setNotesChanged(true); }}
-                  placeholder="Add notes…"
-                  rows={8}
+                  placeholder="Add notes visible to the customer / written into the Shopify order…"
+                  rows={6}
                   className="w-full rounded-lg p-2.5 text-xs resize-none transition-colors placeholder:text-[rgba(232,227,218,0.20)]"
                   style={{
                     background: "rgba(255,255,255,0.03)",
@@ -458,6 +470,47 @@ export function OrderModal({ order, tab, onClose, onStageChange }: OrderModalPro
                 )}
               </div>
             )}
+
+            {/* Internal notes — staff-only, never sent to Shopify, shown in red on export PDF */}
+            <div className="mt-3">
+              <div className="flex items-center gap-1.5 mb-1">
+                <p className={`${LABEL} mb-0`} style={{ color: "rgba(224,85,85,0.65)" }}>
+                  Internal Notes
+                </p>
+                <span
+                  className="text-[8px] uppercase tracking-widest px-1 py-px rounded"
+                  style={{
+                    background: "rgba(224,85,85,0.12)",
+                    color: "rgba(224,85,85,0.85)",
+                    border: "0.5px solid rgba(224,85,85,0.3)",
+                  }}
+                >
+                  staff only
+                </span>
+              </div>
+              <textarea
+                value={internalNotes}
+                onChange={(e) => { setInternalNotes(e.target.value); setInternalNotesChanged(true); }}
+                placeholder="Visible to staff and on the export PDF. Never sent to Shopify or the customer."
+                rows={4}
+                className="w-full rounded-lg p-2.5 text-xs resize-none transition-colors placeholder:text-[rgba(232,227,218,0.20)]"
+                style={{
+                  background: "rgba(224,85,85,0.04)",
+                  border: "0.5px dashed rgba(224,85,85,0.3)",
+                  color: "rgba(232,227,218,0.85)",
+                  fontSize: "16px",
+                }}
+              />
+              {internalNotesChanged && (
+                <button
+                  onClick={handleSaveInternalNotes}
+                  className="mt-1.5 text-[11px] transition-colors"
+                  style={{ color: "#8fbe70" }}
+                >
+                  Save internal notes →
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Order details */}

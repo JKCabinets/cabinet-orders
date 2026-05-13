@@ -18,6 +18,7 @@ interface StoreCtx {
   addOrder: (o: Partial<Order> & { type: "order" | "warranty" }) => Promise<void>;
   moveStage: (id: string, stage: Stage, enteredByName?: string) => Promise<void>;
   updateNotes: (id: string, notes: string) => Promise<void>;
+  updateInternalNotes: (id: string, internal_notes: string) => Promise<void>;
   archiveOrder: (id: string) => Promise<void>;
   unarchiveOrder: (id: string) => Promise<void>;
   deleteOrder: (id: string) => Promise<void>;
@@ -57,6 +58,7 @@ function shapeOrder(raw: Record<string, unknown>): Order {
     date: (raw.date as string) ?? "",
     sku: (raw.sku as string) ?? "",
     notes: (raw.notes as string) ?? "",
+    internal_notes: (raw.internal_notes as string) ?? "",
     archived: (raw.archived as boolean) ?? false,
     activity: (raw.activity as { text: string; time: string }[]) ?? [],
     door_style: (raw.door_style as string) ?? "",
@@ -119,6 +121,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const res = await apiCall("/api/orders", "POST", {
       type: partial.type, name: partial.name, detail: partial.detail,
       sku: partial.sku, source: partial.source, member: partial.member, notes: partial.notes,
+      internal_notes: partial.internal_notes,
       door_style: partial.door_style, color: partial.color, sku_items: partial.sku_items,
       vendor: partial.vendor, ship_to: partial.ship_to,
       customer_phone: partial.customer_phone, customer_email: partial.customer_email,
@@ -166,6 +169,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setOrders(prev => update(prev));
     setWarranties(prev => update(prev));
     await apiCall(`/api/orders/${id}`, "PATCH", { notes });
+  }, []);
+
+  const updateInternalNotes = useCallback(async (id: string, internal_notes: string) => {
+    const update = (list: Order[]) => list.map(o => o.id === id ? { ...o, internal_notes } : o);
+    setOrders(prev => update(prev));
+    setWarranties(prev => update(prev));
+    await apiCall(`/api/orders/${id}`, "PATCH", { internal_notes });
   }, []);
 
   const archiveOrder = useCallback(async (id: string) => {
@@ -253,7 +263,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   return (
     <Store.Provider value={{
       orders, warranties, team, loading,
-      addOrder, moveStage, updateNotes, updateOrderDetails, archiveOrder, unarchiveOrder, deleteOrder,
+      addOrder, moveStage, updateNotes, updateInternalNotes, updateOrderDetails, archiveOrder, unarchiveOrder, deleteOrder,
       claimOrder, addTeamMember, updateTeamMember, deactivateTeamMember, deleteTeamMember,
     }}>
       {children}

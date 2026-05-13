@@ -96,6 +96,13 @@ export interface Order {
   date: string;
   sku: string;
   notes: string;
+  /**
+   * Internal-only notes. Visible to staff in the order modal and shown in a
+   * clearly-marked section of the export PDF; never sent to customers via
+   * shopify writeback. Use this for "customer is grumpy", "vendor is slow",
+   * pricing comments, etc.
+   */
+  internal_notes?: string;
   activity: ActivityEntry[];
   archived?: boolean;
   // Order details

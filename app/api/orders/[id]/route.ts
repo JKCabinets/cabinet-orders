@@ -139,6 +139,7 @@ export async function PATCH(
   if (body.stage && body.stage !== "New") updates.claimed_by = null;
   if (body.stage === "Entered")    updates.entered_by = auth.session.user.name;
   if (body.notes !== undefined)    updates.notes      = sanitize(body.notes as string);
+  if (body.internal_notes !== undefined) updates.internal_notes = sanitize(body.internal_notes as string);
   if (body.archived !== undefined) updates.archived   = body.archived;
   if (body.member)                 updates.member     = body.member;
   if (body.door_style !== undefined) updates.door_style = sanitize(body.door_style as string);
@@ -165,6 +166,7 @@ export async function PATCH(
   let activityText = "";
   if (body.stage)                          activityText = `Moved to "${body.stage}" by ${auth.session.user.name}`;
   else if (body.notes !== undefined)       activityText = `Notes updated by ${auth.session.user.name}`;
+  else if (body.internal_notes !== undefined) activityText = `Internal notes updated by ${auth.session.user.name}`;
   else if (body.archived === true)         activityText = `Archived by ${auth.session.user.name}`;
   else if (body.archived === false)        activityText = `Restored by ${auth.session.user.name}`;
   else if (body.production_start_date !== undefined || body.production_est_finish_date !== undefined)

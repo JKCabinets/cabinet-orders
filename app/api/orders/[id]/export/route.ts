@@ -59,6 +59,7 @@ export async function GET(
   const customerPhone       = order.customer_phone  || "";
   const customerEmail       = order.customer_email  || "";
   const specialInstructions = order.notes           || "";
+  const internalNotes       = order.internal_notes  || "";
   const deliveryMethod      = order.delivery_method || "";
   const shopifyId           = order.shopify_id      || order.id || "—";
   const status              = order.stage           || "—";
@@ -188,6 +189,29 @@ export async function GET(
     .section-style { font-weight: 600; }
     .sku-code { font-family: 'Courier New', monospace; font-weight: 400; font-size: 8.5px; color: #555; }
 
+    /* Internal notes block — distinct red/amber treatment so it can't be mistaken
+       for customer-facing content. Hidden if no internal notes are present. */
+    .internal-block {
+      margin-top: 12px;
+      border: 1.5px dashed #c44;
+      background: #fff8f6;
+      padding: 8px 10px;
+    }
+    .internal-banner {
+      font-size: 8.5px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: #c44;
+      margin-bottom: 4px;
+    }
+    .internal-body {
+      font-size: 10px;
+      color: #333;
+      white-space: pre-wrap;
+      line-height: 1.4;
+    }
+
     .footer { margin-top: 12px; font-size: 8px; color: #aaa; text-align: center; }
 
     @media print {
@@ -280,6 +304,12 @@ export async function GET(
       ${lineRows || `<tr><td colspan="6" style="text-align:center;color:#aaa;padding:18px;">No line items recorded</td></tr>`}
     </tbody>
   </table>
+
+  ${internalNotes ? `
+  <div class="internal-block">
+    <div class="internal-banner">⚠ Internal Notes — Not for Customer</div>
+    <div class="internal-body">${h(internalNotes)}</div>
+  </div>` : ""}
 
   <div class="footer">
     Exported ${h(exportedAt)} · JK Cabinets Order Management

@@ -50,6 +50,7 @@ export function NewOrderModal({ tab, onClose }: NewOrderModalProps) {
   const [source, setSource] = useState<Source>("Manual");
   const [member, setMember] = useState(activeTeam[0]?.initials ?? "AX");
   const [notes, setNotes] = useState("");
+  const [internalNotes, setInternalNotes] = useState("");
   const [doorStyle, setDoorStyle] = useState("");
   const [color, setColor] = useState("");
   const [skuItems, setSkuItems] = useState<SkuItem[]>([]);
@@ -140,6 +141,7 @@ export function NewOrderModal({ tab, onClose }: NewOrderModalProps) {
       name, detail,
       sku: skuItems.map((i) => i.sku).join(", ") || "",
       source, member, notes,
+      internal_notes: internalNotes,
       door_style: doorStyle,
       color,
       sku_items: skuItems,
@@ -423,13 +425,29 @@ export function NewOrderModal({ tab, onClose }: NewOrderModalProps) {
               </select>
             </Field>
 
-          <Field label="Notes">
+          <Field label="Customer Notes">
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Optional notes…"
+              placeholder="Visible to the customer (synced to Shopify)…"
               rows={2}
               style={{ ...GLASS_INPUT, resize: "none" }}
+              className="placeholder:text-[rgba(232,227,218,0.20)]"
+            />
+          </Field>
+
+          <Field label="Internal Notes (staff only)">
+            <textarea
+              value={internalNotes}
+              onChange={(e) => setInternalNotes(e.target.value)}
+              placeholder="Visible to staff only — appears on the export PDF, never sent to Shopify."
+              rows={2}
+              style={{
+                ...GLASS_INPUT,
+                resize: "none",
+                background: "rgba(224,85,85,0.04)",
+                border: "0.5px dashed rgba(224,85,85,0.3)",
+              }}
               className="placeholder:text-[rgba(232,227,218,0.20)]"
             />
           </Field>

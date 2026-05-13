@@ -88,6 +88,7 @@ export async function POST(req: NextRequest) {
     date:       today,
     sku:        sanitize((body.sku as string) ?? ""),
     notes:      sanitize((body.notes as string) ?? ""),
+    internal_notes: sanitize((body.internal_notes as string) ?? ""),
     archived:   false,
     door_style: sanitize((body.door_style as string) ?? ""),
     color:      sanitize((body.color as string) ?? ""),
