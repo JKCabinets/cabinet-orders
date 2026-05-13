@@ -2,17 +2,29 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, escapeHtml } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import { groupSkuItemsByStyle, decodeSku } from "@/lib/skuDecoder";
+import { lookupVendorsForSkus } from "@/lib/vendorLookup";
+import type { SkuItem } from "@/lib/skuDecoder";
 
 // Short alias since this file does a lot of escaping
 const h = escapeHtml;
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
   const { id } = await params;
+
+  // Optional ?vendor= filter. When present, render only the line items for
+  // that vendor; otherwise render the combined PDF as before. Unmapped SKUs
+  // (no vendor in shopify_products and no order.vendor fallback) appear as
+  // warning rows on every per-vendor PDF.
+  const { searchParams } = new URL(req.url);
+  const rawVendorParam = searchParams.get("vendor");
+  const vendorFilter = rawVendorParam && rawVendorParam.length < 200
+    ? rawVendorParam.trim()
+    : null;
 
   // Fetch order
   const { data: order, error } = await supabase
@@ -34,23 +46,33 @@ export async function GET(
 
   const keyedByName = teamMember?.name ?? order.member ?? "—";
 
-  // ── Vendor: stored on order, or look up from shopify_products by SKU ─────
-  let vendor = order.vendor || "";
-  if (!vendor) {
-    const skuItemsForVendor: { sku: string }[] = Array.isArray(order.sku_items) ? order.sku_items : [];
-    const firstSkuFull = skuItemsForVendor.find(i => i.sku)?.sku ?? "";
-    const firstSkuParts = firstSkuFull.split("-");
-    const firstSku = firstSkuParts.length >= 3
-      ? firstSkuParts.slice(0, firstSkuParts.length - 2).join("-")
-      : firstSkuFull;
-    if (firstSku) {
-      const { data: product } = await supabase
-        .from("shopify_products")
-        .select("vendor")
-        .eq("sku", firstSku)
-        .single();
-      if (product?.vendor) vendor = product.vendor;
-    }
+  // ── Vendor mapping for every SKU on the order ────────────────────────────
+  const allSkuItems: SkuItem[] = Array.isArray(order.sku_items) ? order.sku_items : [];
+  const vendorLookup = await lookupVendorsForSkus(allSkuItems, order.vendor);
+
+  // The "Vendor" field on the order header. For a vendor-filtered export it's
+  // the filtered vendor; otherwise fall back to the legacy logic (first SKU's
+  // vendor, then order.vendor).
+  let headerVendor = "";
+  if (vendorFilter) {
+    headerVendor = vendorFilter;
+  } else if (order.vendor) {
+    headerVendor = order.vendor;
+  } else if (vendorLookup.uniqueVendors.length === 1) {
+    // Single-vendor order — use that vendor in the header even without a filter
+    headerVendor = vendorLookup.uniqueVendors[0];
+  } else if (vendorLookup.uniqueVendors.length > 1) {
+    headerVendor = vendorLookup.uniqueVendors.join(", ");
+  }
+
+  // If the filter is set but doesn't match any vendor on this order, 404.
+  // Defensive — protects against a stale UI sending a vendor that no longer
+  // has line items.
+  if (vendorFilter && !vendorLookup.uniqueVendors.includes(vendorFilter)) {
+    return new NextResponse(
+      `No line items for vendor "${vendorFilter}" on this order`,
+      { status: 404 }
+    );
   }
 
   // ── Field mappings (raw — escaping happens at interpolation site) ────────
@@ -65,11 +87,31 @@ export async function GET(
   const status              = order.stage           || "—";
   const orderedOn           = order.date            || "—";
 
-  // ── Line items grouped by door style + color decoded from SKU ────────────
-  const skuItems: { sku: string; quantity: number; description?: string; door_style?: string; color?: string }[] =
-    Array.isArray(order.sku_items) ? order.sku_items : [];
+  // ── Filter line items by vendor ──────────────────────────────────────────
+  // For a per-vendor PDF: include items that belong to this vendor PLUS any
+  // unassigned items (per the spec — they appear on every per-vendor PDF as
+  // warning rows so they're easy to spot).
+  // For the combined PDF: include everything.
+  let filteredSkuItems: SkuItem[];
+  const unassignedItems: SkuItem[] = [];
 
-  const groups = groupSkuItemsByStyle(skuItems);
+  if (vendorFilter) {
+    filteredSkuItems = [];
+    for (const item of allSkuItems) {
+      if (!item.sku) continue;
+      const v = vendorLookup.vendorBySku.get(item.sku);
+      if (v === vendorFilter) {
+        filteredSkuItems.push(item);
+      } else if (!v) {
+        unassignedItems.push(item);
+      }
+      // Items mapped to other vendors are skipped on this per-vendor PDF
+    }
+  } else {
+    filteredSkuItems = allSkuItems;
+  }
+
+  const groups = groupSkuItemsByStyle(filteredSkuItems);
 
   let rowIndex = 1;
   const lineRows = groups.map(group => {
@@ -78,8 +120,6 @@ export async function GET(
     const doorCode  = decoded?.doorCode  ?? "";
     const colorCode = decoded?.colorCode ?? "";
 
-    // Escape every interpolated value — door codes can theoretically contain
-    // chars that need escaping if the upstream decoder ever changes.
     const doorLabel  = doorCode
       ? `${h(group.doorStyle)} <span class="sku-code">"${h(doorCode)}"</span>`
       : h(group.doorStyle);
@@ -112,28 +152,62 @@ export async function GET(
     return sectionRow + itemRows;
   }).join("");
 
+  // ── Unassigned-SKU warning rows (per-vendor PDFs only) ───────────────────
+  let unassignedRows = "";
+  if (vendorFilter && unassignedItems.length > 0) {
+    const items = unassignedItems.map(item => {
+      const displaySku = item.sku ?? "—";
+      return `
+    <tr class="unassigned-row">
+      <td>${rowIndex++}</td>
+      <td class="mono">${h(displaySku)}</td>
+      <td>${h(item.description ?? "—")} <span class="unassigned-pill">⚠ unmapped vendor</span></td>
+      <td class="right">—</td>
+      <td class="center">${h(item.quantity ?? 1)}</td>
+      <td class="right">—</td>
+    </tr>`;
+    }).join("");
+
+    unassignedRows = `
+    <tr class="section-row unassigned-section">
+      <td colspan="6">
+        <span class="section-label" style="color:#c44">⚠ Unmapped SKUs</span>
+        &nbsp;—&nbsp;
+        <span class="section-style" style="color:#c44">These items aren&#x27;t mapped to any vendor. Verify before fulfilling.</span>
+      </td>
+    </tr>${items}`;
+  }
+
   const exportedAt = new Date().toLocaleDateString("en-US", {
     month: "long", day: "numeric", year: "numeric",
     hour: "2-digit", minute: "2-digit",
   });
 
-  // A strict Content-Security-Policy further reduces blast radius of any
-  // missed escape. `unsafe-inline` is needed for the inline <style> block.
   const csp = [
     "default-src 'none'",
     "style-src 'unsafe-inline' https://fonts.googleapis.com",
     "font-src https://fonts.gstatic.com",
-    "script-src 'unsafe-inline'", // the print button uses inline onclick
+    "script-src 'unsafe-inline'",
     "img-src data:",
     "base-uri 'none'",
     "form-action 'none'",
   ].join("; ");
 
+  // ── Page title — vendor-aware for per-vendor PDFs ────────────────────────
+  const pageTitle = vendorFilter
+    ? `Order ${order.id} — ${vendorFilter}`
+    : `Order ${order.id}`;
+
+  // Vendor sub-header — visible "VENDOR PDF" indicator (per #4c)
+  const vendorSubHeader = vendorFilter
+    ? `<div class="vendor-banner">For vendor: <strong>${h(vendorFilter)}</strong></div>`
+    : "";
+
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Order ${h(order.id)}</title>
+  <title>${h(pageTitle)}</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -166,6 +240,18 @@ export async function GET(
     .order-title   { font-size: 18px; font-weight: 700; color: #1a1a1a; letter-spacing: -0.5px; }
     .order-title span { font-weight: 400; }
 
+    /* Vendor banner — only present on per-vendor PDFs */
+    .vendor-banner {
+      background: #f0f6fb;
+      border: 1px solid #5a8fb8;
+      border-left: 4px solid #2e5e8a;
+      padding: 6px 12px;
+      margin-bottom: 10px;
+      font-size: 11px;
+      color: #1a3e60;
+      border-radius: 2px;
+    }
+
     .info-table { width: 100%; border-collapse: collapse; border: 1px solid #d0d0d0; margin-bottom: 10px; }
     .info-table td { padding: 4px 8px; border: 1px solid #d0d0d0; vertical-align: top; }
     .info-table .lbl { font-weight: 700; white-space: nowrap; width: 80px; color: #111; }
@@ -189,8 +275,22 @@ export async function GET(
     .section-style { font-weight: 600; }
     .sku-code { font-family: 'Courier New', monospace; font-weight: 400; font-size: 8.5px; color: #555; }
 
-    /* Internal notes block — distinct red/amber treatment so it can't be mistaken
-       for customer-facing content. Hidden if no internal notes are present. */
+    /* Unassigned SKU rows — warning treatment on per-vendor PDFs */
+    .unassigned-section td { background: #fff5f5; }
+    .unassigned-row td { background: #fff8f8; }
+    .unassigned-pill {
+      display: inline-block;
+      font-size: 8px;
+      font-weight: 700;
+      padding: 1px 4px;
+      margin-left: 4px;
+      background: #fff;
+      border: 1px solid #c44;
+      color: #c44;
+      border-radius: 2px;
+      vertical-align: middle;
+    }
+
     .internal-block {
       margin-top: 12px;
       border: 1.5px dashed #c44;
@@ -239,6 +339,8 @@ export async function GET(
     <div class="order-title"><span>Order#</span> ${h(order.id)}</div>
   </div>
 
+  ${vendorSubHeader}
+
   <table class="info-table">
     <tbody>
       <tr>
@@ -253,7 +355,7 @@ export async function GET(
       </tr>
       <tr>
         <td class="lbl">Vendor</td>
-        <td class="val" colspan="3">${h(vendor || "—")}</td>
+        <td class="val" colspan="3">${h(headerVendor || "—")}</td>
       </tr>
       <tr>
         <td class="lbl">Shopify Id</td>
@@ -301,7 +403,12 @@ export async function GET(
       </tr>
     </thead>
     <tbody>
-      ${lineRows || `<tr><td colspan="6" style="text-align:center;color:#aaa;padding:18px;">No line items recorded</td></tr>`}
+      ${lineRows || (vendorFilter && unassignedItems.length === 0
+        ? `<tr><td colspan="6" style="text-align:center;color:#aaa;padding:18px;">No line items for vendor "${h(vendorFilter)}"</td></tr>`
+        : !lineRows
+          ? `<tr><td colspan="6" style="text-align:center;color:#aaa;padding:18px;">No line items recorded</td></tr>`
+          : "")}
+      ${unassignedRows}
     </tbody>
   </table>
 

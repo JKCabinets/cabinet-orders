@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Order, AVATAR_COLOR_STYLES } from "@/lib/data";
 import { useStore } from "@/lib/store";
 import { formatDateWithYear, parseOrderDate } from "@/lib/dateUtils";
@@ -79,11 +79,6 @@ export function OrderCard({ order, onClick, style, selectMode = false, selected 
       setClaimError(true);
       setTimeout(() => setClaimError(false), 4000);
     }
-  }
-
-  function handleExport(e: React.MouseEvent) {
-    e.stopPropagation();
-    window.open(`/api/orders/${order.id}/export`, "_blank", "noopener");
   }
 
   function handleCompleteClick(e: React.MouseEvent) {
@@ -271,25 +266,8 @@ export function OrderCard({ order, onClick, style, selectMode = false, selected 
 
               {/* Split: Export + Complete Order */}
               <div className="flex gap-1">
-                {/* Export half */}
-                <button
-                  onClick={handleExport}
-                  className="flex-1 flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 transition-all duration-150"
-                  style={{
-                    background: "rgba(255,255,255,0.08)",
-                    border: "0.5px solid rgba(255,255,255,0.18)",
-                    color: "rgba(232,227,218,0.75)",
-                  }}
-                  onMouseEnter={(e) => { const el = e.currentTarget as HTMLButtonElement; el.style.background = "rgba(255,255,255,0.14)"; el.style.color = "#e8e3da"; }}
-                  onMouseLeave={(e) => { const el = e.currentTarget as HTMLButtonElement; el.style.background = "rgba(255,255,255,0.08)"; el.style.color = "rgba(232,227,218,0.75)"; }}
-                >
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                    <polyline points="7 10 12 15 17 10"/>
-                    <line x1="12" y1="15" x2="12" y2="3"/>
-                  </svg>
-                  <span className="text-[10px] font-semibold tracking-wide">Export Order</span>
-                </button>
+                {/* Export half — auto-detects multi-vendor and shows dropdown if needed */}
+                <ExportMenu orderId={order.id} />
 
                 {/* Complete Order half */}
                 <button
@@ -566,3 +544,211 @@ function SourceBadge({ source }: { source: string }) {
     </span>
   );
 }
+
+/**
+ * Export button that adapts to single-vendor vs multi-vendor orders.
+ *
+ *   - 0 or 1 vendor → behaves like the old button (one click opens combined PDF)
+ *   - 2+ vendors    → click opens a dropdown:
+ *                       "Combined" + "{Vendor A}" + "{Vendor B}" + …
+ *
+ * Vendors are fetched lazily on first interaction to avoid an N+1 hit when
+ * lots of cards are on screen. The fetch is cached for the life of the
+ * component.
+ */
+function ExportMenu({ orderId }: { orderId: string }) {
+  const [open, setOpen] = useState(false);
+  const [vendors, setVendors] = useState<string[] | null>(null);
+  const [hasUnassigned, setHasUnassigned] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+
+  async function fetchVendors() {
+    if (vendors !== null) return; // already loaded
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/orders/${orderId}/vendors`);
+      if (res.ok) {
+        const data = await res.json() as { vendors?: string[]; hasUnassigned?: boolean };
+        setVendors(data.vendors ?? []);
+        setHasUnassigned(data.hasUnassigned ?? false);
+      } else {
+        setVendors([]);
+      }
+    } catch {
+      setVendors([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function exportCombined(e: React.MouseEvent) {
+    e.stopPropagation();
+    window.open(`/api/orders/${orderId}/export`, "_blank", "noopener");
+    setOpen(false);
+  }
+
+  function exportForVendor(e: React.MouseEvent, vendor: string) {
+    e.stopPropagation();
+    const url = `/api/orders/${orderId}/export?vendor=${encodeURIComponent(vendor)}`;
+    window.open(url, "_blank", "noopener");
+    setOpen(false);
+  }
+
+  function handleMainClick(e: React.MouseEvent) {
+    e.stopPropagation();
+    // Vendors should already be loaded via hover prefetch. If somehow not,
+    // open the menu and let it show "Loading vendors…".
+    if (vendors === null) {
+      fetchVendors();
+      setOpen(true);
+      return;
+    }
+    // Single-vendor or no-vendor: just export combined directly (no menu).
+    if (vendors.length <= 1) {
+      window.open(`/api/orders/${orderId}/export`, "_blank", "noopener");
+      return;
+    }
+    // Multi-vendor: open dropdown
+    setOpen(true);
+  }
+
+  const multiVendor = vendors !== null && vendors.length > 1;
+
+  // If we know the vendor count and it's ≤1, render the simple button.
+  // Otherwise render the dropdown trigger.
+  return (
+    <div ref={ref} className="flex-1 relative">
+      {vendors !== null && !multiVendor ? (
+        // Simple single-button mode
+        <button
+          onClick={exportCombined}
+          onMouseEnter={(e) => { const el = e.currentTarget as HTMLButtonElement; el.style.background = "rgba(255,255,255,0.14)"; el.style.color = "#e8e3da"; }}
+          onMouseLeave={(e) => { const el = e.currentTarget as HTMLButtonElement; el.style.background = "rgba(255,255,255,0.08)"; el.style.color = "rgba(232,227,218,0.75)"; }}
+          className="w-full flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 transition-all duration-150"
+          style={{
+            background: "rgba(255,255,255,0.08)",
+            border: "0.5px solid rgba(255,255,255,0.18)",
+            color: "rgba(232,227,218,0.75)",
+          }}
+        >
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          <span className="text-[10px] font-semibold tracking-wide">Export Order</span>
+        </button>
+      ) : (
+        // Either not-yet-loaded or multi-vendor — show the trigger with hover prefetch
+        <button
+          onClick={handleMainClick}
+          onMouseEnter={(e) => {
+            fetchVendors();
+            const el = e.currentTarget as HTMLButtonElement;
+            el.style.background = "rgba(255,255,255,0.14)";
+            el.style.color = "#e8e3da";
+          }}
+          onMouseLeave={(e) => { const el = e.currentTarget as HTMLButtonElement; el.style.background = "rgba(255,255,255,0.08)"; el.style.color = "rgba(232,227,218,0.75)"; }}
+          onFocus={() => fetchVendors()}
+          className="w-full flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 transition-all duration-150"
+          style={{
+            background: "rgba(255,255,255,0.08)",
+            border: "0.5px solid rgba(255,255,255,0.18)",
+            color: "rgba(232,227,218,0.75)",
+          }}
+        >
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          <span className="text-[10px] font-semibold tracking-wide">
+            Export Order
+          </span>
+          {multiVendor && (
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          )}
+        </button>
+      )}
+
+      {/* Dropdown */}
+      {open && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="absolute bottom-[calc(100%+4px)] left-0 right-0 z-50 rounded-lg overflow-hidden"
+          style={{
+            background: "rgba(22,36,50,0.99)",
+            backdropFilter: "blur(28px) saturate(160%)",
+            WebkitBackdropFilter: "blur(28px) saturate(160%)",
+            border: "0.5px solid rgba(255,255,255,0.18)",
+            boxShadow: "0 16px 48px rgba(0,0,0,0.65)",
+            minWidth: "180px",
+          }}
+        >
+          {loading && (
+            <div className="px-3 py-2 text-[10px]" style={{ color: "rgba(232,227,218,0.55)" }}>
+              Loading vendors…
+            </div>
+          )}
+          {!loading && vendors && vendors.length === 0 && (
+            <button
+              onClick={exportCombined}
+              className="w-full text-left px-3 py-2 text-[11px] transition-colors hover:bg-[rgba(255,255,255,0.10)]"
+              style={{ color: "rgba(232,227,218,0.85)" }}
+            >
+              Export combined (no vendors detected)
+            </button>
+          )}
+          {!loading && vendors && vendors.length >= 1 && (
+            <>
+              <button
+                onClick={exportCombined}
+                className="w-full text-left px-3 py-2 text-[11px] transition-colors hover:bg-[rgba(255,255,255,0.10)]"
+                style={{ color: "rgba(232,227,218,0.85)", borderBottom: "0.5px solid rgba(255,255,255,0.12)" }}
+              >
+                📄 Combined (all vendors)
+              </button>
+              {vendors.map(v => (
+                <button
+                  key={v}
+                  onClick={(e) => exportForVendor(e, v)}
+                  className="w-full text-left px-3 py-2 text-[11px] transition-colors hover:bg-[rgba(255,255,255,0.10)]"
+                  style={{ color: "rgba(232,227,218,0.85)", borderBottom: "0.5px solid rgba(255,255,255,0.10)" }}
+                  title={`Export only items from ${v}`}
+                >
+                  📦 {v}
+                </button>
+              ))}
+              {hasUnassigned && (
+                <div
+                  className="px-3 py-1.5 text-[9px]"
+                  style={{
+                    color: "rgba(255,170,80,0.95)",
+                    background: "rgba(255,170,80,0.06)",
+                    borderTop: "0.5px solid rgba(255,170,80,0.25)",
+                  }}
+                >
+                  ⚠ Some SKUs aren&apos;t mapped to a vendor — they appear on each per-vendor PDF as warnings.
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
