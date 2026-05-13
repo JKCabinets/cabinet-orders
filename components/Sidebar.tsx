@@ -133,6 +133,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
               open={otherOpen}
               onToggle={() => setOtherOpen(v => !v)}
             >
+              <NavItem href="/calendar" icon={<Calendar className="w-3.5 h-3.5" />} label="Calendar" pathname={pathname} />
               <NavItem href="/warranty" icon={<ShieldCheck className="w-3.5 h-3.5" />} label="Warranty" pathname={pathname} />
               <NavItem
                 href="/orders/archived"
@@ -148,15 +149,6 @@ export function Sidebar({ open, onClose }: SidebarProps) {
 
             {/* ── External tools ── */}
             <div className="mt-3 pt-3 border-t border-white/10 flex flex-col gap-0.5">
-              <a
-                href="https://calendar.google.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2.5 px-3 py-1.5 rounded-md text-xs text-cream/65 hover:text-cream hover:bg-white/8 transition-all"
-              >
-                <Calendar className="w-3.5 h-3.5" />
-                Calendar
-              </a>
               <a
                 href="https://admin.shopify.com"
                 target="_blank"
