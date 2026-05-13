@@ -482,19 +482,25 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
               <div>
                 <p className={LABEL}>Team member</p>
                 {(() => {
-                  // Same logic as the table: prefer claimed_by → entered_by →
-                  // explicit member field. Empty when nobody owns it.
-                  const ownerName = liveOrder.claimed_by ?? liveOrder.entered_by ?? null;
-                  const ownerMember = ownerName
-                    ? team.find(m => m.name === ownerName)
-                    : (liveOrder.member ? team.find(m => m.initials === liveOrder.member) : null);
-                  if (!ownerName && !ownerMember) {
+                  // Stage-aware ownership:
+                  //   New: claimed_by only (an order in New that was
+                  //     previously Entered + rolled back is unclaimed until
+                  //     someone picks it up again — we intentionally hide
+                  //     entered_by here even though it's preserved in the DB
+                  //     for the audit trail)
+                  //   Later stages: entered_by is the source of truth
+                  const isNewStage = liveOrder.stage === "New" || liveOrder.stage === "New claim";
+                  const ownerName = isNewStage
+                    ? liveOrder.claimed_by ?? null
+                    : liveOrder.entered_by ?? liveOrder.claimed_by ?? null;
+                  const ownerMember = ownerName ? team.find(m => m.name === ownerName) : null;
+                  if (!ownerName) {
                     return (
                       <p className="text-xs text-cream/35 italic">unclaimed</p>
                     );
                   }
-                  const initials = ownerMember?.initials ?? (ownerName ? ownerName.slice(0, 2).toUpperCase() : "");
-                  const displayName = ownerMember?.name ?? ownerName ?? "";
+                  const initials = ownerMember?.initials ?? ownerName.slice(0, 2).toUpperCase();
+                  const displayName = ownerMember?.name ?? ownerName;
                   const style = ownerMember
                     ? AVATAR_COLOR_STYLES[ownerMember.avatarColor]
                     : { backgroundColor: "rgba(86,100,72,0.20)", color: "#8fbe70", borderColor: "rgba(86,100,72,0.28)" };

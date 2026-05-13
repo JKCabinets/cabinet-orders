@@ -197,15 +197,18 @@ function OrderRow({
 }) {
   const { team } = useStore();
 
-  // The team avatar follows whoever currently owns the order: the claimer
-  // (while in New) → the person who entered it → anyone explicitly set on
-  // the `member` field later. We deliberately ignore `order.member` when
-  // the order is unclaimed — older orders had a placeholder default that
-  // we don't want surfacing on otherwise-unclaimed rows.
-  const ownerName = order.claimed_by ?? order.entered_by ?? null;
-  const ownerMember = ownerName
-    ? team.find(m => m.name === ownerName)
-    : (order.member ? team.find(m => m.initials === order.member) : null);
+  // The team avatar is driven by stage:
+  //   - New: show whoever has claimed the order; if unclaimed → "unclaimed"
+  //     (entered_by is intentionally ignored here — a previously-Entered
+  //     order that rolled back to New is unclaimed until someone picks it
+  //     up again)
+  //   - Entered & beyond: show whoever entered it (entered_by); claimed_by
+  //     is cleared on stage advance so it shouldn't apply here.
+  const isNewStage = stage === "New";
+  const ownerName = isNewStage
+    ? order.claimed_by ?? null
+    : order.entered_by ?? order.claimed_by ?? null;
+  const ownerMember = ownerName ? team.find(m => m.name === ownerName) : null;
   const ownerInitials = ownerMember?.initials ?? (ownerName ? ownerName.slice(0, 2).toUpperCase() : "");
   const ownerStyle = ownerMember
     ? AVATAR_COLOR_STYLES[ownerMember.avatarColor]
