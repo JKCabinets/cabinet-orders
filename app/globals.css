@@ -2,13 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Brand fonts — DM Sans (body) + Cormorant Garamond (display) ── */
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=DM+Sans:wght@300;400;500;600&display=swap');
-
-:root {
-  --font-sans: 'DM Sans', system-ui, sans-serif;
-  --font-serif: 'Cormorant Garamond', Georgia, serif;
-}
+/* Brand fonts are loaded via next/font in app/layout.tsx, which sets the
+   --font-sans and --font-serif CSS variables on <html>. */
 
 * { box-sizing: border-box; }
 
@@ -24,7 +19,7 @@ body {
     radial-gradient(ellipse at 88% 88%,  rgba(58,66,57,0.45)  0%, transparent 50%),
     radial-gradient(ellipse at 55% 50%,  rgba(10,21,32,0.95)  0%, transparent 60%);
   color: #f0ece4;
-  font-family: var(--font-sans);
+  font-family: var(--font-sans), 'DM Sans', system-ui, sans-serif;
   font-weight: 400;
   line-height: 1.6;
   min-height: 100vh;
@@ -72,7 +67,7 @@ body > * { position: relative; z-index: 2; }
 
 /* ── Editorial typography helpers ─────────────────────────────────────── */
 .font-display {
-  font-family: var(--font-serif);
+  font-family: var(--font-serif), 'Cormorant Garamond', Georgia, serif;
   font-weight: 500;
   letter-spacing: -0.02em;
   line-height: 1.05;

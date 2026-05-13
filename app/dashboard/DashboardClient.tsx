@@ -79,17 +79,24 @@ export function DashboardClient() {
     return items.slice(0, 6);
   }, [active]);
 
-  // ── Stage-specific sub-stat helpers ─────────────────────────────────
-  const todayIso = new Date().toISOString().split("T")[0];
-  const firstOfMonth = new Date(); firstOfMonth.setDate(1);
-  const firstOfMonthIso = firstOfMonth.toISOString().split("T")[0];
+  // Stage-specific sub-stat helpers
+  const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0,0,0,0);
+  const monthStartMs = monthStart.getTime();
 
   const newFromShopify = byStage["New"].filter(o => o.source === "Shopify").length;
-  const enteredToday   = byStage["Entered"].filter(o => o.date && o.date.startsWith(todayIso.slice(0,7))).length;
+  // "Entered today" — orders entered this month. We don't track a separate
+  // "entered_at" date, so we approximate by looking at orders whose date is
+  // recent enough. Falls back to 0 if dates can't be parsed.
+  const enteredThisMonth = byStage["Entered"].filter(o => {
+    const t = parseOrderDate(o.date);
+    return t !== null && t >= monthStartMs;
+  }).length;
   const crossDockPending = byStage["At cross dock"].filter(o => !o.scheduled_delivery_date).length;
-  const deliveredThisMonth = orders.filter(o =>
-    o.stage === "Delivered" && o.date && o.date >= firstOfMonthIso
-  ).length;
+  const deliveredThisMonth = orders.filter(o => {
+    if (o.stage !== "Delivered") return false;
+    const t = parseOrderDate(o.date);
+    return t !== null && t >= monthStartMs;
+  }).length;
   // Average production age in days
   const avgProductionDays = (() => {
     const prod = byStage["In production"];
@@ -142,7 +149,7 @@ export function DashboardClient() {
           <StageCard
             stage="Entered"
             count={byStage["Entered"].length}
-            substat={enteredToday > 0 ? `${enteredToday} this month` : "—"}
+            substat={enteredThisMonth > 0 ? `${enteredThisMonth} this month` : "—"}
             accent={STAGE_ACCENT["Entered"]}
           />
           <StageCard

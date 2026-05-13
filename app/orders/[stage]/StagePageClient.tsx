@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { useStore } from "@/lib/store";
-import { Order, ORDER_STAGES, OrderStage } from "@/lib/data";
+import { Order, OrderStage } from "@/lib/data";
 import { PageHeader } from "@/components/AppShell";
 import { OrderCard } from "@/components/OrderCard";
 import { OrderModal } from "@/components/OrderModal";
@@ -14,8 +14,6 @@ import { Plus, Search, CheckSquare, X } from "lucide-react";
 export const VALID_STAGE_SLUGS = [
   "new", "entered", "in-production", "at-cross-dock", "delivered", "archived",
 ] as const;
-
-type StageSlug = typeof VALID_STAGE_SLUGS[number];
 
 /** Convert URL slug back to canonical stage name. "archived" maps to itself. */
 export function slugToStage(slug: string): OrderStage | "Archived" {
@@ -50,7 +48,6 @@ const STAGE_DESCRIPTION: Record<string, { eyebrow: string; accent: string }> = {
 
 interface Props {
   stage: OrderStage | "Archived";
-  slug: StageSlug;
 }
 
 export function StagePageClient({ stage }: Props) {
