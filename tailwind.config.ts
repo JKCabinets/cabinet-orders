@@ -9,11 +9,46 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ["var(--font-geist-sans)", "sans-serif"],
-        mono: ["var(--font-geist-mono)", "monospace"],
+        // Body and UI — DM Sans per brand guide
+        sans: ["var(--font-sans)", "DM Sans", "system-ui", "sans-serif"],
+        // Display / editorial — Cormorant Garamond per brand guide
+        serif: ["var(--font-serif)", "Cormorant Garamond", "Georgia", "serif"],
+        mono: ["ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
       },
       colors: {
-        // Legacy — kept for components not yet converted
+        // ── Brand palette (JK Cabinets) ──
+        sage: {
+          DEFAULT: "#576257",
+          mid:     "#91a597",
+          deep:    "#3a4239",
+          tint:    "#dde3dd",
+        },
+        storm: {
+          DEFAULT: "#4a5a6b", // italic accents only, never as surface
+          tint:    "#e6ebf0",
+        },
+        ink:      "#1a1a18",
+        charcoal: "#2a2a26",
+        body:     "#6b6b66",
+        muted:    "#a0a09a",
+        cream:    "#f0ece4",
+        beige:    "#e0d8cc",
+        terracotta: {
+          DEFAULT: "#b8826a",
+          light:   "#f0e2d8",
+        },
+
+        // ── Operational stage colors (unchanged) ──
+        // Keep these because they encode stage state in cards and dashboards.
+        stage: {
+          new:       "#c97070", // softened from #e05555 for the lighter palette
+          entered:   "#d4922a",
+          prod:      "#c8b84a",
+          cross:     "#5a8db8", // softened from #4a8fd4
+          delivered: "#8fbe70", // softened from #4caf7a
+        },
+
+        // ── Legacy surface tokens (kept for components not yet restyled) ──
         surface: {
           DEFAULT:   "#1e2a35",
           secondary: "rgba(255,255,255,0.04)",
@@ -22,23 +57,25 @@ const config: Config = {
           border:    "rgba(255,255,255,0.10)",
         },
         accent: {
-          DEFAULT: "#e8e3da",
-          muted:   "rgba(232,227,218,0.55)",
-          dim:     "rgba(232,227,218,0.30)",
+          DEFAULT: "#f0ece4", // same as cream
+          muted:   "rgba(240,236,228,0.55)",
+          dim:     "rgba(240,236,228,0.30)",
           olive:   "#566448",
         },
-        stage: {
-          new:       "#e05555",
-          entered:   "#d4922a",
-          prod:      "#c8b84a",
-          cross:     "#4a8fd4",
-          delivered: "#4caf7a",
-        },
+      },
+      borderRadius: {
+        // Brand uses 12px for everything; pills are 999px (already in Tailwind as "full")
+        brand: "12px",
+        panel: "16px", // frosted panel radius
+      },
+      transitionTimingFunction: {
+        // Brand "quiet motion" easing
+        brand: "cubic-bezier(0.22, 0.9, 0.36, 1)",
       },
       animation: {
-        "slide-in": "slideIn 0.2s ease-out",
+        "slide-in": "slideIn 0.2s cubic-bezier(0.22, 0.9, 0.36, 1)",
         "fade-in":  "fadeIn 0.15s ease-out",
-        "card-in":  "cardIn 0.2s ease-out both",
+        "card-in":  "cardIn 0.25s cubic-bezier(0.22, 0.9, 0.36, 1) both",
       },
       keyframes: {
         slideIn: {
