@@ -10,24 +10,6 @@ import { NewOrderModal } from "@/components/NewOrderModal";
 import { BulkActionBar } from "@/components/BulkActionBar";
 import { Plus, Search, CheckSquare, X } from "lucide-react";
 
-/** All valid stage URL slugs. Includes "archived" as a special-case stage. */
-export const VALID_STAGE_SLUGS = [
-  "new", "entered", "in-production", "at-cross-dock", "delivered", "archived",
-] as const;
-
-/** Convert URL slug back to canonical stage name. "archived" maps to itself. */
-export function slugToStage(slug: string): OrderStage | "Archived" {
-  switch (slug) {
-    case "new":            return "New";
-    case "entered":        return "Entered";
-    case "in-production":  return "In production";
-    case "at-cross-dock":  return "At cross dock";
-    case "delivered":      return "Delivered";
-    case "archived":       return "Archived";
-    default:               return "New"; // unreachable; guarded by VALID_STAGE_SLUGS
-  }
-}
-
 const STAGE_ACCENT: Record<string, string> = {
   "New":            "#c97070",
   "Entered":        "#d4922a",

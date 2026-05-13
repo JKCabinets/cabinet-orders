@@ -1,12 +1,12 @@
 import { notFound } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
-import { StagePageClient, VALID_STAGE_SLUGS, slugToStage } from "./StagePageClient";
+import { StagePageClient } from "./StagePageClient";
+import { VALID_STAGE_SLUGS, slugToStage } from "./stageSlugs";
 
 interface StagePageProps {
   params: Promise<{ stage: string }>;
 }
 
-// Widen VALID_STAGE_SLUGS' literal-tuple type for `.includes` to accept any string
 const VALID_SLUGS_RUNTIME: readonly string[] = VALID_STAGE_SLUGS;
 
 export default async function StagePage({ params }: StagePageProps) {
