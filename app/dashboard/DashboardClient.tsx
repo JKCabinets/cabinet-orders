@@ -390,7 +390,7 @@ function SLAMiniPanel({ byStage }: { byStage: Record<OrderStage, Order[]> }) {
 
   return (
     <div className="glass-sage rounded-panel p-5 lg:p-6">
-      <div className="flex items-baseline justify-between mb-4">
+      <div className="flex items-end justify-between mb-4">
         <div>
           <div className="eyebrow mb-1">Service levels</div>
           <h2 className="font-display text-[22px] text-cream">
@@ -398,9 +398,9 @@ function SLAMiniPanel({ byStage }: { byStage: Record<OrderStage, Order[]> }) {
           </h2>
         </div>
         <div className="text-right">
-          <div className="text-[10px] uppercase tracking-[0.13em] text-cream/55 mb-0.5">Total overdue</div>
+          <div className="text-[10px] uppercase tracking-[0.13em] text-cream/55 mb-1">Total overdue</div>
           <div
-            className="font-display text-[20px]"
+            className="font-display text-[22px] leading-none"
             style={{ color: totalOverdue > 0 ? "#e89090" : "#a0cc7a" }}
           >
             {totalOverdue}
