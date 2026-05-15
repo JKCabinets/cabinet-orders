@@ -114,33 +114,10 @@ export function SLAClient() {
           </div>
           {totalOverdue > 0 && (
             <p className="text-[12px] text-cream/55 mt-2 leading-relaxed">
-              The list below shows every order currently past its stage target. Each row has a recommended next action.
+              Scroll down for the full list — every order past its target with a recommended next action.
             </p>
           )}
         </div>
-
-        {/* ── Operational: overdue orders by stage ────────────────── */}
-        {totalOverdue > 0 && (
-          <div className="space-y-4">
-            {TRACKED_STAGES.map(stage => {
-              const orders = overdueByStage[stage];
-              if (orders.length === 0) return null;
-              return (
-                <OverdueStageBlock
-                  key={stage}
-                  stage={stage}
-                  orders={orders}
-                  team={team}
-                  currentUserName={currentUserName}
-                  onOpenOrder={setSelectedOrder}
-                  onClaim={(id) => claimOrder(id, currentUserName)}
-                  onAdvance={(id, target) => moveStage(id, target as Stage, currentUserName ?? undefined)}
-                  onArchive={(id) => archiveOrder(id)}
-                />
-              );
-            })}
-          </div>
-        )}
 
         {/* ── Trends ──────────────────────────────────────────────── */}
         <div className="glass-sage rounded-panel p-5 lg:p-6">
@@ -193,6 +170,29 @@ export function SLAClient() {
             </div>
           </div>
         </div>
+
+        {/* ── Operational: overdue orders by stage ────────────────── */}
+        {totalOverdue > 0 && (
+          <div className="space-y-4">
+            {TRACKED_STAGES.map(stage => {
+              const orders = overdueByStage[stage];
+              if (orders.length === 0) return null;
+              return (
+                <OverdueStageBlock
+                  key={stage}
+                  stage={stage}
+                  orders={orders}
+                  team={team}
+                  currentUserName={currentUserName}
+                  onOpenOrder={setSelectedOrder}
+                  onClaim={(id) => claimOrder(id, currentUserName)}
+                  onAdvance={(id, target) => moveStage(id, target as Stage, currentUserName ?? undefined)}
+                  onArchive={(id) => archiveOrder(id)}
+                />
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {selectedOrder && (
