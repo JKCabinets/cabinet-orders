@@ -106,7 +106,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
               onToggle={() => setOverviewOpen(v => !v)}
             >
               <NavItem href="/dashboard" icon={<LayoutDashboard className="w-3.5 h-3.5" />} label="Dashboard" pathname={pathname} />
-              <NavItem href="/sla" icon={<LineChart className="w-3.5 h-3.5" />} label="SLA" pathname={pathname} comingSoon />
+              <NavItem href="/sla" icon={<LineChart className="w-3.5 h-3.5" />} label="SLA" pathname={pathname} />
             </SidebarSection>
 
             {/* ── Orders by stage ── */}

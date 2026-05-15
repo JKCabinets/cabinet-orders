@@ -44,7 +44,10 @@ export async function GET(req: NextRequest) {
   });
 
   for (const order of orders) {
-    await supabase.from("orders").update({ stage: "Delivered" }).eq("id", order.id);
+    await supabase.from("orders").update({
+      stage: "Delivered",
+      stage_entered_at: new Date().toISOString(),
+    }).eq("id", order.id);
     await supabase.from("order_activity").insert({
       order_id: order.id,
       text: `Delivery date reached — moved to "Delivered" automatically`,

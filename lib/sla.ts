@@ -18,17 +18,19 @@ export const SLA_TARGETS: Record<OrderStage, number> = {
 };
 
 /**
- * How many days has the order been in its current stage? Returns null
- * if the date can't be parsed (the field is free-form text rather than
- * a Date column, hence the guard).
+ * How many days has the order been in its current stage?
  *
- * Note: this measures days since `order.date`, which is the order's
- * creation date — not the date it entered its *current* stage. That's
- * fine for "New" (where date ≈ stage-entered) but for later stages it
- * effectively gives total age, not stage age. A future improvement
- * would be to add a `stage_entered_at` column and reference it here.
+ * Prefers `stage_entered_at` (schema v9) for accurate per-stage age.
+ * Falls back to `order.date` (the original creation date) for legacy
+ * rows where the column is missing — in that case the value is total
+ * order age, not stage age. Returns null only if both signals are
+ * unavailable.
  */
 export function daysInStage(order: Order, now: number = Date.now()): number | null {
+  if (order.stage_entered_at) {
+    const t = new Date(order.stage_entered_at).getTime();
+    if (isFinite(t)) return Math.floor((now - t) / (1000 * 60 * 60 * 24));
+  }
   const t = parseOrderDate(order.date);
   if (t === null) return null;
   return Math.floor((now - t) / (1000 * 60 * 60 * 24));

@@ -164,6 +164,10 @@ export async function PATCH(
 
   const updates: Record<string, unknown> = {};
   if (body.stage)                  updates.stage      = body.stage;
+  // Bump stage_entered_at whenever the stage actually changes so the
+  // SLA page can show real per-stage age. The DB trigger does this too
+  // as a safety net, but setting it here keeps app code self-documenting.
+  if (body.stage) updates.stage_entered_at = new Date().toISOString();
   // Auto-clear claim when order leaves New; set entered_by when moving to Entered
   if (body.stage && body.stage !== "New") updates.claimed_by = null;
   if (body.stage === "Entered")    updates.entered_by = auth.session.user.name;

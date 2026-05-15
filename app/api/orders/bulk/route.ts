@@ -238,7 +238,12 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      const updates: Record<string, unknown> = { stage: targetStage };
+      const updates: Record<string, unknown> = {
+        stage: targetStage,
+        // Bump stage_entered_at so the SLA page reads real per-stage age.
+        // DB trigger also does this; setting it here is explicit.
+        stage_entered_at: new Date().toISOString(),
+      };
       // Clear claim when leaving New; record entered_by when moving to Entered
       if (targetStage !== "New") updates.claimed_by = null;
       if (targetStage === "Entered") updates.entered_by = displayName;

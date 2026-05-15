@@ -98,7 +98,10 @@ export async function GET(req: NextRequest) {
   for (const order of orders) {
     await supabase
       .from("orders")
-      .update({ stage: "At cross dock" })
+      .update({
+        stage: "At cross dock",
+        stage_entered_at: new Date().toISOString(),
+      })
       .eq("id", order.id);
 
     await supabase.from("order_activity").insert({

@@ -168,6 +168,11 @@ export interface Order {
   // One of: paid, partially_paid, pending, refunded, partially_refunded,
   // voided, authorized. NULL for custom (manual) orders.
   payment_status?: string | null;
+  // ISO timestamp of when the order entered its current stage. Updated
+  // automatically (DB trigger + app code) whenever `stage` changes. Used
+  // by the SLA page to compute real per-stage age rather than total
+  // order age. May be null on legacy rows that pre-date schema v9.
+  stage_entered_at?: string | null;
 }
 
 export const ORDER_STAGES: OrderStage[] = [

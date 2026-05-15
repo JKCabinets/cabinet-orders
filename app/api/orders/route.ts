@@ -36,7 +36,10 @@ export async function GET(req: NextRequest) {
     o => o.stage === "In production" && o.production_est_finish_date && o.production_est_finish_date < today
   );
   for (const o of toAdvance) {
-    await supabase.from("orders").update({ stage: "At cross dock" }).eq("id", o.id);
+    await supabase.from("orders").update({
+      stage: "At cross dock",
+      stage_entered_at: new Date().toISOString(),
+    }).eq("id", o.id);
     await supabase.from("order_activity").insert({
       order_id: o.id,
       text: `Production complete — automatically moved to "At cross dock"`,
