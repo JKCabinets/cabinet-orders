@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import clsx from "clsx";
 import { Order, AVATAR_COLOR_STYLES, getBackorderStatus } from "@/lib/data";
 import { useStore } from "@/lib/store";
 import { useSession } from "next-auth/react";
@@ -460,7 +461,17 @@ function StatusCell({
   if (stage === "Entered") {
     return (
       <div className="flex items-center gap-1.5">
-        <span className="text-[10px] text-cream/55">Awaiting prod</span>
+        {order.production_start_date ? (
+          <span className="text-[10px] text-cream/55">Starts {order.production_start_date}</span>
+        ) : (
+          <button
+            onClick={(e) => { e.stopPropagation(); onOpenModal?.(order); }}
+            className="text-[10px] text-cream/55 hover:text-cream underline-offset-2 hover:underline transition-colors"
+            title="Open order to set production start date — order auto-advances once set"
+          >
+            Set start date →
+          </button>
+        )}
         <a
           href={`/api/orders/${order.id}/export`}
           target="_blank"
@@ -477,15 +488,39 @@ function StatusCell({
 
   // ── In production ──
   if (stage === "In production") {
+    // Auto-advance happens via the production-complete cron when the
+    // est finish date has passed. The button here lets a user manually
+    // push the order forward — usually because production finished
+    // early — with a soft confirmation.
+    const finish = order.production_est_finish_date;
+    const today = new Date().toISOString().slice(0, 10);
+    const isPastFinish = finish && finish <= today;
+    function earlyPush() {
+      const msg = isPastFinish
+        ? `Move "${order.name}" to At cross dock now?`
+        : finish
+        ? `Production isn't scheduled to finish until ${finish}.\n\nPush "${order.name}" to At cross dock anyway?`
+        : `No estimated finish date set.\n\nPush "${order.name}" to At cross dock now?`;
+      if (typeof window !== "undefined" && !window.confirm(msg)) return Promise.resolve();
+      return moveStage(order.id, "At cross dock");
+    }
     return (
       <div className="flex items-center gap-1.5">
-        <span className="text-[10px] text-cream/55">Building</span>
+        <span className="text-[10px] text-cream/55">
+          {finish ? `Finish ${finish}` : "Building"}
+        </span>
         <button
-          onClick={() => withBusy(() => moveStage(order.id, "At cross dock"))}
+          onClick={() => withBusy(earlyPush)}
           disabled={busy}
-          className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30"
+          className={clsx(
+            "px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all border",
+            isPastFinish
+              ? "bg-terracotta/20 border-terracotta/45 text-terracotta hover:bg-terracotta/30"
+              : "bg-white/6 border-cream/15 text-cream/85 hover:bg-white/10"
+          )}
+          title={isPastFinish ? "Move to At cross dock" : "Push to At cross dock before est finish"}
         >
-          {busy ? "..." : (mobile ? "Cross dock" : "Mark Cross-dock")}
+          {busy ? "..." : isPastFinish ? (mobile ? "Cross dock" : "Mark Cross-dock") : "Early Push"}
         </button>
       </div>
     );
@@ -494,29 +529,56 @@ function StatusCell({
   // ── At cross dock ──
   if (stage === "At cross dock") {
     const bo = getBackorderStatus(order.sku_items);
+    const hasDate = !!order.scheduled_delivery_date;
     return (
       <div className="flex items-center gap-1.5">
         {bo.status === "pending" ? (
           <span className="text-[10px]" style={{ color: "#e89090" }}>{bo.count} backordered</span>
-        ) : order.scheduled_delivery_date ? (
+        ) : hasDate ? (
           <span className="text-[10px] text-cream/55">Sched {order.scheduled_delivery_date}</span>
         ) : (
           <span className="text-[10px] text-cream/55">Awaiting call</span>
         )}
-        <button
-          onClick={() => withBusy(() => archiveOrder(order.id))}
-          disabled={busy}
-          className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30"
-        >
-          {busy ? "..." : (mobile ? "Confirm" : "Confirm Delivery")}
-        </button>
+        {hasDate ? (
+          <button
+            // BUG FIX: previously called archiveOrder() so orders skipped
+            // the Delivered stage entirely. Now moves to Delivered first;
+            // a separate "Archive" button on the Delivered stage handles
+            // the archive step.
+            onClick={() => withBusy(() => moveStage(order.id, "Delivered"))}
+            disabled={busy}
+            className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30"
+          >
+            {busy ? "..." : (mobile ? "Confirm" : "Confirm Delivery")}
+          </button>
+        ) : (
+          <button
+            onClick={(e) => { e.stopPropagation(); onOpenModal?.(order); }}
+            className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-white/6 border border-cream/15 text-cream/85 hover:bg-white/10"
+            title="Open order to set delivery date — Confirm Delivery appears once scheduled"
+          >
+            Set delivery date →
+          </button>
+        )}
       </div>
     );
   }
 
   // ── Delivered ──
   if (stage === "Delivered") {
-    return <span className="text-[10px] text-cream/55">Completed</span>;
+    return (
+      <div className="flex items-center gap-1.5">
+        <span className="text-[10px] text-cream/55">Completed</span>
+        <button
+          onClick={() => withBusy(() => archiveOrder(order.id))}
+          disabled={busy}
+          className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-white/6 border border-cream/15 text-cream/85 hover:bg-white/10"
+          title="Move to archive"
+        >
+          {busy ? "..." : "Archive"}
+        </button>
+      </div>
+    );
   }
 
   // ── Warranty fallback ──

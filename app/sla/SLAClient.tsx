@@ -347,7 +347,7 @@ function OverdueRow({
 
       {/* Quick actions */}
       <div className="flex items-center gap-1.5 flex-shrink-0">
-        {/* Primary action: claim if New + unclaimed, otherwise advance */}
+        {/* New + unclaimed → Claim */}
         {isNew && !order.claimed_by && (
           <button
             onClick={() => withBusy(onClaim)}
@@ -357,6 +357,7 @@ function OverdueRow({
             {busy ? "…" : "Claim"}
           </button>
         )}
+        {/* New + claimed by me → Mark Entered (the attachment gate still applies; modal handles it) */}
         {isNew && order.claimed_by === currentUserName && onAdvance && (
           <button
             onClick={() => withBusy(onAdvance)}
@@ -367,14 +368,75 @@ function OverdueRow({
             {busy ? "…" : <>Mark Entered <ArrowRight className="w-3 h-3" /></>}
           </button>
         )}
-        {!isNew && onAdvance && (
-          <button
-            onClick={() => withBusy(onAdvance)}
-            disabled={busy}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-white/6 border border-cream/15 text-cream/85 hover:bg-white/10 disabled:opacity-50"
-          >
-            {busy ? "…" : <>Advance <ArrowRight className="w-3 h-3" /></>}
-          </button>
+        {/* Entered → either show prompt to set start date (which auto-advances) or open modal */}
+        {order.stage === "Entered" && (
+          order.production_start_date ? (
+            // Date is set but somehow still in Entered (e.g. stale state) — open modal
+            <button
+              onClick={onOpen}
+              className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-white/6 border border-cream/15 text-cream/85 hover:bg-white/10"
+            >
+              Open
+            </button>
+          ) : (
+            <button
+              onClick={onOpen}
+              className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30"
+              title="Set production start date — order auto-advances once set"
+            >
+              Set start date →
+            </button>
+          )
+        )}
+        {/* In production → Early Push (with soft confirm) or normal advance if past est finish */}
+        {order.stage === "In production" && onAdvance && (() => {
+          const advance = onAdvance;
+          const finish = order.production_est_finish_date;
+          const todayIso = new Date().toISOString().slice(0, 10);
+          const pastFinish = finish && finish <= todayIso;
+          function go() {
+            const msg = pastFinish
+              ? `Move "${order.name}" to At cross dock now?`
+              : finish
+              ? `Production isn't scheduled to finish until ${finish}.\n\nPush "${order.name}" to At cross dock anyway?`
+              : `No estimated finish date set.\n\nPush "${order.name}" to At cross dock now?`;
+            if (typeof window !== "undefined" && !window.confirm(msg)) return Promise.resolve();
+            return advance();
+          }
+          return (
+            <button
+              onClick={() => withBusy(go)}
+              disabled={busy}
+              className={clsx(
+                "flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all border",
+                pastFinish
+                  ? "bg-terracotta/20 border-terracotta/45 text-terracotta hover:bg-terracotta/30"
+                  : "bg-white/6 border-cream/15 text-cream/85 hover:bg-white/10"
+              )}
+            >
+              {busy ? "…" : pastFinish ? <>Cross dock <ArrowRight className="w-3 h-3" /></> : "Early Push"}
+            </button>
+          );
+        })()}
+        {/* At cross dock → Confirm Delivery only when delivery date is set */}
+        {order.stage === "At cross dock" && onAdvance && (
+          order.scheduled_delivery_date ? (
+            <button
+              onClick={() => withBusy(onAdvance)}
+              disabled={busy}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30 disabled:opacity-50"
+            >
+              {busy ? "…" : <>Confirm Delivery <ArrowRight className="w-3 h-3" /></>}
+            </button>
+          ) : (
+            <button
+              onClick={onOpen}
+              className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-white/6 border border-cream/15 text-cream/85 hover:bg-white/10"
+              title="Open order to set delivery date"
+            >
+              Set delivery date →
+            </button>
+          )
         )}
 
         {/* Archive (secondary) */}

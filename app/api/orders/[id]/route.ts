@@ -191,20 +191,57 @@ export async function PATCH(
   if (body.customer_email !== undefined)  updates.customer_email  = sanitize(body.customer_email as string);
   if (body.delivery_method !== undefined) updates.delivery_method = sanitize(body.delivery_method as string);
 
+  // ── Auto-advance: Entered → In production ──────────────────────────────
+  // When a user sets a production_start_date on an order in "Entered" stage,
+  // the order auto-advances to "In production". This matches the operational
+  // rule that setting the start date IS the act of committing the order to
+  // production — no separate "move stage" click required.
+  //
+  // Guards:
+  //   - Only fires when body.stage is NOT explicitly set (so an explicit
+  //     stage change still wins).
+  //   - Only fires when production_start_date is being set to a non-empty
+  //     value (clearing the field shouldn't trigger a stage change).
+  //   - Only fires when the order is currently in "Entered" (avoids
+  //     re-triggering on later edits).
+  let autoAdvancedTo: string | null = null;
+  if (
+    body.stage === undefined &&
+    body.production_start_date !== undefined &&
+    body.production_start_date !== null &&
+    body.production_start_date !== ""
+  ) {
+    const { data: current } = await supabase
+      .from("orders")
+      .select("stage")
+      .eq("id", id)
+      .single();
+    if (current?.stage === "Entered") {
+      updates.stage = "In production";
+      updates.stage_entered_at = new Date().toISOString();
+      autoAdvancedTo = "In production";
+    }
+  }
+
   const { error } = await supabase.from("orders").update(updates).eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   // Log activity
   const today = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" });
   let activityText = "";
-  if (body.stage)                          activityText = `Moved to "${body.stage}" by ${auth.session.user.name}`;
+  if (autoAdvancedTo) {
+    // Production start date triggered an automatic stage advance.
+    activityText = `Production start date set → moved to "${autoAdvancedTo}" by ${auth.session.user.name}`;
+  }
+  else if (body.stage)                     activityText = `Moved to "${body.stage}" by ${auth.session.user.name}`;
   else if (body.notes !== undefined)       activityText = `Notes updated by ${auth.session.user.name}`;
   else if (body.internal_notes !== undefined) activityText = `Internal notes updated by ${auth.session.user.name}`;
   else if (body.archived === true)         activityText = `Archived by ${auth.session.user.name}`;
   else if (body.archived === false)        activityText = `Restored by ${auth.session.user.name}`;
   else if (body.production_start_date !== undefined || body.production_est_finish_date !== undefined)
                                            activityText = `Production dates updated by ${auth.session.user.name}`;
-  else if (body.delivery_date !== undefined) activityText = `Delivery scheduled by ${auth.session.user.name}`;
+  else if (body.delivery_date !== undefined || body.scheduled_delivery_date !== undefined)
+                                           activityText = `Delivery scheduled by ${auth.session.user.name}`;
   else if ("claimed_by" in body)           activityText = body.claimed_by
     ? `Order claimed by ${body.claimed_by}`
     : `Order unclaimed by ${auth.session.user.name}`;
