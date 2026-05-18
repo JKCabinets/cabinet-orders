@@ -113,6 +113,9 @@ export function OrderTable({
               <SortableHeader label="Customer"  col="name"           current={sortKey} dir={sortDir} onClick={setSort} />
               <SortableHeader label="Type"      col="source"         current={sortKey} dir={sortDir} onClick={setSort} width="w-[95px]" />
               <th className="text-left px-3 py-2.5 text-[10px] uppercase tracking-[0.13em] text-cream/55 font-medium">Status</th>
+              {stage !== "Archived" && (
+                <th className="text-left px-3 py-2.5 text-[10px] uppercase tracking-[0.13em] text-cream/55 font-medium w-[180px]">Update Status</th>
+              )}
               {stage !== "New" && (
                 <th className="text-left px-3 py-2.5 text-[10px] uppercase tracking-[0.13em] text-cream/55 font-medium w-[110px]">Info</th>
               )}
@@ -135,7 +138,14 @@ export function OrderTable({
             ))}
             {sorted.length === 0 && (
               <tr>
-                <td colSpan={(selectMode ? 8 : 7) + (stage !== "New" ? 1 : 0)} className="px-3 py-10 text-center text-cream/45 text-[12px]">
+                <td
+                  colSpan={
+                    (selectMode ? 8 : 7)
+                    + (stage !== "New" ? 1 : 0)
+                    + (stage !== "Archived" ? 1 : 0)
+                  }
+                  className="px-3 py-10 text-center text-cream/45 text-[12px]"
+                >
                   No orders in this stage.
                 </td>
               </tr>
@@ -262,6 +272,11 @@ function OrderRow({
       <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
         <StatusCell order={order} stage={stage} onOpenModal={onSelect} />
       </td>
+      {stage !== "Archived" && (
+        <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+          <UpdateStatusActions order={order} stage={stage} onOpenModal={onSelect} />
+        </td>
+      )}
       {stage !== "New" && (
         <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
           <a
@@ -368,83 +383,120 @@ function PaymentPill({ status }: { status?: string | null }) {
 
 /* ─── Status cell — text + primary action button ─────────────────── */
 
-function StatusCell({
-  order, stage, mobile = false, onOpenModal,
-}: {
-  order: Order; stage: string; mobile?: boolean;
-  /** Called when a gate fails so the user can fix it in the modal. */
-  onOpenModal?: (o: Order, reason?: "needs-attachment") => void;
-}) {
+/**
+ * StatusCell is now split into two pieces:
+ *   - StatusLabel: descriptive text only (e.g. "Awaiting order entry",
+ *     "Starts May 21", "Sched Jun 4"). Renders in the Status column on
+ *     every stage.
+ *   - UpdateStatusActions: the actionable buttons (Claim, Mark Entered,
+ *     Set start date, Early Push, Confirm Delivery, Archive Order, etc.).
+ *     Renders in the new Update Status column on every stage except
+ *     Archived (which uses StatusCell's full output for the Restore
+ *     button via the legacy code path).
+ *
+ * Mobile rows still use a single combined renderer for compactness;
+ * the desktop table renders them separately into their own columns.
+ */
+
+function useRowActions(order: Order) {
   const { data: session } = useSession();
   const { claimOrder, moveStage, archiveOrder, unarchiveOrder } = useStore();
   const currentUserName = session?.user?.name ?? null;
   const [busy, setBusy] = useState(false);
-
   async function withBusy(fn: () => Promise<unknown>) {
     setBusy(true);
     try { await fn(); } finally { setBusy(false); }
   }
+  return { session, currentUserName, claimOrder, moveStage, archiveOrder, unarchiveOrder, busy, withBusy, orderId: order.id };
+}
 
-  /**
-   * Run the New→Entered attachment gate. If it fails, surface the error
-   * inline AND open the modal so the user can attach a file directly.
-   */
+function StatusLabel({ order, stage }: { order: Order; stage: string }) {
+  if (stage === "Archived") {
+    return <span className="text-[10px] text-cream/55 italic">archived</span>;
+  }
+
+  if (stage === "New") {
+    const claimedBy = order.claimed_by ?? null;
+    if (claimedBy) {
+      return <span className="text-[10px] text-cream/55">Claimed by {claimedBy}</span>;
+    }
+    return <span className="text-[10px] text-cream/55">Awaiting order entry</span>;
+  }
+
+  if (stage === "Entered") {
+    if (order.production_start_date) {
+      return <span className="text-[10px] text-cream/55">Starts {order.production_start_date}</span>;
+    }
+    return <span className="text-[10px] text-cream/55 italic">Awaiting production dates</span>;
+  }
+
+  if (stage === "In production") {
+    const start = order.production_start_date;
+    const finish = order.production_est_finish_date;
+    if (start || finish) {
+      return (
+        <div className="flex flex-col gap-0.5 text-[10px] leading-tight">
+          {start && <span className="text-cream/65">Start <span className="text-cream/85">{start}</span></span>}
+          {finish && <span className="text-cream/65">Finish <span className="text-cream/85">{finish}</span></span>}
+        </div>
+      );
+    }
+    return <span className="text-[10px] text-cream/55 italic">Building</span>;
+  }
+
+  if (stage === "At cross dock") {
+    const bo = getBackorderStatus(order.sku_items);
+    if (bo.status === "pending") {
+      return <span className="text-[10px]" style={{ color: "#e89090" }}>{bo.count} backordered</span>;
+    }
+    if (order.scheduled_delivery_date) {
+      return <span className="text-[10px] text-cream/55">Sched {order.scheduled_delivery_date}</span>;
+    }
+    return <span className="text-[10px] text-cream/55 italic">Awaiting delivery date</span>;
+  }
+
+  if (stage === "Delivered") {
+    return <span className="text-[10px] text-cream/55">Completed</span>;
+  }
+
+  return <span className="text-[10px] text-cream/55">{stage}</span>;
+}
+
+function UpdateStatusActions({
+  order, stage, mobile = false, onOpenModal,
+}: {
+  order: Order; stage: string; mobile?: boolean;
+  onOpenModal?: (o: Order, reason?: "needs-attachment") => void;
+}) {
+  const { currentUserName, claimOrder, moveStage, archiveOrder, busy, withBusy } = useRowActions(order);
+
   async function markEntered() {
-    setBusy(true);
-    try {
+    const result = await (async () => {
       const gate = await checkAttachmentGate(order.id);
       if (!gate.ok) {
-        // Open the modal pre-flagged so it shows the banner + opens the
-        // file picker automatically.
         onOpenModal?.(order, "needs-attachment");
         return;
       }
       await moveStage(order.id, "Entered", currentUserName ?? undefined);
-    } finally {
-      setBusy(false);
-    }
+    })();
+    return result;
   }
 
-  // ── Archived ──
-  if (stage === "Archived") {
-    return (
-      <button
-        onClick={() => withBusy(() => unarchiveOrder(order.id))}
-        disabled={busy}
-        className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all"
-        style={{
-          background: busy ? "rgba(145,165,151,0.08)" : "rgba(145,165,151,0.18)",
-          border: "0.5px solid rgba(145,165,151,0.45)",
-          color: busy ? "rgba(184,210,189,0.40)" : "#b8d0bd",
-          cursor: busy ? "wait" : "pointer",
-        }}
-      >
-        <RotateCcw className="w-3 h-3" />
-        {busy ? "..." : "Restore"}
-      </button>
-    );
-  }
-
-  // ── New ──
+  // ── New ─────────────────────────────────────────────────────────────
   if (stage === "New") {
     const claimedBy = order.claimed_by ?? null;
     const isClaimedByMe = !!currentUserName && claimedBy === currentUserName;
     const isClaimedByOther = !!claimedBy && !isClaimedByMe;
 
     if (isClaimedByOther) {
-      return (
-        <div className="flex items-center gap-1.5">
-          <span className="text-[10px] text-cream/55">Claimed</span>
-          <span className="text-[10px] text-cream/40">by {claimedBy}</span>
-        </div>
-      );
+      // No action available — claimed by someone else
+      return <span className="text-[10px] text-cream/30 italic">—</span>;
     }
     if (isClaimedByMe) {
       return (
         <div className="flex items-center gap-1.5">
-          <span className="text-[10px] text-cream/55">Yours —</span>
           <button
-            onClick={markEntered}
+            onClick={() => withBusy(markEntered)}
             disabled={busy}
             className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30"
             title="Requires an attached PDF"
@@ -474,14 +526,8 @@ function StatusCell({
     );
   }
 
-  // ── Entered ──
+  // ── Entered ─────────────────────────────────────────────────────────
   if (stage === "Entered") {
-    if (order.production_start_date) {
-      // Date is set but order is still Entered — means save was queued
-      // but auto-advance hasn't taken effect on the client yet. Show a
-      // calm "Starts" label.
-      return <span className="text-[10px] text-cream/55">Starts {order.production_start_date}</span>;
-    }
     return (
       <button
         onClick={(e) => { e.stopPropagation(); onOpenModal?.(order); }}
@@ -493,12 +539,8 @@ function StatusCell({
     );
   }
 
-  // ── In production ──
+  // ── In production ──────────────────────────────────────────────────
   if (stage === "In production") {
-    // Auto-advance happens via the production-complete cron when the
-    // est finish date has passed. The button here lets a user manually
-    // push the order forward — usually because production finished
-    // early — with a soft confirmation.
     const finish = order.production_est_finish_date;
     const today = new Date().toISOString().slice(0, 10);
     const isPastFinish = finish && finish <= today;
@@ -513,9 +555,6 @@ function StatusCell({
     }
     return (
       <div className="flex items-center gap-1.5">
-        <span className="text-[10px] text-cream/55">
-          {finish ? `Finish ${finish}` : "Building"}
-        </span>
         <button
           onClick={() => withBusy(earlyPush)}
           disabled={busy}
@@ -529,65 +568,109 @@ function StatusCell({
         >
           {busy ? "..." : isPastFinish ? (mobile ? "Cross dock" : "Mark Cross-dock") : "Early Push"}
         </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); onOpenModal?.(order); }}
+          className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-white/4 border border-cream/15 text-cream/65 hover:bg-white/8 hover:text-cream/85"
+          title="Open order to change production dates"
+        >
+          {mobile ? "Dates" : "Change dates"}
+        </button>
       </div>
     );
   }
 
-  // ── At cross dock ──
+  // ── At cross dock ──────────────────────────────────────────────────
   if (stage === "At cross dock") {
-    const bo = getBackorderStatus(order.sku_items);
     const hasDate = !!order.scheduled_delivery_date;
-    return (
-      <div className="flex items-center gap-1.5">
-        {bo.status === "pending" ? (
-          <span className="text-[10px]" style={{ color: "#e89090" }}>{bo.count} backordered</span>
-        ) : hasDate ? (
-          <span className="text-[10px] text-cream/55">Sched {order.scheduled_delivery_date}</span>
-        ) : (
-          <span className="text-[10px] text-cream/55">Awaiting call</span>
-        )}
-        {hasDate ? (
+    if (hasDate) {
+      return (
+        <div className="flex items-center gap-1.5">
           <button
-            // BUG FIX: previously called archiveOrder() so orders skipped
-            // the Delivered stage entirely. Now moves to Delivered first;
-            // a separate "Archive" button on the Delivered stage handles
-            // the archive step.
             onClick={() => withBusy(() => moveStage(order.id, "Delivered"))}
             disabled={busy}
             className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30"
           >
             {busy ? "..." : (mobile ? "Confirm" : "Confirm Delivery")}
           </button>
-        ) : (
           <button
             onClick={(e) => { e.stopPropagation(); onOpenModal?.(order); }}
-            className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-white/6 border border-cream/15 text-cream/85 hover:bg-white/10"
-            title="Open order to set delivery date — Confirm Delivery appears once scheduled"
+            className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-white/4 border border-cream/15 text-cream/65 hover:bg-white/8 hover:text-cream/85"
+            title="Open order to change delivery date"
           >
-            Set delivery date →
+            {mobile ? "Date" : "Change date"}
           </button>
-        )}
-      </div>
+        </div>
+      );
+    }
+    return (
+      <button
+        onClick={(e) => { e.stopPropagation(); onOpenModal?.(order); }}
+        className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30"
+        title="Open order to set delivery date — Confirm Delivery appears once scheduled"
+      >
+        Set delivery date →
+      </button>
     );
   }
 
-  // ── Delivered ──
+  // ── Delivered ──────────────────────────────────────────────────────
   if (stage === "Delivered") {
     return (
-      <div className="flex items-center gap-1.5">
-        <span className="text-[10px] text-cream/55">Completed</span>
-        <button
-          onClick={() => withBusy(() => archiveOrder(order.id))}
-          disabled={busy}
-          className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-white/6 border border-cream/15 text-cream/85 hover:bg-white/10"
-          title="Move to archive"
-        >
-          {busy ? "..." : "Archive"}
-        </button>
+      <button
+        onClick={() => withBusy(() => archiveOrder(order.id))}
+        disabled={busy}
+        className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30"
+        title="Move to archive"
+      >
+        {busy ? "..." : "Archive Order"}
+      </button>
+    );
+  }
+
+  return null;
+}
+
+function StatusCell({
+  order, stage, mobile = false, onOpenModal,
+}: {
+  order: Order; stage: string; mobile?: boolean;
+  /** Called when a gate fails so the user can fix it in the modal. */
+  onOpenModal?: (o: Order, reason?: "needs-attachment") => void;
+}) {
+  const { unarchiveOrder, busy, withBusy } = useRowActions(order);
+
+  // Archived still uses the combined renderer (the Restore button is
+  // the entire "status" for that stage).
+  if (stage === "Archived") {
+    return (
+      <button
+        onClick={() => withBusy(() => unarchiveOrder(order.id))}
+        disabled={busy}
+        className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all"
+        style={{
+          background: busy ? "rgba(145,165,151,0.08)" : "rgba(145,165,151,0.18)",
+          border: "0.5px solid rgba(145,165,151,0.45)",
+          color: busy ? "rgba(184,210,189,0.40)" : "#b8d0bd",
+          cursor: busy ? "wait" : "pointer",
+        }}
+      >
+        <RotateCcw className="w-3 h-3" />
+        {busy ? "..." : "Restore"}
+      </button>
+    );
+  }
+
+  // Mobile combines label + actions inline for compactness
+  if (mobile) {
+    return (
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <StatusLabel order={order} stage={stage} />
+        <UpdateStatusActions order={order} stage={stage} mobile onOpenModal={onOpenModal} />
       </div>
     );
   }
 
-  // ── Warranty fallback ──
-  return <span className="text-[10px] text-cream/55">{stage}</span>;
+  // Desktop renders only the label here; the actions live in their own
+  // column rendered by OrderRow.
+  return <StatusLabel order={order} stage={stage} />;
 }
