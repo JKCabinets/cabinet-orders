@@ -113,6 +113,9 @@ export function OrderTable({
               <SortableHeader label="Customer"  col="name"           current={sortKey} dir={sortDir} onClick={setSort} />
               <SortableHeader label="Type"      col="source"         current={sortKey} dir={sortDir} onClick={setSort} width="w-[95px]" />
               <th className="text-left px-3 py-2.5 text-[10px] uppercase tracking-[0.13em] text-cream/55 font-medium">Status</th>
+              {stage !== "New" && (
+                <th className="text-left px-3 py-2.5 text-[10px] uppercase tracking-[0.13em] text-cream/55 font-medium w-[110px]">Info</th>
+              )}
               <SortableHeader label="Payment"   col="payment_status" current={sortKey} dir={sortDir} onClick={setSort} width="w-[120px]" />
               <SortableHeader label="Team"      col="claimed_by"     current={sortKey} dir={sortDir} onClick={setSort} width="w-[80px]" />
             </tr>
@@ -132,7 +135,7 @@ export function OrderTable({
             ))}
             {sorted.length === 0 && (
               <tr>
-                <td colSpan={selectMode ? 8 : 7} className="px-3 py-10 text-center text-cream/45 text-[12px]">
+                <td colSpan={(selectMode ? 8 : 7) + (stage !== "New" ? 1 : 0)} className="px-3 py-10 text-center text-cream/45 text-[12px]">
                   No orders in this stage.
                 </td>
               </tr>
@@ -259,6 +262,20 @@ function OrderRow({
       <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
         <StatusCell order={order} stage={stage} onOpenModal={onSelect} />
       </td>
+      {stage !== "New" && (
+        <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+          <a
+            href={`/api/orders/${order.id}/export`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-white/4 border border-cream/15 text-cream/85 hover:bg-white/8"
+            title="Open the exported order PDF"
+          >
+            <Download className="w-3 h-3" />
+            Order PDF
+          </a>
+        </td>
+      )}
       <td className="px-3 py-2.5">
         <PaymentPill status={order.payment_status} />
       </td>
@@ -459,30 +476,20 @@ function StatusCell({
 
   // ── Entered ──
   if (stage === "Entered") {
+    if (order.production_start_date) {
+      // Date is set but order is still Entered — means save was queued
+      // but auto-advance hasn't taken effect on the client yet. Show a
+      // calm "Starts" label.
+      return <span className="text-[10px] text-cream/55">Starts {order.production_start_date}</span>;
+    }
     return (
-      <div className="flex items-center gap-1.5">
-        {order.production_start_date ? (
-          <span className="text-[10px] text-cream/55">Starts {order.production_start_date}</span>
-        ) : (
-          <button
-            onClick={(e) => { e.stopPropagation(); onOpenModal?.(order); }}
-            className="text-[10px] text-cream/55 hover:text-cream underline-offset-2 hover:underline transition-colors"
-            title="Open order to set production start date — order auto-advances once set"
-          >
-            Set start date →
-          </button>
-        )}
-        <a
-          href={`/api/orders/${order.id}/export`}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(e) => e.stopPropagation()}
-          className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30"
-        >
-          <Download className="w-3 h-3" />
-          Export
-        </a>
-      </div>
+      <button
+        onClick={(e) => { e.stopPropagation(); onOpenModal?.(order); }}
+        className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30"
+        title="Open order to set production start date — order auto-advances once set"
+      >
+        Set start date →
+      </button>
     );
   }
 

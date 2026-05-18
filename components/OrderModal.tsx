@@ -62,7 +62,7 @@ const LABEL = "text-[10px] uppercase tracking-[0.16em] text-cream/50 mb-1.5";
 const ADMIN_CODE = "4951";
 
 export function OrderModal({ order, tab, onClose, onStageChange, initialReason }: OrderModalProps) {
-  const { moveStage, updateNotes, updateInternalNotes, archiveOrder, unarchiveOrder, deleteOrder, orders, warranties, team } = useStore();
+  const { moveStage, updateOrderDetails, updateNotes, updateInternalNotes, archiveOrder, unarchiveOrder, deleteOrder, orders, warranties, team } = useStore();
   const { data: session } = useSession();
   const currentUserName = session?.user?.name ?? undefined;
   const [notes, setNotes] = useState(order.notes);
@@ -71,7 +71,9 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
   const [internalNotesChanged, setInternalNotesChanged] = useState(false);
   const [enteredGateError, setEnteredGateError] = useState(false);
   const [checkingAttachments, setCheckingAttachments] = useState(false);
-  // Admin PIN for backwards moves
+  // Admin PIN for manual stage changes from the modal (forward or back).
+  // Normal flows (date entry → auto-advance, table buttons with gates)
+  // do not require the PIN.
   const [pendingStage, setPendingStage] = useState<Stage | null>(null);
   const [adminPin, setAdminPin] = useState("");
   const [pinError, setPinError] = useState(false);
@@ -136,18 +138,20 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
 
   async function handleMoveStage(stage: Stage) {
     const targetIdx = (stages as string[]).indexOf(stage);
-    const isBackwards = targetIdx < stageIdx;
+    if (targetIdx === stageIdx) return; // No-op: already there
 
-    // Gate 1: backwards move requires admin PIN
-    if (isBackwards) {
-      (document.activeElement as HTMLElement | null)?.blur();
-      setPendingStage(stage);
-      setAdminPin("");
-      setPinError(false);
-      return;
-    }
-
-    await doMoveStage(stage);
+    // All manual stage changes from the modal require admin approval.
+    // The normal forward flow is:
+    //   - Set the date in the Production Dates / Delivery Date editor
+    //     above (auto-advances when applicable), or
+    //   - Use the row buttons on the stage pages (which enforce gates).
+    // This modal picker is reserved for admin overrides only — both
+    // forward and backward — so guardrails (attachment gate, date
+    // gate, Early Push confirm) can't be skipped accidentally.
+    (document.activeElement as HTMLElement | null)?.blur();
+    setPendingStage(stage);
+    setAdminPin("");
+    setPinError(false);
   }
 
   async function doMoveStage(stage: Stage) {
@@ -375,7 +379,7 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
                         PDF req.
                       </span>
                     )}
-                    {isBackwards && (
+                    {!isActive && (
                       <span className="text-[9px] px-2 py-px rounded-full flex-shrink-0 uppercase tracking-wider font-medium"
                         style={{ background: "rgba(232,144,144,0.12)", color: "#e89090", border: "0.5px solid rgba(232,144,144,0.35)" }}>
                         Admin
@@ -398,7 +402,7 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
                   Admin code <em className="italic-storm">required</em>
                 </p>
                 <p className="text-[11px] mb-3 text-cream/55">
-                  Moving back to &ldquo;{pendingStage}&rdquo; requires the admin override code.
+                  Moving to &ldquo;{pendingStage}&rdquo; from this view requires the admin override code. The normal workflow happens via the stage pages or by setting dates above.
                 </p>
                 <div className="flex gap-2">
                   <input
@@ -533,28 +537,9 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
               </div>
             </div>
 
-            {/* Production & Delivery Dates — shown above notes when dates exist */}
-            {liveOrder.type === "order" && (liveOrder.production_start_date || liveOrder.production_est_finish_date || liveOrder.scheduled_delivery_date) && (
-              <div className="grid grid-cols-3 gap-2 mb-1">
-                {liveOrder.production_start_date && (
-                  <div className="rounded-brand px-3 py-2" style={{ background: "rgba(200,184,74,0.10)", border: "0.5px solid rgba(200,184,74,0.30)" }}>
-                    <p className="text-[9px] uppercase tracking-[0.13em] mb-0.5 text-cream/45">Prod. Start</p>
-                    <p className="text-[11px] font-medium" style={{ color: "#d4cc70" }}>{liveOrder.production_start_date}</p>
-                  </div>
-                )}
-                {liveOrder.production_est_finish_date && (
-                  <div className="rounded-brand px-3 py-2" style={{ background: "rgba(200,184,74,0.10)", border: "0.5px solid rgba(200,184,74,0.30)" }}>
-                    <p className="text-[9px] uppercase tracking-[0.13em] mb-0.5 text-cream/45">Est. Finish</p>
-                    <p className="text-[11px] font-medium" style={{ color: "#d4cc70" }}>{liveOrder.production_est_finish_date}</p>
-                  </div>
-                )}
-                {liveOrder.scheduled_delivery_date && (
-                  <div className="rounded-brand px-3 py-2" style={{ background: "rgba(90,141,184,0.10)", border: "0.5px solid rgba(90,141,184,0.30)" }}>
-                    <p className="text-[9px] uppercase tracking-[0.13em] mb-0.5 text-cream/45">Delivery Date</p>
-                    <p className="text-[11px] font-medium" style={{ color: "#a8c8e0" }}>{liveOrder.scheduled_delivery_date}</p>
-                  </div>
-                )}
-              </div>
+            {/* Production & Delivery Dates — editable from Entered stage forward */}
+            {liveOrder.type === "order" && liveOrder.stage !== "New" && (
+              <DateEditor order={liveOrder} updateOrderDetails={updateOrderDetails} />
             )}
 
             {/* Customer-facing notes — Quote orders get structured display, others get plain textarea */}
@@ -750,6 +735,251 @@ function QuoteInfoPanel({ notes }: { notes: string }) {
           <p className="eyebrow mb-2">Attachment</p>
           <a href={attach} target="_blank" rel="noopener noreferrer" className="text-[13px] underline text-terracotta hover:brightness-110 transition-all">View uploaded file</a>
         </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Date editor (inline) ──────────────────────────────────────────────
+ *
+ * Editable production_start_date / production_est_finish_date /
+ * scheduled_delivery_date with stage-aware visibility:
+ *   - Entered: shows Prod Start + Est Finish editors, prompts user to
+ *     set Start (server auto-advances to In production when saved).
+ *   - In production: both production dates editable. Delivery date
+ *     not yet relevant.
+ *   - At cross dock + Delivered: production dates locked (display
+ *     only) and delivery date editable.
+ *
+ * Editing replaces the existing dates; the server PATCHes the new
+ * values directly. Clearing the start date is intentionally blocked
+ * — once the order is past Entered it shouldn't lose its commit date.
+ */
+function DateEditor({
+  order,
+  updateOrderDetails,
+}: {
+  order: Order;
+  updateOrderDetails: (id: string, details: {
+    production_start_date?: string | null;
+    production_est_finish_date?: string | null;
+    scheduled_delivery_date?: string | null;
+  }) => Promise<void>;
+}) {
+  const stage = order.stage;
+  const showProdDates = stage === "Entered" || stage === "In production" || stage === "At cross dock" || stage === "Delivered";
+  const showDeliveryDate = stage === "At cross dock" || stage === "Delivered";
+  const prodEditable = stage === "Entered" || stage === "In production";
+  const deliveryEditable = stage === "At cross dock";
+
+  const [editingProd, setEditingProd] = useState(false);
+  const [editingDelivery, setEditingDelivery] = useState(false);
+  const [prodStart, setProdStart] = useState(order.production_start_date ?? "");
+  const [prodFinish, setProdFinish] = useState(order.production_est_finish_date ?? "");
+  const [deliveryDate, setDeliveryDate] = useState(order.scheduled_delivery_date ?? "");
+  const [saving, setSaving] = useState(false);
+
+  // Reset local state when the order data changes (e.g. after a save)
+  useEffect(() => {
+    setProdStart(order.production_start_date ?? "");
+    setProdFinish(order.production_est_finish_date ?? "");
+    setDeliveryDate(order.scheduled_delivery_date ?? "");
+  }, [order.production_start_date, order.production_est_finish_date, order.scheduled_delivery_date]);
+
+  async function saveProd() {
+    if (!prodStart) return; // Start date required — setting it triggers auto-advance
+    setSaving(true);
+    try {
+      await updateOrderDetails(order.id, {
+        production_start_date: prodStart,
+        production_est_finish_date: prodFinish || null,
+      });
+      setEditingProd(false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveDelivery() {
+    if (!deliveryDate) return;
+    setSaving(true);
+    try {
+      await updateOrderDetails(order.id, { scheduled_delivery_date: deliveryDate });
+      setEditingDelivery(false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const hasAnyDate = !!(order.production_start_date || order.production_est_finish_date || order.scheduled_delivery_date);
+  if (!showProdDates && !showDeliveryDate && !hasAnyDate) return null;
+
+  return (
+    <div className="space-y-2 mb-1">
+      {/* ── Production dates ── */}
+      {showProdDates && (
+        <>
+          {editingProd ? (
+            <div className="rounded-brand p-3" style={{ background: "rgba(200,184,74,0.08)", border: "0.5px solid rgba(200,184,74,0.30)" }}>
+              <div className="flex items-center gap-2 mb-2">
+                <p className="text-[10px] uppercase tracking-[0.13em] text-cream/55 font-medium">Production dates</p>
+                {stage === "Entered" && (
+                  <span className="text-[9px] text-cream/45 italic">
+                    Setting start date auto-advances to <em className="italic-storm">In production</em>
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-2 mb-3">
+                <label className="flex flex-col gap-1">
+                  <span className="text-[9px] uppercase tracking-wider text-cream/55">Start date <span className="text-terracotta">*</span></span>
+                  <input
+                    type="date"
+                    value={prodStart}
+                    onChange={(e) => setProdStart(e.target.value)}
+                    className="rounded-brand px-2.5 py-1.5 text-[12px]"
+                    style={{ background: "rgba(255,255,255,0.06)", border: "0.5px solid rgba(255,255,255,0.18)", color: "#f0ece4", colorScheme: "dark" }}
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-[9px] uppercase tracking-wider text-cream/55">Est. finish</span>
+                  <input
+                    type="date"
+                    value={prodFinish}
+                    onChange={(e) => setProdFinish(e.target.value)}
+                    className="rounded-brand px-2.5 py-1.5 text-[12px]"
+                    style={{ background: "rgba(255,255,255,0.06)", border: "0.5px solid rgba(255,255,255,0.18)", color: "#f0ece4", colorScheme: "dark" }}
+                  />
+                </label>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={saveProd}
+                  disabled={saving || !prodStart}
+                  className="px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30 disabled:opacity-40"
+                >
+                  {saving ? "…" : "Save dates"}
+                </button>
+                <button
+                  onClick={() => {
+                    setProdStart(order.production_start_date ?? "");
+                    setProdFinish(order.production_est_finish_date ?? "");
+                    setEditingProd(false);
+                  }}
+                  className="px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider text-cream/55 hover:text-cream/85"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (order.production_start_date || order.production_est_finish_date) ? (
+            <div className="grid grid-cols-3 gap-2">
+              {order.production_start_date && (
+                <div className="rounded-brand px-3 py-2" style={{ background: "rgba(200,184,74,0.10)", border: "0.5px solid rgba(200,184,74,0.30)" }}>
+                  <p className="text-[9px] uppercase tracking-[0.13em] mb-0.5 text-cream/45">Prod. Start</p>
+                  <p className="text-[11px] font-medium" style={{ color: "#d4cc70" }}>{order.production_start_date}</p>
+                </div>
+              )}
+              {order.production_est_finish_date && (
+                <div className="rounded-brand px-3 py-2" style={{ background: "rgba(200,184,74,0.10)", border: "0.5px solid rgba(200,184,74,0.30)" }}>
+                  <p className="text-[9px] uppercase tracking-[0.13em] mb-0.5 text-cream/45">Est. Finish</p>
+                  <p className="text-[11px] font-medium" style={{ color: "#d4cc70" }}>{order.production_est_finish_date}</p>
+                </div>
+              )}
+              {prodEditable && (
+                <button
+                  onClick={() => setEditingProd(true)}
+                  className="rounded-brand px-3 py-2 text-[10px] uppercase tracking-wider text-cream/55 hover:text-cream/85 hover:bg-white/4 transition-all"
+                  style={{ border: "0.5px dashed rgba(255,255,255,0.20)" }}
+                >
+                  Edit dates →
+                </button>
+              )}
+            </div>
+          ) : (
+            // No dates set yet — show a single CTA to enter them
+            stage === "Entered" && (
+              <button
+                onClick={() => setEditingProd(true)}
+                className="w-full rounded-brand px-4 py-3 text-left transition-all bg-terracotta/10 hover:bg-terracotta/15"
+                style={{ border: "0.5px solid rgba(184,130,106,0.40)" }}
+              >
+                <p className="font-display text-[15px] mb-0.5" style={{ color: "#d9a888" }}>
+                  Set production <em className="italic-storm">start date</em>
+                </p>
+                <p className="text-[11px] text-cream/55">
+                  This will auto-advance the order to <em className="italic-storm">In production</em>.
+                </p>
+              </button>
+            )
+          )}
+        </>
+      )}
+
+      {/* ── Delivery date ── */}
+      {showDeliveryDate && (
+        <>
+          {editingDelivery ? (
+            <div className="rounded-brand p-3" style={{ background: "rgba(90,141,184,0.08)", border: "0.5px solid rgba(90,141,184,0.30)" }}>
+              <p className="text-[10px] uppercase tracking-[0.13em] text-cream/55 font-medium mb-2">Delivery date</p>
+              <input
+                type="date"
+                value={deliveryDate}
+                onChange={(e) => setDeliveryDate(e.target.value)}
+                className="rounded-brand px-2.5 py-1.5 text-[12px] mb-3 w-48"
+                style={{ background: "rgba(255,255,255,0.06)", border: "0.5px solid rgba(255,255,255,0.18)", color: "#f0ece4", colorScheme: "dark" }}
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={saveDelivery}
+                  disabled={saving || !deliveryDate}
+                  className="px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30 disabled:opacity-40"
+                >
+                  {saving ? "…" : "Save"}
+                </button>
+                <button
+                  onClick={() => {
+                    setDeliveryDate(order.scheduled_delivery_date ?? "");
+                    setEditingDelivery(false);
+                  }}
+                  className="px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider text-cream/55 hover:text-cream/85"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : order.scheduled_delivery_date ? (
+            <div className="grid grid-cols-3 gap-2">
+              <div className="rounded-brand px-3 py-2" style={{ background: "rgba(90,141,184,0.10)", border: "0.5px solid rgba(90,141,184,0.30)" }}>
+                <p className="text-[9px] uppercase tracking-[0.13em] mb-0.5 text-cream/45">Delivery Date</p>
+                <p className="text-[11px] font-medium" style={{ color: "#a8c8e0" }}>{order.scheduled_delivery_date}</p>
+              </div>
+              {deliveryEditable && (
+                <button
+                  onClick={() => setEditingDelivery(true)}
+                  className="rounded-brand px-3 py-2 text-[10px] uppercase tracking-wider text-cream/55 hover:text-cream/85 hover:bg-white/4 transition-all"
+                  style={{ border: "0.5px dashed rgba(255,255,255,0.20)" }}
+                >
+                  Edit date →
+                </button>
+              )}
+            </div>
+          ) : (
+            stage === "At cross dock" && (
+              <button
+                onClick={() => setEditingDelivery(true)}
+                className="w-full rounded-brand px-4 py-3 text-left transition-all bg-terracotta/10 hover:bg-terracotta/15"
+                style={{ border: "0.5px solid rgba(184,130,106,0.40)" }}
+              >
+                <p className="font-display text-[15px] mb-0.5" style={{ color: "#d9a888" }}>
+                  Set <em className="italic-storm">delivery date</em>
+                </p>
+                <p className="text-[11px] text-cream/55">
+                  Once set, you can confirm delivery from the stage page.
+                </p>
+              </button>
+            )
+          )}
+        </>
       )}
     </div>
   );
