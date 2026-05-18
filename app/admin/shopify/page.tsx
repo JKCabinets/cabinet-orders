@@ -23,6 +23,8 @@ export default function ShopifySyncPage() {
   const [syncResult, setSyncResult] = useState<{ synced: number; products: number } | null>(null);
   const [backfilling, setBackfilling] = useState(false);
   const [backfillResult, setBackfillResult] = useState<{ newly_imported: number; already_imported: number; total_in_shopify: number } | null>(null);
+  const [paymentBackfilling, setPaymentBackfilling] = useState(false);
+  const [paymentBackfillResult, setPaymentBackfillResult] = useState<{ updated: number; remaining: number; message: string } | null>(null);
   const [expandedVendors, setExpandedVendors] = useState<Set<string>>(new Set());
   const [selectedVendor, setSelectedVendor] = useState("");
 
@@ -75,6 +77,67 @@ export default function ShopifySyncPage() {
     setBackfilling(false);
   }
 
+  /**
+   * Walk the backfill-payment-status endpoint repeatedly until it
+   * reports zero remaining. Each call processes up to 50 orders.
+   * Capped at 50 iterations as a safety net so a bug in the route
+   * (e.g. always returning the same remaining count) can't lock the
+   * browser in an infinite loop.
+   */
+  async function backfillPayments() {
+    setPaymentBackfilling(true);
+    setPaymentBackfillResult(null);
+    let totalUpdated = 0;
+    let lastRemaining = -1;
+    try {
+      for (let i = 0; i < 50; i++) {
+        const res = await fetch("/api/admin/backfill-payment-status", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ batch_size: 50 }),
+        });
+        const data = await res.json();
+        if (!data.ok) {
+          setPaymentBackfillResult({
+            updated: totalUpdated,
+            remaining: lastRemaining < 0 ? 0 : lastRemaining,
+            message: data.error ?? "Backfill failed",
+          });
+          break;
+        }
+        totalUpdated += data.updated ?? 0;
+        const remaining: number = data.remaining ?? 0;
+        if (remaining === 0) {
+          setPaymentBackfillResult({
+            updated: totalUpdated,
+            remaining: 0,
+            message: totalUpdated > 0
+              ? `Done. Backfilled ${totalUpdated} order${totalUpdated === 1 ? "" : "s"}.`
+              : "Nothing to backfill.",
+          });
+          break;
+        }
+        // Safety: if remaining doesn't decrease between iterations, stop.
+        if (remaining === lastRemaining) {
+          setPaymentBackfillResult({
+            updated: totalUpdated,
+            remaining,
+            message: `Stopped — ${remaining} orders remain but progress stalled. Check server logs.`,
+          });
+          break;
+        }
+        lastRemaining = remaining;
+      }
+    } catch (e) {
+      setPaymentBackfillResult({
+        updated: totalUpdated,
+        remaining: lastRemaining < 0 ? 0 : lastRemaining,
+        message: e instanceof Error ? e.message : "Backfill failed",
+      });
+    }
+    setPaymentBackfilling(false);
+  }
+
   function toggleVendor(vendor: string) {
     setExpandedVendors(prev => {
       const next = new Set(prev);
@@ -118,21 +181,32 @@ export default function ShopifySyncPage() {
           <h1 className="text-sm font-medium text-[#e8e2d4]">Shopify product sync</h1>
         </div>
         <div className="flex items-center gap-3">
-          {backfillResult && (
+          {paymentBackfillResult && (
+            <span className={`flex items-center gap-1 text-[11px] ${paymentBackfillResult.remaining === 0 && !paymentBackfillResult.message.startsWith("Stopped") ? "text-green-400" : "text-amber-400"}`}>
+              <Check className="w-3 h-3" /> {paymentBackfillResult.message}
+            </span>
+          )}
+          {backfillResult && !paymentBackfillResult && (
             <span className="flex items-center gap-1 text-[11px] text-green-400">
               <Check className="w-3 h-3" /> {backfillResult.newly_imported} orders imported · {backfillResult.already_imported} already existed
             </span>
           )}
-          {syncResult && !backfillResult && (
+          {syncResult && !backfillResult && !paymentBackfillResult && (
             <span className="flex items-center gap-1 text-[11px] text-green-400">
               <Check className="w-3 h-3" /> {syncResult.synced} variants from {syncResult.products} products
             </span>
           )}
-          {lastSynced && !syncResult && (
+          {lastSynced && !syncResult && !backfillResult && !paymentBackfillResult && (
             <span className="text-[10px] text-[#5a5650]">
               Synced {new Date(lastSynced).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
             </span>
           )}
+          <button onClick={backfillPayments} disabled={paymentBackfilling}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#2e2e2e] text-xs text-[#9e9888] hover:text-[#e8e2d4] hover:border-[#5a5650] disabled:opacity-50 transition-all"
+            title="Pull the current financial_status from Shopify for any orders missing it">
+            <RefreshCw className={`w-3.5 h-3.5 ${paymentBackfilling ? "animate-spin" : ""}`} />
+            {paymentBackfilling ? "Backfilling..." : "Backfill payments"}
+          </button>
           <button onClick={backfillOrders} disabled={backfilling}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#2e2e2e] text-xs text-[#9e9888] hover:text-[#e8e2d4] hover:border-[#5a5650] disabled:opacity-50 transition-all">
             <Download className={`w-3.5 h-3.5 ${backfilling ? "animate-spin" : ""}`} />
