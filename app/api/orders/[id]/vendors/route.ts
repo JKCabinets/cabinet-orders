@@ -13,9 +13,11 @@ import type { SkuItem } from "@/lib/skuDecoder";
  *
  * Response shape:
  *   {
- *     vendors: string[],           // sorted unique vendor names
- *     hasUnassigned: boolean,      // true if any SKU has no vendor mapping
- *     totalSkus: number,           // total SKU items on the order
+ *     vendors: string[],                 // sorted unique vendor names
+ *     hasUnassigned: boolean,            // true if any SKU has no vendor mapping
+ *     totalSkus: number,                 // total SKU items on the order
+ *     vendorBySku: Record<string,string> // per-SKU vendor name, omitted when
+ *                                        // no mapping exists
  *   }
  */
 export async function GET(
@@ -43,5 +45,6 @@ export async function GET(
     vendors: lookup.uniqueVendors,
     hasUnassigned: lookup.hasUnassigned,
     totalSkus: skuItems.length,
+    vendorBySku: Object.fromEntries(lookup.vendorBySku),
   });
 }

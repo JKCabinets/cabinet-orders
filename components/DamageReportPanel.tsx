@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { AlertTriangle, Plus, X, Check, ChevronDown, ChevronUp } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { AlertTriangle, Plus, X, Check, ChevronDown, ChevronUp, Mail } from "lucide-react";
 import clsx from "clsx";
 
 interface DamageReport {
@@ -15,6 +15,13 @@ interface DamageReport {
   status: "open" | "in_progress" | "resolved";
   reported_by: string;
   created_at: string;
+}
+
+interface Vendor {
+  id: number;
+  name: string;
+  rma_email: string | null;
+  contact_name: string | null;
 }
 
 const DAMAGE_TYPES = [
@@ -37,9 +44,18 @@ const STATUS_STYLES = {
 interface DamageReportPanelProps {
   orderId: string;
   orderSkus?: string[];
+  /** Customer name — used in the RMA email subject and body. */
+  orderName?: string;
+  /** Logged-in team member's name — used as the email signature. */
+  reporterName?: string;
 }
 
-export function DamageReportPanel({ orderId, orderSkus = [] }: DamageReportPanelProps) {
+export function DamageReportPanel({
+  orderId,
+  orderSkus = [],
+  orderName,
+  reporterName,
+}: DamageReportPanelProps) {
   const [reports, setReports] = useState<DamageReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -53,7 +69,36 @@ export function DamageReportPanel({ orderId, orderSkus = [] }: DamageReportPanel
   const [description, setDescription] = useState("");
   const [cause, setCause] = useState("");
 
+  // RMA email feature: vendor directory + per-SKU vendor mapping
+  const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [vendorBySku, setVendorBySku] = useState<Record<string, string>>({});
+
+  const vendorByName = useMemo(
+    () => Object.fromEntries(vendors.map(v => [v.name, v])),
+    [vendors],
+  );
+
   useEffect(() => { fetchReports(); }, [orderId]);
+
+  // Fetch vendor directory + per-SKU vendor mapping in parallel on mount.
+  // Both are cheap; failures don't block report rendering.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [vendorsRes, mapRes] = await Promise.all([
+          fetch("/api/vendors").then(r => r.ok ? r.json() : { vendors: [] }),
+          fetch(`/api/orders/${encodeURIComponent(orderId)}/vendors`).then(r => r.ok ? r.json() : { vendorBySku: {} }),
+        ]);
+        if (cancelled) return;
+        setVendors(vendorsRes.vendors ?? []);
+        setVendorBySku(mapRes.vendorBySku ?? {});
+      } catch {
+        /* silent — the Draft email button just won't have data */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [orderId]);
 
   async function fetchReports() {
     setLoading(true);
@@ -254,12 +299,204 @@ export function DamageReportPanel({ orderId, orderSkus = [] }: DamageReportPanel
                       ))}
                     </div>
                   </div>
+
+                  {/* RMA email draft */}
+                  <div className="mt-3 pt-3 border-t border-[rgba(255,255,255,0.06)]">
+                    <RmaEmailButton
+                      report={r}
+                      orderId={orderId}
+                      orderName={orderName}
+                      reporterName={reporterName}
+                      vendorByName={vendorByName}
+                      vendorBySku={vendorBySku}
+                    />
+                  </div>
                 </div>
               )}
             </div>
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Renders the "Draft RMA email" button for a damage report.
+ *
+ * Behavior depends on whether we have vendor coverage for the affected
+ * SKUs:
+ *   - Single vendor with email → renders a single mailto button
+ *   - Multiple vendors → renders a dropdown of vendor choices
+ *   - No vendor matches / no email on the matched vendor → button is
+ *     disabled with a hint explaining what's missing
+ *
+ * The mailto link is constructed entirely client-side. Once the user
+ * clicks, control transfers to their email client (Outlook, Gmail web,
+ * Apple Mail, etc.) and the app has no further role — by design.
+ * The user reviews and sends manually.
+ */
+function RmaEmailButton({
+  report,
+  orderId,
+  orderName,
+  reporterName,
+  vendorByName,
+  vendorBySku,
+}: {
+  report: DamageReport;
+  orderId: string;
+  orderName?: string;
+  reporterName?: string;
+  vendorByName: Record<string, Vendor>;
+  vendorBySku: Record<string, string>;
+}) {
+  const [showPicker, setShowPicker] = useState(false);
+
+  // Group the report's affected SKUs by vendor name.
+  const skusByVendor = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    const unmapped: string[] = [];
+    for (const sku of report.affected_skus ?? []) {
+      const vendorName = vendorBySku[sku];
+      if (vendorName) {
+        (map[vendorName] ??= []).push(sku);
+      } else {
+        unmapped.push(sku);
+      }
+    }
+    return { map, unmapped };
+  }, [report.affected_skus, vendorBySku]);
+
+  const vendorNames = Object.keys(skusByVendor.map);
+  const hasAnyVendor = vendorNames.length > 0;
+  const isSingleVendor = vendorNames.length === 1;
+
+  function buildMailto(vendorName: string): { href: string; vendor: Vendor | undefined } {
+    const vendor = vendorByName[vendorName];
+    const to = vendor?.rma_email ?? "";
+    const skus = skusByVendor.map[vendorName] ?? [];
+    const subject = `RMA request — ${orderId}${orderName ? ` — ${orderName}` : ""}`;
+
+    const lines = [
+      vendor?.contact_name ? `Hi ${vendor.contact_name},` : `Hello,`,
+      ``,
+      `We're filing an RMA request for the following order.`,
+      ``,
+      `Order: ${orderId}${orderName ? ` (${orderName})` : ""}`,
+      `Damage type: ${report.damage_type}`,
+      report.cause ? `Cause: ${report.cause}` : null,
+      ``,
+      `Affected SKUs:`,
+      ...skus.map(s => `  • ${s}`),
+      skusByVendor.unmapped.length > 0
+        ? `\n(Additional SKUs on this report are from other vendors and handled separately.)`
+        : null,
+      ``,
+      `Description:`,
+      report.description,
+      ``,
+      `Please advise on replacement / return process. Photos can be provided on request.`,
+      ``,
+      `Thanks,`,
+      reporterName ?? "JK Cabinets Team",
+    ].filter(Boolean) as string[];
+
+    const body = lines.join("\n");
+
+    const href = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    return { href, vendor };
+  }
+
+  // No affected SKUs at all → button disabled
+  if ((report.affected_skus?.length ?? 0) === 0) {
+    return (
+      <div className="flex items-center gap-1.5 text-[10px] text-[rgba(232,227,218,0.30)] italic">
+        <Mail className="w-3 h-3" />
+        Add affected SKUs to draft an RMA email
+      </div>
+    );
+  }
+
+  // No vendor coverage at all → button disabled with a hint
+  if (!hasAnyVendor) {
+    return (
+      <div className="flex items-center gap-1.5 text-[10px] text-amber-400/70">
+        <Mail className="w-3 h-3" />
+        No vendor mapping for these SKUs — add vendor info in admin to enable RMA drafts
+      </div>
+    );
+  }
+
+  // Single vendor → one button
+  if (isSingleVendor) {
+    const { href, vendor } = buildMailto(vendorNames[0]);
+    const hasEmail = !!vendor?.rma_email;
+    return (
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-col">
+          <span className="text-[10px] uppercase tracking-widest text-[rgba(232,227,218,0.30)]">Draft RMA email</span>
+          <span className="text-[10px] text-[rgba(232,227,218,0.40)]">
+            {vendorNames[0]}{hasEmail ? ` · ${vendor!.rma_email}` : " · email not set"}
+          </span>
+        </div>
+        {hasEmail ? (
+          <a href={href}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] bg-[rgba(86,100,72,0.18)] border border-[rgba(86,100,72,0.55)] text-[#a8d8b0] hover:bg-[rgba(86,100,72,0.28)] transition-all"
+            title="Opens your email client with subject + body pre-filled">
+            <Mail className="w-3 h-3" />
+            Draft email
+          </a>
+        ) : (
+          <a href="/admin/vendors"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] bg-amber-900/20 border border-amber-800/50 text-amber-400/85 hover:bg-amber-900/30 transition-all"
+            title="Add this vendor's RMA email to enable drafts">
+            <Mail className="w-3 h-3" />
+            Set vendor email
+          </a>
+        )}
+      </div>
+    );
+  }
+
+  // Multiple vendors → dropdown
+  return (
+    <div className="flex items-start justify-between gap-2">
+      <div className="flex flex-col">
+        <span className="text-[10px] uppercase tracking-widest text-[rgba(232,227,218,0.30)]">Draft RMA email</span>
+        <span className="text-[10px] text-[rgba(232,227,218,0.40)]">
+          {vendorNames.length} vendors affected — pick one
+        </span>
+      </div>
+      <div className="relative">
+        <button onClick={() => setShowPicker(v => !v)}
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] bg-[rgba(86,100,72,0.18)] border border-[rgba(86,100,72,0.55)] text-[#a8d8b0] hover:bg-[rgba(86,100,72,0.28)] transition-all">
+          <Mail className="w-3 h-3" />
+          Draft email
+          <ChevronDown className="w-3 h-3" />
+        </button>
+        {showPicker && (
+          <div className="absolute right-0 mt-1.5 w-60 z-10 bg-[#181818] border border-[rgba(255,255,255,0.12)] rounded-lg shadow-lg overflow-hidden">
+            {vendorNames.map(name => {
+              const { href, vendor } = buildMailto(name);
+              const hasEmail = !!vendor?.rma_email;
+              return hasEmail ? (
+                <a key={name} href={href} onClick={() => setShowPicker(false)}
+                  className="block px-3 py-2 hover:bg-[rgba(255,255,255,0.06)] border-b border-[rgba(255,255,255,0.05)] last:border-b-0 transition-colors">
+                  <p className="text-[11px] text-[#e8e3da]">{name}</p>
+                  <p className="text-[10px] text-[rgba(232,227,218,0.40)]">{vendor!.rma_email}</p>
+                  <p className="text-[10px] text-[rgba(232,227,218,0.30)] mt-0.5">{(skusByVendor.map[name] ?? []).length} SKU(s)</p>
+                </a>
+              ) : (
+                <div key={name} className="px-3 py-2 border-b border-[rgba(255,255,255,0.05)] last:border-b-0 opacity-60">
+                  <p className="text-[11px] text-[#e8e3da]">{name}</p>
+                  <p className="text-[10px] text-amber-400/70">email not set — add in admin</p>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

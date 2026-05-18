@@ -632,6 +632,8 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
             <DamageReportPanel
               orderId={liveOrder.id}
               orderSkus={liveOrder.sku_items?.map((i) => i.sku) ?? (liveOrder.sku ? [liveOrder.sku] : [])}
+              orderName={liveOrder.name}
+              reporterName={currentUserName}
             />
           )}
 
