@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import { useStore } from "@/lib/store";
 import { Order, WARRANTY_STAGES } from "@/lib/data";
 import { PageHeader } from "@/components/AppShell";
-import { OrderCard } from "@/components/OrderCard";
+import { OrderTable } from "@/components/OrderTable";
 import { OrderModal } from "@/components/OrderModal";
 import { NewOrderModal } from "@/components/NewOrderModal";
 import { BulkActionBar } from "@/components/BulkActionBar";
@@ -23,6 +23,7 @@ export function WarrantyClient() {
   const [search, setSearch] = useState("");
   const [activeStage, setActiveStage] = useState<string>("__all__");
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [modalReason, setModalReason] = useState<"needs-attachment" | undefined>(undefined);
   const [showNewForm, setShowNewForm] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -54,18 +55,20 @@ export function WarrantyClient() {
   function toggleSelection(id: string) {
     setSelectedIds(prev => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
-  }
-  function handleCardClick(order: Order) {
-    if (selectMode) toggleSelection(order.id);
-    else setSelectedOrder(order);
   }
   const selectedOrders = useMemo(
     () => filtered.filter(o => selectedIds.has(o.id)),
     [filtered, selectedIds],
   );
+
+  // The OrderTable picks column headers from a single `stage` prop. For
+  // "All" we use the most permissive value — "New claim" preserves the
+  // Update Status column and claim affordances, and each row still
+  // renders its own stage-aware status independently.
+  const tableStage = activeStage === "__all__" ? "New claim" : activeStage;
 
   return (
     <>
@@ -154,21 +157,14 @@ export function WarrantyClient() {
             </div>
           </div>
         ) : (
-          <div
-            className="grid gap-3 pt-4"
-            style={{ gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))" }}
-          >
-            {filtered.map((order, i) => (
-              <OrderCard
-                key={order.id}
-                order={order}
-                onClick={() => handleCardClick(order)}
-                style={{ animationDelay: `${Math.min(i * 20, 400)}ms` }}
-                selectMode={selectMode}
-                selected={selectedIds.has(order.id)}
-              />
-            ))}
-          </div>
+          <OrderTable
+            orders={filtered}
+            stage={tableStage}
+            onSelect={(o, reason) => { setSelectedOrder(o); setModalReason(reason); }}
+            selectMode={selectMode}
+            selectedIds={selectedIds}
+            onToggleSelect={toggleSelection}
+          />
         )}
       </div>
 
@@ -176,20 +172,22 @@ export function WarrantyClient() {
         <OrderModal
           order={selectedOrder}
           tab="warranty"
-          onClose={() => setSelectedOrder(null)}
+          initialReason={modalReason}
+          onClose={() => { setSelectedOrder(null); setModalReason(undefined); }}
           onStageChange={(s) => setSelectedOrder(prev => prev ? { ...prev, stage: s } : null)}
         />
       )}
       {showNewForm && (
         <NewOrderModal tab="warranty" onClose={() => setShowNewForm(false)} />
       )}
-
-      <BulkActionBar
-        selectedOrders={selectedOrders}
-        tab="warranty"
-        onClear={() => setSelectedIds(new Set())}
-        onDone={() => { setSelectMode(false); setSelectedIds(new Set()); }}
-      />
+      {selectMode && selectedIds.size > 0 && (
+        <BulkActionBar
+          selectedOrders={selectedOrders}
+          tab="warranty"
+          onClear={() => setSelectedIds(new Set())}
+          onDone={() => { setSelectMode(false); setSelectedIds(new Set()); }}
+        />
+      )}
     </>
   );
 }

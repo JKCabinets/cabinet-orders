@@ -1,0 +1,8 @@
+After applying this bundle, also delete:
+
+  components/OrderCard.tsx
+
+It's no longer imported anywhere. Run from your project root:
+
+  Remove-Item components/OrderCard.tsx
+  git add -A

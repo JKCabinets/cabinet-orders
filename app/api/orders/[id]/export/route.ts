@@ -37,14 +37,23 @@ export async function GET(
     return new NextResponse("Order not found", { status: 404 });
   }
 
-  // ── Keyed By: look up full name from team_members ────────────────────────
-  const { data: teamMember } = await supabase
-    .from("team_members")
-    .select("name")
-    .eq("initials", order.member)
-    .single();
-
-  const keyedByName = teamMember?.name ?? order.member ?? "—";
+  // ── Keyed By: prefer claimed_by / entered_by (the live ownership
+  //    source the UI uses), fall back to the legacy `member` initials
+  //    only when neither is set. Older orders may have a stale "GB"
+  //    default in `member` from before the webhook fix; we still want
+  //    the PDF to reflect the actual current owner.
+  let keyedByName = "—";
+  const ownerName = (order.entered_by as string | null) ?? (order.claimed_by as string | null) ?? null;
+  if (ownerName) {
+    keyedByName = ownerName;
+  } else if (order.member) {
+    const { data: teamMember } = await supabase
+      .from("team_members")
+      .select("name")
+      .eq("initials", order.member)
+      .single();
+    keyedByName = teamMember?.name ?? order.member ?? "—";
+  }
 
   // ── Vendor mapping for every SKU on the order ────────────────────────────
   const allSkuItems: SkuItem[] = Array.isArray(order.sku_items) ? order.sku_items : [];

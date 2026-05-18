@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import clsx from "clsx";
-import { Order, AVATAR_COLOR_STYLES, getBackorderStatus } from "@/lib/data";
+import { Order, Stage, AVATAR_COLOR_STYLES, getBackorderStatus } from "@/lib/data";
 import { useStore } from "@/lib/store";
 import { useSession } from "next-auth/react";
 import { formatDateWithYear, parseOrderDate } from "@/lib/dateUtils";
@@ -459,6 +459,27 @@ function StatusLabel({ order, stage }: { order: Order; stage: string }) {
     return <span className="text-[10px] text-cream/55">Completed</span>;
   }
 
+  // ── Warranty stages ────────────────────────────────────────────────
+  if (stage === "New claim") {
+    const claimedBy = order.claimed_by ?? null;
+    if (claimedBy) {
+      return <span className="text-[10px] text-cream/55">Claimed by {claimedBy}</span>;
+    }
+    return <span className="text-[10px] text-cream/55 italic">Awaiting review</span>;
+  }
+  if (stage === "In review") {
+    return <span className="text-[10px] text-cream/55 italic">Under review</span>;
+  }
+  if (stage === "Parts ordered") {
+    return <span className="text-[10px] text-cream/55">Parts on order</span>;
+  }
+  if (stage === "Shipped") {
+    return <span className="text-[10px] text-cream/55">In transit</span>;
+  }
+  if (stage === "Resolved") {
+    return <span className="text-[10px] text-cream/55">Resolved</span>;
+  }
+
   return <span className="text-[10px] text-cream/55">{stage}</span>;
 }
 
@@ -623,6 +644,93 @@ function UpdateStatusActions({
         title="Move to archive"
       >
         {busy ? "..." : "Archive Order"}
+      </button>
+    );
+  }
+
+  // ── Warranty stages ────────────────────────────────────────────────
+  // Warranty has its own pipeline: New claim → In review → Parts ordered
+  // → Shipped → Resolved. No production/delivery date gates apply.
+  if (stage === "New claim") {
+    const claimedBy = order.claimed_by ?? null;
+    const isClaimedByMe = !!currentUserName && claimedBy === currentUserName;
+    const isClaimedByOther = !!claimedBy && !isClaimedByMe;
+    if (isClaimedByOther) {
+      return <span className="text-[10px] text-cream/30 italic">—</span>;
+    }
+    if (isClaimedByMe) {
+      return (
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => withBusy(() => moveStage(order.id, "In review" as Stage, currentUserName ?? undefined))}
+            disabled={busy}
+            className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30"
+          >
+            {busy ? "..." : (mobile ? "Review" : "Start review")}
+          </button>
+          <button
+            onClick={() => withBusy(() => claimOrder(order.id, null))}
+            disabled={busy}
+            title="Release claim"
+            aria-label="Release claim"
+            className="w-6 h-6 flex items-center justify-center rounded-full text-cream/55 hover:text-cream hover:bg-white/10 transition-all"
+          >
+            <X className="w-3 h-3" />
+          </button>
+        </div>
+      );
+    }
+    return (
+      <button
+        onClick={() => withBusy(() => claimOrder(order.id, currentUserName))}
+        disabled={busy || !currentUserName}
+        className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30 disabled:opacity-40"
+      >
+        {busy ? "..." : "Claim"}
+      </button>
+    );
+  }
+  if (stage === "In review") {
+    return (
+      <button
+        onClick={() => withBusy(() => moveStage(order.id, "Parts ordered" as Stage))}
+        disabled={busy}
+        className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30"
+      >
+        {busy ? "..." : (mobile ? "Order parts" : "Order parts →")}
+      </button>
+    );
+  }
+  if (stage === "Parts ordered") {
+    return (
+      <button
+        onClick={() => withBusy(() => moveStage(order.id, "Shipped" as Stage))}
+        disabled={busy}
+        className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30"
+      >
+        {busy ? "..." : (mobile ? "Ship" : "Mark shipped →")}
+      </button>
+    );
+  }
+  if (stage === "Shipped") {
+    return (
+      <button
+        onClick={() => withBusy(() => moveStage(order.id, "Resolved" as Stage))}
+        disabled={busy}
+        className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30"
+      >
+        {busy ? "..." : (mobile ? "Resolve" : "Mark resolved →")}
+      </button>
+    );
+  }
+  if (stage === "Resolved") {
+    return (
+      <button
+        onClick={() => withBusy(() => archiveOrder(order.id))}
+        disabled={busy}
+        className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30"
+      >
+        {busy ? "..." : "Archive"}
       </button>
     );
   }
