@@ -56,6 +56,7 @@ const PUBLIC_PATHS: readonly string[] = [
   // CSP violation reports are POSTed by the browser without any
   // session — has to be public.
   "/api/csp-report",
+  "/api/health",  // 
 ];
 
 function isPublicPath(pathname: string): boolean {
