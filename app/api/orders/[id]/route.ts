@@ -138,15 +138,27 @@ export async function PATCH(
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
+  // ── Load the current row up front ─────────────────────────────────────
+  // Previously the handler did three separate SELECTs against `orders`:
+  // one for stage validation, one for the Entered-attachment gate, one
+  // for the production-date auto-advance branch. We do it once here and
+  // reuse `currentStage` everywhere downstream. (The post-update read
+  // for Shopify writeback at the bottom is unavoidable — that needs the
+  // values AFTER the update has been applied.)
+  const { data: currentRow } = await supabase
+    .from("orders")
+    .select("stage")
+    .eq("id", id)
+    .single();
+  if (!currentRow) {
+    return NextResponse.json({ error: "Order not found" }, { status: 404 });
+  }
+  const currentStage: string = currentRow.stage;
+
   // ── Stage validation & backward-PIN gate ──────────────────────────────
-  // Previously only `/api/orders/bulk` enforced these — the single-order
-  // PATCH accepted any string for `body.stage` from any authenticated user
-  // and never checked the admin PIN, so a direct API call could bypass the
-  // modal's PIN dialog entirely. We mirror the bulk route's logic here.
-  //
-  // We fetch the current stage once and reuse it below for the Entered-gate
-  // check and the auto-advance branch.
-  let currentStageFromDb: string | null = null;
+  // Mirrors `/api/orders/bulk` — the single-order PATCH previously accepted
+  // any string for `body.stage` and skipped the admin-PIN check, so a
+  // direct API call could bypass the modal's PIN dialog entirely.
   if (body.stage !== undefined) {
     if (typeof body.stage !== "string" || !ALLOWED_STAGES.has(body.stage)) {
       return NextResponse.json(
@@ -154,14 +166,7 @@ export async function PATCH(
         { status: 422 },
       );
     }
-    const { data: current } = await supabase
-      .from("orders")
-      .select("stage")
-      .eq("id", id)
-      .single();
-    currentStageFromDb = current?.stage ?? null;
-
-    if (currentStageFromDb && isBackwardsMove(currentStageFromDb, body.stage)) {
+    if (isBackwardsMove(currentStage, body.stage)) {
       if (!verifyAdminPin(body.admin_pin)) {
         return NextResponse.json(
           { error: "admin_pin_required", message: "Backwards moves require admin PIN" },
@@ -175,24 +180,20 @@ export async function PATCH(
   // Moving an order to "Entered" requires at least one attachment. This
   // matches the client-side gate in lib/stageGates.ts and prevents direct
   // API calls from bypassing the rule. Admin role override is NOT provided —
-  // attachments are a hard requirement.
-  if (body.stage === "Entered") {
-    // Reuse the current-stage lookup from the validation block above so we
-    // don't round-trip twice. The gate only fires on the "New → Entered"
-    // transition (e.g. editing notes on an already-Entered order shouldn't
-    // re-check attachments).
-    if (currentStageFromDb === "New") {
-      const { data: attachments } = await supabase
-        .from("order_attachments")
-        .select("id")
-        .eq("order_id", id)
-        .limit(1);
-      if (!attachments || attachments.length === 0) {
-        return NextResponse.json(
-          { error: "Attach at least one file before marking this order as Entered" },
-          { status: 400 },
-        );
-      }
+  // attachments are a hard requirement. Only fires on the New → Entered
+  // transition (re-saving an already-Entered order with stage="Entered"
+  // shouldn't re-check attachments).
+  if (body.stage === "Entered" && currentStage === "New") {
+    const { data: attachments } = await supabase
+      .from("order_attachments")
+      .select("id")
+      .eq("order_id", id)
+      .limit(1);
+    if (!attachments || attachments.length === 0) {
+      return NextResponse.json(
+        { error: "Attach at least one file before marking this order as Entered" },
+        { status: 400 },
+      );
     }
   }
 
@@ -243,18 +244,12 @@ export async function PATCH(
     body.stage === undefined &&
     body.production_start_date !== undefined &&
     body.production_start_date !== null &&
-    body.production_start_date !== ""
+    body.production_start_date !== "" &&
+    currentStage === "Entered"
   ) {
-    const { data: current } = await supabase
-      .from("orders")
-      .select("stage")
-      .eq("id", id)
-      .single();
-    if (current?.stage === "Entered") {
-      updates.stage = "In production";
-      updates.stage_entered_at = new Date().toISOString();
-      autoAdvancedTo = "In production";
-    }
+    updates.stage = "In production";
+    updates.stage_entered_at = new Date().toISOString();
+    autoAdvancedTo = "In production";
   }
 
   const { error } = await supabase.from("orders").update(updates).eq("id", id);

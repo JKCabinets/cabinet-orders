@@ -6,10 +6,11 @@ import { usePathname } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import {
   LayoutDashboard, LineChart, ShieldCheck, Archive, Settings, LogOut,
-  Calendar, ChevronDown, Menu, X,
+  Calendar, ChevronDown, Menu, X, PackageX,
 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { ORDER_STAGES, OrderStage } from "@/lib/data";
+import { rollupBackorders } from "@/lib/backorders";
 import clsx from "clsx";
 
 /**
@@ -48,6 +49,9 @@ export function Sidebar({ open, onClose }: SidebarProps) {
   for (const stage of ORDER_STAGES) {
     stageCounts[stage] = activeOrders.filter(o => o.stage === stage).length;
   }
+  // Distinct backordered SKUs across active orders. Shows as the count badge
+  // on the Backorders nav item, and the item itself only renders when > 0.
+  const backorderCount = rollupBackorders(activeOrders).length;
   const archivedCount = orders.filter(o => o.archived).length;
 
   const [ordersOpen, setOrdersOpen] = useState(true);
@@ -107,6 +111,18 @@ export function Sidebar({ open, onClose }: SidebarProps) {
             >
               <NavItem href="/dashboard" icon={<LayoutDashboard className="w-3.5 h-3.5" />} label="Dashboard" pathname={pathname} />
               <NavItem href="/sla" icon={<LineChart className="w-3.5 h-3.5" />} label="SLA" pathname={pathname} />
+              {/* Backorders surfaces only when there's something to act on.
+                  When the count drops to zero the link disappears — keeps
+                  the sidebar quiet on calm days. */}
+              {backorderCount > 0 && (
+                <NavItem
+                  href="/backorders"
+                  icon={<PackageX className="w-3.5 h-3.5" />}
+                  label="Backorders"
+                  count={backorderCount}
+                  pathname={pathname}
+                />
+              )}
             </SidebarSection>
 
             {/* ── Orders by stage ── */}

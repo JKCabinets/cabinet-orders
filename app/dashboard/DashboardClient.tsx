@@ -4,11 +4,12 @@ import React, { useMemo, useState } from "react";
 import Link from "next/link";
 import { useStore } from "@/lib/store";
 import { Order, ORDER_STAGES, OrderStage, getBackorderStatus } from "@/lib/data";
+import { rollupBackorders, summarizeBackorders, type BackorderSummary } from "@/lib/backorders";
 import { parseOrderDate } from "@/lib/dateUtils";
 import { PageHeader } from "@/components/AppShell";
 import { OrderModal } from "@/components/OrderModal";
 import { NewOrderModal } from "@/components/NewOrderModal";
-import { Plus, Search, ChevronRight } from "lucide-react";
+import { Plus, Search, ChevronRight, PackageX } from "lucide-react";
 
 const STAGE_ACCENT: Record<OrderStage, string> = {
   "New":            "#c97070",
@@ -30,6 +31,10 @@ export function DashboardClient() {
   const [searchQuery, setSearchQuery] = useState("");
 
   const active = useMemo(() => orders.filter(o => !o.archived), [orders]);
+
+  // ── Backorder rollup (used by the dashboard panel + sidebar count) ──
+  const backorderRollups = useMemo(() => rollupBackorders(active), [active]);
+  const backorderSummary = useMemo(() => summarizeBackorders(backorderRollups), [backorderRollups]);
 
   // ── Stage statistics ────────────────────────────────────────────────
   const byStage = useMemo(() => {
@@ -176,6 +181,11 @@ export function DashboardClient() {
 
         {/* ── SLA mini panel ── */}
         <SLAMiniPanel byStage={byStage} />
+
+        {/* ── Backorders — only shown when there's something to see ── */}
+        {backorderSummary.distinctSkus > 0 && (
+          <BackorderPanel summary={backorderSummary} />
+        )}
 
         {/* ── Needs Attention ── */}
         <NeedsAttention
@@ -432,6 +442,107 @@ function SLAMiniPanel({ byStage }: { byStage: Record<OrderStage, Order[]> }) {
         })}
       </div>
     </div>
+  );
+}
+
+/* ─── Backorders ────────────────────────────────────────────────────── */
+
+/**
+ * Inline dashboard card showing the aggregate backorder picture. Only renders
+ * when there's at least one backordered SKU on an active order. Links through
+ * to the dedicated /backorders page for the deeper view.
+ *
+ * Visible metrics, in order of glanceability:
+ *   - Headline count: N SKUs across M orders
+ *   - "Worst offender": the SKU appearing on the most orders (most-impactful
+ *     phone call to make to the vendor)
+ *   - Pill row: how many SKUs have overdue commitments vs. undated
+ */
+function BackorderPanel({
+  summary,
+}: {
+  summary: BackorderSummary;
+}) {
+  const { distinctSkus, affectedOrders, overdueSkus, undatedSkus, topImpact } = summary;
+
+  return (
+    <Link
+      href="/backorders"
+      className="lift-card glass rounded-brand p-5 lg:p-6 flex flex-col gap-4 group"
+      style={{ borderLeft: "2px solid #e8b56a" }}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <div
+            className="w-9 h-9 rounded-md flex items-center justify-center flex-shrink-0"
+            style={{
+              background: "rgba(232,181,106,0.12)",
+              border: "1px solid rgba(232,181,106,0.30)",
+            }}
+          >
+            <PackageX className="w-4 h-4" style={{ color: "#e8b56a" }} />
+          </div>
+          <div className="min-w-0">
+            <div className="eyebrow mb-0.5">Supply</div>
+            <h2 className="font-display text-[22px] text-cream leading-none">
+              Backordered <em className="italic-storm">SKUs</em>
+            </h2>
+          </div>
+        </div>
+        <ChevronRight className="w-4 h-4 text-cream/45 group-hover:text-cream/85 transition-colors flex-shrink-0" />
+      </div>
+
+      {/* Headline numbers */}
+      <div className="flex items-baseline gap-3 flex-wrap">
+        <span className="font-display text-[42px] leading-none" style={{ color: "#e8b56a" }}>
+          {distinctSkus}
+        </span>
+        <span className="text-[13px] text-cream/65 leading-tight">
+          {distinctSkus === 1 ? "SKU" : "SKUs"} across {affectedOrders} {affectedOrders === 1 ? "order" : "orders"}
+        </span>
+      </div>
+
+      {/* Worst-offender callout — only if a SKU is on multiple orders */}
+      {topImpact && topImpact.orderCount > 1 && (
+        <div className="text-[12px] text-cream/65 leading-relaxed">
+          <span className="font-mono text-cream/85">{topImpact.sku}</span>
+          {" is on "}
+          <span className="text-cream/85">{topImpact.orderCount} orders</span>
+          {topImpact.description ? ` — ${topImpact.description}` : null}
+        </div>
+      )}
+
+      {/* Status pills — only render the ones that apply */}
+      {(overdueSkus > 0 || undatedSkus > 0) && (
+        <div className="flex items-center gap-2 flex-wrap">
+          {overdueSkus > 0 && (
+            <span
+              className="text-[10px] px-2 py-0.5 rounded-full font-medium uppercase tracking-wider"
+              style={{
+                background: "rgba(232,144,144,0.15)",
+                color: "#e89090",
+                border: "0.5px solid rgba(232,144,144,0.45)",
+              }}
+            >
+              {overdueSkus} past commit
+            </span>
+          )}
+          {undatedSkus > 0 && (
+            <span
+              className="text-[10px] px-2 py-0.5 rounded-full font-medium uppercase tracking-wider"
+              style={{
+                background: "rgba(160,160,154,0.12)",
+                color: "#cfc8b6",
+                border: "0.5px solid rgba(160,160,154,0.35)",
+              }}
+            >
+              {undatedSkus} no date set
+            </span>
+          )}
+        </div>
+      )}
+    </Link>
   );
 }
 
