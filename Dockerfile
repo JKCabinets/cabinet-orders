@@ -43,7 +43,35 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # Build. With `output: "standalone"` in next.config.mjs, this produces:
 #   .next/standalone/  — minimal Node app with embedded dependencies
 #   .next/static/      — static assets to be served separately
-RUN npm run build
+# Mount build secrets, export them as env vars, then run the build.
+# Next.js's "collecting page data" phase imports route modules, some of
+# which construct Supabase/auth clients at module-load time, so they
+# need real env values at build time, not just runtime.
+RUN --mount=type=secret,id=SUPABASE_URL \
+    --mount=type=secret,id=SUPABASE_SERVICE_ROLE_KEY \
+    --mount=type=secret,id=NEXTAUTH_SECRET \
+    --mount=type=secret,id=CRON_SECRET \
+    --mount=type=secret,id=ADMIN_BACKWARD_PIN \
+    --mount=type=secret,id=SHOPIFY_WEBHOOK_SECRET \
+    --mount=type=secret,id=SHOPIFY_CLIENT_ID \
+    --mount=type=secret,id=SHOPIFY_CLIENT_SECRET \
+    --mount=type=secret,id=SHOPIFY_STORE_DOMAIN \
+    --mount=type=secret,id=QUOTE_WEBHOOK_SECRET \
+    --mount=type=secret,id=UPSTASH_REDIS_REST_URL \
+    --mount=type=secret,id=UPSTASH_REDIS_REST_TOKEN \
+    SUPABASE_URL=$(cat /run/secrets/SUPABASE_URL) \
+    SUPABASE_SERVICE_ROLE_KEY=$(cat /run/secrets/SUPABASE_SERVICE_ROLE_KEY) \
+    NEXTAUTH_SECRET=$(cat /run/secrets/NEXTAUTH_SECRET) \
+    CRON_SECRET=$(cat /run/secrets/CRON_SECRET) \
+    ADMIN_BACKWARD_PIN=$(cat /run/secrets/ADMIN_BACKWARD_PIN) \
+    SHOPIFY_WEBHOOK_SECRET=$(cat /run/secrets/SHOPIFY_WEBHOOK_SECRET) \
+    SHOPIFY_CLIENT_ID=$(cat /run/secrets/SHOPIFY_CLIENT_ID) \
+    SHOPIFY_CLIENT_SECRET=$(cat /run/secrets/SHOPIFY_CLIENT_SECRET) \
+    SHOPIFY_STORE_DOMAIN=$(cat /run/secrets/SHOPIFY_STORE_DOMAIN) \
+    QUOTE_WEBHOOK_SECRET=$(cat /run/secrets/QUOTE_WEBHOOK_SECRET) \
+    UPSTASH_REDIS_REST_URL=$(cat /run/secrets/UPSTASH_REDIS_REST_URL) \
+    UPSTASH_REDIS_REST_TOKEN=$(cat /run/secrets/UPSTASH_REDIS_REST_TOKEN) \
+    npm run build
 
 # ─── Stage 3: runtime ─────────────────────────────────────────────────
 FROM node:22-alpine AS runner

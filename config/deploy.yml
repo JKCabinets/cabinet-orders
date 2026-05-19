@@ -60,9 +60,19 @@ registry:
 # locally. Avoids needing Docker Desktop on the dev machine.
 builder:
   arch: amd64
-  remote: ssh://garrett@5.78.220.153
-  local: false
-  context: .
+  secrets:
+    - SUPABASE_URL
+    - SUPABASE_SERVICE_ROLE_KEY
+    - NEXTAUTH_SECRET
+    - CRON_SECRET
+    - ADMIN_BACKWARD_PIN
+    - SHOPIFY_WEBHOOK_SECRET
+    - SHOPIFY_CLIENT_ID
+    - SHOPIFY_CLIENT_SECRET
+    - SHOPIFY_STORE_DOMAIN
+    - QUOTE_WEBHOOK_SECRET
+    - UPSTASH_REDIS_REST_URL
+    - UPSTASH_REDIS_REST_TOKEN
 
 # ─── Environment variables ────────────────────────────────────────────
 # `clear` values are visible in the deploy.yml (safe to commit).
