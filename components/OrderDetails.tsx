@@ -18,11 +18,9 @@ interface OrderDetailsProps {
   readOnly?: boolean;
 }
 
-export function OrderDetails({ orderId, doorStyle, color, skuItems, readOnly = false }: OrderDetailsProps) {
+export function OrderDetails({ orderId, skuItems, readOnly = false }: OrderDetailsProps) {
   const { updateOrderDetails } = useStore();
 
-  const [editingField, setEditingField] = useState<"door_style" | "color" | null>(null);
-  const [fieldValue, setFieldValue] = useState("");
   const [localSkuItems, setLocalSkuItems] = useState<SkuItem[]>(skuItems);
   const [addingItem, setAddingItem] = useState(false);
   const [newSku, setNewSku] = useState("");
@@ -90,18 +88,6 @@ export function OrderDetails({ orderId, doorStyle, color, skuItems, readOnly = f
     const only = groupedSkuItems[0];
     return !!(only && (only.vendor || only.style || only.color));
   }, [groupedSkuItems]);
-
-  function startEdit(field: "door_style" | "color") {
-    setEditingField(field);
-    setFieldValue(field === "door_style" ? doorStyle : color);
-  }
-
-  async function saveField() {
-    if (!editingField) return;
-    await updateOrderDetails(orderId, { [editingField]: fieldValue });
-    setEditingField(null);
-    flash();
-  }
 
   async function saveSkuItems(items: SkuItem[]) {
     setLocalSkuItems(items);
@@ -243,34 +229,6 @@ export function OrderDetails({ orderId, doorStyle, color, skuItems, readOnly = f
         {saved && <span className="text-[10px] text-cream/55 italic">Saved</span>}
       </div>
 
-      {/* Door Style & Color */}
-      <div className="grid grid-cols-2 gap-3 mb-4">
-        <DetailField
-          label="Door style"
-          value={doorStyle}
-          isEditing={editingField === "door_style"}
-          editValue={fieldValue}
-          onEdit={() => !readOnly && startEdit("door_style")}
-          onEditChange={setFieldValue}
-          onSave={saveField}
-          onCancel={() => setEditingField(null)}
-          placeholder="e.g. Shaker"
-          readOnly={readOnly}
-        />
-        <DetailField
-          label="Color"
-          value={color}
-          isEditing={editingField === "color"}
-          editValue={fieldValue}
-          onEdit={() => !readOnly && startEdit("color")}
-          onEditChange={setFieldValue}
-          onSave={saveField}
-          onCancel={() => setEditingField(null)}
-          placeholder="e.g. White"
-          readOnly={readOnly}
-        />
-      </div>
-
       {/* SKU Items */}
       <div>
         <div className="flex items-center justify-between mb-2">
@@ -369,49 +327,6 @@ export function OrderDetails({ orderId, doorStyle, color, skuItems, readOnly = f
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-function DetailField({ label, value, isEditing, editValue, onEdit, onEditChange, onSave, onCancel, placeholder, readOnly }: {
-  label: string; value: string; isEditing: boolean; editValue: string;
-  onEdit: () => void; onEditChange: (v: string) => void;
-  onSave: () => void; onCancel: () => void; placeholder: string;
-  readOnly?: boolean;
-}) {
-  return (
-    <div>
-      <p className="text-[10px] uppercase tracking-widest text-cream/55 mb-1.5">{label}</p>
-      {isEditing ? (
-        <div className="flex gap-1">
-          <input
-            value={editValue}
-            onChange={(e) => onEditChange(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") onSave(); if (e.key === "Escape") onCancel(); }}
-            autoFocus
-            placeholder={placeholder}
-            className="flex-1 field-input text-xs py-1.5 px-2"
-          />
-          <button onClick={onSave} className="p-1.5 rounded-md bg-[rgba(255,255,255,0.04)] border border-[rgba(86,100,72,0.55)] text-[#e8e3da] hover:bg-[rgba(255,255,255,0.06)] transition-all">
-            <Check className="w-3 h-3" />
-          </button>
-          <button onClick={onCancel} className="p-1.5 rounded-md border border-[rgba(255,255,255,0.10)] text-cream/85 hover:text-[#e8e3da] transition-all">
-            <X className="w-3 h-3" />
-          </button>
-        </div>
-      ) : (
-        <div
-          onClick={readOnly ? undefined : onEdit}
-          className={`w-full text-left px-2.5 py-1.5 rounded-lg bg-[#111] border border-[rgba(255,255,255,0.10)] text-xs transition-colors group ${readOnly ? "cursor-default" : "hover:border-[rgba(86,100,72,0.55)] cursor-pointer"}`}
-        >
-          {value ? (
-            <span className="text-[#e8e3da]">{value}</span>
-          ) : (
-            <span className="text-[#3e3e3e]">{placeholder}</span>
-          )}
-          {!readOnly && <Pencil className="w-2.5 h-2.5 text-cream/55 float-right mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity" />}
-        </div>
-      )}
     </div>
   );
 }
