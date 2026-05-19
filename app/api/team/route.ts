@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, requireAdmin, sanitize } from "@/lib/auth";
+import { requireAuth, requireAdmin, cleanInput } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
@@ -62,9 +62,9 @@ export async function POST(req: NextRequest) {
 
   const newMember = {
     id:            `member-${Date.now()}`,
-    username:      sanitize(body.username as string).toLowerCase(),
-    name:          sanitize(body.name as string),
-    initials:      sanitize(body.initials as string).toUpperCase().slice(0, 2),
+    username:      cleanInput(body.username as string).toLowerCase(),
+    name:          cleanInput(body.name as string),
+    initials:      cleanInput(body.initials as string).toUpperCase().slice(0, 2),
     role:          body.role === "admin" ? "admin" : "member",
     avatar_color:  body.avatarColor ?? "blue",
     active:        true,

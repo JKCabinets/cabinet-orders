@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { supabase } from "@/lib/supabase";
-import { sanitize, checkRateLimit } from "@/lib/auth";
+import { cleanInput, checkRateLimit } from "@/lib/auth";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -193,16 +193,16 @@ export async function POST(req: NextRequest) {
   const extractedDetails = extractField(plainText, "More Details", "Details", "Additional Details", "Notes");
 
   // All inbound fields are sanitized — this data ends up in HTML exports later.
-  const name    = sanitize((body.name    || extractedName    || "Quote Request").slice(0, MAX_FIELD_LEN));
-  const email   = sanitize((body.email   || extractedEmail   || "").slice(0, MAX_FIELD_LEN));
-  const phone   = sanitize((body.phone   || extractedPhone   || "").slice(0, MAX_FIELD_LEN));
-  const address = sanitize((body.address || extractedAddress || "").slice(0, MAX_FIELD_LEN));
-  const city    = sanitize((body.city    || "").slice(0, MAX_FIELD_LEN));
-  const state   = sanitize((body.state   || "").slice(0, MAX_FIELD_LEN));
-  const zip     = sanitize((body.zip     || "").slice(0, MAX_FIELD_LEN));
-  const doorStyle   = sanitize((body.door_style   || extractedDoor    || "").slice(0, MAX_FIELD_LEN));
-  const color       = sanitize((body.color        || extractedColor   || "").slice(0, MAX_FIELD_LEN));
-  const cabinetLine = sanitize((body.cabinet_line || extractedCabinet || "").slice(0, MAX_FIELD_LEN));
+  const name    = cleanInput((body.name    || extractedName    || "Quote Request").slice(0, MAX_FIELD_LEN));
+  const email   = cleanInput((body.email   || extractedEmail   || "").slice(0, MAX_FIELD_LEN));
+  const phone   = cleanInput((body.phone   || extractedPhone   || "").slice(0, MAX_FIELD_LEN));
+  const address = cleanInput((body.address || extractedAddress || "").slice(0, MAX_FIELD_LEN));
+  const city    = cleanInput((body.city    || "").slice(0, MAX_FIELD_LEN));
+  const state   = cleanInput((body.state   || "").slice(0, MAX_FIELD_LEN));
+  const zip     = cleanInput((body.zip     || "").slice(0, MAX_FIELD_LEN));
+  const doorStyle   = cleanInput((body.door_style   || extractedDoor    || "").slice(0, MAX_FIELD_LEN));
+  const color       = cleanInput((body.color        || extractedColor   || "").slice(0, MAX_FIELD_LEN));
+  const cabinetLine = cleanInput((body.cabinet_line || extractedCabinet || "").slice(0, MAX_FIELD_LEN));
 
   const today = new Date().toLocaleDateString("en-US", {
     month: "short", day: "numeric", timeZone: "America/Phoenix",
@@ -230,12 +230,12 @@ export async function POST(req: NextRequest) {
   if (city)    notesParts.push(`City: ${city}`);
   if (state)   notesParts.push(`State: ${state}`);
   if (zip)     notesParts.push(`Zip: ${zip}`);
-  if (extractedBudget) notesParts.push(`Budget: ${sanitize(extractedBudget)}`);
+  if (extractedBudget) notesParts.push(`Budget: ${cleanInput(extractedBudget)}`);
   if (cabinetLine) notesParts.push(`Cabinet Line: ${cabinetLine}`);
   if (doorStyle)   notesParts.push(`Door Style: ${doorStyle}`);
   if (color)       notesParts.push(`Color: ${color}`);
   const rawNotes = body.notes || "";
-  const customerNotesFinal = sanitize((rawNotes || extractedDetails || "").slice(0, MAX_BODY_LEN));
+  const customerNotesFinal = cleanInput((rawNotes || extractedDetails || "").slice(0, MAX_BODY_LEN));
   if (customerNotesFinal) notesParts.push(`Notes: ${customerNotesFinal}`);
   if (incomingFiles.length > 0) {
     notesParts.push(`📎 ${incomingFiles.length} file${incomingFiles.length === 1 ? "" : "s"} attached`);
@@ -293,7 +293,7 @@ export async function POST(req: NextRequest) {
     if (uploadError) {
       await supabase.from("order_activity").insert({
         order_id: orderId,
-        text: `⚠️ Failed to save attachment "${sanitize(file.name)}": ${sanitize(uploadError.message)}`,
+        text: `⚠️ Failed to save attachment "${cleanInput(file.name)}": ${cleanInput(uploadError.message)}`,
         time: today,
       });
       continue;
@@ -301,7 +301,7 @@ export async function POST(req: NextRequest) {
 
     const { error: dbError } = await supabase.from("order_attachments").insert({
       order_id: orderId,
-      file_name: sanitize(file.name),
+      file_name: cleanInput(file.name),
       file_path: filePath,
       file_size: file.size,
       file_type: file.type || "application/octet-stream",
@@ -311,7 +311,7 @@ export async function POST(req: NextRequest) {
     if (dbError) {
       await supabase.from("order_activity").insert({
         order_id: orderId,
-        text: `⚠️ File "${sanitize(file.name)}" uploaded but DB row failed: ${sanitize(dbError.message)}`,
+        text: `⚠️ File "${cleanInput(file.name)}" uploaded but DB row failed: ${cleanInput(dbError.message)}`,
         time: today,
       });
       continue;
@@ -325,7 +325,7 @@ export async function POST(req: NextRequest) {
     const fileName = legacyAttachmentUrl.split("/").pop()?.split("?")[0] || "Customer Attachment";
     await supabase.from("order_attachments").insert({
       order_id: orderId,
-      file_name: sanitize(fileName),
+      file_name: cleanInput(fileName),
       file_path: legacyAttachmentUrl,
       file_size: 0,
       file_type: legacyAttachmentUrl.toLowerCase().endsWith(".pdf") ? "application/pdf" : "image/jpeg",

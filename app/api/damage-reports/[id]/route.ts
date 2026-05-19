@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, sanitize } from "@/lib/auth";
+import { requireAuth, cleanInput } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 
 const ALLOWED_STATUSES = new Set(["open", "in_review", "parts_ordered", "repair_scheduled", "resolved", "closed"]);
@@ -26,7 +26,7 @@ export async function PATCH(
   }
   if (body.resolution !== undefined) {
     // Sanitize so this can be safely rendered in the export route later.
-    updates.resolution = sanitize(body.resolution as string);
+    updates.resolution = cleanInput(body.resolution as string);
   }
   updates.updated_at = new Date().toISOString();
 

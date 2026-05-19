@@ -10,11 +10,14 @@ import { supabase } from "@/lib/supabase";
  * Both admin-only.
  */
 
-const sanitize = (s: unknown) =>
+// Local trim + length cap. Stricter than @/lib/auth's cleanInput, which
+// doesn't size-bound. The 500-char cap is defensive against a giant
+// pasted string blowing up the DB column.
+const cleanCapped = (s: unknown) =>
   typeof s === "string" ? s.trim().slice(0, 500) : "";
 
 const sanitizeEmail = (s: unknown) => {
-  const v = sanitize(s);
+  const v = cleanCapped(s);
   if (!v) return "";
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return "__INVALID__";
   return v;
@@ -38,7 +41,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   const updates: Record<string, unknown> = {};
 
   if (body.name !== undefined) {
-    const name = sanitize(body.name);
+    const name = cleanCapped(body.name);
     if (!name) return NextResponse.json({ error: "Vendor name cannot be empty" }, { status: 400 });
     updates.name = name;
   }
@@ -50,10 +53,10 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     updates.rma_email = email || null;
   }
   if (body.contact_name !== undefined) {
-    updates.contact_name = sanitize(body.contact_name) || null;
+    updates.contact_name = cleanCapped(body.contact_name) || null;
   }
   if (body.notes !== undefined) {
-    updates.notes = sanitize(body.notes) || null;
+    updates.notes = cleanCapped(body.notes) || null;
   }
 
   if (Object.keys(updates).length === 0) {

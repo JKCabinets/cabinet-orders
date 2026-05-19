@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, sanitize } from "@/lib/auth";
+import { requireAuth, cleanInput } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 
 export async function GET(req: NextRequest) {
@@ -37,10 +37,10 @@ export async function POST(req: NextRequest) {
     .from("damage_reports")
     .insert({
       order_id: body.orderId,
-      damage_type: sanitize(body.damage_type as string),
+      damage_type: cleanInput(body.damage_type as string),
       affected_skus: body.affected_skus ?? [],
-      description: sanitize(body.description as string),
-      cause: sanitize((body.cause as string) ?? ""),
+      description: cleanInput(body.description as string),
+      cause: cleanInput((body.cause as string) ?? ""),
       reported_by: auth.session.user.name ?? auth.session.user.username,
       status: "open",
     })

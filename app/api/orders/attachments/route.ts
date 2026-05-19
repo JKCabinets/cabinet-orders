@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, sanitize, rateLimitOr429 } from "@/lib/auth";
+import { requireAuth, cleanInput, rateLimitOr429 } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 
 // Hard caps on attachment uploads. These match the quote-form webhook so the
@@ -116,11 +116,11 @@ export async function POST(req: NextRequest) {
       // markup-aware contexts (admin pages, export PDFs, the modal's
       // attachments panel). The session name was already sanitized when
       // the team_member row was created, but defense in depth is cheap.
-      file_name: sanitize(safeName),
+      file_name: cleanInput(safeName),
       file_path: filePath,
       file_size: file.size,
-      file_type: sanitize(file.type || "application/octet-stream").slice(0, 200),
-      uploaded_by: sanitize(auth.session.user.name ?? auth.session.user.username),
+      file_type: cleanInput(file.type || "application/octet-stream").slice(0, 200),
+      uploaded_by: cleanInput(auth.session.user.name ?? auth.session.user.username),
     })
     .select()
     .single();

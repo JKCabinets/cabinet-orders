@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { supabase } from "@/lib/supabase";
-import { sanitize } from "@/lib/auth";
+import { cleanInput } from "@/lib/auth";
 import { decodeSku, buildSkuFromAvisNames } from "@/lib/skuDecoder";
 
 const SHOPIFY_SECRET = process.env.SHOPIFY_WEBHOOK_SECRET ?? "";
@@ -90,11 +90,11 @@ function buildOrder(payload: Record<string, unknown>) {
     // Sanitize every string field so anything ingested from Shopify is safe to
     // later interpolate into HTML (e.g. the order export route).
     return {
-      sku: sanitize(sku),
+      sku: cleanInput(sku),
       quantity: Number(i.quantity ?? 1),
-      description: sanitize(String(i.name ?? "")),
-      door_style: sanitize(avisDoorStyle),
-      color: sanitize(avisColorSelect),
+      description: cleanInput(String(i.name ?? "")),
+      door_style: cleanInput(avisDoorStyle),
+      color: cleanInput(avisColorSelect),
     };
   }).filter(i => i.sku);
 
@@ -117,19 +117,19 @@ function buildOrder(payload: Record<string, unknown>) {
 
   // All free-text strings are sanitized before being returned.
   return {
-    customerName: sanitize(customerName),
-    customerEmail: sanitize(customerEmail),
-    customerPhone: sanitize(customerPhone),
-    shipTo: sanitize(shipTo),
-    deliveryMethod: sanitize(deliveryMethod),
-    detail: sanitize(detail),
+    customerName: cleanInput(customerName),
+    customerEmail: cleanInput(customerEmail),
+    customerPhone: cleanInput(customerPhone),
+    shipTo: cleanInput(shipTo),
+    deliveryMethod: cleanInput(deliveryMethod),
+    detail: cleanInput(detail),
     skus,
     skuItems,
-    notes: sanitize(notes),
+    notes: cleanInput(notes),
     today,
-    orderNumber: sanitize(orderNumber),
-    decodedDoorStyle: sanitize(decodedDoorStyle),
-    decodedColor: sanitize(decodedColor),
+    orderNumber: cleanInput(orderNumber),
+    decodedDoorStyle: cleanInput(decodedDoorStyle),
+    decodedColor: cleanInput(decodedColor),
   };
 }
 
@@ -214,7 +214,7 @@ export async function POST(req: NextRequest) {
       color: decodedColor,
       delivery_window: "",
       delivery_notes: "",
-      vendor: sanitize(vendorName),
+      vendor: cleanInput(vendorName),
       ship_to: shipTo,
       customer_phone: customerPhone,
       customer_email: customerEmail,

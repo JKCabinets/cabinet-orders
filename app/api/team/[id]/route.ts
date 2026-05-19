@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin, sanitize } from "@/lib/auth";
+import { requireAdmin, cleanInput } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import bcrypt from "bcryptjs";
 import { validatePassword } from "@/lib/passwordPolicy";
@@ -28,9 +28,9 @@ export async function PATCH(
     .single();
 
   const updates: Record<string, unknown> = {};
-  if (body.name)                 updates.name         = sanitize(body.name as string);
-  if (body.username)             updates.username     = sanitize(body.username as string).toLowerCase();
-  if (body.initials)             updates.initials     = sanitize(body.initials as string).toUpperCase().slice(0, 2);
+  if (body.name)                 updates.name         = cleanInput(body.name as string);
+  if (body.username)             updates.username     = cleanInput(body.username as string).toLowerCase();
+  if (body.initials)             updates.initials     = cleanInput(body.initials as string).toUpperCase().slice(0, 2);
   if (body.role)                 updates.role         = body.role === "admin" ? "admin" : "member";
   if (body.avatarColor)          updates.avatar_color = body.avatarColor;
   if (body.avatar_color)         updates.avatar_color = body.avatar_color;

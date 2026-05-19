@@ -1,13 +1,17 @@
 /**
  * Decode common HTML entities back to their raw characters.
  *
- * Why this exists: legacy data stored via `sanitize()` was HTML-encoded
- * on write, which means everywhere we render that data as text (React
- * children, PDF templating with auto-escape, plain-text export) ends
- * up double-escaping. This decoder lets us paper over that until we
- * can move sanitize() to render-time-only.
+ * Why this exists: legacy rows stored under the old `sanitize()` helper
+ * (which HTML-encoded everything on insert) have entity-encoded text in
+ * the DB. Post-refactor inserts go in raw — but until the one-time backfill
+ * SQL has run against your DB, you'll have a mix of legacy-encoded and raw
+ * rows. This decoder bridges that: it's a no-op on raw strings, and on
+ * legacy rows it restores readable characters.
  *
- * Covers the entities sanitize() introduces:
+ * Once the backfill has run, every render site can drop the decode call —
+ * it'll be a true no-op everywhere. Until then, keep the calls in place.
+ *
+ * Covers the entities the old sanitize() introduced:
  *   &amp;   &   ampersand
  *   &lt;    <   less than
  *   &gt;    >   greater than

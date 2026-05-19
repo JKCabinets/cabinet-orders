@@ -29,30 +29,28 @@ export async function requireAdmin(): Promise<{ session: AuthSession } | NextRes
 }
 
 /**
- * Sanitize a string for safe DB storage — encodes &, <, >, ", ', / so values
- * are safe to interpolate into HTML later. Use this on any text that may end
- * up inside server-rendered HTML (e.g. the order export route).
+ * Normalize free-form text input for DB storage. Coerces to string, trims
+ * whitespace. Does NOT HTML-encode — that was the old `sanitize()` behavior
+ * and it caused widespread "&#x27;" / "&quot;" rot in the UI because React
+ * already escapes everything it renders, so encoding on insert produced
+ * double-escaping at every read site.
  *
- * NOTE: This is encoding, not full HTML sanitization. It does not preserve
- * any markup — every angle bracket becomes `&lt;` / `&gt;`.
+ * Render-time escaping (for raw HTML templates like the PDF export route)
+ * still happens via `escapeHtml()` below — that's the correct boundary.
+ *
+ * Returns "" for non-string input so callers don't have to null-guard.
  */
-export function sanitize(input: unknown): string {
+export function cleanInput(input: unknown): string {
   if (typeof input !== "string") return "";
-  return input
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#x27;")
-    .replace(/\//g, "&#x2F;")
-    .replace(/`/g, "&#x60;")
-    .trim();
+  return input.trim();
 }
 
 /**
- * Escape a string for HTML *output*. Use this in any route that templates
- * data (including data read from the DB) into raw HTML. Unlike `sanitize()`
- * above, this does not trim.
+ * Escape a string for raw-HTML output. Use this in any route that templates
+ * data (including data read from the DB) into HTML strings — the PDF export
+ * is the main consumer. Do NOT use on values being rendered by React; React
+ * escapes its own children automatically and double-escaping is what the
+ * old `sanitize()` function caused.
  */
 export function escapeHtml(input: unknown): string {
   if (input === null || input === undefined) return "";

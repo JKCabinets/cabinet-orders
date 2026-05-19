@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, sanitize, rateLimitOr429 } from "@/lib/auth";
+import { requireAuth, cleanInput, rateLimitOr429 } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 
 export async function GET(req: NextRequest) {
@@ -83,27 +83,27 @@ export async function POST(req: NextRequest) {
   const newOrder = {
     id,
     type:       body.type    ?? "order",
-    name:       sanitize(body.name as string),
+    name:       cleanInput(body.name as string),
     source:     body.source  ?? "Manual",
-    detail:     sanitize((body.detail as string) ?? ""),
+    detail:     cleanInput((body.detail as string) ?? ""),
     stage:      isOrder ? "New" : "New claim",
     member:     body.member  ?? "AX",
     date:       today,
-    sku:        sanitize((body.sku as string) ?? ""),
-    notes:      sanitize((body.notes as string) ?? ""),
-    internal_notes: sanitize((body.internal_notes as string) ?? ""),
+    sku:        cleanInput((body.sku as string) ?? ""),
+    notes:      cleanInput((body.notes as string) ?? ""),
+    internal_notes: cleanInput((body.internal_notes as string) ?? ""),
     archived:   false,
-    door_style: sanitize((body.door_style as string) ?? ""),
-    color:      sanitize((body.color as string) ?? ""),
+    door_style: cleanInput((body.door_style as string) ?? ""),
+    color:      cleanInput((body.color as string) ?? ""),
     // sku_items is a complex JSON value — frontend already passes structured
-    // objects. The export route now HTML-escapes everything before rendering,
-    // so we don't need to sanitize at write time for those nested fields.
+    // objects. The export route HTML-escapes everything before rendering and
+    // React handles the rest, so we don't need to encode at write time.
     sku_items:  body.sku_items ?? [],
-    vendor:          sanitize((body.vendor as string) ?? ""),
-    ship_to:         sanitize((body.ship_to as string) ?? ""),
-    customer_phone:  sanitize((body.customer_phone as string) ?? ""),
-    customer_email:  sanitize((body.customer_email as string) ?? ""),
-    delivery_method: sanitize((body.delivery_method as string) ?? ""),
+    vendor:          cleanInput((body.vendor as string) ?? ""),
+    ship_to:         cleanInput((body.ship_to as string) ?? ""),
+    customer_phone:  cleanInput((body.customer_phone as string) ?? ""),
+    customer_email:  cleanInput((body.customer_email as string) ?? ""),
+    delivery_method: cleanInput((body.delivery_method as string) ?? ""),
     // Track who created the order — useful for audit and for the authorization
     // checks in /api/orders/[id] DELETE.
     created_by:      auth.session.user.username,

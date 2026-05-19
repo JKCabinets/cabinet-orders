@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, sanitize, rateLimitOr429 } from "@/lib/auth";
+import { requireAuth, cleanInput, rateLimitOr429 } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import { getShopifyToken } from "@/lib/shopify";
 import { ALLOWED_STAGES, isBackwardsMove, verifyAdminPin, fieldsToClearOnBackwardMove, describeFieldsCleared } from "@/lib/stageGuards";
@@ -206,25 +206,25 @@ export async function PATCH(
   // Auto-clear claim when order leaves New; set entered_by when moving to Entered
   if (body.stage && body.stage !== "New") updates.claimed_by = null;
   if (body.stage === "Entered")    updates.entered_by = auth.session.user.name;
-  if (body.notes !== undefined)    updates.notes      = sanitize(body.notes as string);
-  if (body.internal_notes !== undefined) updates.internal_notes = sanitize(body.internal_notes as string);
+  if (body.notes !== undefined)    updates.notes      = cleanInput(body.notes as string);
+  if (body.internal_notes !== undefined) updates.internal_notes = cleanInput(body.internal_notes as string);
   if (body.archived !== undefined) updates.archived   = body.archived;
   if (body.member)                 updates.member     = body.member;
-  if (body.door_style !== undefined) updates.door_style = sanitize(body.door_style as string);
-  if (body.color !== undefined)    updates.color      = sanitize(body.color as string);
+  if (body.door_style !== undefined) updates.door_style = cleanInput(body.door_style as string);
+  if (body.color !== undefined)    updates.color      = cleanInput(body.color as string);
   if (body.sku_items !== undefined) updates.sku_items = body.sku_items;
   if (body.delivery_date !== undefined) updates.delivery_date = body.delivery_date;
   if (body.scheduled_delivery_date !== undefined) updates.scheduled_delivery_date = body.scheduled_delivery_date;
-  if (body.delivery_window !== undefined) updates.delivery_window = sanitize(body.delivery_window as string);
-  if (body.delivery_notes !== undefined) updates.delivery_notes = sanitize(body.delivery_notes as string);
+  if (body.delivery_window !== undefined) updates.delivery_window = cleanInput(body.delivery_window as string);
+  if (body.delivery_notes !== undefined) updates.delivery_notes = cleanInput(body.delivery_notes as string);
   if (body.production_start_date !== undefined) updates.production_start_date = body.production_start_date;
   if (body.production_est_finish_date !== undefined) updates.production_est_finish_date = body.production_est_finish_date;
   if ("claimed_by" in body) updates.claimed_by = body.claimed_by ?? null;
-  if (body.vendor !== undefined)          updates.vendor          = sanitize(body.vendor as string);
-  if (body.ship_to !== undefined)         updates.ship_to         = sanitize(body.ship_to as string);
-  if (body.customer_phone !== undefined)  updates.customer_phone  = sanitize(body.customer_phone as string);
-  if (body.customer_email !== undefined)  updates.customer_email  = sanitize(body.customer_email as string);
-  if (body.delivery_method !== undefined) updates.delivery_method = sanitize(body.delivery_method as string);
+  if (body.vendor !== undefined)          updates.vendor          = cleanInput(body.vendor as string);
+  if (body.ship_to !== undefined)         updates.ship_to         = cleanInput(body.ship_to as string);
+  if (body.customer_phone !== undefined)  updates.customer_phone  = cleanInput(body.customer_phone as string);
+  if (body.customer_email !== undefined)  updates.customer_email  = cleanInput(body.customer_email as string);
+  if (body.delivery_method !== undefined) updates.delivery_method = cleanInput(body.delivery_method as string);
 
   // ── Auto-advance: Entered → In production ──────────────────────────────
   // When a user sets a production_start_date on an order in "Entered" stage,

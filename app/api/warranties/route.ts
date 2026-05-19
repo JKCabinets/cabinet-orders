@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, sanitize, rateLimitOr429 } from "@/lib/auth";
+import { requireAuth, cleanInput, rateLimitOr429 } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 
 export async function GET(req: NextRequest) {
@@ -54,14 +54,14 @@ export async function POST(req: NextRequest) {
   const claim = {
     id,
     type: "warranty",
-    name:   sanitize(body.name as string),
+    name:   cleanInput(body.name as string),
     source: body.source ?? "Manual",
-    detail: sanitize((body.detail as string) ?? ""),
+    detail: cleanInput((body.detail as string) ?? ""),
     stage:  "New claim",
     member: body.member ?? "AX",
     date:   today,
-    sku:    sanitize((body.sku as string) ?? ""),
-    notes:  sanitize((body.notes as string) ?? ""),
+    sku:    cleanInput((body.sku as string) ?? ""),
+    notes:  cleanInput((body.notes as string) ?? ""),
     archived: false,
     created_by: auth.session.user.username,
   };

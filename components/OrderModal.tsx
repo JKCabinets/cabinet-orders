@@ -70,9 +70,10 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
   const { moveStage, updateOrderDetails, updateNotes, updateInternalNotes, archiveOrder, unarchiveOrder, deleteOrder, orders, warranties, team } = useStore();
   const { data: session } = useSession();
   const currentUserName = session?.user?.name ?? undefined;
-  // Notes/internal-notes are stored entity-encoded (sanitize() runs on save),
-  // so we decode here to populate the textareas with readable characters.
-  // When the user saves, sanitize() re-encodes — round-trip safe.
+  // Decode in case the row was stored under the legacy sanitize() encoding —
+  // post-refactor inserts store raw text, but rows from before the backfill
+  // ran still have entities. decodeHtmlEntities is a no-op on raw strings,
+  // so this is safe in both states.
   const [notes, setNotes] = useState(decodeHtmlEntities(order.notes));
   const [notesChanged, setNotesChanged] = useState(false);
   const [internalNotes, setInternalNotes] = useState(decodeHtmlEntities(order.internal_notes ?? ""));

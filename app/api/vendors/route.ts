@@ -12,11 +12,14 @@ import { supabase } from "@/lib/supabase";
  * Per-row update / delete lives at /api/vendors/[id].
  */
 
-const sanitize = (s: unknown) =>
+// Local trim + length cap. Stricter than @/lib/auth's cleanInput, which
+// doesn't size-bound. The 500-char cap is defensive against a giant
+// pasted string blowing up the DB column.
+const cleanCapped = (s: unknown) =>
   typeof s === "string" ? s.trim().slice(0, 500) : "";
 
 const sanitizeEmail = (s: unknown) => {
-  const v = sanitize(s);
+  const v = cleanCapped(s);
   if (!v) return "";
   // Loose validation only — Shopify's vendor email field doesn't
   // enforce a strict format and we don't want to reject "ar+rma@..."
@@ -44,10 +47,10 @@ export async function POST(req: NextRequest) {
   if (auth instanceof NextResponse) return auth;
 
   const body = await req.json().catch(() => ({}));
-  const name = sanitize(body.name);
+  const name = cleanCapped(body.name);
   const rmaEmail = sanitizeEmail(body.rma_email);
-  const contactName = sanitize(body.contact_name);
-  const notes = sanitize(body.notes);
+  const contactName = cleanCapped(body.contact_name);
+  const notes = cleanCapped(body.notes);
 
   if (!name) {
     return NextResponse.json({ error: "Vendor name is required" }, { status: 400 });

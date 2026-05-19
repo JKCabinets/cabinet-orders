@@ -8,9 +8,11 @@ import type { SkuItem } from "@/lib/skuDecoder";
 
 // Short alias since this file does a lot of escaping
 const h = escapeHtml;
-// Free text from upstream (e.g. Shopify line item names) may already be
-// HTML-entity-encoded from our sanitize() pass. Decode before re-escaping
-// for HTML output so "&amp;quot;" doesn't show up in the rendered PDF.
+// Free text may be entity-encoded for two reasons: (1) legacy rows stored
+// under the old sanitize() helper, before the backfill; (2) Shopify itself
+// encodes some characters before serving the REST API. Decode first, then
+// re-escape for HTML output. After the backfill, the decode is only doing
+// work on Shopify-sourced text.
 const text = (s: unknown) => h(decodeHtmlEntities(String(s ?? "")));
 
 export async function GET(
