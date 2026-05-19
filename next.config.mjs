@@ -13,9 +13,32 @@ const securityHeaders = [
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
   // Basic XSS protection for older browsers
   { key: "X-XSS-Protection", value: "1; mode=block" },
-  // Content-Security-Policy is set per-request in proxy.ts (nonce-based,
-  // strict — no 'unsafe-inline' or 'unsafe-eval' in production). It cannot
-  // be set here because the nonce must be unique per request.
+  // Content Security Policy — allows same-origin + Supabase + NextAuth
+  //
+  // NOTE: 'unsafe-inline' and 'unsafe-eval' in script-src effectively
+  // disable XSS protection. We attempted to move to a nonce-based CSP
+  // in proxy.ts but Vercel's deployment pipeline didn't reliably apply
+  // the per-request nonce to Next.js framework scripts (all client JS
+  // got blocked, the app rendered as logged-out "Guest"). Tracking this
+  // as a follow-up — likely needs a different approach involving
+  // hash-based exceptions for the framework bootstrap script, or
+  // experimenting with Next.js's own SRI integration.
+  {
+    key: "Content-Security-Policy",
+    value: [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob:",
+      "font-src 'self'",
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.upstash.io",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "frame-ancestors 'none'",
+      "upgrade-insecure-requests",
+    ].join("; "),
+  },
 ];
 
 const nextConfig = {
