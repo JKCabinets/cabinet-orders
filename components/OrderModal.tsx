@@ -439,8 +439,6 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
                   <input
                     ref={pinInputRef}
                     type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
                     autoComplete="off"
                     autoCorrect="off"
                     autoCapitalize="off"
@@ -449,11 +447,16 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
                     data-1p-ignore="true"
                     data-lpignore="true"
                     data-form-type="other"
-                    maxLength={4}
+                    maxLength={6}
                     value={adminPin}
-                    onChange={(e) => { setAdminPin(e.target.value.replace(/\D/g, "")); setPinError(false); }}
+                    onChange={(e) => {
+                      // Accept alphanumeric only — letters and digits, no spaces
+                      // or symbols. Server compares as-is, so we keep case sensitive.
+                      setAdminPin(e.target.value.replace(/[^A-Za-z0-9]/g, "").slice(0, 6));
+                      setPinError(false);
+                    }}
                     onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Enter") handlePinSubmit(); }}
-                    placeholder="••••"
+                    placeholder="••••••"
                     className="flex-1 rounded-full px-4 py-2 text-sm text-center tracking-[0.4em] font-mono transition-colors"
                     style={{
                       background: pinError ? "rgba(232,144,144,0.18)" : "rgba(255,255,255,0.08)",

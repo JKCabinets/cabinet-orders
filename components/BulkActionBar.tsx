@@ -344,8 +344,6 @@ export function BulkActionBar({ selectedOrders, tab, onClear, onDone }: BulkActi
                 <input
                   ref={pinInputRef}
                   type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
                   autoComplete="off"
                   autoCorrect="off"
                   autoCapitalize="off"
@@ -354,8 +352,14 @@ export function BulkActionBar({ selectedOrders, tab, onClear, onDone }: BulkActi
                   data-1p-ignore="true"
                   data-lpignore="true"
                   data-form-type="other"
+                  maxLength={6}
                   value={adminPin}
-                  onChange={(e) => { setAdminPin(e.target.value.replace(/\D/g, "")); setPinError(false); }}
+                  onChange={(e) => {
+                    // Accept alphanumeric only — matches OrderModal's PIN input.
+                    // Server compares as-is (case sensitive) against ADMIN_BACKWARD_PIN.
+                    setAdminPin(e.target.value.replace(/[^A-Za-z0-9]/g, "").slice(0, 6));
+                    setPinError(false);
+                  }}
                   onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Enter" && adminPin) execute(); }}
                   placeholder="Enter admin PIN"
                   className="w-full px-3 py-2 rounded-lg text-sm transition-colors"
