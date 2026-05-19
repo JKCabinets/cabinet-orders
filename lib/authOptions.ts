@@ -50,7 +50,7 @@ export const authOptions: NextAuthOptions = {
           const supabase = await getSupabase();
           const { data: user, error } = await supabase
             .from("team_members")
-            .select("id, username, name, role, password, password_hash, active, failed_attempts, locked_until")
+            .select("id, username, name, role, password, password_hash, active, failed_attempts, locked_until, session_version")
             .eq("username", credentials.username.toLowerCase())
             .eq("active", true)
             .single();
@@ -159,6 +159,7 @@ export const authOptions: NextAuthOptions = {
             name: user.name,
             email: `${user.username}@jkcabinets.com`,
             role: user.role,
+            sessionVersion: user.session_version ?? 1,
           };
         } catch (err) {
           if (err instanceof Error && err.message.includes("locked")) throw err;
@@ -169,17 +170,100 @@ export const authOptions: NextAuthOptions = {
   ],
   callbacks: {
     async jwt({ token, user }) {
+      // Sign-in path: `user` is populated only on the call that follows
+      // a successful authorize(). Snapshot the role and session_version
+      // into the token, plus a timestamp so we know how stale our last
+      // verification is.
       if (user) {
-        token.role = ((user as { role?: string }).role ?? "member") as "admin" | "member";
+        const u = user as { role?: string; sessionVersion?: number };
+        token.role = (u.role ?? "member") as "admin" | "member";
         token.username = user.id;
-        token.sessionVersion = Date.now(); // used to invalidate sessions on password change
+        token.sessionVersion = u.sessionVersion ?? 1;
+        token.lastVerifiedAt = Date.now();
+        token.invalidated = false;
+        return token;
       }
-      return token;
+
+      // Subsequent calls: verify the token's snapshot against the DB.
+      // To keep the verification cost reasonable, we only re-check at
+      // most once per VERIFY_INTERVAL_MS. That trades a small window of
+      // staleness for the bulk of authenticated requests not paying a
+      // Supabase round-trip.
+      //
+      // Window math: a demoted admin / deactivated user keeps their
+      // session for up to VERIFY_INTERVAL_MS after the bump lands.
+      // Versus the previous 4-hour token TTL, this is roughly 1/240th
+      // the blast radius.
+      const VERIFY_INTERVAL_MS = 60_000;
+      const lastVerified = (token.lastVerifiedAt as number | undefined) ?? 0;
+      const now = Date.now();
+      if (now - lastVerified < VERIFY_INTERVAL_MS) {
+        return token;
+      }
+
+      // Time to re-verify. Fetch the current session_version and active
+      // flag for this user from Supabase. If the user has been hard-
+      // deleted, the lookup returns no rows — treat that as invalidation.
+      try {
+        const supabase = await getSupabase();
+        const { data, error } = await supabase
+          .from("team_members")
+          .select("session_version, active, role")
+          .eq("username", token.username as string)
+          .single();
+
+        if (error || !data) {
+          // No row found (hard-deleted) — mark the token invalidated.
+          // We can't actually delete the JWT from here (it's stored as
+          // a cookie on the client), but the session callback below
+          // will reject the user when it sees `invalidated`.
+          token.invalidated = true;
+          return token;
+        }
+
+        if (!data.active) {
+          // Soft-deleted — invalidate.
+          token.invalidated = true;
+          return token;
+        }
+
+        if ((data.session_version ?? 1) !== token.sessionVersion) {
+          // Version bumped server-side — token is stale, force re-login.
+          token.invalidated = true;
+          return token;
+        }
+
+        // Role drift can happen if an admin's role was changed but the
+        // session_version bump didn't fire (e.g. a future bug). Refresh
+        // the role on the token so the audit-log story stays sane.
+        if (data.role !== token.role) {
+          token.role = data.role as "admin" | "member";
+        }
+
+        token.lastVerifiedAt = now;
+        token.invalidated = false;
+        return token;
+      } catch {
+        // Supabase outage / network error: fail open. The whole app is
+        // already broken in this state — every API route hits Supabase —
+        // so an attacker holding a stale token can't do anything that
+        // touches the DB anyway. Better than mass-logging-out every user
+        // on a transient blip.
+        return token;
+      }
     },
     async session({ session, token }) {
+      // If the JWT callback flagged this token as invalidated (role
+      // change, deactivation, deletion), return a session without a
+      // user. NextAuth's client-side useSession() will then surface
+      // status "unauthenticated" and trigger redirect-to-login on
+      // protected pages.
+      if (token.invalidated) {
+        return { ...session, user: undefined as unknown as typeof session.user };
+      }
       if (session.user) {
-        (session.user as { role?: string; username?: string }).role = token.role as string;
-        (session.user as { role?: string; username?: string }).username = token.username as string;
+        session.user.role = token.role;
+        session.user.username = token.username;
       }
       return session;
     },

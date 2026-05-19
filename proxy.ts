@@ -90,8 +90,12 @@ export default withAuth(
         // Allow public paths through (strict match — no prefix-substring bypass)
         if (isPublicPath(pathname)) return true;
 
-        // Require token for everything else
-        return !!token;
+        // Require a valid, non-invalidated token. The jwt callback in
+        // lib/authOptions.ts sets `invalidated` when a server-side
+        // privilege change should force the user to re-authenticate
+        // (role change, deactivation, hard delete).
+        if (!token || token.invalidated) return false;
+        return true;
       },
     },
   }

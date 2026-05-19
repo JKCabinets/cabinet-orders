@@ -13,7 +13,12 @@ export type AuthSession = {
 
 export async function requireAuth(): Promise<{ session: AuthSession } | NextResponse> {
   const session = (await getServerSession(authOptions)) as AuthSession | null;
-  if (!session) {
+  // A session object may exist but lack `.user` if the JWT callback
+  // marked the token invalidated (role change, deactivation, hard
+  // delete — see lib/authOptions.ts session callback). Treat that as
+  // unauthorized so the request doesn't get to a route that assumes
+  // session.user is populated.
+  if (!session || !session.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   return { session };

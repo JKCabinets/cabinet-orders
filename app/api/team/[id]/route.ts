@@ -20,10 +20,11 @@ export async function PATCH(
   // Fetch the current state BEFORE the update so we can audit-log any
   // privilege-affecting changes (role flips, deactivations). Without this
   // the audit trail only catches password changes — a demoted admin would
-  // leave no record.
+  // leave no record. Also reads session_version so we can compute the
+  // next value when a privilege-affecting change requires invalidation.
   const { data: beforeRow } = await supabase
     .from("team_members")
-    .select("role, active, username")
+    .select("role, active, username, session_version")
     .eq("id", id)
     .single();
 
@@ -58,6 +59,35 @@ export async function PATCH(
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "No valid fields to update" }, { status: 422 });
+  }
+
+  // ── Session-version bump for privilege-affecting changes ─────────────
+  // If the user is being demoted, deactivated, or their password is
+  // changing, bump session_version so any outstanding JWTs they hold
+  // get invalidated on next verification (see lib/authOptions.ts jwt
+  // callback). Atomic with the rest of the UPDATE so we never have a
+  // window where the privilege change is live but the bump isn't.
+  //
+  // We bump on:
+  //   - role change (admin ↔ member, either direction)
+  //   - deactivation (active flips to false)
+  //   - password change (already invalidates passwords, but the JWT
+  //     still carries authority via the role claim — bumping forces
+  //     re-login with the new credentials)
+  //
+  // We do NOT bump on: name change, initials change, avatar color,
+  // username change, reactivation (a reactivated user has no current
+  // JWT to invalidate anyway).
+  if (beforeRow) {
+    const roleChanged =
+      updates.role !== undefined && updates.role !== beforeRow.role;
+    const deactivated =
+      updates.active === false && beforeRow.active;
+    const passwordChanged = !!body.password;
+
+    if (roleChanged || deactivated || passwordChanged) {
+      updates.session_version = (beforeRow.session_version ?? 1) + 1;
+    }
   }
 
   const { error } = await supabase.from("team_members").update(updates).eq("id", id);
@@ -118,18 +148,29 @@ export async function DELETE(
   const { searchParams } = new URL(req.url);
   const hard = searchParams.get("hard") === "true";
 
-  // Capture target identity before deletion for the audit log.
+  // Capture target identity before deletion for the audit log. Also
+  // reads session_version so we can compute the bump for soft-delete.
   const { data: beforeRow } = await supabase
     .from("team_members")
-    .select("username, role")
+    .select("username, role, session_version")
     .eq("id", id)
     .single();
 
   if (hard) {
+    // Hard delete: the row disappears. The JWT callback will fail its
+    // lookup-by-username on next verification and force logout, so no
+    // explicit bump is needed (there's nothing to bump on).
     const { error } = await supabase.from("team_members").delete().eq("id", id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   } else {
-    const { error } = await supabase.from("team_members").update({ active: false }).eq("id", id);
+    // Soft delete: bump session_version so any outstanding JWTs are
+    // invalidated within the verification window, even if some part of
+    // the JWT callback's row-fetch races us.
+    const nextVersion = (beforeRow?.session_version ?? 1) + 1;
+    const { error } = await supabase
+      .from("team_members")
+      .update({ active: false, session_version: nextVersion })
+      .eq("id", id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
