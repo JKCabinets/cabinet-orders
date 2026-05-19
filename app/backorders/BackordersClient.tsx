@@ -10,7 +10,6 @@ import {
 } from "@/lib/backorders";
 import { PageHeader } from "@/components/AppShell";
 import { OrderModal } from "@/components/OrderModal";
-import { decodeHtmlEntities } from "@/lib/htmlEntities";
 import { PackageX, ChevronDown, ChevronRight } from "lucide-react";
 import clsx from "clsx";
 
@@ -175,7 +174,7 @@ function RollupRow({
           <span className="font-mono text-[13px] text-cream">{rollup.sku}</span>
           {rollup.description && (
             <span className="text-[12px] text-cream/55 truncate">
-              {decodeHtmlEntities(rollup.description)}
+              {rollup.description}
             </span>
           )}
         </div>
@@ -270,7 +269,7 @@ function AffectedOrderLine({
         {order.id}
       </span>
       <span className="text-[12px] text-cream/85 flex-1 min-w-0 truncate">
-        {decodeHtmlEntities(order.name)}
+        {order.name}
       </span>
       <span className="text-[10px] text-cream/45 flex-shrink-0">
         {order.stage}
@@ -288,7 +287,7 @@ function AffectedOrderLine({
       )}
       {item?.backorder_notes && (
         <span className="text-[10px] text-cream/45 w-full pl-3 italic">
-          “{decodeHtmlEntities(item.backorder_notes)}”
+          “{item.backorder_notes}”
         </span>
       )}
     </button>

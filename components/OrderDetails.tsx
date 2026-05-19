@@ -5,7 +5,6 @@ import { Plus, Trash2, Check, X, Pencil, AlertTriangle } from "lucide-react";
 import { SkuItem } from "@/lib/data";
 import { useStore } from "@/lib/store";
 import { decodeSku } from "@/lib/skuDecoder";
-import { decodeHtmlEntities } from "@/lib/htmlEntities";
 
 interface OrderDetailsProps {
   orderId: string;
@@ -171,8 +170,8 @@ export function OrderDetails({ orderId, skuItems, readOnly = false }: OrderDetai
             <div className={`grid grid-cols-12 gap-1.5 items-center px-2 py-1.5 rounded-lg group transition-colors ${rowTint}`}>
               <span className="col-span-3 text-[11px] font-mono text-cream truncate">{item.sku}</span>
               <span className="col-span-1 text-[11px] text-cream/85 text-center font-medium">{item.quantity}</span>
-              <span className="col-span-5 text-[11px] text-cream/85 truncate" title={decodeHtmlEntities(item.description ?? "")}>
-                {decodeHtmlEntities(item.description ?? "—")}
+              <span className="col-span-5 text-[11px] text-cream/85 truncate" title={item.description ?? ""}>
+                {item.description ?? "—"}
               </span>
               <div className="col-span-3 flex items-center justify-end gap-1">
                 <button
@@ -442,8 +441,8 @@ function BackorderEditor({ item, onSave, onCancel }: {
  * to italic placeholders so the row never looks broken.
  */
 function GroupHeader({ vendor, style, color }: { vendor: string; style: string; color: string }) {
-  const styleLabel = style ? decodeHtmlEntities(style) : "Unknown style";
-  const colorLabel = color ? decodeHtmlEntities(color) : "Unknown color";
+  const styleLabel = style ? style : "Unknown style";
+  const colorLabel = color ? color : "Unknown color";
   return (
     <div
       className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 mt-2 rounded-md"

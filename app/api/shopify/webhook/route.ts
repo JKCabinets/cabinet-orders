@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { supabase } from "@/lib/supabase";
 import { cleanInput } from "@/lib/auth";
+import { decodeHtmlEntities } from "@/lib/htmlEntities";
 import { decodeSku, buildSkuFromAvisNames } from "@/lib/skuDecoder";
 
 const SHOPIFY_SECRET = process.env.SHOPIFY_WEBHOOK_SECRET ?? "";
@@ -9,6 +10,24 @@ const SHOPIFY_SECRET = process.env.SHOPIFY_WEBHOOK_SECRET ?? "";
 // Reject payloads larger than 5 MB — Shopify's largest legitimate order payloads
 // are well under 1 MB; anything larger is either malformed or an abuse attempt.
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Normalize incoming free text from Shopify.
+ *
+ * Shopify occasionally serves text with HTML entities pre-encoded in
+ * JSON payloads (e.g. `&amp;` in a line-item name). The rest of the app
+ * stores raw characters and lets React / `escapeHtml()` handle escaping
+ * at render time, so we decode here at the ingress boundary to get
+ * everything onto the same convention. This is the only place in the
+ * codebase that decodes — all reads downstream treat stored text as raw.
+ *
+ * Then trim via `cleanInput`. Idempotent on already-raw strings; the
+ * decode is a no-op when no entities are present.
+ */
+function shopifyInput(s: unknown): string {
+  if (typeof s !== "string") return "";
+  return cleanInput(decodeHtmlEntities(s));
+}
 
 /**
  * Verify the Shopify HMAC signature.
@@ -87,14 +106,15 @@ function buildOrder(payload: Record<string, unknown>) {
     }
     if (!sku) sku = baseVariantSku;
 
-    // Sanitize every string field so anything ingested from Shopify is safe to
-    // later interpolate into HTML (e.g. the order export route).
+    // Normalize every string field via shopifyInput (decode any HTML entities
+    // Shopify may have included, then trim). This is the boundary where
+    // external data becomes raw internal data.
     return {
-      sku: cleanInput(sku),
+      sku: shopifyInput(sku),
       quantity: Number(i.quantity ?? 1),
-      description: cleanInput(String(i.name ?? "")),
-      door_style: cleanInput(avisDoorStyle),
-      color: cleanInput(avisColorSelect),
+      description: shopifyInput(String(i.name ?? "")),
+      door_style: shopifyInput(avisDoorStyle),
+      color: shopifyInput(avisColorSelect),
     };
   }).filter(i => i.sku);
 
@@ -115,21 +135,21 @@ function buildOrder(payload: Record<string, unknown>) {
 
   const today = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "America/Phoenix" });
 
-  // All free-text strings are sanitized before being returned.
+  // All free-text strings normalized via shopifyInput before return.
   return {
-    customerName: cleanInput(customerName),
-    customerEmail: cleanInput(customerEmail),
-    customerPhone: cleanInput(customerPhone),
-    shipTo: cleanInput(shipTo),
-    deliveryMethod: cleanInput(deliveryMethod),
-    detail: cleanInput(detail),
+    customerName: shopifyInput(customerName),
+    customerEmail: shopifyInput(customerEmail),
+    customerPhone: shopifyInput(customerPhone),
+    shipTo: shopifyInput(shipTo),
+    deliveryMethod: shopifyInput(deliveryMethod),
+    detail: shopifyInput(detail),
     skus,
     skuItems,
-    notes: cleanInput(notes),
+    notes: shopifyInput(notes),
     today,
-    orderNumber: cleanInput(orderNumber),
-    decodedDoorStyle: cleanInput(decodedDoorStyle),
-    decodedColor: cleanInput(decodedColor),
+    orderNumber: shopifyInput(orderNumber),
+    decodedDoorStyle: shopifyInput(decodedDoorStyle),
+    decodedColor: shopifyInput(decodedColor),
   };
 }
 
@@ -214,7 +234,7 @@ export async function POST(req: NextRequest) {
       color: decodedColor,
       delivery_window: "",
       delivery_notes: "",
-      vendor: cleanInput(vendorName),
+      vendor: shopifyInput(vendorName),
       ship_to: shipTo,
       customer_phone: customerPhone,
       customer_email: customerEmail,

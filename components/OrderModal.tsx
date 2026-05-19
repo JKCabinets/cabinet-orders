@@ -10,7 +10,6 @@ import {
 } from "@/lib/data";
 import { useStore } from "@/lib/store";
 import { checkAttachmentGate } from "@/lib/stageGates";
-import { decodeHtmlEntities } from "@/lib/htmlEntities";
 import { AttachmentsPanel, type AttachmentsPanelHandle } from "./AttachmentsPanel";
 import { OrderDetails } from "./OrderDetails";
 import { DamageReportPanel } from "./DamageReportPanel";
@@ -70,13 +69,9 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
   const { moveStage, updateOrderDetails, updateNotes, updateInternalNotes, archiveOrder, unarchiveOrder, deleteOrder, orders, warranties, team } = useStore();
   const { data: session } = useSession();
   const currentUserName = session?.user?.name ?? undefined;
-  // Decode in case the row was stored under the legacy sanitize() encoding —
-  // post-refactor inserts store raw text, but rows from before the backfill
-  // ran still have entities. decodeHtmlEntities is a no-op on raw strings,
-  // so this is safe in both states.
-  const [notes, setNotes] = useState(decodeHtmlEntities(order.notes));
+  const [notes, setNotes] = useState(order.notes);
   const [notesChanged, setNotesChanged] = useState(false);
-  const [internalNotes, setInternalNotes] = useState(decodeHtmlEntities(order.internal_notes ?? ""));
+  const [internalNotes, setInternalNotes] = useState(order.internal_notes ?? "");
   const [internalNotesChanged, setInternalNotesChanged] = useState(false);
   const [enteredGateError, setEnteredGateError] = useState(false);
   const [checkingAttachments, setCheckingAttachments] = useState(false);
@@ -262,7 +257,7 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
         <div className="flex items-start justify-between px-6 py-5 flex-shrink-0" style={SECTION_BORDER}>
           <div>
             <p className="text-[10px] uppercase tracking-[0.16em] text-cream/45 mb-1.5 font-mono">{liveOrder.id}</p>
-            <h2 className="font-display text-[26px] text-cream leading-tight">{decodeHtmlEntities(liveOrder.name)}</h2>
+            <h2 className="font-display text-[26px] text-cream leading-tight">{liveOrder.name}</h2>
             {/* Detail line (SKU description list) intentionally hidden — it's
                 noisy and the SKU table below is the source of truth. */}
           </div>
@@ -670,7 +665,7 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
             <DamageReportPanel
               orderId={liveOrder.id}
               orderSkus={liveOrder.sku_items?.map((i) => i.sku) ?? (liveOrder.sku ? [liveOrder.sku] : [])}
-              orderName={decodeHtmlEntities(liveOrder.name)}
+              orderName={liveOrder.name}
               reporterName={currentUserName}
             />
           )}

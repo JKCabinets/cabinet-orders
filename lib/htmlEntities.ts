@@ -1,17 +1,20 @@
 /**
  * Decode common HTML entities back to their raw characters.
  *
- * Why this exists: legacy rows stored under the old `sanitize()` helper
- * (which HTML-encoded everything on insert) have entity-encoded text in
- * the DB. Post-refactor inserts go in raw — but until the one-time backfill
- * SQL has run against your DB, you'll have a mix of legacy-encoded and raw
- * rows. This decoder bridges that: it's a no-op on raw strings, and on
- * legacy rows it restores readable characters.
+ * Where this is used: the Shopify webhook ingress (`app/api/shopify/webhook`).
+ * Shopify occasionally serves text with HTML entities pre-encoded in JSON
+ * payloads (e.g. `&amp;` in a line-item name), so we decode at the boundary
+ * to normalize everything onto the same convention — raw text in storage,
+ * React/escapeHtml at render.
  *
- * Once the backfill has run, every render site can drop the decode call —
- * it'll be a true no-op everywhere. Until then, keep the calls in place.
+ * Historically this was called everywhere as defensive cover for legacy
+ * rows that had been stored under the old `sanitize()` helper (which
+ * HTML-encoded on insert). The v11 backfill migration decoded those rows,
+ * and the sanitize refactor stopped re-encoding new inserts, so the helper
+ * is no longer needed at render sites — only at the Shopify boundary.
  *
- * Covers the entities the old sanitize() introduced:
+ * Covers the entities the old sanitize() introduced and the variants
+ * Shopify is known to emit:
  *   &amp;   &   ampersand
  *   &lt;    <   less than
  *   &gt;    >   greater than
@@ -19,9 +22,6 @@
  *   &#x27;  '   single quote
  *   &#x2F;  /   forward slash
  *   &#x60;  `   backtick
- *
- * Plus a few common numeric-entity forms that show up in Shopify data
- * (Shopify itself encodes a handful before serving its REST API).
  *
  * Safe to call on already-decoded strings — it's a no-op.
  */

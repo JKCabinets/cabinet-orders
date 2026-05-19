@@ -3,17 +3,15 @@ import { requireAuth, escapeHtml, rateLimitOr429 } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import { groupSkuItemsByStyle, decodeSku } from "@/lib/skuDecoder";
 import { lookupVendorsForSkus } from "@/lib/vendorLookup";
-import { decodeHtmlEntities } from "@/lib/htmlEntities";
 import type { SkuItem } from "@/lib/skuDecoder";
 
 // Short alias since this file does a lot of escaping
 const h = escapeHtml;
-// Free text may be entity-encoded for two reasons: (1) legacy rows stored
-// under the old sanitize() helper, before the backfill; (2) Shopify itself
-// encodes some characters before serving the REST API. Decode first, then
-// re-escape for HTML output. After the backfill, the decode is only doing
-// work on Shopify-sourced text.
-const text = (s: unknown) => h(decodeHtmlEntities(String(s ?? "")));
+// Post-sanitize-refactor, every text column stores raw characters. Render
+// is just "escape for HTML output." (Historically this composed with a
+// decodeHtmlEntities call to undo legacy entity-encoded rows; the v11
+// backfill removed those, and the Shopify webhook now decodes at ingress.)
+const text = (s: unknown) => h(String(s ?? ""));
 
 export async function GET(
   req: NextRequest,

@@ -7,7 +7,6 @@ import { Order, OrderStage, AVATAR_COLOR_STYLES, Stage } from "@/lib/data";
 import { SLA_TARGETS, daysInStage, isOverdue } from "@/lib/sla";
 import { AppShell, PageHeader } from "@/components/AppShell";
 import { OrderModal } from "@/components/OrderModal";
-import { decodeHtmlEntities } from "@/lib/htmlEntities";
 import { AlertTriangle, ArrowRight, Archive } from "lucide-react";
 import clsx from "clsx";
 
@@ -328,7 +327,7 @@ function OverdueRow({
             </span>
           )}
         </div>
-        <div className="font-display text-[15px] text-cream truncate">{decodeHtmlEntities(order.name)}</div>
+        <div className="font-display text-[15px] text-cream truncate">{order.name}</div>
       </button>
 
       {/* Owner */}
@@ -396,7 +395,7 @@ function OverdueRow({
           const todayIso = new Date().toISOString().slice(0, 10);
           const pastFinish = finish && finish <= todayIso;
           function go() {
-            const displayName = decodeHtmlEntities(order.name);
+            const displayName = order.name;
             const msg = pastFinish
               ? `Move "${displayName}" to At cross dock now?`
               : finish
