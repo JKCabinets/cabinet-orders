@@ -260,7 +260,7 @@ export async function PATCH(
   // Only apply to fields the request body didn't explicitly set, so a
   // caller that sends `{ stage: "Entered", delivery_date: "..." }` (rare
   // but possible) keeps its explicit value.
-  let clearedFields: Record<string, null> | null = null;
+  let clearedFields: Record<string, string | null> | null = null;
   if (typeof body.stage === "string") {
     clearedFields = fieldsToClearOnBackwardMove(currentStage, body.stage);
     if (clearedFields) {

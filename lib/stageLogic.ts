@@ -70,12 +70,19 @@ export function isBackwardsMove(currentStage: string, targetStage: string): bool
 export function fieldsToClearOnBackwardMove(
   currentStage: string,
   targetStage: string,
-): Record<string, null> | null {
+): Record<string, string | null> | null {
   if (!isBackwardsMove(currentStage, targetStage)) return null;
   const target = stageIndex(targetStage);
   if (target.flow !== "order") return null; // warranty has no date transitions
 
-  const clear: Record<string, null> = {};
+  // Mixed value type:
+  //   - `null` for date columns and nullable text (entered_by). These are
+  //     `date` or nullable `text` in the DB.
+  //   - `""` for delivery_window and delivery_notes, which are NOT NULL
+  //     text columns (default '') from supabase-schema-v2. Setting them
+  //     to null violates the constraint and returns a 500 from the API;
+  //     empty string is the schema-sanctioned "no value" sentinel.
+  const clear: Record<string, string | null> = {};
 
   // Target is "At cross dock" or earlier → clear delivery date
   if (target.idx <= ORDER_STAGE_ORDER.indexOf("At cross dock")) {
@@ -84,10 +91,10 @@ export function fieldsToClearOnBackwardMove(
   }
   // When target is "At cross dock", keep window/notes (the user is fixing
   // a scheduled delivery — access notes are still relevant). When target
-  // is earlier, drop them too.
+  // is earlier, drop them too — but to "" not null (NOT NULL columns).
   if (target.idx < ORDER_STAGE_ORDER.indexOf("At cross dock")) {
-    clear.delivery_window = null;
-    clear.delivery_notes = null;
+    clear.delivery_window = "";
+    clear.delivery_notes = "";
   }
 
   // Target is earlier than "In production" → clear production dates
@@ -113,7 +120,7 @@ export function fieldsToClearOnBackwardMove(
  * Human-readable list of the fields that would be cleared. Used for the
  * activity-log message so the team can see what got wiped.
  */
-export function describeFieldsCleared(cleared: Record<string, null> | null): string {
+export function describeFieldsCleared(cleared: Record<string, string | null> | null): string {
   if (!cleared) return "";
   const labels: Record<string, string> = {
     entered_by: "entered-by",
