@@ -60,7 +60,11 @@ const SECTION_BORDER: React.CSSProperties = {
 
 const LABEL = "text-[10px] uppercase tracking-[0.16em] text-cream/50 mb-1.5";
 
-const ADMIN_CODE = "4951";
+// PIN validation lives server-side only. The modal sends whatever the user
+// typed; the server compares against ADMIN_BACKWARD_PIN (constant-time) and
+// surfaces a 403 with `admin_pin_required` if it doesn't match. This avoids
+// the previous footgun where the modal's hardcoded "4951" and Vercel's env
+// var could drift out of sync, breaking every backward move silently.
 
 export function OrderModal({ order, tab, onClose, onStageChange, initialReason }: OrderModalProps) {
   const { moveStage, updateOrderDetails, updateNotes, updateInternalNotes, archiveOrder, unarchiveOrder, deleteOrder, orders, warranties, team } = useStore();
@@ -168,35 +172,48 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
       }
     }
     setEnteredGateError(false);
-    // Send the PIN to the server — for backwards moves the API requires it
-    // and rejects with 403 admin_pin_required if missing. Forward moves
-    // accept (but don't require) the PIN; including it is harmless.
+    // Send the PIN to the server. For backwards moves the API requires it
+    // and rejects with 403 admin_pin_required if it's missing or wrong.
+    // Forward moves don't need a PIN but accept one harmlessly.
     const result = await moveStage(liveOrder.id, stage, currentUserName, providedPin);
     if (!result.ok && result.pinRequired) {
-      // Server-side PIN mismatch — client and server got out of sync
-      // (most likely because ADMIN_BACKWARD_PIN was rotated in Vercel
-      // without updating ADMIN_CODE here). Surface the error so the
-      // user knows to contact whoever holds the current PIN.
+      // Server rejected the PIN — keep the dialog open and let the user
+      // try again. The PIN dialog is the canonical place to surface this
+      // error since that's where the user typed it.
+      setPendingStage(stage);
+      setAdminPin("");
       setPinError(true);
-      setTimeout(() => setPinError(false), 4000);
+      // Re-focus the input on the next frame so the user can retype.
+      requestAnimationFrame(() => pinInputRef.current?.focus());
+      return;
+    }
+    if (!result.ok) {
+      // Some other error (network, 422, 500). Close the PIN dialog and
+      // surface a generic error — the user can re-attempt from the picker.
+      // Logged to console for debugging since we don't have a toast system.
+      console.error("Stage move failed:", result.error);
       return;
     }
     onStageChange(stage);
   }
 
   function handlePinSubmit() {
-    if (adminPin === ADMIN_CODE && pendingStage) {
-      const stage = pendingStage;
-      const pin = adminPin;
-      setPendingStage(null);
-      setAdminPin("");
-      setPinError(false);
-      doMoveStage(stage, pin);
-    } else {
+    // No client-side comparison — that was the source of the drift bug
+    // where ADMIN_CODE here had to match ADMIN_BACKWARD_PIN in Vercel.
+    // Send whatever the user typed to the server; the server decides.
+    if (!pendingStage || !adminPin) {
       setPinError(true);
-      setAdminPin("");
       setTimeout(() => setPinError(false), 2000);
+      return;
     }
+    const stage = pendingStage;
+    const pin = adminPin;
+    // Close the dialog optimistically; doMoveStage will re-open it if the
+    // server rejects the PIN. This keeps the happy path snappy.
+    setPendingStage(null);
+    setAdminPin("");
+    setPinError(false);
+    doMoveStage(stage, pin);
   }
 
   function handleSaveNotes() {
