@@ -7,6 +7,7 @@ import { useStore } from "@/lib/store";
 import { useSession } from "next-auth/react";
 import { formatDateWithYear, parseOrderDate } from "@/lib/dateUtils";
 import { checkAttachmentGate } from "@/lib/stageGates";
+import { decodeHtmlEntities } from "@/lib/htmlEntities";
 import { ArrowUp, ArrowDown, RotateCcw, ChevronRight, Download, X } from "lucide-react";
 
 /**
@@ -262,7 +263,7 @@ function OrderRow({
       <td className="px-3 py-2.5 font-mono text-[10px] text-cream/65">{order.id}</td>
       <td className="px-3 py-2.5 text-cream/75 text-[11px]">{formatDateWithYear(order.date)}</td>
       <td className="px-3 py-2.5">
-        <div className="font-display text-[15px] leading-tight text-cream truncate">{order.name}</div>
+        <div className="font-display text-[15px] leading-tight text-cream truncate">{decodeHtmlEntities(order.name)}</div>
         {/* SKU detail line hidden — too noisy for a list view. The SKU
             breakdown is available in the modal. */}
       </td>
@@ -336,7 +337,7 @@ function MobileRow({
           <TypePill source={order.source} />
           <PaymentPill status={order.payment_status} />
         </div>
-        <div className="font-display text-[15px] leading-tight text-cream truncate">{order.name}</div>
+        <div className="font-display text-[15px] leading-tight text-cream truncate">{decodeHtmlEntities(order.name)}</div>
         <div className="text-[10px] text-cream/45 truncate">{formatDateWithYear(order.date)}</div>
       </div>
       <div onClick={(e) => e.stopPropagation()} className="flex-shrink-0">
@@ -566,11 +567,12 @@ function UpdateStatusActions({
     const today = new Date().toISOString().slice(0, 10);
     const isPastFinish = finish && finish <= today;
     function earlyPush() {
+      const displayName = decodeHtmlEntities(order.name);
       const msg = isPastFinish
-        ? `Move "${order.name}" to At cross dock now?`
+        ? `Move "${displayName}" to At cross dock now?`
         : finish
-        ? `Production isn't scheduled to finish until ${finish}.\n\nPush "${order.name}" to At cross dock anyway?`
-        : `No estimated finish date set.\n\nPush "${order.name}" to At cross dock now?`;
+        ? `Production isn't scheduled to finish until ${finish}.\n\nPush "${displayName}" to At cross dock anyway?`
+        : `No estimated finish date set.\n\nPush "${displayName}" to At cross dock now?`;
       if (typeof window !== "undefined" && !window.confirm(msg)) return Promise.resolve();
       return moveStage(order.id, "At cross dock");
     }

@@ -4,6 +4,7 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import { Archive, ChevronDown, Loader2, X, AlertCircle } from "lucide-react";
 import { Order, ORDER_STAGES, WARRANTY_STAGES, Stage } from "@/lib/data";
 import { useStore } from "@/lib/store";
+import { decodeHtmlEntities } from "@/lib/htmlEntities";
 
 interface BulkActionBarProps {
   selectedOrders: Order[];
@@ -325,7 +326,7 @@ export function BulkActionBar({ selectedOrders, tab, onClear, onDone }: BulkActi
                     {willFailThis && <span style={{ color: "#e08030" }}>⊗</span>}
                     {check?.will_pass && confirming.kind === "move" && <span style={{ color: "#8fbe70" }}>→</span>}
                     <span style={{ color: willFailThis ? "rgba(255,170,80,0.85)" : "rgba(232,227,218,0.55)" }}>
-                      {o.id} — {o.name}
+                      {o.id} — {decodeHtmlEntities(o.name)}
                     </span>
                   </div>
                 );

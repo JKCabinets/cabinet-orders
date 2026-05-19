@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, escapeHtml } from "@/lib/auth";
+import { requireAuth, escapeHtml, rateLimitOr429 } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import { groupSkuItemsByStyle, decodeSku } from "@/lib/skuDecoder";
 import { lookupVendorsForSkus } from "@/lib/vendorLookup";
@@ -19,6 +19,12 @@ export async function GET(
 ) {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
+  // PDF generation is more expensive than regular reads — vendor lookup
+  // hits shopify_products, full SKU decode runs per line item, and we may
+  // render the whole acknowledgment template. Cap at 20/min to prevent
+  // accidental loops or scripted abuse.
+  const limited = await rateLimitOr429(req, 20, 60_000, "orders:export");
+  if (limited) return limited;
   const { id } = await params;
 
   // Optional ?vendor= filter. When present, render only the line items for

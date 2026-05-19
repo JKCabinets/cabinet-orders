@@ -13,23 +13,9 @@ const securityHeaders = [
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
   // Basic XSS protection for older browsers
   { key: "X-XSS-Protection", value: "1; mode=block" },
-  // Content Security Policy — allows same-origin + Supabase + NextAuth
-  {
-    key: "Content-Security-Policy",
-    value: [
-      "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
-      "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data: blob:",
-      "font-src 'self'",
-      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.upstash.io",
-      "object-src 'none'",
-      "base-uri 'self'",
-      "form-action 'self'",
-      "frame-ancestors 'none'",
-      "upgrade-insecure-requests",
-    ].join("; "),
-  },
+  // Content-Security-Policy is set per-request in proxy.ts (nonce-based,
+  // strict — no 'unsafe-inline' or 'unsafe-eval' in production). It cannot
+  // be set here because the nonce must be unique per request.
 ];
 
 const nextConfig = {

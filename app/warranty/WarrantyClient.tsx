@@ -8,6 +8,7 @@ import { OrderTable } from "@/components/OrderTable";
 import { OrderModal } from "@/components/OrderModal";
 import { NewOrderModal } from "@/components/NewOrderModal";
 import { BulkActionBar } from "@/components/BulkActionBar";
+import { decodeHtmlEntities } from "@/lib/htmlEntities";
 import { Plus, Search, CheckSquare, X } from "lucide-react";
 
 const WARRANTY_STAGE_ACCENT: Record<string, string> = {
@@ -41,7 +42,7 @@ export function WarrantyClient() {
     if (search) {
       const q = search.toLowerCase();
       list = list.filter(o =>
-        o.name.toLowerCase().includes(q) ||
+        decodeHtmlEntities(o.name).toLowerCase().includes(q) ||
         o.id.toLowerCase().includes(q) ||
         o.sku.toLowerCase().includes(q)
       );

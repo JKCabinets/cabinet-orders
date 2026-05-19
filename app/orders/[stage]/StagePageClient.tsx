@@ -8,6 +8,7 @@ import { OrderTable } from "@/components/OrderTable";
 import { OrderModal } from "@/components/OrderModal";
 import { NewOrderModal } from "@/components/NewOrderModal";
 import { BulkActionBar } from "@/components/BulkActionBar";
+import { decodeHtmlEntities } from "@/lib/htmlEntities";
 import { Plus, Search, CheckSquare, X } from "lucide-react";
 
 const STAGE_DESCRIPTION: Record<string, { eyebrow: string; accent: string }> = {
@@ -45,7 +46,7 @@ export function StagePageClient({ stage }: Props) {
     if (!search) return stageOrders;
     const q = search.toLowerCase();
     return stageOrders.filter(o =>
-      o.name.toLowerCase().includes(q) ||
+      decodeHtmlEntities(o.name).toLowerCase().includes(q) ||
       o.id.toLowerCase().includes(q) ||
       o.sku.toLowerCase().includes(q)
     );

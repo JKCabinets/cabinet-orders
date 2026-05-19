@@ -70,9 +70,12 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
   const { moveStage, updateOrderDetails, updateNotes, updateInternalNotes, archiveOrder, unarchiveOrder, deleteOrder, orders, warranties, team } = useStore();
   const { data: session } = useSession();
   const currentUserName = session?.user?.name ?? undefined;
-  const [notes, setNotes] = useState(order.notes);
+  // Notes/internal-notes are stored entity-encoded (sanitize() runs on save),
+  // so we decode here to populate the textareas with readable characters.
+  // When the user saves, sanitize() re-encodes — round-trip safe.
+  const [notes, setNotes] = useState(decodeHtmlEntities(order.notes));
   const [notesChanged, setNotesChanged] = useState(false);
-  const [internalNotes, setInternalNotes] = useState(order.internal_notes ?? "");
+  const [internalNotes, setInternalNotes] = useState(decodeHtmlEntities(order.internal_notes ?? ""));
   const [internalNotesChanged, setInternalNotesChanged] = useState(false);
   const [enteredGateError, setEnteredGateError] = useState(false);
   const [checkingAttachments, setCheckingAttachments] = useState(false);

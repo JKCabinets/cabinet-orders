@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { ChevronLeft, ChevronRight, Package, Factory, CheckCircle2 } from "lucide-react";
 import clsx from "clsx";
 import { AppShell, PageHeader } from "@/components/AppShell";
+import { decodeHtmlEntities } from "@/lib/htmlEntities";
 
 interface CalendarOrder {
   id: string;
@@ -161,7 +162,7 @@ export default function CalendarPage() {
     setEditingOrder(o.id);
     setEditDeliveryDate(o.delivery_date || fallbackDate || "");
     setEditWindow(o.delivery_window || "");
-    setEditNotes(o.delivery_notes || "");
+    setEditNotes(decodeHtmlEntities(o.delivery_notes || ""));
   }
 
   return (
@@ -265,7 +266,7 @@ export default function CalendarPage() {
                       <>
                         {deliveryOrders.slice(0, 2).map(o => (
                           <div key={o.id} className="text-[9px] truncate bg-blue-900/40 text-blue-300 rounded px-1 py-0.5">
-                            {o.id} · {o.name.split(" ")[0]}{o.delivery_window && ` · ${o.delivery_window}`}
+                            {o.id} · {decodeHtmlEntities(o.name).split(" ")[0]}{o.delivery_window && ` · ${o.delivery_window}`}
                           </div>
                         ))}
                         {deliveryOrders.length > 2 && (
@@ -276,12 +277,12 @@ export default function CalendarPage() {
                       <>
                         {startOrders.slice(0, 1).map(o => (
                           <div key={`s-${o.id}`} className="text-[9px] truncate bg-violet-900/40 text-violet-300 rounded px-1 py-0.5">
-                            {o.id} · {o.name.split(" ")[0]}
+                            {o.id} · {decodeHtmlEntities(o.name).split(" ")[0]}
                           </div>
                         ))}
                         {finishOrders.slice(0, 1).map(o => (
                           <div key={`f-${o.id}`} className="text-[9px] truncate bg-emerald-900/40 text-emerald-300 rounded px-1 py-0.5">
-                            {o.id} · {o.name.split(" ")[0]}
+                            {o.id} · {decodeHtmlEntities(o.name).split(" ")[0]}
                           </div>
                         ))}
                         {(startOrders.length + finishOrders.length) > 2 && (
@@ -379,8 +380,8 @@ export default function CalendarPage() {
                 {unscheduledProduction.map(o => (
                   <div key={o.id} className="px-4 py-3 flex items-center justify-between">
                     <div>
-                      <p className="text-xs text-[#e8e3da]"><span className="text-[rgba(232,227,218,0.40)]">{o.id}</span> · {o.name}</p>
-                      <p className="text-[10px] text-[rgba(232,227,218,0.50)]">{o.detail}</p>
+                      <p className="text-xs text-[#e8e3da]"><span className="text-[rgba(232,227,218,0.40)]">{o.id}</span> · {decodeHtmlEntities(o.name)}</p>
+                      <p className="text-[10px] text-[rgba(232,227,218,0.50)]">{decodeHtmlEntities(o.detail)}</p>
                     </div>
                     <button onClick={() => { openEditProduction(o); setSelectedDay(null); }}
                       className="text-[10px] text-violet-400 hover:text-violet-300 transition-colors">
@@ -403,7 +404,7 @@ export default function CalendarPage() {
                 {unscheduledDelivery.map(o => (
                   <div key={o.id} className="px-4 py-3 flex items-center justify-between">
                     <div>
-                      <p className="text-xs text-[#e8e3da]"><span className="text-[rgba(232,227,218,0.40)]">{o.id}</span> · {o.name}</p>
+                      <p className="text-xs text-[#e8e3da]"><span className="text-[rgba(232,227,218,0.40)]">{o.id}</span> · {decodeHtmlEntities(o.name)}</p>
                     </div>
                     <button onClick={() => { openEditDelivery(o); setSelectedDay(null); }}
                       className="text-[10px] text-amber-400 hover:text-amber-300 transition-colors">
@@ -423,7 +424,7 @@ export default function CalendarPage() {
             if (view === "production") {
               return (
                 <div className="bg-[rgba(255,255,255,0.04)] border border-[rgba(86,100,72,0.55)] rounded-xl p-4">
-                  <p className="text-xs font-medium text-[#e8e3da] mb-1">Set production dates — {o.name}</p>
+                  <p className="text-xs font-medium text-[#e8e3da] mb-1">Set production dates — {decodeHtmlEntities(o.name)}</p>
                   {o.shopify_id && (
                     <p className="text-[10px] text-violet-400 mb-3">Shopify order · dates will sync automatically</p>
                   )}
@@ -450,7 +451,7 @@ export default function CalendarPage() {
 
             return (
               <div className="bg-[rgba(255,255,255,0.04)] border border-[rgba(86,100,72,0.55)] rounded-xl p-4">
-                <p className="text-xs font-medium text-[#e8e3da] mb-3">Schedule delivery — {o.name}</p>
+                <p className="text-xs font-medium text-[#e8e3da] mb-3">Schedule delivery — {decodeHtmlEntities(o.name)}</p>
                 <div className="flex flex-col gap-2">
                   <div>
                     <label className="block text-[10px] uppercase tracking-widest text-[rgba(232,227,218,0.30)] mb-1">Date</label>
@@ -516,7 +517,7 @@ function ProductionOrderCard({
     <div className="p-4">
       {editing ? (
         <div className="flex flex-col gap-2">
-          <p className="text-xs font-medium text-[#e8e3da]"><span className="text-[rgba(232,227,218,0.40)]">{order.id}</span> · {order.name}</p>
+          <p className="text-xs font-medium text-[#e8e3da]"><span className="text-[rgba(232,227,218,0.40)]">{order.id}</span> · {decodeHtmlEntities(order.name)}</p>
           {order.shopify_id && (
             <p className="text-[10px] text-violet-400">Shopify order · dates will sync automatically</p>
           )}
@@ -540,8 +541,8 @@ function ProductionOrderCard({
         <div>
           <div className="flex items-start justify-between">
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-[#e8e3da] truncate"><span className="text-[rgba(232,227,218,0.40)]">{order.id}</span> · {order.name}</p>
-              <p className="text-[10px] text-[rgba(232,227,218,0.50)] mt-0.5 truncate">{order.detail}</p>
+              <p className="text-xs font-medium text-[#e8e3da] truncate"><span className="text-[rgba(232,227,218,0.40)]">{order.id}</span> · {decodeHtmlEntities(order.name)}</p>
+              <p className="text-[10px] text-[rgba(232,227,218,0.50)] mt-0.5 truncate">{decodeHtmlEntities(order.detail)}</p>
               <div className="flex flex-col gap-0.5 mt-1.5">
                 {isStart && (
                   <div className="flex items-center gap-1.5">
@@ -604,7 +605,7 @@ function DeliveryOrderCard({
     <div className="p-4">
       {editing ? (
         <div className="flex flex-col gap-2">
-          <p className="text-xs font-medium text-[#e8e3da]"><span className="text-[rgba(232,227,218,0.40)]">{order.id}</span> · {order.name}</p>
+          <p className="text-xs font-medium text-[#e8e3da]"><span className="text-[rgba(232,227,218,0.40)]">{order.id}</span> · {decodeHtmlEntities(order.name)}</p>
           <div>
             <label className="block text-[10px] uppercase tracking-widest text-[rgba(232,227,218,0.30)] mb-1">Delivery date</label>
             <input type="date" value={editDeliveryDate} onChange={e => setEditDeliveryDate(e.target.value)} className="w-full field-input text-xs py-1.5 px-2" />
@@ -638,10 +639,10 @@ function DeliveryOrderCard({
         <div>
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-xs font-medium text-[#e8e3da]"><span className="text-[rgba(232,227,218,0.40)]">{order.id}</span> · {order.name}</p>
-              <p className="text-[10px] text-[rgba(232,227,218,0.50)] mt-0.5">{order.detail}</p>
+              <p className="text-xs font-medium text-[#e8e3da]"><span className="text-[rgba(232,227,218,0.40)]">{order.id}</span> · {decodeHtmlEntities(order.name)}</p>
+              <p className="text-[10px] text-[rgba(232,227,218,0.50)] mt-0.5">{decodeHtmlEntities(order.detail)}</p>
               {order.delivery_window && <p className="text-[10px] text-amber-400 mt-1">{order.delivery_window}</p>}
-              {order.delivery_notes && <p className="text-[10px] text-[rgba(232,227,218,0.30)] mt-1">{order.delivery_notes}</p>}
+              {order.delivery_notes && <p className="text-[10px] text-[rgba(232,227,218,0.30)] mt-1">{decodeHtmlEntities(order.delivery_notes)}</p>}
             </div>
             <button onClick={onEdit} className="text-[10px] text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] transition-colors ml-2 shrink-0">
               Edit

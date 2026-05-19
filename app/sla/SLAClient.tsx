@@ -7,6 +7,7 @@ import { Order, OrderStage, AVATAR_COLOR_STYLES, Stage } from "@/lib/data";
 import { SLA_TARGETS, daysInStage, isOverdue } from "@/lib/sla";
 import { AppShell, PageHeader } from "@/components/AppShell";
 import { OrderModal } from "@/components/OrderModal";
+import { decodeHtmlEntities } from "@/lib/htmlEntities";
 import { AlertTriangle, ArrowRight, Archive } from "lucide-react";
 import clsx from "clsx";
 
@@ -327,7 +328,7 @@ function OverdueRow({
             </span>
           )}
         </div>
-        <div className="font-display text-[15px] text-cream truncate">{order.name}</div>
+        <div className="font-display text-[15px] text-cream truncate">{decodeHtmlEntities(order.name)}</div>
       </button>
 
       {/* Owner */}
@@ -395,11 +396,12 @@ function OverdueRow({
           const todayIso = new Date().toISOString().slice(0, 10);
           const pastFinish = finish && finish <= todayIso;
           function go() {
+            const displayName = decodeHtmlEntities(order.name);
             const msg = pastFinish
-              ? `Move "${order.name}" to At cross dock now?`
+              ? `Move "${displayName}" to At cross dock now?`
               : finish
-              ? `Production isn't scheduled to finish until ${finish}.\n\nPush "${order.name}" to At cross dock anyway?`
-              : `No estimated finish date set.\n\nPush "${order.name}" to At cross dock now?`;
+              ? `Production isn't scheduled to finish until ${finish}.\n\nPush "${displayName}" to At cross dock anyway?`
+              : `No estimated finish date set.\n\nPush "${displayName}" to At cross dock now?`;
             if (typeof window !== "undefined" && !window.confirm(msg)) return Promise.resolve();
             return advance();
           }
