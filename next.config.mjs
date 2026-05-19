@@ -15,19 +15,38 @@ const securityHeaders = [
   { key: "X-XSS-Protection", value: "1; mode=block" },
   // Content Security Policy — allows same-origin + Supabase + NextAuth
   //
-  // NOTE: 'unsafe-inline' and 'unsafe-eval' in script-src effectively
-  // disable XSS protection. We attempted to move to a nonce-based CSP
-  // in proxy.ts but Vercel's deployment pipeline didn't reliably apply
-  // the per-request nonce to Next.js framework scripts (all client JS
-  // got blocked, the app rendered as logged-out "Guest"). Tracking this
-  // as a follow-up — likely needs a different approach involving
-  // hash-based exceptions for the framework bootstrap script, or
-  // experimenting with Next.js's own SRI integration.
+  // # Status & history
+  //
+  // Two prior attempts at a strict nonce-based CSP failed:
+  //   1. Direct enforcement (broke production — framework chunks blocked
+  //      under 'strict-dynamic' because Next.js wasn't applying nonces).
+  //   2. Report-only observation (deployed safely — but reports showed
+  //      Next.js 16's `getScriptNonceFromHeader` doesn't extract our
+  //      nonce, even with dynamic rendering forced and headers() read
+  //      in the layout. Appears to be a Next.js 16 / Turbopack quirk).
+  //
+  // Current state: report-only nonce CSP runs alongside this enforced
+  // policy (set in proxy.ts), so we keep visibility without enforcement.
+  //
+  // Hardening within current constraints: 'unsafe-eval' is REMOVED.
+  // React production doesn't use eval/new Function. This closes the
+  // most dangerous half of our previous "unsafe" surface — an XSS
+  // attacker with a script injection now can't pivot to dynamic code
+  // construction.
+  //
+  // 'unsafe-inline' is kept (Next.js framework still emits inline
+  // scripts without nonces). This is the imperfect baseline we'll
+  // live with until either:
+  //   - Next.js 16 fixes nonce propagation, OR
+  //   - We migrate off Turbopack to use experimental SRI, OR
+  //   - We accept the dynamic rendering cost AND find a way to make
+  //     the framework actually apply nonces.
   {
     key: "Content-Security-Policy",
     value: [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+      // unsafe-inline kept for framework scripts; unsafe-eval REMOVED.
+      "script-src 'self' 'unsafe-inline'",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob:",
       "font-src 'self'",
