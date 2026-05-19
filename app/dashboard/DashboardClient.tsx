@@ -6,6 +6,7 @@ import { useStore } from "@/lib/store";
 import { Order, ORDER_STAGES, OrderStage, getBackorderStatus } from "@/lib/data";
 import { rollupBackorders, summarizeBackorders, type BackorderSummary } from "@/lib/backorders";
 import { parseOrderDate } from "@/lib/dateUtils";
+import { decodeHtmlEntities } from "@/lib/htmlEntities";
 import { PageHeader } from "@/components/AppShell";
 import { OrderModal } from "@/components/OrderModal";
 import { NewOrderModal } from "@/components/NewOrderModal";
@@ -251,9 +252,9 @@ function SearchOverlay({
     return orders
       .filter(o =>
         o.id.toLowerCase().includes(q) ||
-        o.name.toLowerCase().includes(q) ||
+        decodeHtmlEntities(o.name).toLowerCase().includes(q) ||
         (o.sku ?? "").toLowerCase().includes(q) ||
-        (o.detail ?? "").toLowerCase().includes(q)
+        decodeHtmlEntities(o.detail ?? "").toLowerCase().includes(q)
       )
       .slice(0, 30);
   }, [orders, query]);
@@ -316,7 +317,7 @@ function SearchOverlay({
                     <span className="text-[9px] uppercase tracking-wider text-cream/45 px-1.5 py-px rounded-full border border-white/15">archived</span>
                   )}
                 </div>
-                <div className="font-display text-[16px] text-cream truncate">{o.name}</div>
+                <div className="font-display text-[16px] text-cream truncate">{decodeHtmlEntities(o.name)}</div>
               </div>
               <ChevronRight className="w-3.5 h-3.5 text-cream/40 flex-shrink-0" />
             </button>
@@ -509,7 +510,7 @@ function BackorderPanel({
           <span className="font-mono text-cream/85">{topImpact.sku}</span>
           {" is on "}
           <span className="text-cream/85">{topImpact.orderCount} orders</span>
-          {topImpact.description ? ` — ${topImpact.description}` : null}
+          {topImpact.description ? ` — ${decodeHtmlEntities(topImpact.description)}` : null}
         </div>
       )}
 
@@ -593,7 +594,7 @@ function NeedsAttention({
                   {reason}
                 </span>
               </div>
-              <div className="text-[13px] font-medium text-cream truncate">{order.name}</div>
+              <div className="text-[13px] font-medium text-cream truncate">{decodeHtmlEntities(order.name)}</div>
               <div className="text-[10px] text-cream/55">{order.stage} · {order.date}</div>
             </button>
           ))}

@@ -10,6 +10,7 @@ import {
 } from "@/lib/data";
 import { useStore } from "@/lib/store";
 import { checkAttachmentGate } from "@/lib/stageGates";
+import { decodeHtmlEntities } from "@/lib/htmlEntities";
 import { AttachmentsPanel, type AttachmentsPanelHandle } from "./AttachmentsPanel";
 import { OrderDetails } from "./OrderDetails";
 import { DamageReportPanel } from "./DamageReportPanel";
@@ -240,7 +241,7 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
         <div className="flex items-start justify-between px-6 py-5 flex-shrink-0" style={SECTION_BORDER}>
           <div>
             <p className="text-[10px] uppercase tracking-[0.16em] text-cream/45 mb-1.5 font-mono">{liveOrder.id}</p>
-            <h2 className="font-display text-[26px] text-cream leading-tight">{liveOrder.name}</h2>
+            <h2 className="font-display text-[26px] text-cream leading-tight">{decodeHtmlEntities(liveOrder.name)}</h2>
             {/* Detail line (SKU description list) intentionally hidden — it's
                 noisy and the SKU table below is the source of truth. */}
           </div>
@@ -645,7 +646,7 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
             <DamageReportPanel
               orderId={liveOrder.id}
               orderSkus={liveOrder.sku_items?.map((i) => i.sku) ?? (liveOrder.sku ? [liveOrder.sku] : [])}
-              orderName={liveOrder.name}
+              orderName={decodeHtmlEntities(liveOrder.name)}
               reporterName={currentUserName}
             />
           )}
