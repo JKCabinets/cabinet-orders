@@ -62,6 +62,7 @@ builder:
   arch: amd64
   remote: ssh://garrett@5.78.220.153
   local: false
+  context: .
 
 # ─── Environment variables ────────────────────────────────────────────
 # `clear` values are visible in the deploy.yml (safe to commit).
