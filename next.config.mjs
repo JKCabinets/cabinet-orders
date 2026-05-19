@@ -61,6 +61,16 @@ const securityHeaders = [
 ];
 
 const nextConfig = {
+  // Build a self-contained "standalone" output that Docker can run with
+  // just `node server.js` — no need to copy node_modules into the image.
+  // This dramatically shrinks the production image (~150MB instead of
+  // ~800MB) and is the recommended approach for containerized Next.js.
+  //
+  // Required because our Kamal deploy builds a Docker image from this
+  // project. The Dockerfile copies .next/standalone and .next/static
+  // into a minimal node:alpine final stage.
+  output: "standalone",
+
   async headers() {
     return [
       {

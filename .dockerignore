@@ -1,0 +1,52 @@
+# Files and directories excluded from the Docker build context.
+# Mirrors .gitignore but tighter — also excludes things git tracks that
+# Docker doesn't need (docs, tests, local env files, etc.).
+
+# Dependencies — installed fresh inside the image
+node_modules
+npm-debug.log
+
+# Build output — generated inside the image
+.next
+out
+build
+dist
+
+# Git history — Docker doesn't need it (image size, build speed)
+.git
+.gitignore
+.github
+
+# Local environment files — secrets get injected by Kamal at runtime
+.env
+.env.local
+.env.development
+.env.development.local
+.env.production
+.env.production.local
+.env.kamal
+.env.example
+
+# Kamal's own files — not needed inside the container
+.kamal
+config/deploy.yml
+
+# Editor / OS / metadata
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Vercel
+.vercel
+
+# Test artifacts and coverage
+coverage
+.nyc_output
+
+# Documentation
+README.md
+docs

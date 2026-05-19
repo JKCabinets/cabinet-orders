@@ -1,0 +1,97 @@
+# Kamal deployment configuration for cabinet-orders on Hetzner CPX31.
+#
+# Run from this directory:
+#   kamal setup       — first-time setup (run once)
+#   kamal deploy      — subsequent deploys
+#   kamal app logs    — tail container logs
+#   kamal app exec -i bash  — shell into running container
+#
+# Docs: https://kamal-deploy.org
+
+# ─── Identity ─────────────────────────────────────────────────────────
+service: cabinet-orders
+image: jkcabinets/cabinet-orders
+
+# ─── Where to deploy ──────────────────────────────────────────────────
+servers:
+  web:
+    - 5.78.220.153
+
+# SSH login user — we created `garrett` and disabled root SSH.
+ssh:
+  user: garrett
+
+# ─── HTTPS / proxy ────────────────────────────────────────────────────
+# Kamal includes "kamal-proxy", an embedded Caddy-like reverse proxy
+# that handles Let's Encrypt automatically. It listens on 80/443 and
+# routes to our container on port 3000.
+#
+# sslip.io is a free wildcard DNS service: any subdomain like
+# `5-78-220-153.sslip.io` automatically resolves to 5.78.220.153.
+# This lets us get a Let's Encrypt cert WITHOUT setting up DNS for
+# our real domain yet. Perfect for the testing phase.
+#
+# When we cut over the production domain, we'll change the host below
+# to `ordersjkcabinets2you.com` and update DNS to point at this IP.
+proxy:
+  ssl: true
+  host: 5-78-220-153.sslip.io
+  app_port: 3000
+  healthcheck:
+    path: /api/health
+    interval: 5
+    timeout: 3
+
+# ─── Container registry (GitHub Container Registry) ───────────────────
+# We use ghcr.io because:
+#   - already authenticated via GitHub (no separate account)
+#   - private repos free
+#   - no pull rate limits like Docker Hub has
+#
+# Kamal builds the image locally, pushes here, pulls onto the server.
+registry:
+  server: ghcr.io
+  username: JKCabinets
+  password:
+    - KAMAL_REGISTRY_PASSWORD
+
+# ─── Build settings ───────────────────────────────────────────────────
+# Build the Docker image directly on the Hetzner server instead of
+# locally. Avoids needing Docker Desktop on the dev machine.
+builder:
+  arch: amd64
+  remote: ssh://garrett@5.78.220.153
+  local: false
+
+# ─── Environment variables ────────────────────────────────────────────
+# `clear` values are visible in the deploy.yml (safe to commit).
+# `secret` values are loaded from .kamal/secrets at deploy time.
+env:
+  clear:
+    NODE_ENV: production
+    # NextAuth needs to know its own URL to construct callback links.
+    # This changes when we cut over to the real domain.
+    NEXTAUTH_URL: https://5-78-220-153.sslip.io
+    PORT: "3000"
+    HOSTNAME: "0.0.0.0"
+  secret:
+    - SUPABASE_URL
+    - SUPABASE_SERVICE_ROLE_KEY
+    - NEXTAUTH_SECRET
+    - CRON_SECRET
+    - ADMIN_BACKWARD_PIN
+    - SHOPIFY_WEBHOOK_SECRET
+    - SHOPIFY_CLIENT_ID
+    - SHOPIFY_CLIENT_SECRET
+    - SHOPIFY_STORE_DOMAIN
+    - QUOTE_WEBHOOK_SECRET
+    - TEAMS_WEBHOOK_URL
+    - UPSTASH_REDIS_REST_URL
+    - UPSTASH_REDIS_REST_TOKEN
+
+# ─── Useful aliases ───────────────────────────────────────────────────
+# Run with: kamal <alias>
+aliases:
+  console: app exec --interactive --reuse "node"
+  shell: app exec --interactive --reuse "sh"
+  logs: app logs -f

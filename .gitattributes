@@ -1,0 +1,5 @@
+# Force LF line endings on shell scripts and config files that run on Linux servers
+.kamal/secrets text eol=lf
+Dockerfile text eol=lf
+.dockerignore text eol=lf
+config/deploy.yml text eol=lf
