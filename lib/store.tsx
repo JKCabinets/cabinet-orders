@@ -16,7 +16,7 @@ interface StoreCtx {
   team: TeamMember[];
   loading: boolean;
   addOrder: (o: Partial<Order> & { type: "order" | "warranty" }) => Promise<void>;
-  moveStage: (id: string, stage: Stage, enteredByName?: string) => Promise<void>;
+  moveStage: (id: string, stage: Stage, enteredByName?: string, adminPin?: string) => Promise<{ ok: boolean; pinRequired?: boolean; error?: string }>;
   updateNotes: (id: string, notes: string) => Promise<void>;
   updateInternalNotes: (id: string, internal_notes: string) => Promise<void>;
   archiveOrder: (id: string) => Promise<void>;
@@ -155,7 +155,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const moveStage = useCallback(async (id: string, stage: Stage, enteredByName?: string) => {
+  const moveStage = useCallback(async (
+    id: string,
+    stage: Stage,
+    enteredByName?: string,
+    adminPin?: string,
+  ): Promise<{ ok: boolean; pinRequired?: boolean; error?: string }> => {
     const t = today();
     const update = (list: Order[]) => list.map(o =>
       o.id === id ? {
@@ -165,9 +170,35 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         activity: [...o.activity, { text: `Moved to "${stage}"`, time: t }]
       } : o
     );
+    // Optimistic local update. We revert below if the server rejects.
     setOrders(prev => update(prev));
     setWarranties(prev => update(prev));
-    await apiCall(`/api/orders/${id}`, "PATCH", { stage });
+
+    // Use fetch directly here (not the generic apiCall) so we can read the
+    // 403 body and surface `admin_pin_required` to the caller — apiCall
+    // swallows non-2xx as `null`.
+    let res: Response;
+    try {
+      res = await fetch(`/api/orders/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(adminPin ? { stage, admin_pin: adminPin } : { stage }),
+      });
+    } catch {
+      return { ok: false, error: "network_error" };
+    }
+
+    if (res.ok) return { ok: true };
+
+    // Parse the error body so callers can branch on `admin_pin_required`.
+    let payload: { error?: string; message?: string } = {};
+    try { payload = await res.json(); } catch { /* leave empty */ }
+
+    return {
+      ok: false,
+      pinRequired: payload.error === "admin_pin_required",
+      error: payload.error ?? payload.message ?? `HTTP ${res.status}`,
+    };
   }, []);
 
   const updateNotes = useCallback(async (id: string, notes: string) => {

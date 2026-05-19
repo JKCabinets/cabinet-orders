@@ -154,7 +154,7 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
     setPinError(false);
   }
 
-  async function doMoveStage(stage: Stage) {
+  async function doMoveStage(stage: Stage, providedPin: string) {
     // Gate 2: moving to "Entered" requires at least one attachment
     if (stage === "Entered" && liveOrder.stage === "New") {
       setCheckingAttachments(true);
@@ -167,17 +167,30 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
       }
     }
     setEnteredGateError(false);
-    moveStage(liveOrder.id, stage, currentUserName);
+    // Send the PIN to the server — for backwards moves the API requires it
+    // and rejects with 403 admin_pin_required if missing. Forward moves
+    // accept (but don't require) the PIN; including it is harmless.
+    const result = await moveStage(liveOrder.id, stage, currentUserName, providedPin);
+    if (!result.ok && result.pinRequired) {
+      // Server-side PIN mismatch — client and server got out of sync
+      // (most likely because ADMIN_BACKWARD_PIN was rotated in Vercel
+      // without updating ADMIN_CODE here). Surface the error so the
+      // user knows to contact whoever holds the current PIN.
+      setPinError(true);
+      setTimeout(() => setPinError(false), 4000);
+      return;
+    }
     onStageChange(stage);
   }
 
   function handlePinSubmit() {
     if (adminPin === ADMIN_CODE && pendingStage) {
       const stage = pendingStage;
+      const pin = adminPin;
       setPendingStage(null);
       setAdminPin("");
       setPinError(false);
-      doMoveStage(stage);
+      doMoveStage(stage, pin);
     } else {
       setPinError(true);
       setAdminPin("");

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, sanitize } from "@/lib/auth";
+import { requireAuth, sanitize, rateLimitOr429 } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import { getShopifyToken } from "@/lib/shopify";
+import { ALLOWED_STAGES, isBackwardsMove, verifyAdminPin } from "@/lib/stageGuards";
 
 /** Push order updates back to Shopify */
 async function syncToShopify(
@@ -126,11 +127,48 @@ export async function PATCH(
 ) {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
+  // Rate-limit per-user-ish (by IP) at the same shape as the listing route.
+  // Heavier than GET because each PATCH can fan out to a Shopify writeback.
+  const limited = await rateLimitOr429(req, 30, 60_000, "orders:patch");
+  if (limited) return limited;
   const { id } = await params;
 
   let body: Record<string, unknown>;
   try { body = await req.json(); } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  // ── Stage validation & backward-PIN gate ──────────────────────────────
+  // Previously only `/api/orders/bulk` enforced these — the single-order
+  // PATCH accepted any string for `body.stage` from any authenticated user
+  // and never checked the admin PIN, so a direct API call could bypass the
+  // modal's PIN dialog entirely. We mirror the bulk route's logic here.
+  //
+  // We fetch the current stage once and reuse it below for the Entered-gate
+  // check and the auto-advance branch.
+  let currentStageFromDb: string | null = null;
+  if (body.stage !== undefined) {
+    if (typeof body.stage !== "string" || !ALLOWED_STAGES.has(body.stage)) {
+      return NextResponse.json(
+        { error: "Invalid stage value" },
+        { status: 422 },
+      );
+    }
+    const { data: current } = await supabase
+      .from("orders")
+      .select("stage")
+      .eq("id", id)
+      .single();
+    currentStageFromDb = current?.stage ?? null;
+
+    if (currentStageFromDb && isBackwardsMove(currentStageFromDb, body.stage)) {
+      if (!verifyAdminPin(body.admin_pin)) {
+        return NextResponse.json(
+          { error: "admin_pin_required", message: "Backwards moves require admin PIN" },
+          { status: 403 },
+        );
+      }
+    }
   }
 
   // ── Server-side stage gate ────────────────────────────────────────────
@@ -139,15 +177,11 @@ export async function PATCH(
   // API calls from bypassing the rule. Admin role override is NOT provided —
   // attachments are a hard requirement.
   if (body.stage === "Entered") {
-    // Look up the current stage so we don't run the gate on no-op writes
-    // (e.g. an Entered order being patched with stage="Entered" while
-    // editing notes — shouldn't trigger the gate).
-    const { data: current } = await supabase
-      .from("orders")
-      .select("stage")
-      .eq("id", id)
-      .single();
-    if (current?.stage === "New") {
+    // Reuse the current-stage lookup from the validation block above so we
+    // don't round-trip twice. The gate only fires on the "New → Entered"
+    // transition (e.g. editing notes on an already-Entered order shouldn't
+    // re-check attachments).
+    if (currentStageFromDb === "New") {
       const { data: attachments } = await supabase
         .from("order_attachments")
         .select("id")

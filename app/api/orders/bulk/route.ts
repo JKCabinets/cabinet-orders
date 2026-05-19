@@ -1,40 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import crypto from "crypto";
 import { requireAuth, rateLimitOr429 } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import { getShopifyToken } from "@/lib/shopify";
+import {
+  ALLOWED_STAGES,
+  stageIndex,
+  timingSafeStringEqual,
+  ADMIN_PIN,
+} from "@/lib/stageGuards";
 
 // Cap on bulk operations per request. Higher than this should be done in
 // batches client-side to keep request times reasonable.
 const MAX_BULK_IDS = 50;
-
-// Stage orderings — used to detect backwards moves (target index < current index).
-// Mirrors ORDER_STAGES / WARRANTY_STAGES from lib/data.ts.
-const ORDER_STAGE_ORDER = ["New", "Entered", "In production", "At cross dock", "Delivered"] as const;
-const WARRANTY_STAGE_ORDER = ["New claim", "In review", "Parts ordered", "Shipped", "Resolved"] as const;
-const ORDER_STAGE_SET = new Set<string>(ORDER_STAGE_ORDER);
-const WARRANTY_STAGE_SET = new Set<string>(WARRANTY_STAGE_ORDER);
-const ALLOWED_STAGES = new Set<string>([...ORDER_STAGE_ORDER, ...WARRANTY_STAGE_ORDER]);
-
-// Admin PIN for backwards moves. Reads from env first; falls back to the
-// legacy hardcoded value so existing deployments keep working until
-// ADMIN_BACKWARD_PIN is configured. Constant-time compared on every check.
-const ADMIN_PIN = process.env.ADMIN_BACKWARD_PIN || "4951";
-
-function stageIndex(stage: string): { idx: number; flow: "order" | "warranty" | "unknown" } {
-  const orderIdx = ORDER_STAGE_ORDER.indexOf(stage as typeof ORDER_STAGE_ORDER[number]);
-  if (orderIdx >= 0) return { idx: orderIdx, flow: "order" };
-  const warrantyIdx = WARRANTY_STAGE_ORDER.indexOf(stage as typeof WARRANTY_STAGE_ORDER[number]);
-  if (warrantyIdx >= 0) return { idx: warrantyIdx, flow: "warranty" };
-  return { idx: -1, flow: "unknown" };
-}
-
-function timingSafeStringEqual(a: string, b: string): boolean {
-  const ab = Buffer.from(a, "utf8");
-  const bb = Buffer.from(b, "utf8");
-  if (ab.length !== bb.length) return false;
-  return crypto.timingSafeEqual(ab, bb);
-}
 
 interface BulkResult {
   id: string;
