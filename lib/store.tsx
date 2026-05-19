@@ -9,6 +9,7 @@ import {
   Order, Stage, TeamMember,
   Member, Source, ORDER_STAGES, WARRANTY_STAGES, AvatarColor, Role,
 } from "./data";
+import { fieldsToClearOnBackwardMove } from "./stageLogic";
 
 interface StoreCtx {
   orders: Order[];
@@ -162,15 +163,51 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     adminPin?: string,
   ): Promise<{ ok: boolean; pinRequired?: boolean; error?: string }> => {
     const t = today();
+
+    // Snapshot the orders BEFORE the optimistic update so we can revert
+    // exactly if the server rejects. We snapshot from the setter callback
+    // (rather than the closed-over `orders`) to be sure we capture the
+    // freshest state — older versions of this code lost concurrent
+    // updates that landed between render and the click.
+    let ordersBefore: Order[] = [];
+    let warrantiesBefore: Order[] = [];
+    setOrders(prev => { ordersBefore = prev; return prev; });
+    setWarranties(prev => { warrantiesBefore = prev; return prev; });
+
+    // Compute the local clear-fields mirror of what the server will do on
+    // a backward move. Without this, the UI would briefly show stale dates
+    // until the next data refresh pulled them back as null.
+    const targetOrder = ordersBefore.find(o => o.id === id)
+      ?? warrantiesBefore.find(o => o.id === id);
+    const cleared = targetOrder
+      ? fieldsToClearOnBackwardMove(targetOrder.stage, stage)
+      : null;
+
     const update = (list: Order[]) => list.map(o =>
       o.id === id ? {
-        ...o, stage,
+        ...o,
+        stage,
         claimed_by: stage !== "New" ? null : o.claimed_by,
-        entered_by: stage === "Entered" ? (enteredByName ?? o.entered_by) : o.entered_by,
+        entered_by: stage === "Entered"
+          ? (enteredByName ?? o.entered_by)
+          : (cleared && "entered_by" in cleared ? null : o.entered_by),
+        // Mirror the server's date-clearing so calendar / SLA panels don't
+        // briefly flash with stale dates.
+        delivery_date:
+          cleared && "delivery_date" in cleared ? null : o.delivery_date,
+        scheduled_delivery_date:
+          cleared && "scheduled_delivery_date" in cleared ? null : o.scheduled_delivery_date,
+        delivery_window:
+          cleared && "delivery_window" in cleared ? "" : o.delivery_window,
+        delivery_notes:
+          cleared && "delivery_notes" in cleared ? "" : o.delivery_notes,
+        production_start_date:
+          cleared && "production_start_date" in cleared ? null : o.production_start_date,
+        production_est_finish_date:
+          cleared && "production_est_finish_date" in cleared ? null : o.production_est_finish_date,
         activity: [...o.activity, { text: `Moved to "${stage}"`, time: t }]
       } : o
     );
-    // Optimistic local update. We revert below if the server rejects.
     setOrders(prev => update(prev));
     setWarranties(prev => update(prev));
 
@@ -185,10 +222,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify(adminPin ? { stage, admin_pin: adminPin } : { stage }),
       });
     } catch {
+      // Network error — revert the optimistic update so the UI doesn't lie
+      // about state we never persisted.
+      setOrders(ordersBefore);
+      setWarranties(warrantiesBefore);
       return { ok: false, error: "network_error" };
     }
 
     if (res.ok) return { ok: true };
+
+    // Server rejected — revert everything we did optimistically. Without
+    // this, the order appears moved for a few seconds and then snaps back
+    // when the next data refresh pulls the true state from the server.
+    setOrders(ordersBefore);
+    setWarranties(warrantiesBefore);
 
     // Parse the error body so callers can branch on `admin_pin_required`.
     let payload: { error?: string; message?: string } = {};

@@ -153,7 +153,10 @@ export interface Order {
   production_start_date?: string | null;
   production_est_finish_date?: string | null;
   // Delivery
+  delivery_date?: string | null;
   scheduled_delivery_date?: string | null;
+  delivery_window?: string;
+  delivery_notes?: string;
   // Claim system
   claimed_by?: string | null;
   // Who moved the order to Entered (set server-side, permanent record)

@@ -7,6 +7,8 @@ import {
   stageIndex,
   timingSafeStringEqual,
   ADMIN_PIN,
+  fieldsToClearOnBackwardMove,
+  describeFieldsCleared,
 } from "@/lib/stageGuards";
 
 // Cap on bulk operations per request. Higher than this should be done in
@@ -225,6 +227,13 @@ export async function POST(req: NextRequest) {
       if (targetStage !== "New") updates.claimed_by = null;
       if (targetStage === "Entered") updates.entered_by = displayName;
 
+      // ── Backward moves: clear stale forward-progress dates ────────────
+      // E.g. moving At cross dock → In production clears the delivery date,
+      // since the order won't actually be delivered on the date that was
+      // booked while it was still cross-docked.
+      const cleared = fieldsToClearOnBackwardMove(order.stage, targetStage);
+      if (cleared) Object.assign(updates, cleared);
+
       const { error: updateError } = await supabase
         .from("orders").update(updates).eq("id", id);
       if (updateError) {
@@ -232,9 +241,10 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
+      const clearedNote = cleared ? ` — cleared ${describeFieldsCleared(cleared)}` : "";
       activityInserts.push({
         order_id: id,
-        text: `Moved to "${targetStage}" by ${displayName} (bulk action)`,
+        text: `Moved to "${targetStage}" by ${displayName} (bulk action)${clearedNote}`,
         time: today,
       });
 

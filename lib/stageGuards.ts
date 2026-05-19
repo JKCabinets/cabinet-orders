@@ -1,27 +1,27 @@
-import crypto from "crypto";
-
 /**
- * Shared stage validation + admin-PIN gating used by every API route that
- * mutates an order's stage. Previously, only the bulk route (`/api/orders/bulk`)
- * enforced the backward-PIN check — single-order PATCH happily accepted any
- * stage value from any authenticated user, so the modal's PIN dialog was
- * advisory only. This module centralizes the rules so both routes agree.
+ * Server-only stage helpers: PIN env reading + constant-time compare.
  *
- * Stage orderings mirror ORDER_STAGES / WARRANTY_STAGES from lib/data.ts.
+ * For pure stage-flow logic (validation, backward detection, date clearing),
+ * see `lib/stageLogic.ts` — that module is isomorphic and safe to import
+ * from client code. This file pulls in Node's `crypto`, so it must only
+ * be imported from server-side route handlers.
+ *
+ * We also re-export the pure helpers here so existing server code can keep
+ * `import { ... } from "@/lib/stageGuards"` without churn.
  */
 
-export const ORDER_STAGE_ORDER = [
-  "New", "Entered", "In production", "At cross dock", "Delivered",
-] as const;
+import crypto from "crypto";
 
-export const WARRANTY_STAGE_ORDER = [
-  "New claim", "In review", "Parts ordered", "Shipped", "Resolved",
-] as const;
-
-export const ALLOWED_STAGES: ReadonlySet<string> = new Set<string>([
-  ...ORDER_STAGE_ORDER,
-  ...WARRANTY_STAGE_ORDER,
-]);
+export {
+  ORDER_STAGE_ORDER,
+  WARRANTY_STAGE_ORDER,
+  ALLOWED_STAGES,
+  stageIndex,
+  isBackwardsMove,
+  fieldsToClearOnBackwardMove,
+  describeFieldsCleared,
+} from "@/lib/stageLogic";
+export type { StageFlow } from "@/lib/stageLogic";
 
 /** Admin PIN for backwards moves. Reads from env first; falls back to the
  * legacy hardcoded value so existing deployments keep working until
@@ -29,36 +29,12 @@ export const ALLOWED_STAGES: ReadonlySet<string> = new Set<string>([
 export const ADMIN_PIN: string =
   process.env.ADMIN_BACKWARD_PIN || "4951";
 
-export type StageFlow = "order" | "warranty" | "unknown";
-
-export function stageIndex(stage: string): { idx: number; flow: StageFlow } {
-  const orderIdx = (ORDER_STAGE_ORDER as readonly string[]).indexOf(stage);
-  if (orderIdx >= 0) return { idx: orderIdx, flow: "order" };
-  const warrantyIdx = (WARRANTY_STAGE_ORDER as readonly string[]).indexOf(stage);
-  if (warrantyIdx >= 0) return { idx: warrantyIdx, flow: "warranty" };
-  return { idx: -1, flow: "unknown" };
-}
-
 /** Constant-time string equality. Returns false on length mismatch (no throw). */
 export function timingSafeStringEqual(a: string, b: string): boolean {
   const ab = Buffer.from(a, "utf8");
   const bb = Buffer.from(b, "utf8");
   if (ab.length !== bb.length) return false;
   return crypto.timingSafeEqual(ab, bb);
-}
-
-/**
- * Decide whether moving from `currentStage` to `targetStage` is a backwards
- * transition (lower index within the same flow). Cross-flow moves (order ↔
- * warranty) are treated as NOT backwards — the caller should reject those
- * separately if they're disallowed.
- */
-export function isBackwardsMove(currentStage: string, targetStage: string): boolean {
-  const current = stageIndex(currentStage);
-  const target = stageIndex(targetStage);
-  if (current.flow === "unknown" || target.flow === "unknown") return false;
-  if (current.flow !== target.flow) return false;
-  return target.idx < current.idx;
 }
 
 /**

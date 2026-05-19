@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, sanitize, rateLimitOr429 } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import { getShopifyToken } from "@/lib/shopify";
-import { ALLOWED_STAGES, isBackwardsMove, verifyAdminPin } from "@/lib/stageGuards";
+import { ALLOWED_STAGES, isBackwardsMove, verifyAdminPin, fieldsToClearOnBackwardMove, describeFieldsCleared } from "@/lib/stageGuards";
 
 /** Push order updates back to Shopify */
 async function syncToShopify(
@@ -252,6 +252,24 @@ export async function PATCH(
     autoAdvancedTo = "In production";
   }
 
+  // ── Backward moves: clear stale forward-progress dates ────────────────
+  // E.g. moving At cross dock → In production clears the delivery date —
+  // it won't actually be delivered on the date that was booked while the
+  // order was cross-docked. Helper computes which fields go to null.
+  //
+  // Only apply to fields the request body didn't explicitly set, so a
+  // caller that sends `{ stage: "Entered", delivery_date: "..." }` (rare
+  // but possible) keeps its explicit value.
+  let clearedFields: Record<string, null> | null = null;
+  if (typeof body.stage === "string") {
+    clearedFields = fieldsToClearOnBackwardMove(currentStage, body.stage);
+    if (clearedFields) {
+      for (const [k, v] of Object.entries(clearedFields)) {
+        if (updates[k] === undefined) updates[k] = v;
+      }
+    }
+  }
+
   const { error } = await supabase.from("orders").update(updates).eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
@@ -262,7 +280,13 @@ export async function PATCH(
     // Production start date triggered an automatic stage advance.
     activityText = `Production start date set → moved to "${autoAdvancedTo}" by ${auth.session.user.name}`;
   }
-  else if (body.stage)                     activityText = `Moved to "${body.stage}" by ${auth.session.user.name}`;
+  else if (body.stage) {
+    activityText = `Moved to "${body.stage}" by ${auth.session.user.name}`;
+    // When a backward move clears dates, append the list so the activity
+    // log explains why the calendar suddenly looks different.
+    const clearedNote = clearedFields ? describeFieldsCleared(clearedFields) : "";
+    if (clearedNote) activityText += ` — cleared ${clearedNote}`;
+  }
   else if (body.notes !== undefined)       activityText = `Notes updated by ${auth.session.user.name}`;
   else if (body.internal_notes !== undefined) activityText = `Internal notes updated by ${auth.session.user.name}`;
   else if (body.archived === true)         activityText = `Archived by ${auth.session.user.name}`;
