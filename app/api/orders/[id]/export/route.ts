@@ -3,10 +3,15 @@ import { requireAuth, escapeHtml } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import { groupSkuItemsByStyle, decodeSku } from "@/lib/skuDecoder";
 import { lookupVendorsForSkus } from "@/lib/vendorLookup";
+import { decodeHtmlEntities } from "@/lib/htmlEntities";
 import type { SkuItem } from "@/lib/skuDecoder";
 
 // Short alias since this file does a lot of escaping
 const h = escapeHtml;
+// Free text from upstream (e.g. Shopify line item names) may already be
+// HTML-entity-encoded from our sanitize() pass. Decode before re-escaping
+// for HTML output so "&amp;quot;" doesn't show up in the rendered PDF.
+const text = (s: unknown) => h(decodeHtmlEntities(String(s ?? "")));
 
 export async function GET(
   req: NextRequest,
@@ -120,45 +125,90 @@ export async function GET(
     filteredSkuItems = allSkuItems;
   }
 
-  const groups = groupSkuItemsByStyle(filteredSkuItems);
+  // ── Group items: vendor → style+color → line items ──────────────────
+  // For each rendered line item we need to know:
+  //   (a) what vendor it belongs to (so we can group them)
+  //   (b) what style/color group it sits in within that vendor
+  // We bucket items by vendor first, then run groupSkuItemsByStyle()
+  // within each bucket. Items with no vendor mapping are placed in a
+  // synthetic "Unassigned" bucket only when there's something else to
+  // contrast with — for single-vendor and per-vendor-filter exports we
+  // skip the bucket header entirely so the PDF stays clean.
+  const vendorBuckets = new Map<string, SkuItem[]>();
+  for (const item of filteredSkuItems) {
+    const vendor = item.sku ? (vendorLookup.vendorBySku.get(item.sku) ?? "") : "";
+    const key = vendor || "Unassigned";
+    const list = vendorBuckets.get(key) ?? [];
+    list.push(item);
+    vendorBuckets.set(key, list);
+  }
+  // Sort vendor headings alphabetically, but always push "Unassigned"
+  // to the end so it doesn't precede real vendors.
+  const orderedVendorKeys = Array.from(vendorBuckets.keys()).sort((a, b) => {
+    if (a === "Unassigned") return 1;
+    if (b === "Unassigned") return -1;
+    return a.localeCompare(b);
+  });
+  // Only render vendor headers when there are 2+ vendors AND we're not
+  // already filtering to a single vendor. Single-vendor exports already
+  // have the vendor in the page header; doubling up just adds noise.
+  const showVendorHeaders = !vendorFilter && orderedVendorKeys.length > 1;
 
   let rowIndex = 1;
-  const lineRows = groups.map(group => {
-    const firstItem = group.items[0];
-    const decoded = firstItem ? decodeSku(firstItem.sku) : null;
-    const doorCode  = decoded?.doorCode  ?? "";
-    const colorCode = decoded?.colorCode ?? "";
+  const lineRows = orderedVendorKeys.map(vendorKey => {
+    const items = vendorBuckets.get(vendorKey) ?? [];
+    const groups = groupSkuItemsByStyle(items);
 
-    const doorLabel  = doorCode
-      ? `${h(group.doorStyle)} <span class="sku-code">"${h(doorCode)}"</span>`
-      : h(group.doorStyle);
-    const colorLabel = colorCode
-      ? `${h(group.color)} <span class="sku-code">"${h(colorCode)}"</span>`
-      : h(group.color);
+    const vendorHeader = showVendorHeaders
+      ? `
+    <tr class="vendor-row">
+      <td colspan="6">
+        <span class="vendor-label">Vendor</span>
+        &nbsp;→&nbsp;
+        <span class="vendor-name">${text(vendorKey)}</span>
+      </td>
+    </tr>`
+      : "";
 
-    const sectionRow = `
+    const groupRows = groups.map(group => {
+      const firstItem = group.items[0];
+      const decoded = firstItem ? decodeSku(firstItem.sku) : null;
+      const doorCode  = decoded?.doorCode  ?? "";
+      const colorCode = decoded?.colorCode ?? "";
+
+      const doorLabel  = doorCode
+        ? `${text(group.doorStyle)} <span class="sku-code">"${h(doorCode)}"</span>`
+        : text(group.doorStyle);
+      const colorLabel = colorCode
+        ? `${text(group.color)} <span class="sku-code">"${h(colorCode)}"</span>`
+        : text(group.color);
+
+      const sectionRow = `
     <tr class="section-row">
       <td colspan="6">
-        <span class="section-label">Group Style and Color</span>
+        <span class="section-label">Style</span>
         &nbsp;→&nbsp;
-        <span class="section-style">Style: ${doorLabel} - ${colorLabel}</span>
+        <span class="section-style">${doorLabel} - ${colorLabel}</span>
       </td>
     </tr>`;
 
-    const itemRows = group.items.map(item => {
-      const displaySku = item.sku ?? "—";
-      return `
+      const itemRows = group.items.map(item => {
+        const displaySku = item.sku ?? "—";
+        return `
     <tr>
       <td>${rowIndex++}</td>
       <td class="mono">${h(displaySku)}</td>
-      <td>${h(item.description ?? "—")}</td>
+      <td>${text(item.description ?? "—")}</td>
       <td class="right">—</td>
       <td class="center">${h(item.quantity ?? 1)}</td>
       <td class="right">—</td>
     </tr>`;
+      }).join("");
+
+      return sectionRow + itemRows;
     }).join("");
 
-    return sectionRow + itemRows;
+    return vendorHeader + groupRows;
   }).join("");
 
   // ── Unassigned-SKU warning rows (per-vendor PDFs only) ───────────────────
@@ -170,7 +220,7 @@ export async function GET(
     <tr class="unassigned-row">
       <td>${rowIndex++}</td>
       <td class="mono">${h(displaySku)}</td>
-      <td>${h(item.description ?? "—")} <span class="unassigned-pill">⚠ unmapped vendor</span></td>
+      <td>${text(item.description ?? "—")} <span class="unassigned-pill">⚠ unmapped vendor</span></td>
       <td class="right">—</td>
       <td class="center">${h(item.quantity ?? 1)}</td>
       <td class="right">—</td>
@@ -284,6 +334,17 @@ export async function GET(
     .section-style { font-weight: 600; }
     .sku-code { font-family: 'Courier New', monospace; font-weight: 400; font-size: 8.5px; color: #555; }
 
+    /* Vendor heading — sits above style+color groups on multi-vendor exports */
+    .vendor-row td {
+      background: #1f2933;
+      color: #fff;
+      padding: 6px 8px;
+      font-size: 10px;
+      letter-spacing: 0.04em;
+    }
+    .vendor-label { text-transform: uppercase; opacity: 0.65; font-weight: 500; }
+    .vendor-name { font-weight: 700; font-size: 11px; }
+
     /* Unassigned SKU rows — warning treatment on per-vendor PDFs */
     .unassigned-section td { background: #fff5f5; }
     .unassigned-row td { background: #fff8f8; }
@@ -380,23 +441,23 @@ export async function GET(
   <div class="customer-block">
     <div class="cust-row">
       <span class="cust-lbl">Customer Name:</span>
-      <span class="cust-val">${h(customerName)}</span>
+      <span class="cust-val">${text(customerName)}</span>
     </div>
     <div class="cust-row">
       <span class="cust-lbl">Ship To Address:</span>
-      <span class="cust-val">${h(shipToAddress)}</span>
+      <span class="cust-val">${text(shipToAddress)}</span>
     </div>
     <div class="cust-row">
       <span class="cust-lbl">Customer Phone:</span>
-      <span class="cust-val">${h(customerPhone)}</span>
+      <span class="cust-val">${text(customerPhone)}</span>
     </div>
     <div class="cust-row">
       <span class="cust-lbl">Special instructions:</span>
-      <span class="cust-val">${h(specialInstructions)}</span>
+      <span class="cust-val">${text(specialInstructions)}</span>
     </div>
     <div class="cust-row">
       <span class="cust-lbl">Customer Email:</span>
-      <span class="cust-val">${h(customerEmail)}</span>
+      <span class="cust-val">${text(customerEmail)}</span>
     </div>
   </div>
 
@@ -424,7 +485,7 @@ export async function GET(
   ${internalNotes ? `
   <div class="internal-block">
     <div class="internal-banner">⚠ Internal Notes — Not for Customer</div>
-    <div class="internal-body">${h(internalNotes)}</div>
+    <div class="internal-body">${text(internalNotes)}</div>
   </div>` : ""}
 
   <div class="footer">
