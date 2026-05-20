@@ -35,7 +35,9 @@ ssh:
 # to `ordersjkcabinets2you.com` and update DNS to point at this IP.
 proxy:
   ssl: true
-  host: 5-78-220-153.sslip.io
+  hosts:
+    - ordersjkcabinets2you.com
+    - www.ordersjkcabinets2you.com
   app_port: 3000
   healthcheck:
     path: /api/health
@@ -82,7 +84,7 @@ env:
     NODE_ENV: production
     # NextAuth needs to know its own URL to construct callback links.
     # This changes when we cut over to the real domain.
-    NEXTAUTH_URL: https://5-78-220-153.sslip.io
+    NEXTAUTH_URL: https://ordersjkcabinets2you.com
     PORT: "3000"
     HOSTNAME: "0.0.0.0"
   secret:
