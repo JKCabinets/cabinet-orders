@@ -46,7 +46,7 @@ next-env.d.ts
 .kamal/hooks/
 
 # Local Kamal logs
-kamal-setup.log
+kamal-*.log
 
 kamal-deploy.log
 kamal-deploy.log
