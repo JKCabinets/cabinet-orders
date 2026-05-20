@@ -59,6 +59,9 @@ RUN --mount=type=secret,id=SUPABASE_URL \
     --mount=type=secret,id=QUOTE_WEBHOOK_SECRET \
     --mount=type=secret,id=UPSTASH_REDIS_REST_URL \
     --mount=type=secret,id=UPSTASH_REDIS_REST_TOKEN \
+    --mount=type=secret,id=SUPABASE_JWT_SECRET \
+    --mount=type=secret,id=NEXT_PUBLIC_SUPABASE_URL \
+    --mount=type=secret,id=NEXT_PUBLIC_SUPABASE_ANON_KEY \
     SUPABASE_URL=$(cat /run/secrets/SUPABASE_URL) \
     SUPABASE_SERVICE_ROLE_KEY=$(cat /run/secrets/SUPABASE_SERVICE_ROLE_KEY) \
     NEXTAUTH_SECRET=$(cat /run/secrets/NEXTAUTH_SECRET) \
@@ -71,6 +74,9 @@ RUN --mount=type=secret,id=SUPABASE_URL \
     QUOTE_WEBHOOK_SECRET=$(cat /run/secrets/QUOTE_WEBHOOK_SECRET) \
     UPSTASH_REDIS_REST_URL=$(cat /run/secrets/UPSTASH_REDIS_REST_URL) \
     UPSTASH_REDIS_REST_TOKEN=$(cat /run/secrets/UPSTASH_REDIS_REST_TOKEN) \
+    SUPABASE_JWT_SECRET=$(cat /run/secrets/SUPABASE_JWT_SECRET) \
+    NEXT_PUBLIC_SUPABASE_URL=$(cat /run/secrets/NEXT_PUBLIC_SUPABASE_URL) \
+    NEXT_PUBLIC_SUPABASE_ANON_KEY=$(cat /run/secrets/NEXT_PUBLIC_SUPABASE_ANON_KEY) \
     npm run build
 
 # ─── Stage 3: runtime ─────────────────────────────────────────────────

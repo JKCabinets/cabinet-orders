@@ -75,6 +75,9 @@ builder:
     - QUOTE_WEBHOOK_SECRET
     - UPSTASH_REDIS_REST_URL
     - UPSTASH_REDIS_REST_TOKEN
+    - SUPABASE_JWT_SECRET
+    - NEXT_PUBLIC_SUPABASE_URL
+    - NEXT_PUBLIC_SUPABASE_ANON_KEY
 
 # ─── Environment variables ────────────────────────────────────────────
 # `clear` values are visible in the deploy.yml (safe to commit).
@@ -101,6 +104,9 @@ env:
     - TEAMS_WEBHOOK_URL
     - UPSTASH_REDIS_REST_URL
     - UPSTASH_REDIS_REST_TOKEN
+    - SUPABASE_JWT_SECRET
+    - NEXT_PUBLIC_SUPABASE_URL
+    - NEXT_PUBLIC_SUPABASE_ANON_KEY
 
 # ─── Useful aliases ───────────────────────────────────────────────────
 # Run with: kamal <alias>
