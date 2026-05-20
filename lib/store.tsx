@@ -10,6 +10,7 @@ import {
   Member, Source, ORDER_STAGES, WARRANTY_STAGES, AvatarColor, Role,
 } from "./data";
 import { fieldsToClearOnBackwardMove } from "./stageLogic";
+import { useRealtimeOrders } from "./useRealtimeOrders";
 
 interface StoreCtx {
   orders: Order[];
@@ -121,6 +122,36 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
     load();
   }, [status]);
+
+  // Realtime: subscribe to orders table changes. Edits made by other
+  // users (or other tabs of the same user) flow into the store
+  // automatically — no manual refresh needed.
+  useRealtimeOrders({
+    onInsert: (row) => {
+      if (row.type === "warranty") {
+        setWarranties((prev) =>
+          prev.some((o) => o.id === row.id) ? prev : [row, ...prev],
+        );
+      } else {
+        setOrders((prev) =>
+          prev.some((o) => o.id === row.id) ? prev : [row, ...prev],
+        );
+      }
+    },
+    onUpdate: (row) => {
+      const setter = row.type === "warranty" ? setWarranties : setOrders;
+      setter((prev) => prev.map((o) => (o.id === row.id ? row : o)));
+    },
+    onDelete: (id) => {
+      setOrders((prev) => prev.filter((o) => o.id !== id));
+      setWarranties((prev) => prev.filter((o) => o.id !== id));
+    },
+    onReconnect: () => {
+      // On reconnect, do nothing for now — events missed during a brief
+      // disconnect are rare and idempotent merges handle most cases.
+      // Phase 2 may add an explicit refetch here.
+    },
+  });
 
   const today = () => new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
