@@ -62,7 +62,7 @@ export default function ProfilePage() {
     );
   }
 
-  const isOnline = onlineUsers.includes(member.username);
+  const isOnline = onlineUsers.includes(member.id);
 
   return (
     <AppShell>

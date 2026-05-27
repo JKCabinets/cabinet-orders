@@ -29,8 +29,11 @@ export function usePresence(): string[] {
 
   useEffect(() => {
     if (status !== "authenticated") return;
-    const username = session?.user?.username;
-    if (!username) return;
+    // Key presence on team_members.id (immutable). Username would drop
+    // us offline briefly during admin renames since other clients\'
+    // team data still has the old username momentarily.
+    const userId = (session?.user as { id?: string } | undefined)?.id;
+    if (!userId) return;
 
     let cancelled = false;
     let channel: RealtimeChannel | null = null;
@@ -44,7 +47,7 @@ export function usePresence(): string[] {
         // same presence channel. `key` is the per-user dedup ref; multi-
         // tab sessions for the same user count as one presence entry.
         channel = client.channel("presence-global", {
-          config: { presence: { key: username } },
+          config: { presence: { key: userId } },
         });
 
         channel
@@ -58,7 +61,7 @@ export function usePresence(): string[] {
           .subscribe(async (subscribeStatus) => {
             if (subscribeStatus === "SUBSCRIBED" && channel) {
               await channel.track({
-                user_id: username,
+                user_id: userId,
                 joined_at: new Date().toISOString(),
               });
             }
@@ -80,7 +83,7 @@ export function usePresence(): string[] {
         });
       }
     };
-  }, [status, session?.user?.username]);
+  }, [status, (session?.user as { id?: string } | undefined)?.id]);
 
   return onlineUserIds;
 }

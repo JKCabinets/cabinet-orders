@@ -187,7 +187,7 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger }) {
       // Sign-in path: `user` is populated only on the call that follows
       // a successful authorize(). Snapshot the role and session_version
       // into the token, plus a timestamp so we know how stale our last
@@ -221,7 +221,11 @@ export const authOptions: NextAuthOptions = {
       const VERIFY_INTERVAL_MS = 60_000;
       const lastVerified = (token.lastVerifiedAt as number | undefined) ?? 0;
       const now = Date.now();
-      if (now - lastVerified < VERIFY_INTERVAL_MS) {
+      // trigger === "update" means the client called useSession().update().
+      // That's a deliberate "I want fresh data NOW" signal, so we bypass
+      // the throttle. Without this, an admin rename takes up to 60s to
+      // propagate even when our realtime hook fires update() immediately.
+      if (trigger !== "update" && now - lastVerified < VERIFY_INTERVAL_MS) {
         return token;
       }
 

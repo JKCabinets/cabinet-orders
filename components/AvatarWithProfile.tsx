@@ -37,7 +37,7 @@ export function AvatarWithProfile({
 }) {
   const { onlineUsers } = useStore();
   const { data: session } = useSession();
-  const isOnline = onlineUsers.includes(member.username);
+  const isOnline = onlineUsers.includes(member.id);
 
   const sessionUser = session?.user as { role?: string; username?: string } | undefined;
   const isAdmin = sessionUser?.role === "admin";

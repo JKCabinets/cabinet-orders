@@ -21,7 +21,7 @@ export function OnlineUsersInSidebar() {
   // Filter to active team members who are currently online
   const onlineTeam = team
     .filter((m) => m.active)
-    .filter((m) => onlineUsers.includes(m.username))
+    .filter((m) => onlineUsers.includes(m.id))
     // Stable sort by name so positions don't jump around as presence syncs
     .sort((a, b) => a.name.localeCompare(b.name));
 

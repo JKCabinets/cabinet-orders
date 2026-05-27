@@ -194,7 +194,8 @@ function UserFooter({
 }) {
   const user = session?.user as { name?: string; role?: string; username?: string } | undefined;
   const me = user?.username ? team.find((m) => m.username === user.username) : undefined;
-  const isOnline = user?.username ? onlineUsers.includes(user.username) : false;
+  const meId = (session?.user as { id?: string } | undefined)?.id;
+            const isOnline = meId ? onlineUsers.includes(meId) : false;
 
   return (
     <div className="px-3 py-3 border-t border-white/10 flex items-center gap-2.5">
