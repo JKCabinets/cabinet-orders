@@ -1,0 +1,25 @@
+#!/bin/bash
+# Maintain a stable symlink at /var/log/cabinet-orders/app.log pointing
+# to the currently-running app container's Docker JSON log. This gives
+# fail2ban a predictable path that survives redeploys.
+#
+# Runs automatically after every `kamal deploy` (Kamal convention).
+# Note: this script does NOT check whether the target file exists, since
+# /var/lib/docker/containers/* is only readable by root and this hook
+# runs as the deploy user. The symlink itself is a string pointer — it
+# only matters that fail2ban (running as root) can dereference it.
+
+set -euo pipefail
+
+CONTAINER_ID=$(docker ps --filter label=service=cabinet-orders --filter label=role=web --format '{{.ID}}' | head -1)
+if [ -z "$CONTAINER_ID" ]; then
+  echo "[post-deploy] no app container running; skipping log symlink"
+  exit 0
+fi
+
+FULL_ID=$(docker inspect --format='{{.Id}}' "$CONTAINER_ID")
+LOG_PATH="/var/lib/docker/containers/${FULL_ID}/${FULL_ID}-json.log"
+SYMLINK=/var/log/cabinet-orders/app.log
+
+ln -sfn "$LOG_PATH" "$SYMLINK"
+echo "[post-deploy] symlink refreshed: $SYMLINK -> $LOG_PATH"
