@@ -11,11 +11,13 @@ import {
 } from "./data";
 import { fieldsToClearOnBackwardMove } from "./stageLogic";
 import { useRealtimeOrders } from "./useRealtimeOrders";
+import { usePresence } from "./usePresence";
 
 interface StoreCtx {
   orders: Order[];
   warranties: Order[];
   team: TeamMember[];
+  onlineUsers: string[];
   loading: boolean;
   addOrder: (o: Partial<Order> & { type: "order" | "warranty" }) => Promise<void>;
   moveStage: (id: string, stage: Stage, enteredByName?: string, adminPin?: string) => Promise<{ ok: boolean; pinRequired?: boolean; error?: string }>;
@@ -152,6 +154,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       // Phase 2 may add an explicit refetch here.
     },
   });
+
+  // Track who else is signed in right now. Powers the green-ring online
+  // indicator on team-member avatars.
+  const onlineUsers = usePresence();
 
   const today = () => new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
@@ -434,7 +440,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   return (
     <Store.Provider value={{
-      orders, warranties, team, loading,
+      orders, warranties, team, onlineUsers, loading,
       addOrder, moveStage, updateNotes, updateInternalNotes, updateOrderDetails, archiveOrder, unarchiveOrder, deleteOrder, bulkAction,
       claimOrder, addTeamMember, updateTeamMember, deactivateTeamMember, deleteTeamMember,
     }}>

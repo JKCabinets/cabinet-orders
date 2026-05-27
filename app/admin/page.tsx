@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useSession } from "next-auth/react";
 import { useStore } from "@/lib/store";
+import { Avatar } from "@/components/Avatar";
 import {
   TeamMember, AvatarColor, Role,
   AVATAR_COLOR_STYLES, AVATAR_COLOR_SWATCH_STYLES, AVATAR_COLOR_OPTIONS,
@@ -192,12 +193,11 @@ function MemberRow({ member, onEdit, onChangePassword, onRequestAction, isConfir
   onRequestAction: () => void; isConfirmingAction: boolean;
   onDeactivate: () => void; onDelete: () => void; onCancelAction: () => void;
 }) {
+  const { onlineUsers } = useStore();
   return (
     <div className="flex items-center justify-between px-4 py-3 bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.10)] rounded-xl group hover:border-[rgba(86,100,72,0.55)] transition-colors">
       <div className="flex items-center gap-3">
-        <div style={{ ...AVATAR_COLOR_STYLES[member.avatarColor], borderWidth: 2, borderStyle: "solid" }} className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-medium">
-          {member.initials}
-        </div>
+        <Avatar member={member} online={onlineUsers.includes(member.username)} size="md" />
         <div>
           <div className="flex items-center gap-2">
             <p className="text-sm text-[#e8e3da]">{member.name}</p>

@@ -26,6 +26,8 @@ const STAGE_DOT: Record<OrderStage, string> = {
 };
 
 /** Convert "In production" → "in-production" for the URL slug. */
+import { OnlineUsersInSidebar } from "./OnlineUsersInSidebar";
+
 function stageToSlug(stage: OrderStage): string {
   return stage.toLowerCase().replace(/\s+/g, "-");
 }
@@ -163,6 +165,9 @@ export function Sidebar({ open, onClose }: SidebarProps) {
               )}
             </SidebarSection>
           </nav>
+
+          {/* Online team members */}
+          <OnlineUsersInSidebar />
 
           {/* User footer */}
           <div className="px-3 py-3 border-t border-white/10 flex items-center gap-2.5">
