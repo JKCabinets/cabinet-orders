@@ -15,7 +15,12 @@ image: jkcabinets/cabinet-orders
 # ─── Where to deploy ──────────────────────────────────────────────────
 servers:
   web:
-    - 5.78.220.153
+    hosts:
+      - 5.78.220.153
+    options:
+      log-driver: journald
+      log-opt:
+        tag: cabinet-orders-web
 
 # SSH login user — we created `garrett` and disabled root SSH.
 ssh:
