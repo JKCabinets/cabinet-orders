@@ -12,6 +12,21 @@ export interface TeamMember {
   role: Role;
   avatarColor: AvatarColor;
   active: boolean;
+
+  // Profile fields (v15). All optional — users fill them in via the
+  // profile editor over time. Existing rows from before v15 have NULL
+  // for everything except ooo_status, which defaults to FALSE.
+  photoUrl?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  roleTitle?: string | null;       // e.g. "Lead Designer"
+  bio?: string | null;
+  workingHours?: string | null;    // free text, e.g. "9-5 PT, Mon-Fri"
+  timezone?: string | null;        // IANA, e.g. "America/Phoenix"
+  slackHandle?: string | null;
+  oooStatus?: boolean;             // defaults to false
+  oooMessage?: string | null;
+  oooUntil?: string | null;        // ISO date string (YYYY-MM-DD)
 }
 
 export type AvatarColor = "blue" | "teal" | "amber" | "coral" | "purple" | "rose";

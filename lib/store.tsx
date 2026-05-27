@@ -88,6 +88,11 @@ function shapeOrder(raw: Record<string, unknown>): Order {
 }
 
 function shapeTeamMember(raw: Record<string, unknown>): TeamMember {
+  // Map snake_case DB columns to camelCase TS fields. The raw object
+  // might come from either:
+  //   - Supabase SELECT (always snake_case)
+  //   - Our own API after a PATCH (we might pass camelCase echoes back)
+  // so each field tolerates both via `?? raw.camelCase` fallbacks.
   return {
     id: raw.id as string,
     username: raw.username as string,
@@ -96,6 +101,19 @@ function shapeTeamMember(raw: Record<string, unknown>): TeamMember {
     role: (raw.role as Role) ?? "member",
     avatarColor: ((raw.avatar_color ?? raw.avatarColor) as AvatarColor) ?? "blue",
     active: (raw.active as boolean) ?? true,
+
+    // Profile fields (v15)
+    photoUrl:     (raw.photo_url     ?? raw.photoUrl     ?? null) as string | null,
+    phone:        (raw.phone                              ?? null) as string | null,
+    email:        (raw.email                              ?? null) as string | null,
+    roleTitle:    (raw.role_title    ?? raw.roleTitle    ?? null) as string | null,
+    bio:          (raw.bio                                ?? null) as string | null,
+    workingHours: (raw.working_hours ?? raw.workingHours ?? null) as string | null,
+    timezone:     (raw.timezone                           ?? null) as string | null,
+    slackHandle:  (raw.slack_handle  ?? raw.slackHandle  ?? null) as string | null,
+    oooStatus:    (raw.ooo_status    ?? raw.oooStatus    ?? false) as boolean,
+    oooMessage:   (raw.ooo_message   ?? raw.oooMessage   ?? null) as string | null,
+    oooUntil:     (raw.ooo_until     ?? raw.oooUntil     ?? null) as string | null,
   };
 }
 

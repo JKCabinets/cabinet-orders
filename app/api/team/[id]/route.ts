@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin, cleanInput } from "@/lib/auth";
+import { requireAdmin, requireSelfOrAdmin, cleanInput } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import bcrypt from "bcryptjs";
 import { validatePassword } from "@/lib/passwordPolicy";
@@ -8,9 +8,14 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireAdmin();
-  if (auth instanceof NextResponse) return auth;
+  // Use the self-or-admin helper here. Privilege-affecting fields
+  // (role, password, active) still require admin — we enforce that
+  // inline below by checking `auth.isAdmin` before applying those
+  // updates. Profile fields (photo, phone, email, bio, OOO, etc.)
+  // can be edited by the user themselves OR by an admin.
   const { id } = await params;
+  const auth = await requireSelfOrAdmin(id);
+  if (auth instanceof NextResponse) return auth;
 
   let body: Record<string, unknown>;
   try { body = await req.json(); } catch {
@@ -29,16 +34,58 @@ export async function PATCH(
     .single();
 
   const updates: Record<string, unknown> = {};
+
+  // ── Profile fields (anyone — self OR admin) ───────────────────────
+  // These don't grant privileges, so the user is allowed to edit them
+  // on their own row. Empty strings are stored as NULL to keep the DB
+  // clean — frontend treats null and "" identically anyway.
+  const nullableText = (v: unknown): string | null => {
+    if (typeof v !== "string") return null;
+    const trimmed = cleanInput(v);
+    return trimmed.length ? trimmed : null;
+  };
+  if (body.photoUrl     !== undefined) updates.photo_url     = nullableText(body.photoUrl);
+  if (body.phone        !== undefined) updates.phone         = nullableText(body.phone);
+  if (body.email        !== undefined) updates.email         = nullableText(body.email);
+  if (body.roleTitle    !== undefined) updates.role_title    = nullableText(body.roleTitle);
+  if (body.bio          !== undefined) updates.bio           = nullableText(body.bio);
+  if (body.workingHours !== undefined) updates.working_hours = nullableText(body.workingHours);
+  if (body.timezone     !== undefined) updates.timezone      = nullableText(body.timezone);
+  if (body.slackHandle  !== undefined) updates.slack_handle  = nullableText(body.slackHandle);
+  if (body.oooStatus    !== undefined) updates.ooo_status    = !!body.oooStatus;
+  if (body.oooMessage   !== undefined) updates.ooo_message   = nullableText(body.oooMessage);
+  if (body.oooUntil     !== undefined) updates.ooo_until     = nullableText(body.oooUntil); // YYYY-MM-DD or null
+
+  // ── Identity & avatar (anyone — these aren't privilege-affecting,
+  // they're more like "what people see in the team list") ──────────
   if (body.name)                 updates.name         = cleanInput(body.name as string);
-  if (body.username)             updates.username     = cleanInput(body.username as string).toLowerCase();
   if (body.initials)             updates.initials     = cleanInput(body.initials as string).toUpperCase().slice(0, 2);
-  if (body.role)                 updates.role         = body.role === "admin" ? "admin" : "member";
   if (body.avatarColor)          updates.avatar_color = body.avatarColor;
   if (body.avatar_color)         updates.avatar_color = body.avatar_color;
-  if (body.active !== undefined) updates.active       = body.active;
 
-  // Hash password with bcrypt before saving
+  // ── Privilege-affecting fields (admin only) ───────────────────────
+  // username change is included here because a user changing their own
+  // username could break audit trails and login flows; keep it admin.
+  if (body.username !== undefined || body.role !== undefined || body.active !== undefined) {
+    if (!auth.isAdmin) {
+      return NextResponse.json(
+        { error: "Forbidden — admin only for username, role, or active changes" },
+        { status: 403 }
+      );
+    }
+    if (body.username)             updates.username = cleanInput(body.username as string).toLowerCase();
+    if (body.role)                 updates.role     = body.role === "admin" ? "admin" : "member";
+    if (body.active !== undefined) updates.active   = body.active;
+  }
+
+  // Hash password with bcrypt before saving — admin only.
   if (body.password) {
+    if (!auth.isAdmin) {
+      return NextResponse.json(
+        { error: "Forbidden — admin only for password changes" },
+        { status: 403 }
+      );
+    }
     const pwd = body.password as string;
     const pwdError = validatePassword(pwd);
     if (pwdError) return NextResponse.json({ error: pwdError }, { status: 422 });

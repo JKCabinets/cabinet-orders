@@ -26,7 +26,11 @@ export async function GET(_req: NextRequest) {
 
   const { data, error } = await supabase
     .from("team_members")
-    .select("id, username, name, initials, role, avatar_color, active")
+    .select(
+      "id, username, name, initials, role, avatar_color, active, " +
+      "photo_url, phone, email, role_title, bio, working_hours, " +
+      "timezone, slack_handle, ooo_status, ooo_message, ooo_until"
+    )
     .order("created_at");
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

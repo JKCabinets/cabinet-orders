@@ -1,6 +1,7 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/authOptions";
 import { NextRequest, NextResponse } from "next/server";
+import { supabase } from "@/lib/supabase";
 
 export type AuthSession = {
   user: {
@@ -31,6 +32,49 @@ export async function requireAdmin(): Promise<{ session: AuthSession } | NextRes
     return NextResponse.json({ error: "Forbidden — admin only" }, { status: 403 });
   }
   return result;
+}
+
+/**
+ * Allow either an admin OR the user editing their own row. Used for
+ * profile-only fields where users should be able to update themselves
+ * but not anyone else.
+ *
+ * Looks up the target row's username (since the URL key is `id`, not
+ * `username`) so we can compare against the session's username — the
+ * canonical identity in our JWT.
+ *
+ * Returns:
+ *   - 401 if no session
+ *   - 404 if target row doesn't exist
+ *   - 403 if session is neither admin nor the target
+ *   - { session, isAdmin: true|false } on success — callers can use
+ *     isAdmin to gate privilege-affecting fields within the same handler
+ */
+export async function requireSelfOrAdmin(
+  targetId: string,
+): Promise<
+  | { session: AuthSession; isAdmin: boolean; targetUsername: string }
+  | NextResponse
+> {
+  const result = await requireAuth();
+  if (result instanceof NextResponse) return result;
+
+  const { data: row, error } = await supabase
+    .from("team_members")
+    .select("username")
+    .eq("id", targetId)
+    .single();
+  if (error || !row) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  const isAdmin = result.session.user.role === "admin";
+  const isSelf = result.session.user.username === row.username;
+  if (!isAdmin && !isSelf) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  return { session: result.session, isAdmin, targetUsername: row.username };
 }
 
 /**
