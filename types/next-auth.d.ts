@@ -28,6 +28,12 @@ declare module "next-auth/jwt" {
     role: "admin" | "member";
     username: string;
     /**
+     * Display name, refreshed from team_members.name on every JWT
+     * verify cycle. The session callback copies this into
+     * session.user.name so a rename propagates without re-login.
+     */
+    name?: string;
+    /**
      * Snapshot of `team_members.session_version` at sign-in. The JWT
      * callback (lib/authOptions.ts) compares this to the live DB value
      * to detect privilege changes that should invalidate the session.

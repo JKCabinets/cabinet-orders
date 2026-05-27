@@ -230,10 +230,15 @@ export const authOptions: NextAuthOptions = {
       // deleted, the lookup returns no rows — treat that as invalidation.
       try {
         const supabase = await getSupabase();
+        // Look up by team_members.id (token.sub, immutable). Looking up
+        // by username would break the moment an admin renames the user,
+        // because the in-flight token still holds the OLD username.
+        // We also pull the latest username + name so the session can
+        // reflect renames without forcing a sign-out.
         const { data, error } = await supabase
           .from("team_members")
-          .select("session_version, active, role")
-          .eq("username", token.username as string)
+          .select("session_version, active, role, username, name")
+          .eq("id", token.sub as string)
           .single();
 
         if (error || !data) {
@@ -264,6 +269,16 @@ export const authOptions: NextAuthOptions = {
           token.role = data.role as "admin" | "member";
         }
 
+        // Pull the latest username + display name onto the token so a
+        // rename in admin propagates to session.user.username/name on
+        // the next session.update() or next 60s verify cycle — no
+        // forced sign-out needed.
+        if (typeof data.username === "string" && data.username !== token.username) {
+          token.username = data.username;
+        }
+        if (typeof data.name === "string" && data.name !== token.name) {
+          token.name = data.name;
+        }
         token.lastVerifiedAt = now;
         token.invalidated = false;
         return token;
@@ -293,6 +308,9 @@ export const authOptions: NextAuthOptions = {
         session.user.id = token.sub as string;
         session.user.role = token.role;
         session.user.username = token.username;
+        if (typeof token.name === "string") {
+          session.user.name = token.name;
+        }
       }
       return session;
     },

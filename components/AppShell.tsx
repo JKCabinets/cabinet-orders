@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Sidebar, SidebarMobileTrigger } from "./Sidebar";
+import { useSessionAutoRefresh } from "@/lib/useSessionAutoRefresh";
 
 /**
  * Standard page shell — sidebar on the left (fixed), scrollable main on the right.
@@ -14,6 +15,11 @@ import { Sidebar, SidebarMobileTrigger } from "./Sidebar";
  *   </AppShell>
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
+  // Subscribe to realtime updates on the signed-in user\'s own
+  // team_members row so a rename by an admin (username, display name,
+  // role) propagates to session.user immediately instead of waiting
+  // up to 60s for the next JWT verify cycle.
+  useSessionAutoRefresh();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   return (
