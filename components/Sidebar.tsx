@@ -27,6 +27,7 @@ const STAGE_DOT: Record<OrderStage, string> = {
 
 /** Convert "In production" → "in-production" for the URL slug. */
 import { OnlineUsersInSidebar } from "./OnlineUsersInSidebar";
+import { Avatar } from "./Avatar";
 
 function stageToSlug(stage: OrderStage): string {
   return stage.toLowerCase().replace(/\s+/g, "-");
@@ -41,7 +42,7 @@ interface SidebarProps {
 export function Sidebar({ open, onClose }: SidebarProps) {
   const pathname = usePathname();
   const { data: session } = useSession();
-  const { orders } = useStore();
+  const { orders, team, onlineUsers } = useStore();
   const user = session?.user as { name?: string; role?: string } | undefined;
   const isAdmin = user?.role === "admin";
 
@@ -170,25 +171,52 @@ export function Sidebar({ open, onClose }: SidebarProps) {
           <OnlineUsersInSidebar />
 
           {/* User footer */}
-          <div className="px-3 py-3 border-t border-white/10 flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-medium border border-terracotta/45 bg-terracotta/20 text-terracotta">
-              {user?.name?.[0]?.toUpperCase() ?? "?"}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-xs text-cream truncate">{user?.name ?? "Guest"}</div>
-              <div className="text-[10px] text-cream/55 capitalize">{user?.role ?? "—"}</div>
-            </div>
-            <button
-              onClick={() => signOut({ callbackUrl: "/login" })}
-              className="p-1.5 rounded-md hover:bg-white/10 transition-colors"
-              title="Sign out"
-            >
-              <LogOut className="w-3.5 h-3.5 text-cream/65" />
-            </button>
-          </div>
+          <UserFooter session={session} team={team} onlineUsers={onlineUsers} />
         </div>
       </aside>
     </>
+  );
+}
+
+/**
+ * Bottom-of-sidebar user pill. Looks up the signed-in user's full team
+ * member row so the Avatar can render their photo + OOO ring. Falls back
+ * to a colored initials disc when the team row isn't loaded yet.
+ */
+function UserFooter({
+  session,
+  team,
+  onlineUsers,
+}: {
+  session: ReturnType<typeof useSession>["data"];
+  team: { username: string; name: string; initials: string; avatarColor: import("@/lib/data").AvatarColor; photoUrl?: string | null; oooStatus?: boolean }[];
+  onlineUsers: string[];
+}) {
+  const user = session?.user as { name?: string; role?: string; username?: string } | undefined;
+  const me = user?.username ? team.find((m) => m.username === user.username) : undefined;
+  const isOnline = user?.username ? onlineUsers.includes(user.username) : false;
+
+  return (
+    <div className="px-3 py-3 border-t border-white/10 flex items-center gap-2.5">
+      {me ? (
+        <Avatar member={me} online={isOnline} size="sm" />
+      ) : (
+        <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-medium border border-terracotta/45 bg-terracotta/20 text-terracotta">
+          {user?.name?.[0]?.toUpperCase() ?? "?"}
+        </div>
+      )}
+      <div className="flex-1 min-w-0">
+        <div className="text-xs text-cream truncate">{user?.name ?? "Guest"}</div>
+        <div className="text-[10px] text-cream/55 capitalize">{user?.role ?? "—"}</div>
+      </div>
+      <button
+        onClick={() => signOut({ callbackUrl: "/login" })}
+        className="p-1.5 rounded-md hover:bg-white/10 transition-colors"
+        title="Sign out"
+      >
+        <LogOut className="w-3.5 h-3.5 text-cream/65" />
+      </button>
+    </div>
   );
 }
 
