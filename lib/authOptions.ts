@@ -15,6 +15,16 @@ async function getSupabase() {
 }
 
 async function logAuditEvent(event: string, username: string, ip?: string, details?: Record<string, unknown>) {
+  // Emit a structured line to stderr for security-relevant auth events so
+  // fail2ban (running on the host) can detect repeated failures and ban
+  // offending IPs. Stays terse — one line, easy to parse with a regex.
+  // The audit DB write below is the system of record; this is just a
+  // signal for the firewall layer.
+  if (event === "login_failed" || event === "login_blocked") {
+    const safeIp = (ip ?? "unknown").replace(/[^0-9a-fA-F:.]/g, "");
+    const safeUser = String(username).replace(/[^a-zA-Z0-9._@-]/g, "").slice(0, 64);
+    console.error(`[AUTH_FAIL] event=${event} user=${safeUser} ip=${safeIp}`);
+  }
   try {
     const supabase = await getSupabase();
     await supabase.from("audit_log").insert({ event, username, ip_address: ip ?? "unknown", details });
