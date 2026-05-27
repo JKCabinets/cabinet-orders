@@ -147,6 +147,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Could not parse body" }, { status: 400, headers: CORS });
   }
 
+ // ── Honeypot check ────────────────────────────────────────────────────────
+  // The public form has a hidden "website" field. Real humans never see it
+  // (CSS hides it off-screen). Bots scrape the HTML and dutifully fill it in.
+  // If it has any value, drop the submission silently — fake success so the
+  // bot thinks it worked and doesn't retry. Don't write to the DB.
+  if (body.website && body.website.trim() !== "") {
+    return NextResponse.json(
+      { ok: true, order_id: `QUO-${Date.now()}` },
+      { status: 201, headers: CORS }
+    );
+  }
+
   // ── Optional shared-secret check (constant-time) ──────────────────────────
   const secret = process.env.QUOTE_WEBHOOK_SECRET;
   if (secret) {
