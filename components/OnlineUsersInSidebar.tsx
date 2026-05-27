@@ -11,7 +11,7 @@
  */
 
 import { useStore } from "@/lib/store";
-import { Avatar } from "./Avatar";
+import { AvatarWithProfile } from "./AvatarWithProfile";
 
 const MAX_VISIBLE = 6;
 
@@ -45,7 +45,7 @@ export function OnlineUsersInSidebar() {
       </div>
       <div className="flex items-center -space-x-1.5">
         {visible.map((m) => (
-          <Avatar key={m.id} member={m} online size="sm" />
+          <AvatarWithProfile key={m.id} member={m} size="sm" />
         ))}
         {extra > 0 && (
           <div

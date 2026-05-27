@@ -27,7 +27,7 @@ const STAGE_DOT: Record<OrderStage, string> = {
 
 /** Convert "In production" → "in-production" for the URL slug. */
 import { OnlineUsersInSidebar } from "./OnlineUsersInSidebar";
-import { Avatar } from "./Avatar";
+import { AvatarWithProfile } from "./AvatarWithProfile";
 
 function stageToSlug(stage: OrderStage): string {
   return stage.toLowerCase().replace(/\s+/g, "-");
@@ -189,7 +189,7 @@ function UserFooter({
   onlineUsers,
 }: {
   session: ReturnType<typeof useSession>["data"];
-  team: { username: string; name: string; initials: string; avatarColor: import("@/lib/data").AvatarColor; photoUrl?: string | null; oooStatus?: boolean }[];
+  team: import("@/lib/data").TeamMember[];
   onlineUsers: string[];
 }) {
   const user = session?.user as { name?: string; role?: string; username?: string } | undefined;
@@ -199,7 +199,7 @@ function UserFooter({
   return (
     <div className="px-3 py-3 border-t border-white/10 flex items-center gap-2.5">
       {me ? (
-        <Avatar member={me} online={isOnline} size="sm" />
+        <AvatarWithProfile member={me} size="sm" />
       ) : (
         <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-medium border border-terracotta/45 bg-terracotta/20 text-terracotta">
           {user?.name?.[0]?.toUpperCase() ?? "?"}
