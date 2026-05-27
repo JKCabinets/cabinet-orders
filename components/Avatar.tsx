@@ -16,6 +16,7 @@
 import { TeamMember, AVATAR_COLOR_STYLES } from "@/lib/data";
 
 const SIZE_CLASSES = {
+  xs: { box: "w-6 h-6", text: "text-[9px]", ring: "ring-[1.5px]" },
   sm: { box: "w-7 h-7", text: "text-[10px]", ring: "ring-2" },
   md: { box: "w-9 h-9", text: "text-xs", ring: "ring-2" },
   lg: { box: "w-12 h-12", text: "text-sm", ring: "ring-[3px]" },
