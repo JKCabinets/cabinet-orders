@@ -15,6 +15,7 @@
  */
 
 import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { TeamMember } from "@/lib/data";
@@ -47,11 +48,22 @@ export function AvatarWithProfile({
   // mouse move across a list of avatars (e.g. the OnlineUsersInSidebar).
   const [showCard, setShowCard]   = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const [cardPos, setCardPos]     = useState<{ top: number; left: number } | null>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const triggerRef = useRef<HTMLSpanElement>(null);
 
   function handleMouseEnter() {
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
-    hoverTimer.current = setTimeout(() => setShowCard(true), HOVER_DELAY_MS);
+    hoverTimer.current = setTimeout(() => {
+      // Measure trigger position so the portal-rendered card can be
+      // placed below it. Re-measured every show so it stays correct
+      // even after scroll or layout shift.
+      if (triggerRef.current) {
+        const rect = triggerRef.current.getBoundingClientRect();
+        setCardPos({ top: rect.bottom + 8, left: rect.left });
+      }
+      setShowCard(true);
+    }, HOVER_DELAY_MS);
   }
   function handleMouseLeave() {
     if (hoverTimer.current) {
@@ -85,29 +97,30 @@ export function AvatarWithProfile({
   return (
     <>
       <span
+        ref={triggerRef}
         className={`relative inline-block cursor-pointer ${className}`}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
         onClick={handleClick}
       >
-        <Avatar member={member} online={isOnline} size={size} />
+        <Avatar member={member} online={isOnline} size={size} noTitle />
 
-        {/* Hover card — absolutely positioned below the avatar.
-            We render via a sibling so it can extend outside the avatar's
-            inline box without affecting layout. */}
-        {showCard && (
-          <span
-            className="absolute z-50 mt-2 left-0 top-full w-64 pointer-events-none"
-            // pointer-events-none on the wrapper means moving onto the
-            // card itself won't keep it open; if you want sticky behavior
-            // later, flip this to auto and add timer guards.
-          >
-            <span className="block bg-[#0c0c0c] border border-[rgba(255,255,255,0.12)] rounded-xl shadow-2xl shadow-black/60 p-3">
-              <ProfileSummary member={member} online={isOnline} variant="card" />
-            </span>
-          </span>
-        )}
       </span>
+
+      {/* Hover card — portal-rendered to escape ancestor `overflow-hidden`
+          containers (like the sidebar panel). Positioned using the trigger's
+          getBoundingClientRect measured in handleMouseEnter. */}
+      {showCard && cardPos && typeof document !== "undefined" && createPortal(
+        <div
+          className="fixed z-[200] w-64 pointer-events-none"
+          style={{ top: cardPos.top, left: cardPos.left }}
+        >
+          <div className="bg-[#0c0c0c] border border-[rgba(255,255,255,0.12)] rounded-xl shadow-2xl shadow-black/60 p-3">
+            <ProfileSummary member={member} online={isOnline} variant="card" />
+          </div>
+        </div>,
+        document.body
+      )}
 
       {/* Click modal */}
       {showModal && (
@@ -121,7 +134,7 @@ export function AvatarWithProfile({
             {/* Header */}
             <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-[rgba(255,255,255,0.06)]">
               <div className="flex items-center gap-3">
-                <Avatar member={member} online={isOnline} size="lg" />
+                <Avatar member={member} online={isOnline} size="lg" noTitle />
                 <div>
                   <p className="text-base text-[#e8e3da]">{member.name}</p>
                   <p className="text-[11px] text-[rgba(232,227,218,0.45)] mt-0.5">

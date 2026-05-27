@@ -35,6 +35,8 @@ interface AvatarProps {
   size?: keyof typeof SIZE_CLASSES;
   /** Extra Tailwind classes appended to the root */
   className?: string;
+  /** Suppress the native browser tooltip; use when a wrapper renders its own hover card */
+  noTitle?: boolean;
 }
 
 export function Avatar({
@@ -42,6 +44,7 @@ export function Avatar({
   online = false,
   size = "md",
   className = "",
+  noTitle = false,
 }: AvatarProps) {
   const sz = SIZE_CLASSES[size];
 
@@ -69,7 +72,7 @@ export function Avatar({
   if (member.photoUrl) {
     return (
       <div
-        title={tooltip}
+        title={noTitle ? undefined : tooltip}
         className={rootClasses}
         style={{ borderWidth: 2, borderStyle: "solid", borderColor: "rgba(86,100,72,0.55)" }}
       >
@@ -87,7 +90,7 @@ export function Avatar({
   const colorStyle = AVATAR_COLOR_STYLES[member.avatarColor];
   return (
     <div
-      title={tooltip}
+      title={noTitle ? undefined : tooltip}
       className={`${rootClasses} ${sz.text} font-medium`}
       style={{
         ...colorStyle,
