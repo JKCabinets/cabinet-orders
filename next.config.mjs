@@ -48,7 +48,7 @@ const securityHeaders = [
       // unsafe-inline kept for framework scripts; unsafe-eval REMOVED.
       "script-src 'self' 'unsafe-inline'",
       "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data: blob:",
+      "img-src 'self' data: blob: https://*.supabase.co",
       "font-src 'self'",
       "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.upstash.io",
       "object-src 'none'",
