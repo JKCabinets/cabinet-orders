@@ -8,16 +8,22 @@ import {
   TeamMember, AvatarColor, Role,
   AVATAR_COLOR_STYLES, AVATAR_COLOR_SWATCH_STYLES, AVATAR_COLOR_OPTIONS,
 } from "@/lib/data";
-import { Users, Plus, Pencil, UserX, Trash2, Shield, User, Check, X, KeyRound, Eye, EyeOff } from "lucide-react";
+import { Users, Plus, Pencil, UserX, Trash2, Shield, User, Check, X, KeyRound, Eye, EyeOff, UserCog } from "lucide-react";
+import { ProfileForm } from "@/components/ProfileForm";
 import clsx from "clsx";
 import { AuditLog } from "@/components/AuditLog";
 import { AppShell, PageHeader } from "@/components/AppShell";
 
 export default function AdminPage() {
   const { data: session } = useSession();
-  const { team, addTeamMember, updateTeamMember, deactivateTeamMember, deleteTeamMember, loading } = useStore();
+  const {
+    team, addTeamMember, updateTeamMember, deactivateTeamMember, deleteTeamMember,
+    updateTeamMemberProfile, uploadAvatar,
+    loading,
+  } = useStore();
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [changingPasswordId, setChangingPasswordId] = useState<string | null>(null);
   const [confirmActionId, setConfirmActionId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -113,6 +119,18 @@ export default function AdminPage() {
                     onSave={(data) => { updateTeamMember(member.id, data); setEditingId(null); showToast("Member updated"); }}
                     onCancel={() => setEditingId(null)}
                   />
+                ) : editingProfileId === member.id ? (
+                  <ProfileForm
+                    member={member}
+                    canEdit
+                    onUploadPhoto={(file) => uploadAvatar(member.id, file)}
+                    onSave={async (fields) => {
+                      await updateTeamMemberProfile(member.id, fields);
+                      setEditingProfileId(null);
+                      showToast(member.name + "'s profile saved");
+                    }}
+                    onCancel={() => setEditingProfileId(null)}
+                  />
                 ) : changingPasswordId === member.id ? (
                   <PasswordForm
                     member={member}
@@ -126,8 +144,9 @@ export default function AdminPage() {
                 ) : (
                   <MemberRow
                     member={member}
-                    onEdit={() => { setEditingId(member.id); setShowAddForm(false); setChangingPasswordId(null); }}
-                    onChangePassword={() => { setChangingPasswordId(member.id); setEditingId(null); setShowAddForm(false); }}
+                    onEdit={() => { setEditingId(member.id); setShowAddForm(false); setChangingPasswordId(null); setEditingProfileId(null); }}
+                    onChangePassword={() => { setChangingPasswordId(member.id); setEditingId(null); setShowAddForm(false); setEditingProfileId(null); }}
+                    onProfile={() => { setEditingProfileId(member.id); setEditingId(null); setShowAddForm(false); setChangingPasswordId(null); }}
                     onRequestAction={() => setConfirmActionId(member.id)}
                     isConfirmingAction={confirmActionId === member.id}
                     onDeactivate={() => { deactivateTeamMember(member.id); setConfirmActionId(null); showToast(`${member.name} deactivated`); }}
@@ -188,8 +207,8 @@ export default function AdminPage() {
   );
 }
 
-function MemberRow({ member, onEdit, onChangePassword, onRequestAction, isConfirmingAction, onDeactivate, onDelete, onCancelAction }: {
-  member: TeamMember; onEdit: () => void; onChangePassword: () => void;
+function MemberRow({ member, onEdit, onChangePassword, onProfile, onRequestAction, isConfirmingAction, onDeactivate, onDelete, onCancelAction }: {
+  member: TeamMember; onEdit: () => void; onChangePassword: () => void; onProfile: () => void;
   onRequestAction: () => void; isConfirmingAction: boolean;
   onDeactivate: () => void; onDelete: () => void; onCancelAction: () => void;
 }) {
@@ -222,6 +241,9 @@ function MemberRow({ member, onEdit, onChangePassword, onRequestAction, isConfir
           </div>
         ) : (
           <>
+            <button onClick={onProfile} className="opacity-0 group-hover:opacity-100 flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-[rgba(255,255,255,0.10)] text-[11px] text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] hover:border-[rgba(86,100,72,0.55)] transition-all">
+              <UserCog className="w-3 h-3" />Profile
+            </button>
             <button onClick={onChangePassword} className="opacity-0 group-hover:opacity-100 flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-[rgba(255,255,255,0.10)] text-[11px] text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] hover:border-[rgba(86,100,72,0.55)] transition-all">
               <KeyRound className="w-3 h-3" />Password
             </button>

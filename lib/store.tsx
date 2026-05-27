@@ -36,6 +36,18 @@ interface StoreCtx {
   updateTeamMember: (id: string, updates: Partial<TeamMember> & { password?: string }) => Promise<void>;
   deactivateTeamMember: (id: string) => Promise<void>;
   deleteTeamMember: (id: string) => Promise<void>;
+
+  // Profile-only updates (self OR admin; see lib/auth.ts requireSelfOrAdmin)
+  updateTeamMemberProfile: (
+    id: string,
+    fields: Partial<Pick<TeamMember,
+      "photoUrl" | "phone" | "email" | "roleTitle" | "bio" |
+      "workingHours" | "timezone" | "slackHandle" |
+      "oooStatus" | "oooMessage" | "oooUntil"
+    >>
+  ) => Promise<void>;
+  // Upload a new profile photo, returns the new public URL
+  uploadAvatar: (id: string, file: File) => Promise<string>;
 }
 
 const Store = createContext<StoreCtx | null>(null);
@@ -451,6 +463,46 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     await apiCall(`/api/team/${id}`, "PATCH", { active: false });
   }, []);
 
+  /**
+   * PATCH profile-only fields. Distinct from updateTeamMember because:
+   *   - The API gates these fields with requireSelfOrAdmin (vs admin-only)
+   *   - We never need to refetch the whole team after — just merge locally
+   *   - Photo upload happens separately via uploadAvatar; photoUrl here
+   *     is the URL string already returned from that upload
+   */
+  const updateTeamMemberProfile = useCallback(async (
+    id: string,
+    fields: Partial<Pick<TeamMember,
+      "photoUrl" | "phone" | "email" | "roleTitle" | "bio" |
+      "workingHours" | "timezone" | "slackHandle" |
+      "oooStatus" | "oooMessage" | "oooUntil"
+    >>
+  ) => {
+    setTeam(prev => prev.map(m => m.id === id ? { ...m, ...fields } : m));
+    await apiCall(`/api/team/${id}`, "PATCH", fields);
+  }, []);
+
+  /**
+   * POST a photo to /api/team/[id]/avatar. Returns the new public URL.
+   * Updates local team state so any avatar rendered elsewhere on the
+   * page picks up the new photo without a refetch.
+   */
+  const uploadAvatar = useCallback(async (id: string, file: File): Promise<string> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await fetch(`/api/team/${id}/avatar`, {
+      method: "POST",
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(err.error || "Upload failed");
+    }
+    const data = await res.json();
+    setTeam(prev => prev.map(m => m.id === id ? { ...m, photoUrl: data.url } : m));
+    return data.url as string;
+  }, []);
+
   const deleteTeamMember = useCallback(async (id: string) => {
     setTeam(prev => prev.filter(m => m.id !== id));
     await apiCall(`/api/team/${id}?hard=true`, "DELETE");
@@ -461,6 +513,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       orders, warranties, team, onlineUsers, loading,
       addOrder, moveStage, updateNotes, updateInternalNotes, updateOrderDetails, archiveOrder, unarchiveOrder, deleteOrder, bulkAction,
       claimOrder, addTeamMember, updateTeamMember, deactivateTeamMember, deleteTeamMember,
+      updateTeamMemberProfile, uploadAvatar,
     }}>
       {children}
     </Store.Provider>
