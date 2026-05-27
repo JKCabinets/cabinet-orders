@@ -9,6 +9,8 @@ import {
   AVATAR_COLOR_STYLES,
 } from "@/lib/data";
 import { useStore } from "@/lib/store";
+import { AvatarWithProfile } from "./AvatarWithProfile";
+import { useToast } from "./Toast";
 import { checkAttachmentGate } from "@/lib/stageGates";
 import { AttachmentsPanel, type AttachmentsPanelHandle } from "./AttachmentsPanel";
 import { OrderDetails } from "./OrderDetails";
@@ -66,7 +68,33 @@ const LABEL = "text-[10px] uppercase tracking-[0.16em] text-cream/50 mb-1.5";
 // var could drift out of sync, breaking every backward move silently.
 
 export function OrderModal({ order, tab, onClose, onStageChange, initialReason }: OrderModalProps) {
-  const { moveStage, updateOrderDetails, updateNotes, updateInternalNotes, archiveOrder, unarchiveOrder, deleteOrder, orders, warranties, team } = useStore();
+  const { moveStage, updateOrderDetails, updateNotes, updateInternalNotes, archiveOrder, unarchiveOrder, deleteOrder, orders, warranties, team, claimOrder: rawClaimOrder } = useStore();
+  const { showToast } = useToast();
+  const [claimBusy, setClaimBusy] = useState(false);
+
+  // Wrap claimOrder with the same conflict-toast UX used in OrderTable.
+  // Returns void; busy state is set/unset around the call so the button
+  // can disable itself while in flight.
+  async function handleClaim(target: string | null) {
+    setClaimBusy(true);
+    try {
+      const result = await rawClaimOrder(liveOrder.id, target);
+      if (!result.ok) {
+        if (result.reason === "already_claimed" && result.claimedBy) {
+          const claimer = team.find((m) => m.name === result.claimedBy || m.username === result.claimedBy);
+          showToast(`Already claimed by ${claimer?.name ?? result.claimedBy}`, { kind: "warn" });
+        } else if (result.reason === "not_owner") {
+          showToast("You can\'t release someone else\'s claim", { kind: "warn" });
+        } else if (result.reason === "network_error") {
+          showToast("Network error — claim not saved", { kind: "error" });
+        } else {
+          showToast("Claim failed", { kind: "error" });
+        }
+      }
+    } finally {
+      setClaimBusy(false);
+    }
+  }
   const { data: session } = useSession();
   const currentUserName = session?.user?.name ?? undefined;
   const [notes, setNotes] = useState(order.notes);
@@ -527,40 +555,69 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
                 <p className="text-xs font-mono text-cream/65">{liveOrder.sku || "—"}</p>
               </div>
               <div>
-                <p className={LABEL}>Team member</p>
                 {(() => {
                   // Stage-aware ownership:
-                  //   New: claimed_by only (an order in New that was
-                  //     previously Entered + rolled back is unclaimed until
-                  //     someone picks it up again — we intentionally hide
-                  //     entered_by here even though it's preserved in the DB
-                  //     for the audit trail)
-                  //   Later stages: entered_by is the source of truth
+                  //   New / New claim: claimed_by is the source of truth.
+                  //     An order rolled back to New is unclaimed until
+                  //     someone picks it up again — entered_by is kept
+                  //     in the DB for audit but hidden here.
+                  //   Later stages: entered_by takes precedence.
                   const isNewStage = liveOrder.stage === "New" || liveOrder.stage === "New claim";
                   const ownerName = isNewStage
                     ? liveOrder.claimed_by ?? null
                     : liveOrder.entered_by ?? liveOrder.claimed_by ?? null;
                   const ownerMember = ownerName ? team.find(m => m.name === ownerName) : null;
-                  if (!ownerName) {
-                    return (
-                      <p className="text-xs text-cream/35 italic">unclaimed</p>
-                    );
-                  }
-                  const initials = ownerMember?.initials ?? ownerName.slice(0, 2).toUpperCase();
-                  const displayName = ownerMember?.name ?? ownerName;
-                  const style = ownerMember
-                    ? AVATAR_COLOR_STYLES[ownerMember.avatarColor]
-                    : { backgroundColor: "rgba(86,100,72,0.20)", color: "#8fbe70", borderColor: "rgba(86,100,72,0.28)" };
+                  const claimedBy = liveOrder.claimed_by ?? null;
+                  const isClaimedByMe = !!currentUserName && claimedBy === currentUserName;
+                  const isClaimedByOther = !!claimedBy && !isClaimedByMe;
+                  // Claim/release affordance only on New stages — once
+                  // entered, ownership is tracked by entered_by which the
+                  // PATCH endpoint maintains on stage transitions.
+                  const showClaimUi = isNewStage;
                   return (
-                    <div className="flex items-center gap-2">
-                      <div
-                        style={{ ...style, borderWidth: 1, borderStyle: "solid" }}
-                        className="inline-flex items-center justify-center w-7 h-7 rounded-full text-[11px] font-semibold"
-                      >
-                        {initials}
+                    <>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className={LABEL}>Team member</p>
+                        {showClaimUi && (
+                          isClaimedByMe ? (
+                            <button
+                              type="button"
+                              onClick={() => handleClaim(null)}
+                              disabled={claimBusy}
+                              className="text-[10px] uppercase tracking-wider text-cream/55 hover:text-cream transition-colors disabled:opacity-40"
+                            >
+                              {claimBusy ? "..." : "Release"}
+                            </button>
+                          ) : isClaimedByOther ? (
+                            <span className="text-[10px] uppercase tracking-wider text-amber-300/70" title={`Claimed by ${ownerMember?.name ?? claimedBy}`}>
+                              Locked
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleClaim(currentUserName ?? null)}
+                              disabled={claimBusy || !currentUserName}
+                              className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30 transition-all disabled:opacity-40"
+                            >
+                              {claimBusy ? "..." : "Claim"}
+                            </button>
+                          )
+                        )}
                       </div>
-                      <span className="text-xs text-cream/65">{displayName}</span>
-                    </div>
+                      <div className="mt-1">
+                        {!ownerName ? (
+                          <p className="text-xs text-cream/35 italic">unclaimed</p>
+                        ) : ownerMember ? (
+                          <div className="flex items-center gap-2">
+                            <AvatarWithProfile member={ownerMember} size="sm" />
+                            <span className="text-xs text-cream/65">{ownerMember.name}</span>
+                          </div>
+                        ) : (
+                          // Fallback when the team row isn\'t loaded yet
+                          <span className="text-xs text-cream/65">{ownerName}</span>
+                        )}
+                      </div>
+                    </>
                   );
                 })()}
               </div>

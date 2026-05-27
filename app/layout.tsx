@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import "./globals.css";
 import { StoreProvider } from "@/lib/store";
 import { AuthProvider } from "@/components/AuthProvider";
+import { ToastProvider } from "@/components/Toast";
 
 // Brand fonts per the JK Cabinets brand guide. next/font fetches these at
 // build time and self-hosts them, so no FOIT and no Google Fonts roundtrip
@@ -78,7 +79,7 @@ export default async function RootLayout({
     <html lang="en" className={`${dmSans.variable} ${cormorant.variable}`}>
       <body className="antialiased">
         <AuthProvider>
-          <StoreProvider>{children}</StoreProvider>
+          <StoreProvider><ToastProvider>{children}</ToastProvider></StoreProvider>
         </AuthProvider>
       </body>
     </html>

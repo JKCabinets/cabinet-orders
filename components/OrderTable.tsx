@@ -8,6 +8,8 @@ import { useSession } from "next-auth/react";
 import { formatDateWithYear, parseOrderDate } from "@/lib/dateUtils";
 import { checkAttachmentGate } from "@/lib/stageGates";
 import { ArrowUp, ArrowDown, RotateCcw, ChevronRight, Download, X } from "lucide-react";
+import { AvatarWithProfile } from "./AvatarWithProfile";
+import { useToast } from "./Toast";
 
 /**
  * Sortable, dense, brand-styled table view of orders. Used on each stage
@@ -400,14 +402,51 @@ function PaymentPill({ status }: { status?: string | null }) {
 
 function useRowActions(order: Order) {
   const { data: session } = useSession();
-  const { claimOrder, moveStage, archiveOrder, unarchiveOrder } = useStore();
+  const { claimOrder: rawClaimOrder, moveStage, archiveOrder, unarchiveOrder, team } = useStore();
+  const { showToast } = useToast();
   const currentUserName = session?.user?.name ?? null;
   const [busy, setBusy] = useState(false);
   async function withBusy(fn: () => Promise<unknown>) {
     setBusy(true);
     try { await fn(); } finally { setBusy(false); }
   }
+  // Wrap claimOrder so any conflict from the server (already_claimed,
+  // not_owner, network_error) surfaces as a toast. The store already
+  // reconciles local state to the server\'s view, so the UI updates
+  // automatically; the toast is just for user awareness.
+  async function claimOrder(id: string, claimedBy: string | null) {
+    const result = await rawClaimOrder(id, claimedBy);
+    if (!result.ok) {
+      if (result.reason === "already_claimed" && result.claimedBy) {
+        const claimer = team.find((m) => m.name === result.claimedBy || m.username === result.claimedBy);
+        const displayName = claimer?.name ?? result.claimedBy;
+        showToast(`Already claimed by ${displayName}`, { kind: "warn" });
+      } else if (result.reason === "not_owner") {
+        showToast("You can\'t release someone else\'s claim", { kind: "warn" });
+      } else if (result.reason === "network_error") {
+        showToast("Network error — claim not saved", { kind: "error" });
+      } else {
+        showToast("Claim failed", { kind: "error" });
+      }
+    }
+    return result;
+  }
   return { session, currentUserName, claimOrder, moveStage, archiveOrder, unarchiveOrder, busy, withBusy, orderId: order.id };
+}
+
+function ClaimedByPill({ claimedBy }: { claimedBy: string }) {
+  const { team } = useStore();
+  const member = team.find((m) => m.name === claimedBy || m.username === claimedBy);
+  if (member) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-[10px] text-cream/55">
+        <AvatarWithProfile member={member} size="xs" />
+        <span>Claimed by {member.name}</span>
+      </span>
+    );
+  }
+  // Fallback when the team row isn\'t loaded yet (or member deleted)
+  return <span className="text-[10px] text-cream/55">Claimed by {claimedBy}</span>;
 }
 
 function StatusLabel({ order, stage }: { order: Order; stage: string }) {
@@ -418,7 +457,7 @@ function StatusLabel({ order, stage }: { order: Order; stage: string }) {
   if (stage === "New") {
     const claimedBy = order.claimed_by ?? null;
     if (claimedBy) {
-      return <span className="text-[10px] text-cream/55">Claimed by {claimedBy}</span>;
+      return <ClaimedByPill claimedBy={claimedBy} />;
     }
     return <span className="text-[10px] text-cream/55">Awaiting order entry</span>;
   }
@@ -463,7 +502,7 @@ function StatusLabel({ order, stage }: { order: Order; stage: string }) {
   if (stage === "New claim") {
     const claimedBy = order.claimed_by ?? null;
     if (claimedBy) {
-      return <span className="text-[10px] text-cream/55">Claimed by {claimedBy}</span>;
+      return <ClaimedByPill claimedBy={claimedBy} />;
     }
     return <span className="text-[10px] text-cream/55 italic">Awaiting review</span>;
   }

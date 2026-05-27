@@ -31,7 +31,19 @@ interface StoreCtx {
     action: { type: "move"; stage: Stage; adminPin?: string } | { type: "archive"; archived: boolean }
   ) => Promise<{ succeeded: number; failed: number; results: { id: string; ok: boolean; error?: string }[]; pinRequired?: boolean } | null>;
   updateOrderDetails: (id: string, details: { door_style?: string; color?: string; sku_items?: { sku: string; quantity: number; description?: string }[]; production_start_date?: string | null; production_est_finish_date?: string | null; scheduled_delivery_date?: string | null }) => Promise<void>;
-  claimOrder: (id: string, claimedBy: string | null) => Promise<boolean>;
+  /**
+   * Claim or release the order. When `claimedBy` is non-null, attempts
+   * to claim; when null, releases. Returns the actual server state so
+   * the caller can show appropriate UI on conflict:
+   *   ok=false, claimedBy="aaron"  → Aaron already owns it; show toast
+   *   ok=false, claimedBy=null     → generic failure
+   *   ok=true,  claimedBy="me"     → you got it
+   *   ok=true,  claimedBy=null     → release succeeded
+   */
+  claimOrder: (
+    id: string,
+    claimedBy: string | null,
+  ) => Promise<{ ok: boolean; claimedBy: string | null; reason?: string }>;
   addTeamMember: (m: Omit<TeamMember, "id">) => Promise<void>;
   updateTeamMember: (id: string, updates: Partial<TeamMember> & { password?: string }) => Promise<void>;
   deactivateTeamMember: (id: string) => Promise<void>;
@@ -420,20 +432,48 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const claimOrder = useCallback(async (id: string, claimedBy: string | null) => {
-    // Snapshot previous value so we can revert on failure
-    const prev = [...orders, ...warranties].find(o => o.id === id)?.claimed_by ?? null;
-    const update = (list: Order[]) => list.map(o => o.id === id ? { ...o, claimed_by: claimedBy } : o);
-    setOrders(prev2 => update(prev2));
-    setWarranties(prev2 => update(prev2));
-    const res = await apiCall(`/api/orders/${id}`, "PATCH", { claimed_by: claimedBy });
-    if (!res) {
-      // API failed — revert optimistic update
-      const revert = (list: Order[]) => list.map(o => o.id === id ? { ...o, claimed_by: prev } : o);
+    // Optimistically update local state, then call the dedicated
+    // /api/orders/[id]/claim endpoint which delegates to the atomic
+    // SQL function. If the server reports a different state than we
+    // assumed (e.g. someone else already had it), reconcile.
+    const prevList = [...orders, ...warranties];
+    const prev = prevList.find(o => o.id === id)?.claimed_by ?? null;
+
+    const optimistic = (list: Order[]) =>
+      list.map(o => (o.id === id ? { ...o, claimed_by: claimedBy } : o));
+    setOrders(prev2 => optimistic(prev2));
+    setWarranties(prev2 => optimistic(prev2));
+
+    try {
+      const res = await fetch(`/api/orders/${id}/claim`, {
+        method: claimedBy ? "POST" : "DELETE",
+        headers: { "Content-Type": "application/json" },
+      });
+      const body = await res.json().catch(() => ({}));
+
+      // Reconcile local state with whatever the server actually says
+      const serverClaimedBy = (body?.claimed_by ?? null) as string | null;
+      const reconcile = (list: Order[]) =>
+        list.map(o => (o.id === id ? { ...o, claimed_by: serverClaimedBy } : o));
+      setOrders(prev2 => reconcile(prev2));
+      setWarranties(prev2 => reconcile(prev2));
+
+      if (!res.ok || body?.ok === false) {
+        return {
+          ok: false,
+          claimedBy: serverClaimedBy,
+          reason: (body?.reason as string | undefined) ?? "request_failed",
+        };
+      }
+      return { ok: true, claimedBy: serverClaimedBy };
+    } catch (err) {
+      // Network failure — revert to whatever was there before
+      const revert = (list: Order[]) =>
+        list.map(o => (o.id === id ? { ...o, claimed_by: prev } : o));
       setOrders(prev2 => revert(prev2));
       setWarranties(prev2 => revert(prev2));
-      return false;
+      return { ok: false, claimedBy: prev, reason: "network_error" };
     }
-    return true;
   }, [orders, warranties]);
 
   const addTeamMember = useCallback(async (m: Omit<TeamMember, "id">) => {
