@@ -51,7 +51,7 @@ export async function POST(
   if (limited) return limited;
 
   const { id } = await params;
-  const user = auth.session.user.username;
+  const user = auth.session.user.id;  // team_members.id (immutable)
 
   const { data, error } = await supabase.rpc("claim_order", {
     p_order_id: id,
@@ -89,7 +89,7 @@ export async function DELETE(
   if (limited) return limited;
 
   const { id } = await params;
-  const user = auth.session.user.username;
+  const user = auth.session.user.id;  // team_members.id (immutable)
 
   const { data, error } = await supabase.rpc("release_order", {
     p_order_id: id,

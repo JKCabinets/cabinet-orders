@@ -207,7 +207,7 @@ export async function PATCH(
   if (body.stage && body.stage !== "New") updates.claimed_by = null;
   // entered_by stores the immutable username (not display name) so that
   // when users rename, the historical record still resolves correctly.
-  if (body.stage === "Entered")    updates.entered_by = auth.session.user.username;
+  if (body.stage === "Entered")    updates.entered_by = auth.session.user.id;  // team_members.id
   if (body.notes !== undefined)    updates.notes      = cleanInput(body.notes as string);
   if (body.internal_notes !== undefined) updates.internal_notes = cleanInput(body.internal_notes as string);
   if (body.archived !== undefined) updates.archived   = body.archived;
@@ -298,15 +298,15 @@ export async function PATCH(
   else if (body.delivery_date !== undefined || body.scheduled_delivery_date !== undefined)
                                            activityText = `Delivery scheduled by ${auth.session.user.name}`;
   else if ("claimed_by" in body) {
-    // body.claimed_by is now a username (immutable). Resolve to display
-    // name for human-readable audit trail. Falls back to the raw value
-    // if the user has been deleted.
+    // body.claimed_by is now a team_members.id. Resolve to display
+    // name for the audit log; fall back to the raw id if the team
+    // member has been deleted (unlikely but defensive).
     let claimDisplay = body.claimed_by ? String(body.claimed_by) : "";
     if (body.claimed_by) {
       const { data: tm } = await supabase
         .from("team_members")
         .select("name")
-        .eq("username", body.claimed_by)
+        .eq("id", body.claimed_by)
         .maybeSingle();
       if (tm?.name) claimDisplay = tm.name;
     }

@@ -164,8 +164,16 @@ export const authOptions: NextAuthOptions = {
 
           await logAuditEvent("login_success", user.username, ip);
 
+          // We pass three identity fields downstream:
+          //   id        – team_members.id (immutable surrogate key, used
+          //               for claimed_by / entered_by ownership writes)
+          //   username  – the login string (changeable by admins)
+          //   name      – the display name (changeable by user)
+          // Storing all three in the session lets every callsite pick
+          // the right one for its purpose without ambiguity.
           return {
-            id: user.username,
+            id: user.id,
+            username: user.username,
             name: user.name,
             email: `${user.username}@jkcabinets.com`,
             role: user.role,
@@ -185,9 +193,15 @@ export const authOptions: NextAuthOptions = {
       // into the token, plus a timestamp so we know how stale our last
       // verification is.
       if (user) {
-        const u = user as { role?: string; sessionVersion?: number };
+        const u = user as { role?: string; sessionVersion?: number; username?: string };
         token.role = (u.role ?? "member") as "admin" | "member";
-        token.username = user.id;
+        // Two identities flow through the token:
+        //   token.sub      — NextAuth's primary subject. We set this
+        //                    to user.id (team_members.id) so it survives
+        //                    username changes.
+        //   token.username — the login string (may change over time).
+        token.sub = user.id;
+        token.username = u.username ?? user.id;
         token.sessionVersion = u.sessionVersion ?? 1;
         token.lastVerifiedAt = Date.now();
         token.invalidated = false;
@@ -272,6 +286,11 @@ export const authOptions: NextAuthOptions = {
         return { ...session, user: undefined as unknown as typeof session.user };
       }
       if (session.user) {
+        // session.user.id is the team_members.id (immutable). All
+        // ownership writes (claimed_by, entered_by) reference this.
+        // session.user.username is the login string (may change).
+        // session.user.name is the display name (may change).
+        session.user.id = token.sub as string;
         session.user.role = token.role;
         session.user.username = token.username;
       }

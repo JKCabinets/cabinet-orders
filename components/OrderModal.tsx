@@ -81,7 +81,8 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
       const result = await rawClaimOrder(liveOrder.id, target);
       if (!result.ok) {
         if (result.reason === "already_claimed" && result.claimedBy) {
-          const claimer = team.find((m) => m.name === result.claimedBy || m.username === result.claimedBy);
+          // result.claimedBy is now a team_members.id
+          const claimer = team.find((m) => m.id === result.claimedBy);
           showToast(`Already claimed by ${claimer?.name ?? result.claimedBy}`, { kind: "warn" });
         } else if (result.reason === "not_owner") {
           showToast("You can\'t release someone else\'s claim", { kind: "warn" });
@@ -96,12 +97,12 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
     }
   }
   const { data: session } = useSession();
-  // currentUsername is the IMMUTABLE identifier used for claim/release
-  // comparisons and writes to claimed_by / entered_by.
+  // currentUserId is the team_members.id — the IMMUTABLE identifier used
+  // for claim/release comparisons and writes to claimed_by / entered_by.
   // currentUserDisplayName is for human-facing strings only (damage
   // reports, audit text the user sees).
-  const sessUser = session?.user as { name?: string; username?: string } | undefined;
-  const currentUsername = sessUser?.username ?? undefined;
+  const sessUser = session?.user as { id?: string; name?: string; username?: string } | undefined;
+  const currentUserId = sessUser?.id ?? undefined;
   const currentUserDisplayName = sessUser?.name ?? undefined;
   const [notes, setNotes] = useState(order.notes);
   const [notesChanged, setNotesChanged] = useState(false);
@@ -208,7 +209,7 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
     // Send the PIN to the server. For backwards moves the API requires it
     // and rejects with 403 admin_pin_required if it's missing or wrong.
     // Forward moves don't need a PIN but accept one harmlessly.
-    const result = await moveStage(liveOrder.id, stage, currentUsername, providedPin);
+    const result = await moveStage(liveOrder.id, stage, currentUserId, providedPin);
     if (!result.ok && result.pinRequired) {
       // Server rejected the PIN — keep the dialog open and let the user
       // try again. The PIN dialog is the canonical place to surface this
@@ -572,10 +573,10 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
                   const ownerName = isNewStage
                     ? liveOrder.claimed_by ?? null
                     : liveOrder.entered_by ?? liveOrder.claimed_by ?? null;
-                  // ownerName is now a username; look up by username, render m.name
-                  const ownerMember = ownerName ? team.find(m => m.username === ownerName) : null;
+                  // ownerName is now a team_members.id; look up by id, render m.name
+                  const ownerMember = ownerName ? team.find(m => m.id === ownerName) : null;
                   const claimedBy = liveOrder.claimed_by ?? null;
-                  const isClaimedByMe = !!currentUsername && claimedBy === currentUsername;
+                  const isClaimedByMe = !!currentUserId && claimedBy === currentUserId;
                   const isClaimedByOther = !!claimedBy && !isClaimedByMe;
                   // Claim/release affordance only on New stages — once
                   // entered, ownership is tracked by entered_by which the
@@ -602,8 +603,8 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
                           ) : (
                             <button
                               type="button"
-                              onClick={() => handleClaim(currentUsername ?? null)}
-                              disabled={claimBusy || !currentUsername}
+                              onClick={() => handleClaim(currentUserId ?? null)}
+                              disabled={claimBusy || !currentUserId}
                               className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30 transition-all disabled:opacity-40"
                             >
                               {claimBusy ? "..." : "Claim"}

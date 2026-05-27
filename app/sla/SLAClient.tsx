@@ -36,11 +36,11 @@ const NEXT_STAGE: Partial<Record<OrderStage, OrderStage>> = {
 export function SLAClient() {
   const { orders, team, claimOrder, moveStage, archiveOrder } = useStore();
   const { data: session } = useSession();
-  // See OrderTable for explanation — we standardize on username for
-  // claim/entered_by comparisons. claimed_by stores the immutable
-  // username; render the display name via team lookup.
-  const sessUser = session?.user as { name?: string; username?: string } | undefined;
-  const currentUsername = sessUser?.username ?? null;
+  // See OrderTable for the full story. We standardize on team_members.id
+  // (post-v18 migration) for ALL ownership comparisons — immutable,
+  // survives renames. Render display name via team.find(m => m.id === ...).
+  const sessUser = session?.user as { id?: string; name?: string; username?: string } | undefined;
+  const currentUserId = sessUser?.id ?? null;
 
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
 
@@ -187,10 +187,10 @@ export function SLAClient() {
                   stage={stage}
                   orders={orders}
                   team={team}
-                  currentUsername={currentUsername}
+                  currentUserId={currentUserId}
                   onOpenOrder={setSelectedOrder}
-                  onClaim={(id) => claimOrder(id, currentUsername)}
-                  onAdvance={(id, target) => moveStage(id, target as Stage, currentUsername ?? undefined)}
+                  onClaim={(id) => claimOrder(id, currentUserId)}
+                  onAdvance={(id, target) => moveStage(id, target as Stage, currentUserId ?? undefined)}
                   onArchive={(id) => archiveOrder(id)}
                 />
               );
@@ -214,13 +214,13 @@ export function SLAClient() {
 /* ─── Overdue stage block ───────────────────────────────────────────── */
 
 function OverdueStageBlock({
-  stage, orders, team, currentUsername, onOpenOrder,
+  stage, orders, team, currentUserId, onOpenOrder,
   onClaim, onAdvance, onArchive,
 }: {
   stage: OrderStage;
   orders: Order[];
-  team: Array<{ name: string; username: string; initials: string; avatarColor: keyof typeof AVATAR_COLOR_STYLES }>;
-  currentUsername: string | null;
+  team: Array<{ id: string; name: string; username: string; initials: string; avatarColor: keyof typeof AVATAR_COLOR_STYLES }>;
+  currentUserId: string | null;
   onOpenOrder: (o: Order) => void;
   onClaim: (id: string) => Promise<unknown>;
   onAdvance: (id: string, target: OrderStage) => Promise<unknown>;
@@ -248,7 +248,7 @@ function OverdueStageBlock({
             key={o.id}
             order={o}
             team={team}
-            currentUsername={currentUsername}
+            currentUserId={currentUserId}
             color={color}
             nextStage={next}
             onOpen={() => onOpenOrder(o)}
@@ -263,12 +263,12 @@ function OverdueStageBlock({
 }
 
 function OverdueRow({
-  order, team, currentUsername, color, nextStage,
+  order, team, currentUserId, color, nextStage,
   onOpen, onClaim, onAdvance, onArchive,
 }: {
   order: Order;
-  team: Array<{ name: string; username: string; initials: string; avatarColor: keyof typeof AVATAR_COLOR_STYLES }>;
-  currentUsername: string | null;
+  team: Array<{ id: string; name: string; username: string; initials: string; avatarColor: keyof typeof AVATAR_COLOR_STYLES }>;
+  currentUserId: string | null;
   color: string;
   nextStage?: OrderStage;
   onOpen: () => void;
@@ -284,8 +284,8 @@ function OverdueRow({
   // Stage-aware owner (matches the rest of the app)
   const isNew = order.stage === "New";
   const ownerName = isNew ? order.claimed_by ?? null : order.entered_by ?? order.claimed_by ?? null;
-  // ownerName is now a username (post-v17 normalization); lookup by username.
-  const ownerMember = ownerName ? team.find(m => m.username === ownerName) : null;
+  // ownerName is now a team_members.id (post-v18 migration); lookup by id.
+  const ownerMember = ownerName ? team.find(m => m.id === ownerName) : null;
   const ownerInitials = ownerMember?.initials ?? (ownerName ? ownerName.slice(0, 2).toUpperCase() : "");
   const ownerStyle = ownerMember
     ? AVATAR_COLOR_STYLES[ownerMember.avatarColor]
@@ -363,7 +363,7 @@ function OverdueRow({
           </button>
         )}
         {/* New + claimed by me → Mark Entered (the attachment gate still applies; modal handles it) */}
-        {isNew && order.claimed_by === currentUsername && onAdvance && (
+        {isNew && order.claimed_by === currentUserId && onAdvance && (
           <button
             onClick={() => withBusy(onAdvance)}
             disabled={busy}

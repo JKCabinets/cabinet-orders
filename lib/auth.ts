@@ -5,9 +5,18 @@ import { supabase } from "@/lib/supabase";
 
 export type AuthSession = {
   user: {
+    /**
+     * The team_members.id (immutable surrogate key). Use this for any
+     * ownership write (claimed_by, entered_by) or permission check
+     * that needs to survive username / display-name changes.
+     */
+    id: string;
     name?: string | null;
     email?: string | null;
     role: "admin" | "member";
+    /**
+     * Login string. May be changed by admins.
+     */
     username: string;
   };
 };

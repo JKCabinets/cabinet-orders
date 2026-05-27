@@ -4,10 +4,20 @@ import "next-auth/jwt";
 declare module "next-auth" {
   interface Session {
     user: {
+      /**
+       * The team_members.id (immutable surrogate key). Use this for
+       * ownership writes (claimed_by, entered_by) and any permission
+       * comparison that must survive username/display-name changes.
+       */
+      id: string;
       name?: string | null;
       email?: string | null;
       image?: string | null;
       role: "admin" | "member";
+      /**
+       * The login string. May be changed by admins. Use this for
+       * audit text and identity verification at login time only.
+       */
       username: string;
     };
   }
