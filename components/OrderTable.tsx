@@ -224,7 +224,9 @@ function OrderRow({
   const ownerName = isNewStage
     ? order.claimed_by ?? null
     : order.entered_by ?? order.claimed_by ?? null;
-  const ownerMember = ownerName ? team.find(m => m.name === ownerName) : null;
+  // ownerName is now a username (post-v17 normalization). Look up by
+  // username; m.name is shown to the user.
+  const ownerMember = ownerName ? team.find(m => m.username === ownerName) : null;
   const ownerInitials = ownerMember?.initials ?? (ownerName ? ownerName.slice(0, 2).toUpperCase() : "");
   const ownerStyle = ownerMember
     ? AVATAR_COLOR_STYLES[ownerMember.avatarColor]
@@ -297,14 +299,20 @@ function OrderRow({
         <PaymentPill status={order.payment_status} />
       </td>
       <td className="px-3 py-2.5">
-        {ownerName ? (
-          <div className="flex items-center gap-1.5" title={`Owned by ${ownerDisplayName}`}>
-            <div style={{ ...ownerStyle, borderWidth: 1, borderStyle: "solid" }}
-              className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold flex-shrink-0">
-              {ownerInitials}
-            </div>
-            <span className="text-[10px] text-cream/55 truncate hidden xl:inline">{ownerDisplayName}</span>
-          </div>
+        {ownerMember ? (
+          // Avatar only (no name) — the hover card and click modal on
+          // AvatarWithProfile provide name/role/status on demand.
+          <AvatarWithProfile member={ownerMember} size="sm" />
+        ) : ownerName ? (
+          // Fallback when the team_members row hasn\'t loaded yet (or
+          // the user was deleted). Show the raw username so we don\'t
+          // hide ownership info entirely.
+          <span
+            title={`Owned by ${ownerName}`}
+            className="inline-flex items-center justify-center w-7 h-7 rounded-full text-[10px] font-medium border border-[rgba(86,100,72,0.28)] bg-[rgba(86,100,72,0.20)] text-[#8fbe70]"
+          >
+            {ownerName.slice(0, 2).toUpperCase()}
+          </span>
         ) : (
           <span className="text-[10px] text-cream/30 italic">unclaimed</span>
         )}
@@ -404,7 +412,12 @@ function useRowActions(order: Order) {
   const { data: session } = useSession();
   const { claimOrder: rawClaimOrder, moveStage, archiveOrder, unarchiveOrder, team } = useStore();
   const { showToast } = useToast();
-  const currentUserName = session?.user?.name ?? null;
+  // We use session.user.username (the immutable username) here, NOT
+  // session.user.name (the display name). claimed_by / entered_by are
+  // normalized to username in v17_normalize_claim_ownership.sql so a
+  // user renaming themselves doesn\'t orphan historical claims.
+  const sessUser = session?.user as { name?: string; username?: string } | undefined;
+  const currentUsername = sessUser?.username ?? null;
   const [busy, setBusy] = useState(false);
   async function withBusy(fn: () => Promise<unknown>) {
     setBusy(true);
@@ -431,7 +444,7 @@ function useRowActions(order: Order) {
     }
     return result;
   }
-  return { session, currentUserName, claimOrder, moveStage, archiveOrder, unarchiveOrder, busy, withBusy, orderId: order.id };
+  return { session, currentUsername, claimOrder, moveStage, archiveOrder, unarchiveOrder, busy, withBusy, orderId: order.id };
 }
 
 function ClaimedByPill({ claimedBy }: { claimedBy: string }) {
@@ -528,7 +541,7 @@ function UpdateStatusActions({
   order: Order; stage: string; mobile?: boolean;
   onOpenModal?: (o: Order, reason?: "needs-attachment") => void;
 }) {
-  const { currentUserName, claimOrder, moveStage, archiveOrder, busy, withBusy } = useRowActions(order);
+  const { currentUsername, claimOrder, moveStage, archiveOrder, busy, withBusy } = useRowActions(order);
 
   async function markEntered() {
     const result = await (async () => {
@@ -537,7 +550,7 @@ function UpdateStatusActions({
         onOpenModal?.(order, "needs-attachment");
         return;
       }
-      await moveStage(order.id, "Entered", currentUserName ?? undefined);
+      await moveStage(order.id, "Entered", currentUsername ?? undefined);
     })();
     return result;
   }
@@ -545,7 +558,7 @@ function UpdateStatusActions({
   // ── New ─────────────────────────────────────────────────────────────
   if (stage === "New") {
     const claimedBy = order.claimed_by ?? null;
-    const isClaimedByMe = !!currentUserName && claimedBy === currentUserName;
+    const isClaimedByMe = !!currentUsername && claimedBy === currentUsername;
     const isClaimedByOther = !!claimedBy && !isClaimedByMe;
 
     if (isClaimedByOther) {
@@ -577,8 +590,8 @@ function UpdateStatusActions({
     }
     return (
       <button
-        onClick={() => withBusy(() => claimOrder(order.id, currentUserName))}
-        disabled={busy || !currentUserName}
+        onClick={() => withBusy(() => claimOrder(order.id, currentUsername))}
+        disabled={busy || !currentUsername}
         className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30 disabled:opacity-40"
       >
         {busy ? "..." : "Claim"}
@@ -693,7 +706,7 @@ function UpdateStatusActions({
   // → Shipped → Resolved. No production/delivery date gates apply.
   if (stage === "New claim") {
     const claimedBy = order.claimed_by ?? null;
-    const isClaimedByMe = !!currentUserName && claimedBy === currentUserName;
+    const isClaimedByMe = !!currentUsername && claimedBy === currentUsername;
     const isClaimedByOther = !!claimedBy && !isClaimedByMe;
     if (isClaimedByOther) {
       return <span className="text-[10px] text-cream/30 italic">—</span>;
@@ -702,7 +715,7 @@ function UpdateStatusActions({
       return (
         <div className="flex items-center gap-1.5">
           <button
-            onClick={() => withBusy(() => moveStage(order.id, "In review" as Stage, currentUserName ?? undefined))}
+            onClick={() => withBusy(() => moveStage(order.id, "In review" as Stage, currentUsername ?? undefined))}
             disabled={busy}
             className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30"
           >
@@ -722,8 +735,8 @@ function UpdateStatusActions({
     }
     return (
       <button
-        onClick={() => withBusy(() => claimOrder(order.id, currentUserName))}
-        disabled={busy || !currentUserName}
+        onClick={() => withBusy(() => claimOrder(order.id, currentUsername))}
+        disabled={busy || !currentUsername}
         className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30 disabled:opacity-40"
       >
         {busy ? "..." : "Claim"}

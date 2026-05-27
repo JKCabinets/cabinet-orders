@@ -36,7 +36,11 @@ const NEXT_STAGE: Partial<Record<OrderStage, OrderStage>> = {
 export function SLAClient() {
   const { orders, team, claimOrder, moveStage, archiveOrder } = useStore();
   const { data: session } = useSession();
-  const currentUserName = session?.user?.name ?? null;
+  // See OrderTable for explanation — we standardize on username for
+  // claim/entered_by comparisons. claimed_by stores the immutable
+  // username; render the display name via team lookup.
+  const sessUser = session?.user as { name?: string; username?: string } | undefined;
+  const currentUsername = sessUser?.username ?? null;
 
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
 
@@ -183,10 +187,10 @@ export function SLAClient() {
                   stage={stage}
                   orders={orders}
                   team={team}
-                  currentUserName={currentUserName}
+                  currentUsername={currentUsername}
                   onOpenOrder={setSelectedOrder}
-                  onClaim={(id) => claimOrder(id, currentUserName)}
-                  onAdvance={(id, target) => moveStage(id, target as Stage, currentUserName ?? undefined)}
+                  onClaim={(id) => claimOrder(id, currentUsername)}
+                  onAdvance={(id, target) => moveStage(id, target as Stage, currentUsername ?? undefined)}
                   onArchive={(id) => archiveOrder(id)}
                 />
               );
@@ -210,13 +214,13 @@ export function SLAClient() {
 /* ─── Overdue stage block ───────────────────────────────────────────── */
 
 function OverdueStageBlock({
-  stage, orders, team, currentUserName, onOpenOrder,
+  stage, orders, team, currentUsername, onOpenOrder,
   onClaim, onAdvance, onArchive,
 }: {
   stage: OrderStage;
   orders: Order[];
-  team: Array<{ name: string; initials: string; avatarColor: keyof typeof AVATAR_COLOR_STYLES }>;
-  currentUserName: string | null;
+  team: Array<{ name: string; username: string; initials: string; avatarColor: keyof typeof AVATAR_COLOR_STYLES }>;
+  currentUsername: string | null;
   onOpenOrder: (o: Order) => void;
   onClaim: (id: string) => Promise<unknown>;
   onAdvance: (id: string, target: OrderStage) => Promise<unknown>;
@@ -244,7 +248,7 @@ function OverdueStageBlock({
             key={o.id}
             order={o}
             team={team}
-            currentUserName={currentUserName}
+            currentUsername={currentUsername}
             color={color}
             nextStage={next}
             onOpen={() => onOpenOrder(o)}
@@ -259,12 +263,12 @@ function OverdueStageBlock({
 }
 
 function OverdueRow({
-  order, team, currentUserName, color, nextStage,
+  order, team, currentUsername, color, nextStage,
   onOpen, onClaim, onAdvance, onArchive,
 }: {
   order: Order;
-  team: Array<{ name: string; initials: string; avatarColor: keyof typeof AVATAR_COLOR_STYLES }>;
-  currentUserName: string | null;
+  team: Array<{ name: string; username: string; initials: string; avatarColor: keyof typeof AVATAR_COLOR_STYLES }>;
+  currentUsername: string | null;
   color: string;
   nextStage?: OrderStage;
   onOpen: () => void;
@@ -280,7 +284,8 @@ function OverdueRow({
   // Stage-aware owner (matches the rest of the app)
   const isNew = order.stage === "New";
   const ownerName = isNew ? order.claimed_by ?? null : order.entered_by ?? order.claimed_by ?? null;
-  const ownerMember = ownerName ? team.find(m => m.name === ownerName) : null;
+  // ownerName is now a username (post-v17 normalization); lookup by username.
+  const ownerMember = ownerName ? team.find(m => m.username === ownerName) : null;
   const ownerInitials = ownerMember?.initials ?? (ownerName ? ownerName.slice(0, 2).toUpperCase() : "");
   const ownerStyle = ownerMember
     ? AVATAR_COLOR_STYLES[ownerMember.avatarColor]
@@ -358,7 +363,7 @@ function OverdueRow({
           </button>
         )}
         {/* New + claimed by me → Mark Entered (the attachment gate still applies; modal handles it) */}
-        {isNew && order.claimed_by === currentUserName && onAdvance && (
+        {isNew && order.claimed_by === currentUsername && onAdvance && (
           <button
             onClick={() => withBusy(onAdvance)}
             disabled={busy}
