@@ -73,6 +73,28 @@ export async function POST(
   const key = `${id}/${Date.now()}.${ext}`;
   const bytes = new Uint8Array(await file.arrayBuffer());
 
+  // Clean up any previous avatar(s) for this user before uploading the new
+  // one. Files are stored under the per-user folder `${id}/<timestamp>.<ext>`,
+  // so each replace would otherwise orphan the prior object and the bucket
+  // would grow without bound. Best-effort — a cleanup failure shouldn't
+  // block the new upload, but we log it so a persistent leak is visible.
+  try {
+    const { data: existing } = await supabase.storage
+      .from("team-avatars")
+      .list(id);
+    if (existing && existing.length > 0) {
+      const paths = existing.map((f) => `${id}/${f.name}`);
+      const { error: removeError } = await supabase.storage
+        .from("team-avatars")
+        .remove(paths);
+      if (removeError) {
+        console.warn(`[avatar] failed to remove old files for ${id}:`, removeError.message);
+      }
+    }
+  } catch (err) {
+    console.warn(`[avatar] cleanup threw for ${id}:`, err);
+  }
+
   const { error: uploadError } = await supabase.storage
     .from("team-avatars")
     .upload(key, bytes, {

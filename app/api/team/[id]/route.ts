@@ -140,6 +140,31 @@ export async function PATCH(
   const { error } = await supabase.from("team_members").update(updates).eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  // ── Avatar storage cleanup on photo removal ──────────────────────────
+  // When the user explicitly removes their photo (photoUrl sent and
+  // resolved to null), the DB column is nulled above — but the stored
+  // file would otherwise linger in the bucket forever. Delete the user's
+  // avatar folder contents. Gated on BOTH conditions so this only fires on
+  // an actual remove, never on an unrelated profile edit. Best-effort.
+  if (body.photoUrl !== undefined && updates.photo_url === null) {
+    try {
+      const { data: existing } = await supabase.storage
+        .from("team-avatars")
+        .list(id);
+      if (existing && existing.length > 0) {
+        const paths = existing.map((f) => `${id}/${f.name}`);
+        const { error: removeError } = await supabase.storage
+          .from("team-avatars")
+          .remove(paths);
+        if (removeError) {
+          console.warn(`[avatar] failed to remove files on photo-clear for ${id}:`, removeError.message);
+        }
+      }
+    } catch (err) {
+      console.warn(`[avatar] cleanup threw on photo-clear for ${id}:`, err);
+    }
+  }
+
   // ── Audit log privilege-affecting changes ────────────────────────────
   // Done AFTER the UPDATE succeeds so we don't log changes that didn't
   // actually persist. Each event is best-effort — a failed audit insert
@@ -209,6 +234,19 @@ export async function DELETE(
     // explicit bump is needed (there's nothing to bump on).
     const { error } = await supabase.from("team_members").delete().eq("id", id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    // The row is gone for good — remove the user's avatar files too so
+    // they don't linger in the bucket as orphans. Best-effort.
+    try {
+      const { data: existing } = await supabase.storage
+        .from("team-avatars")
+        .list(id);
+      if (existing && existing.length > 0) {
+        const paths = existing.map((f) => `${id}/${f.name}`);
+        await supabase.storage.from("team-avatars").remove(paths);
+      }
+    } catch (err) {
+      console.warn(`[avatar] cleanup threw on hard-delete for ${id}:`, err);
+    }
   } else {
     // Soft delete: bump session_version so any outstanding JWTs are
     // invalidated within the verification window, even if some part of
