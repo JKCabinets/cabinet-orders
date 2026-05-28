@@ -1,7 +1,6 @@
 import CredentialsProvider from "next-auth/providers/credentials";
 import { NextAuthOptions } from "next-auth";
 import bcrypt from "bcryptjs";
-import crypto from "crypto";
 
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_MINUTES = 15;
@@ -36,12 +35,6 @@ async function logAuditEvent(event: string, username: string, ip?: string, detai
  * migration path so failed comparisons don't leak timing info. Returns false
  * if the strings differ in length.
  */
-function timingSafeStringEqual(a: string, b: string): boolean {
-  const ab = Buffer.from(a, "utf8");
-  const bb = Buffer.from(b, "utf8");
-  if (ab.length !== bb.length) return false;
-  return crypto.timingSafeEqual(ab, bb);
-}
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -86,17 +79,8 @@ export const authOptions: NextAuthOptions = {
           // constant-time compare, then immediately upgrade to a bcrypt hash
           // and CLEAR the plain-text column so it can never be used again.
           let valid = false;
-          let upgradedFromPlaintext = false;
-
           if (user.password_hash) {
             valid = await bcrypt.compare(credentials.password, user.password_hash);
-          } else if (user.password) {
-            // Legacy migration path — constant-time compare, single use.
-            valid = timingSafeStringEqual(credentials.password, user.password);
-            upgradedFromPlaintext = valid;
-          } else {
-            // No credentials on file at all — treat as invalid.
-            valid = false;
           }
 
           if (!valid) {
@@ -131,13 +115,6 @@ export const authOptions: NextAuthOptions = {
             last_login: new Date().toISOString(),
           };
 
-          if (upgradedFromPlaintext) {
-            successUpdates.password_hash = await bcrypt.hash(credentials.password, BCRYPT_COST);
-            successUpdates.password = null; // wipe plaintext immediately
-            await logAuditEvent("password_upgraded", user.username, ip, {
-              note: "Legacy plaintext password replaced with bcrypt hash on login",
-            });
-          }
 
           await supabase.from("team_members").update(successUpdates).eq("id", user.id);
 

@@ -75,7 +75,6 @@ export async function POST(req: NextRequest) {
     // Never store the plaintext — only the bcrypt hash. Force-reset is enforced
     // by the `force_password_reset` flag if your schema supports it; otherwise
     // the temp password should be communicated out of band and rotated soon.
-    password:      null,
     password_hash: passwordHash,
   };
 
