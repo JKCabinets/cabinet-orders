@@ -1,25 +1,37 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import { useRouter, useParams } from "next/navigation";
+import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { useEffect, useMemo } from "react";
 import { useStore } from "@/lib/store";
 import { AppShell, PageHeader } from "@/components/AppShell";
 import { ProfileForm } from "@/components/ProfileForm";
-import { Avatar } from "@/components/Avatar";
-import { User as UserIcon, Lock } from "lucide-react";
+import { ProfileView } from "@/components/ProfileView";
+import { Pencil, X, Lock } from "lucide-react";
 
+/**
+ * /profile/[username]
+ *
+ * Two modes, switched by the ?edit=1 query param:
+ *   - VIEW (default): read-only ProfileView. Any signed-in user can see
+ *     any team member\'s profile here.
+ *   - EDIT (?edit=1): the fillable ProfileForm. Only reachable by the
+ *     profile owner or an admin; if a non-permitted user hits ?edit=1
+ *     directly we silently fall back to view mode.
+ */
 export default function ProfilePage() {
   const router = useRouter();
   const params = useParams<{ username: string }>();
+  const searchParams = useSearchParams();
   const targetUsername = params?.username;
+  const wantsEdit = searchParams.get("edit") === "1";
+
   const { data: session, status } = useSession();
   const { team, loading, updateTeamMemberProfile, uploadAvatar, onlineUsers } = useStore();
 
   const sessionUser = session?.user as
-    | { name?: string; role?: string; username?: string }
+    | { id?: string; name?: string; role?: string; username?: string }
     | undefined;
-  const sessionUsername = sessionUser?.username;
   const isAdmin = sessionUser?.role === "admin";
 
   const member = useMemo(
@@ -27,10 +39,15 @@ export default function ProfilePage() {
     [team, targetUsername],
   );
 
+  // Permission to edit: self (by immutable id) OR admin.
   const canEdit =
-    !!sessionUsername &&
+    !!sessionUser?.id &&
     !!member &&
-    (sessionUsername === member.username || isAdmin);
+    (sessionUser.id === member.id || isAdmin);
+
+  // Only actually render edit mode if they want it AND are allowed.
+  const editing = wantsEdit && canEdit;
+  const isSelf = !!member && sessionUser?.id === member.id;
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -64,53 +81,57 @@ export default function ProfilePage() {
 
   const isOnline = onlineUsers.includes(member.id);
 
+  // Navigation helpers for flipping modes (preserve the username path).
+  const goEdit = () => router.push(`/profile/${member.username}?edit=1`);
+  const goView = () => router.push(`/profile/${member.username}`);
+
   return (
     <AppShell>
       <PageHeader
         eyebrow="Profile"
         title={member.name}
         right={
-          <div className="flex items-center gap-2 text-[11px] text-cream/50">
-            {canEdit ? (
-              <span className="flex items-center gap-1.5">
-                <UserIcon className="w-3.5 h-3.5" />
-                {sessionUsername === member.username ? "Your profile" : "Admin editing"}
-              </span>
-            ) : (
-              <span className="flex items-center gap-1.5">
-                <Lock className="w-3.5 h-3.5" />
-                Read-only
-              </span>
-            )}
-          </div>
+          editing ? (
+            <button
+              onClick={goView}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[rgba(255,255,255,0.10)] text-[11px] text-cream/55 hover:text-cream hover:border-[rgba(86,100,72,0.55)] transition-all"
+            >
+              <X className="w-3.5 h-3.5" />
+              Cancel edit
+            </button>
+          ) : canEdit ? (
+            <button
+              onClick={goEdit}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[rgba(86,100,72,0.55)] bg-[rgba(255,255,255,0.04)] text-[11px] text-cream hover:bg-[rgba(255,255,255,0.06)] transition-all"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+              {isSelf ? "Edit my profile" : "Edit profile"}
+            </button>
+          ) : (
+            <span className="flex items-center gap-1.5 text-[11px] text-cream/50">
+              <Lock className="w-3.5 h-3.5" />
+              Read-only
+            </span>
+          )
         }
       />
 
       <div className="max-w-3xl mx-auto px-6 lg:px-8 pb-12">
-        <div className="flex items-center gap-4 mb-6 px-4 py-3 glass rounded-2xl">
-          <Avatar member={member} online={isOnline} size="lg" />
-          <div className="flex-1">
-            <p className="text-base text-[#e8e3da]">{member.name}</p>
-            <p className="text-[11px] text-[rgba(232,227,218,0.45)] mt-0.5">
-              @{member.username} · {member.role}
-              {member.roleTitle ? " · " + member.roleTitle : ""}
-            </p>
-          </div>
-          {member.oooStatus && (
-            <span className="text-[10px] uppercase tracking-wider px-2 py-1 rounded-md bg-amber-900/30 text-amber-300 border border-amber-700/40">
-              Out of office
-            </span>
-          )}
-        </div>
-
-        <ProfileForm
-          member={member}
-          canEdit={canEdit}
-          onUploadPhoto={(file) => uploadAvatar(member.id, file)}
-          onSave={async (fields) => {
-            await updateTeamMemberProfile(member.id, fields);
-          }}
-        />
+        {editing ? (
+          <ProfileForm
+            member={member}
+            canEdit
+            onUploadPhoto={(file) => uploadAvatar(member.id, file)}
+            onSave={async (fields) => {
+              await updateTeamMemberProfile(member.id, fields);
+              // Flip back to the read-only view so the save feels complete.
+              goView();
+            }}
+            onCancel={goView}
+          />
+        ) : (
+          <ProfileView member={member} online={isOnline} />
+        )}
       </div>
     </AppShell>
   );

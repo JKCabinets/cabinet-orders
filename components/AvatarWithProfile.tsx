@@ -17,12 +17,11 @@
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import { useSession } from "next-auth/react";
 import { TeamMember } from "@/lib/data";
 import { Avatar } from "./Avatar";
 import { ProfileSummary } from "./ProfileSummary";
 import { useStore } from "@/lib/store";
-import { Pencil, X } from "lucide-react";
+import { ExternalLink, X } from "lucide-react";
 
 const HOVER_DELAY_MS = 500;
 
@@ -36,13 +35,7 @@ export function AvatarWithProfile({
   className?: string;
 }) {
   const { onlineUsers } = useStore();
-  const { data: session } = useSession();
   const isOnline = onlineUsers.includes(member.id);
-
-  const sessionUser = session?.user as { role?: string; username?: string } | undefined;
-  const isAdmin = sessionUser?.role === "admin";
-  const isSelf  = sessionUser?.username === member.username;
-  const canEdit = isAdmin || isSelf;
 
   // Hover card state. We use a delay so the card doesn't fire on every
   // mouse move across a list of avatars (e.g. the OnlineUsersInSidebar).
@@ -156,19 +149,18 @@ export function AvatarWithProfile({
               <ProfileSummary member={member} online={isOnline} variant="full" />
             </div>
 
-            {/* Footer: Edit link when permitted */}
-            {canEdit && (
-              <div className="px-5 py-3 border-t border-[rgba(255,255,255,0.06)] flex justify-end">
-                <Link
-                  href={`/profile/${member.username}`}
-                  onClick={() => setShowModal(false)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[rgba(86,100,72,0.55)] bg-[rgba(255,255,255,0.04)] text-xs text-[#e8e3da] hover:bg-[rgba(255,255,255,0.06)] transition-all"
-                >
-                  <Pencil className="w-3.5 h-3.5" />
-                  {isSelf ? "Edit my profile" : "Edit profile"}
-                </Link>
-              </div>
-            )}
+            {/* Footer: everyone can open the full read-only profile page.
+                Editing is a separate action available there (self/admin). */}
+            <div className="px-5 py-3 border-t border-[rgba(255,255,255,0.06)] flex justify-end">
+              <Link
+                href={`/profile/${member.username}`}
+                onClick={() => setShowModal(false)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[rgba(86,100,72,0.55)] bg-[rgba(255,255,255,0.04)] text-xs text-[#e8e3da] hover:bg-[rgba(255,255,255,0.06)] transition-all"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                View full profile
+              </Link>
+            </div>
           </div>
         </div>
       )}
