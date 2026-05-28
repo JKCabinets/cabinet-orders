@@ -87,7 +87,7 @@ export default function ProfilePage() {
       />
 
       <div className="max-w-3xl mx-auto px-6 lg:px-8 pb-12">
-        <div className="flex items-center gap-4 mb-6 px-4 py-3 bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.10)] rounded-xl">
+        <div className="flex items-center gap-4 mb-6 px-4 py-3 glass rounded-2xl">
           <Avatar member={member} online={isOnline} size="lg" />
           <div className="flex-1">
             <p className="text-base text-[#e8e3da]">{member.name}</p>

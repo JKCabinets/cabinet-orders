@@ -113,7 +113,7 @@ export function ProfileForm({
   const inputDisabled = !canEdit || saving;
 
   return (
-    <div className="bg-[#111] border border-[rgba(255,255,255,0.10)] rounded-xl p-5">
+    <div className="glass rounded-2xl p-5">
       <p className="text-xs font-medium text-[rgba(232,227,218,0.50)] mb-4">
         {canEdit ? "Edit profile" : "Profile"} — {member.name}
       </p>
