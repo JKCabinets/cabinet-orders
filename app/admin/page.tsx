@@ -123,7 +123,15 @@ export default function AdminPage() {
                 {editingId === member.id ? (
                   <MemberForm
                     initial={member}
-                    onSave={(data) => { updateTeamMember(member.id, data); setEditingId(null); showToast("Member updated", { kind: "success" }); }}
+                    onSave={async (data) => {
+                      const result = await updateTeamMember(member.id, data);
+                      if (result.ok) {
+                        setEditingId(null);
+                        showToast("Member updated", { kind: "success" });
+                      } else {
+                        showToast(result.error ?? "Failed to update member", { kind: "error" });
+                      }
+                    }}
                     onCancel={() => setEditingId(null)}
                   />
                 ) : editingProfileId === member.id ? (
@@ -141,10 +149,15 @@ export default function AdminPage() {
                 ) : changingPasswordId === member.id ? (
                   <PasswordForm
                     member={member}
-                    onSave={(newPassword) => {
-                      updateTeamMember(member.id, { password: newPassword });
-                      setChangingPasswordId(null);
-                      showToast("Password updated — saved to database", { kind: "success" });
+                    onSave={async (newPassword) => {
+                      const result = await updateTeamMember(member.id, { password: newPassword });
+                      if (result.ok) {
+                        setChangingPasswordId(null);
+                        showToast("Password updated — saved to database", { kind: "success" });
+                      } else {
+                        // Keep the form open so the admin can pick a valid password.
+                        showToast(result.error ?? "Failed to update password", { kind: "error" });
+                      }
                     }}
                     onCancel={() => setChangingPasswordId(null)}
                   />

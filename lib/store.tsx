@@ -45,7 +45,7 @@ interface StoreCtx {
     claimedBy: string | null,
   ) => Promise<{ ok: boolean; claimedBy: string | null; reason?: string }>;
   addTeamMember: (m: Omit<TeamMember, "id">) => Promise<{ ok: boolean; error?: string; temporaryPassword?: string }>;
-  updateTeamMember: (id: string, updates: Partial<TeamMember> & { password?: string }) => Promise<void>;
+  updateTeamMember: (id: string, updates: Partial<TeamMember> & { password?: string }) => Promise<{ ok: boolean; error?: string }>;
   deactivateTeamMember: (id: string) => Promise<void>;
   deleteTeamMember: (id: string) => Promise<void>;
 
@@ -502,17 +502,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return { ok: false, error: res?.__error ?? "Failed to add member" };
   }, []);
 
-  const updateTeamMember = useCallback(async (id: string, updates: Partial<TeamMember> & { password?: string }) => {
-    setTeam(prev => prev.map(m => m.id === id ? { ...m, ...updates } : m));
+  const updateTeamMember = useCallback(async (id: string, updates: Partial<TeamMember> & { password?: string }): Promise<{ ok: boolean; error?: string }> => {
+    // Snapshot prior state so we can roll back the optimistic update if
+    // the server rejects the change (e.g. weak password -> 422).
+    let prevSnapshot: TeamMember[] = [];
+    setTeam(prev => { prevSnapshot = prev; return prev.map(m => m.id === id ? { ...m, ...updates } : m); });
     const res = await apiCall(`/api/team/${id}`, "PATCH", {
       name: updates.name, username: updates.username, initials: updates.initials,
       role: updates.role, avatarColor: updates.avatarColor,
       active: updates.active, password: updates.password,
     });
-    if (res?.ok) {
-      const teamRes = await apiCall("/api/team");
-      if (teamRes?.data) setTeam(teamRes.data.map(shapeTeamMember));
+    // apiCall returns { __error } on failure, or the parsed body on success.
+    if (res?.__error) {
+      // Roll back the optimistic change and report the real error.
+      setTeam(prevSnapshot);
+      return { ok: false, error: res.__error };
     }
+    // Reconcile against the server's authoritative state.
+    const teamRes = await apiCall("/api/team");
+    if (teamRes?.data) setTeam(teamRes.data.map(shapeTeamMember));
+    return { ok: true };
   }, []);
 
   const deactivateTeamMember = useCallback(async (id: string) => {
