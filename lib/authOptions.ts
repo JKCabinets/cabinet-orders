@@ -53,7 +53,7 @@ export const authOptions: NextAuthOptions = {
           const supabase = await getSupabase();
           const { data: user, error } = await supabase
             .from("team_members")
-            .select("id, username, name, role, password, password_hash, active, failed_attempts, locked_until, session_version")
+            .select("id, username, name, role, password_hash, active, failed_attempts, locked_until, session_version")
             .eq("username", credentials.username.toLowerCase())
             .eq("active", true)
             .single();
