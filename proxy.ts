@@ -1,9 +1,8 @@
 import { withAuth } from "next-auth/middleware";
 import { NextResponse } from "next/server";
-import { randomUUID } from "crypto";
 
 /**
- * Authentication + admin-route guard + CSP nonce (report-only).
+ * Authentication + admin-route guard.
  *
  * # Rename note
  *
@@ -19,25 +18,46 @@ import { randomUUID } from "crypto";
  *
  * # CSP strategy
  *
- * The static CSP in next.config.mjs (with `'unsafe-inline'` /
- * `'unsafe-eval'`) is still the *enforced* policy. In addition, we
- * set a SEPARATE `Content-Security-Policy-Report-Only` header here
- * with a strict nonce-based policy. The browser evaluates both:
+ * The enforced Content-Security-Policy lives in next.config.mjs. It is
+ * same-origin by default and additionally allows Supabase (images,
+ * realtime) and the app's own inline framework scripts/styles. That is
+ * the policy the browser actually applies, and it is sound.
  *
- *   - Enforced policy → permissive, app keeps working
- *   - Report-only policy → strict, but only reports violations
+ * ## Retired: report-only nonce CSP experiment
  *
- * Violations get POSTed to `/api/csp-report` where they're logged to
- * Supabase. After a few days of observation we'll know exactly which
- * scripts/styles get flagged, fix the policy (likely with hashes for
- * framework bootstrap), then flip the report-only one to enforcing
- * and remove the permissive one.
+ * This file previously ALSO emitted a strict, nonce-based
+ * `Content-Security-Policy-Report-Only` header. The goal was to observe
+ * violations, tighten the policy, then flip it to enforcing and drop the
+ * permissive `'unsafe-inline'` from the enforced policy.
  *
- * Why we're doing it this way: a previous attempt set the strict policy
- * as the enforced one directly and shipped to production. The Next.js
- * framework bootstrap script didn't reliably pick up the nonce, all
- * client JS got blocked, the app rendered as logged-out "Guest." This
- * time we observe before enforcing.
+ * That experiment was retired. The strict policy depends on
+ * `script-src 'strict-dynamic' 'nonce-…'`, which requires Next.js to
+ * stamp its framework bootstrap scripts with our per-request nonce.
+ * Next.js 16 / Turbopack does NOT reliably propagate the nonce
+ * (`getScriptNonceFromHeader` doesn't extract it), so framework scripts
+ * always violated the strict policy and it could never be safely
+ * enforced. Several days of collected reports confirmed every violation
+ * fell into one of three non-actionable buckets:
+ *   1. framework inline/eval bootstrap scripts that can't be nonced
+ *      until the upstream bug is fixed,
+ *   2. legitimate Supabase avatar images,
+ *   3. stale noise from the old Vercel deploy and the www. variant.
+ * No genuine security finding ever surfaced.
+ *
+ * The `/api/csp-report` endpoint and the `csp_reports` table are left in
+ * place, unused, so the experiment can be revived cheaply.
+ *
+ * ## Reviving (when Next.js fixes nonce propagation)
+ *   1. Re-add a `buildReportOnlyCsp(nonce)` that emits
+ *      `script-src 'self' 'nonce-…' 'strict-dynamic'` (+ 'unsafe-eval'
+ *      in dev only) and `report-uri /api/csp-report`.
+ *   2. Set the request-side `Content-Security-Policy` header + `x-nonce`
+ *      so Next.js applies the nonce, and set the response-side
+ *      `Content-Security-Policy-Report-Only` header.
+ *   3. Confirm via /api/csp-report that framework scripts are now nonced
+ *      (no more `script-src-elem: inline` framework hits).
+ *   4. Only then flip it to enforcing and remove `'unsafe-inline'` from
+ *      the enforced policy in next.config.mjs.
  */
 
 /** Public routes that do not require authentication.
@@ -54,9 +74,10 @@ const PUBLIC_PATHS: readonly string[] = [
   "/api/webhooks",
   "/api/cron",
   // CSP violation reports are POSTed by the browser without any
-  // session — has to be public.
+  // session — has to be public. (Endpoint retained for the future
+  // report-only revival; see the CSP strategy note above.)
   "/api/csp-report",
-  "/api/health",  // 
+  "/api/health",  //
 ];
 
 function isPublicPath(pathname: string): boolean {
@@ -91,43 +112,6 @@ function isAdminPath(pathname: string): boolean {
   );
 }
 
-/**
- * Build the strict nonce-based CSP we're testing in report-only mode.
- *
- * `strict-dynamic` tells the browser "trust this nonce and anything it
- * transitively loads" — without it we'd have to enumerate every JS chunk
- * URL. The trade is that `strict-dynamic` IGNORES `'self'` and URL
- * allowlists in script-src, so anything not nonced or loaded transitively
- * via a nonced script gets blocked.
- *
- * Dev allows `'unsafe-eval'` because React's dev runtime uses eval for
- * better error messages. Production does not.
- */
-function buildReportOnlyCsp(nonce: string): string {
-  const isDev = process.env.NODE_ENV === "development";
-  const directives = [
-    "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${isDev ? " 'unsafe-eval'" : ""}`,
-    // For styles, 'self' covers framework CSS files; the nonce covers
-    // any streaming inline styles Next.js may inject. Keeping
-    // `'unsafe-inline'` only in dev (where HMR pushes inline updates).
-    `style-src 'self' 'nonce-${nonce}'${isDev ? " 'unsafe-inline'" : ""}`,
-    "img-src 'self' data: blob:",
-    "font-src 'self'",
-    "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.upstash.io",
-    "object-src 'none'",
-    "base-uri 'self'",
-    "form-action 'self'",
-    "frame-ancestors 'none'",
-    "upgrade-insecure-requests",
-    // Send violation reports to our endpoint. `report-uri` is the
-    // widely-supported directive; the newer Reporting API uses
-    // `report-to`, but our endpoint accepts both payload shapes.
-    "report-uri /api/csp-report",
-  ];
-  return directives.join("; ");
-}
-
 export default withAuth(
   function proxy(req) {
     const { pathname } = req.nextUrl;
@@ -137,41 +121,7 @@ export default withAuth(
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // Generate a fresh nonce per request. randomUUID is from node:crypto,
-    // base64-encoded so it's safe in HTTP headers and HTML attributes.
-    const nonce = Buffer.from(randomUUID()).toString("base64");
-    const csp = buildReportOnlyCsp(nonce);
-
-    // Forward the nonce to downstream RSC code via a request header so
-    // Next.js can apply it to its framework scripts. Read it from a
-    // server component with `(await headers()).get("x-nonce")` if you
-    // ever need to nonce a custom inline script.
-    //
-    // The Content-Security-Policy header we set on the *request* is
-    // what Next.js looks at to decide whether to apply nonces to its
-    // own scripts (per the docs). The header on the response is what
-    // the browser actually sees.
-    const requestHeaders = new Headers(req.headers);
-    requestHeaders.set("x-nonce", nonce);
-    requestHeaders.set("Content-Security-Policy", csp);
-
-    const response = NextResponse.next({
-      request: { headers: requestHeaders },
-    });
-
-    // The export route at /api/orders/[id]/export sets its own CSP
-    // (with 'unsafe-inline' for print stylesheets in the generated
-    // HTML). Don't override its response with our report-only header
-    // for that path — the export's CSP is correct for its own HTML.
-    const isExportRoute = /^\/api\/orders\/[^/]+\/export(\/|$)/.test(pathname);
-    if (!isExportRoute) {
-      // Report-only: browser evaluates the policy and reports
-      // violations, but does NOT block. The static permissive CSP in
-      // next.config.mjs is the actually-enforced one.
-      response.headers.set("Content-Security-Policy-Report-Only", csp);
-    }
-
-    return response;
+    return NextResponse.next();
   },
   {
     callbacks: {
