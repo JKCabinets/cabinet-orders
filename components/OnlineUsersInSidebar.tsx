@@ -10,6 +10,8 @@
  * Reads `team` and `onlineUsers` from the store. No props.
  */
 
+import Link from "next/link";
+import { Users } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { AvatarWithProfile } from "./AvatarWithProfile";
 
@@ -35,14 +37,19 @@ export function OnlineUsersInSidebar() {
 
   return (
     <div className="px-3 py-3 border-t border-white/10">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-[10px] uppercase tracking-wider text-cream/45">
-          Online
+      <Link
+        href="/team"
+        className="flex items-center justify-between mb-2 group"
+        title="View all team members"
+      >
+        <span className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-cream/45 group-hover:text-cream/80 transition-colors">
+          <Users className="w-3 h-3" />
+          Team
         </span>
-        <span className="text-[10px] tabular-nums text-cream/45">
-          {onlineTeam.length}
+        <span className="text-[10px] tabular-nums text-cream/45 group-hover:text-cream/80 transition-colors">
+          {onlineTeam.length} online
         </span>
-      </div>
+      </Link>
       <div className="flex items-center -space-x-1.5">
         {visible.map((m) => (
           <AvatarWithProfile key={m.id} member={m} size="sm" />
