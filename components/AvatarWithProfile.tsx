@@ -50,10 +50,37 @@ export function AvatarWithProfile({
     hoverTimer.current = setTimeout(() => {
       // Measure trigger position so the portal-rendered card can be
       // placed below it. Re-measured every show so it stays correct
-      // even after scroll or layout shift.
+      // even after scroll or layout shift. Boundary-aware: flips the
+      // card to the left of / above the trigger when it would otherwise
+      // spill off the right or bottom edge of the viewport.
       if (triggerRef.current) {
         const rect = triggerRef.current.getBoundingClientRect();
-        setCardPos({ top: rect.bottom + 8, left: rect.left });
+        const CARD_W = 256;   // matches w-64
+        const CARD_H = 200;   // generous estimate of the summary card height
+        const GAP = 8;
+        const MARGIN = 12;    // keep this far from the viewport edge
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+
+        // Horizontal: default left-aligned to the trigger. If that would
+        // overflow the right edge, right-align the card to the trigger.
+        let left = rect.left;
+        if (left + CARD_W > vw - MARGIN) {
+          left = rect.right - CARD_W;
+        }
+        // Final clamp so it never goes off the left edge either.
+        left = Math.max(MARGIN, Math.min(left, vw - CARD_W - MARGIN));
+
+        // Vertical: default below the trigger. If that would overflow the
+        // bottom edge, flip above the trigger.
+        let top = rect.bottom + GAP;
+        if (top + CARD_H > vh - MARGIN) {
+          top = rect.top - CARD_H - GAP;
+        }
+        // Clamp so it never goes off the top edge.
+        top = Math.max(MARGIN, top);
+
+        setCardPos({ top, left });
       }
       setShowCard(true);
     }, HOVER_DELAY_MS);
