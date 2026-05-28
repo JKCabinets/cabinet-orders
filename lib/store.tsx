@@ -44,7 +44,7 @@ interface StoreCtx {
     id: string,
     claimedBy: string | null,
   ) => Promise<{ ok: boolean; claimedBy: string | null; reason?: string }>;
-  addTeamMember: (m: Omit<TeamMember, "id">) => Promise<void>;
+  addTeamMember: (m: Omit<TeamMember, "id">) => Promise<{ ok: boolean; error?: string; temporaryPassword?: string }>;
   updateTeamMember: (id: string, updates: Partial<TeamMember> & { password?: string }) => Promise<void>;
   deactivateTeamMember: (id: string) => Promise<void>;
   deleteTeamMember: (id: string) => Promise<void>;
@@ -71,10 +71,20 @@ async function apiCall(url: string, method = "GET", body?: unknown) {
       headers: body ? { "Content-Type": "application/json" } : {},
       body: body ? JSON.stringify(body) : undefined,
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      // Preserve the server\'s error message so callers can surface it
+      // instead of silently swallowing the failure. Falls back to the
+      // HTTP status text if the body isn\'t JSON.
+      let message = res.statusText || `Request failed (${res.status})`;
+      try {
+        const errBody = await res.json();
+        if (errBody?.error) message = String(errBody.error);
+      } catch { /* non-JSON error body */ }
+      return { __error: message };
+    }
     return await res.json();
-  } catch {
-    return null;
+  } catch (err) {
+    return { __error: err instanceof Error ? err.message : "Network error" };
   }
 }
 
@@ -476,13 +486,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [orders, warranties]);
 
-  const addTeamMember = useCallback(async (m: Omit<TeamMember, "id">) => {
+  const addTeamMember = useCallback(async (m: Omit<TeamMember, "id">): Promise<{ ok: boolean; error?: string; temporaryPassword?: string }> => {
     const res = await apiCall("/api/team", "POST", {
       name: m.name, username: m.username, initials: m.initials,
       role: m.role, avatarColor: m.avatarColor,
     });
-    if (res?.data) setTeam(prev => [...prev, shapeTeamMember(res.data)]);
-    else setTeam(prev => [...prev, { ...m, id: `local-${Date.now()}` }]);
+    // Only add to local state on a real DB-backed success. On failure we
+    // surface the error to the caller and add NOTHING — no fabricated
+    // `local-` row that would vanish on the next refetch (that masked a
+    // NOT-NULL constraint failure for a long time).
+    if (res?.data) {
+      setTeam(prev => [...prev, shapeTeamMember(res.data)]);
+      return { ok: true, temporaryPassword: res.temporary_password };
+    }
+    return { ok: false, error: res?.__error ?? "Failed to add member" };
   }, []);
 
   const updateTeamMember = useCallback(async (id: string, updates: Partial<TeamMember> & { password?: string }) => {

@@ -13,6 +13,7 @@ import { ProfileForm } from "@/components/ProfileForm";
 import clsx from "clsx";
 import { AuditLog } from "@/components/AuditLog";
 import { AppShell, PageHeader } from "@/components/AppShell";
+import { useToast } from "@/components/Toast";
 
 export default function AdminPage() {
   const { data: session } = useSession();
@@ -26,15 +27,11 @@ export default function AdminPage() {
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [changingPasswordId, setChangingPasswordId] = useState<string | null>(null);
   const [confirmActionId, setConfirmActionId] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
 
   const user = session?.user as { name?: string; role?: string } | undefined;
   const isAdmin = user?.role === "admin";
 
-  function showToast(msg: string) {
-    setToast(msg);
-    setTimeout(() => setToast(null), 3000);
-  }
+  const { showToast } = useToast();
 
   if (session && !isAdmin) {
     return (
@@ -61,11 +58,6 @@ export default function AdminPage() {
 
   return (
     <AppShell>
-      {toast && (
-        <div className="fixed top-4 right-4 z-50 rounded-xl px-4 py-3 text-sm text-cream shadow-lg animate-slide-in" style={{background:"rgba(255,255,255,0.07)",backdropFilter:"blur(40px)",WebkitBackdropFilter:"blur(40px)",border:"0.5px solid rgba(255,255,255,0.14)",boxShadow:"inset 0 1px 0 rgba(255,255,255,0.12), 0 16px 40px rgba(0,0,0,0.4)"}}>
-          {toast}
-        </div>
-      )}
 
       <PageHeader
         eyebrow="Settings"
@@ -104,7 +96,22 @@ export default function AdminPage() {
           {showAddForm && !editingId && (
             <div className="mb-3">
               <MemberForm
-                onSave={(data) => { addTeamMember({ ...data, active: true }); setShowAddForm(false); showToast("Member added successfully"); }}
+                onSave={async (data) => {
+                  const result = await addTeamMember({ ...data, active: true });
+                  if (result.ok) {
+                    setShowAddForm(false);
+                    if (result.temporaryPassword) {
+                      showToast(
+                        `Member added. Temporary password: ${result.temporaryPassword}`,
+                        { kind: "success", durationMs: 30000 },
+                      );
+                    } else {
+                      showToast("Member added successfully", { kind: "success" });
+                    }
+                  } else {
+                    showToast(result.error ?? "Failed to add member", { kind: "error" });
+                  }
+                }}
                 onCancel={() => setShowAddForm(false)}
               />
             </div>
@@ -116,7 +123,7 @@ export default function AdminPage() {
                 {editingId === member.id ? (
                   <MemberForm
                     initial={member}
-                    onSave={(data) => { updateTeamMember(member.id, data); setEditingId(null); showToast("Member updated"); }}
+                    onSave={(data) => { updateTeamMember(member.id, data); setEditingId(null); showToast("Member updated", { kind: "success" }); }}
                     onCancel={() => setEditingId(null)}
                   />
                 ) : editingProfileId === member.id ? (
@@ -127,7 +134,7 @@ export default function AdminPage() {
                     onSave={async (fields) => {
                       await updateTeamMemberProfile(member.id, fields);
                       setEditingProfileId(null);
-                      showToast(member.name + "'s profile saved");
+                      showToast(member.name + "'s profile saved", { kind: "success" });
                     }}
                     onCancel={() => setEditingProfileId(null)}
                   />
@@ -137,7 +144,7 @@ export default function AdminPage() {
                     onSave={(newPassword) => {
                       updateTeamMember(member.id, { password: newPassword });
                       setChangingPasswordId(null);
-                      showToast("Password updated — saved to database");
+                      showToast("Password updated — saved to database", { kind: "success" });
                     }}
                     onCancel={() => setChangingPasswordId(null)}
                   />
@@ -149,8 +156,8 @@ export default function AdminPage() {
                     onProfile={() => { setEditingProfileId(member.id); setEditingId(null); setShowAddForm(false); setChangingPasswordId(null); }}
                     onRequestAction={() => setConfirmActionId(member.id)}
                     isConfirmingAction={confirmActionId === member.id}
-                    onDeactivate={() => { deactivateTeamMember(member.id); setConfirmActionId(null); showToast(`${member.name} deactivated`); }}
-                    onDelete={() => { deleteTeamMember(member.id); setConfirmActionId(null); showToast(`${member.name} permanently deleted`); }}
+                    onDeactivate={() => { deactivateTeamMember(member.id); setConfirmActionId(null); showToast(`${member.name} deactivated`, { kind: "warn" }); }}
+                    onDelete={() => { deleteTeamMember(member.id); setConfirmActionId(null); showToast(`${member.name} permanently deleted`, { kind: "warn" }); }}
                     onCancelAction={() => setConfirmActionId(null)}
                   />
                 )}
@@ -173,8 +180,8 @@ export default function AdminPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <button onClick={() => { updateTeamMember(member.id, { active: true }); showToast(`${member.name} reactivated`); }} className="text-[11px] text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] transition-colors">Reactivate</button>
-                    <button onClick={() => { deleteTeamMember(member.id); showToast(`${member.name} permanently deleted`); }} className="text-[11px] text-red-400/60 hover:text-red-400 transition-colors ml-2">Delete</button>
+                    <button onClick={() => { updateTeamMember(member.id, { active: true }); showToast(`${member.name} reactivated`, { kind: "success" }); }} className="text-[11px] text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] transition-colors">Reactivate</button>
+                    <button onClick={() => { deleteTeamMember(member.id); showToast(`${member.name} permanently deleted`, { kind: "warn" }); }} className="text-[11px] text-red-400/60 hover:text-red-400 transition-colors ml-2">Delete</button>
                   </div>
                 </div>
               ))}
