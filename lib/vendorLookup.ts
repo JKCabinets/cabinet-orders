@@ -12,6 +12,7 @@
 
 import { supabase } from "@/lib/supabase";
 import type { SkuItem } from "@/lib/skuDecoder";
+import { decodeSku } from "@/lib/skuDecoder";
 
 const UNKNOWN_VENDOR = "__UNASSIGNED__";
 
@@ -21,10 +22,15 @@ export interface VendorLookupResult {
   hasUnassigned: boolean;
 }
 
-/** Strip the trailing "-{doorCode}-{colorCode}" from a full SKU to get the base. */
+/**
+ * Get the base variant SKU from a full composite, regardless of shape:
+ *   Waypoint  base-DOOR-COLOR (3-part) -> base
+ *   HCI / J&K base-COLOR      (2-part) -> base
+ * decodeSku knows both code tables, so it strips exactly the right suffix(es).
+ * Falls back to the full SKU when it can't decode (e.g. a bare/manual SKU).
+ */
 function baseSku(fullSku: string): string {
-  const parts = fullSku.split("-");
-  return parts.length >= 3 ? parts.slice(0, parts.length - 2).join("-") : fullSku;
+  return decodeSku(fullSku)?.baseSku || fullSku;
 }
 
 export async function lookupVendorsForSkus(
