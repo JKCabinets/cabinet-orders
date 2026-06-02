@@ -200,17 +200,17 @@ export async function POST(req: NextRequest) {
 
     let vendorName = "";
     const firstSkuFull = skuItems.find(i => i.sku)?.sku ?? "";
-    const firstSkuParts = firstSkuFull.split("-");
-    const firstSku = firstSkuParts.length >= 3
-      ? firstSkuParts.slice(0, firstSkuParts.length - 2).join("-")
-      : firstSkuFull;
+    // Derive the base variant SKU regardless of composite shape:
+    //   Waypoint  base-DOOR-COLOR (3-part) -> base
+    //   HCI / J&K base-COLOR      (2-part) -> base
+    const firstSku = decodeSku(firstSkuFull)?.baseSku || firstSkuFull;
     if (firstSku) {
-      const { data: product } = await supabase
+      const { data: products } = await supabase
         .from("shopify_products")
         .select("vendor")
         .eq("sku", firstSku)
-        .single();
-      if (product?.vendor) vendorName = product.vendor;
+        .limit(1);
+      if (products && products[0]?.vendor) vendorName = products[0].vendor;
     }
 
     const { error } = await supabase.from("orders").insert({

@@ -1,14 +1,19 @@
 /**
  * skuDecoder.ts
  *
- * Decodes the door-style and color segments from a SKU built by the
- * Shopify SKU Variation Builder, and builds full SKUs from Avis option names.
+ * Decodes the door-style and color segments from a SKU, and builds full SKUs
+ * from Avis option names (Waypoint only).
  *
- * SKU format:  {baseProduct}-{doorCode}-{colorCode}
- * Example:     W930-410F-PL → { baseSku: "W930", doorStyle: "Shaker", color: "Painted Linen" }
+ * Two SKU shapes are supported:
+ *   Waypoint   {base}-{doorCode}-{colorCode}   e.g. W930-580F-PL  (door + color)
+ *   HCI / J&K  {base}-{colorCode}              e.g. B09FHD-MSL    (color only)
+ *
+ * Waypoint door/color come from Avis line-item properties; HCI/J&K color comes
+ * from a native Shopify variant, with the code appended by the storefront SKU
+ * bridge. The shapes are told apart by the code tables, not by segment count.
  */
 
-// ── Door Style: code → human-readable name ────────────────────────────────
+// ── Waypoint — Door Style: code -> human-readable name ───────────────────
 export const DOOR_STYLE_MAP: Record<string, string> = {
   "570F": "Arizona",
   "460F": "Gilbert",
@@ -19,7 +24,7 @@ export const DOOR_STYLE_MAP: Record<string, string> = {
   "BUTT": "Butt",
 };
 
-// ── Door Style: Avis option name → SKU code (reverse lookup) ─────────────
+// ── Waypoint — Door Style: Avis option name -> SKU code (reverse) ────────
 export const DOOR_STYLE_NAME_TO_CODE: Record<string, string> = {
   "Arizona":    "570F",
   "Gilbert":    "460F",
@@ -30,7 +35,7 @@ export const DOOR_STYLE_NAME_TO_CODE: Record<string, string> = {
   "Butt":       "BUTT",
 };
 
-// ── Color: code → human-readable name ────────────────────────────────────
+// ── Waypoint — Color: code -> human-readable name ────────────────────────
 export const COLOR_MAP: Record<string, string> = {
   "ML": "Maple Latte",
   "MR": "Maple Rye",
@@ -43,7 +48,7 @@ export const COLOR_MAP: Record<string, string> = {
   "PV": "Painted Vanilla",
 };
 
-// ── Color: Avis option name → SKU code (reverse lookup) ──────────────────
+// ── Waypoint — Color: Avis option name -> SKU code (reverse) ─────────────
 export const COLOR_NAME_TO_CODE: Record<string, string> = {
   "Maple Latte":   "ML",
   "Maple Rye":     "MR",
@@ -54,6 +59,39 @@ export const COLOR_NAME_TO_CODE: Record<string, string> = {
   "Painted Oat":   "PO",
   "Painted Sage":  "PS",
   "Painted Vanilla":"PV",
+};
+
+// ── HCI — Color: code -> name (native-variant colors; no door segment) ───
+//    Keep these in sync with the HCI overlay's attachingSku codes.
+export const HCI_COLOR_MAP: Record<string, string> = {
+  "WHS": "White Shaker",
+  "GRS": "Gray Shaker",
+  "MSL": "Modern Slate",
+  "SIB": "Signature Blue",
+  "ONB": "Onyx Black",
+  "WHN": "Nano White",
+  "GRN": "Nano Green",
+};
+
+// ── J&K — Color: code -> name (native-variant colors; no door segment) ───
+//    Forward-looking: confirm against the J&K overlay codes once that store
+//    is live. No J&K orders flow until then.
+export const JK_COLOR_MAP: Record<string, string> = {
+  "S1":  "Java Coffee",
+  "H9":  "Pearl Glaze",
+  "E1":  "Dove",
+  "E2":  "Charcoal Gray",
+  "K10": "Mocha Glazed",
+  "NS5": "Castle Grey",
+  "NS8": "White",
+};
+
+// ── All color codes in one lookup (used to recognise the trailing segment) ─
+//    Codes do not collide across vendors, so a flat merge is unambiguous.
+export const COLOR_MAP_ALL: Record<string, string> = {
+  ...COLOR_MAP,
+  ...HCI_COLOR_MAP,
+  ...JK_COLOR_MAP,
 };
 
 export interface DecodedSku {
@@ -67,29 +105,52 @@ export interface DecodedSku {
 
 /**
  * Decode a full SKU string into its component parts.
- * Returns null if the SKU has fewer than 3 segments or codes are unrecognised.
+ *
+ * Tries the 3-part Waypoint shape first (base-DOOR-COLOR), then the 2-part
+ * HCI/J&K shape (base-COLOR). Returns null if the trailing segment is not a
+ * known color code in any vendor's table.
  */
 export function decodeSku(sku: string): DecodedSku | null {
   if (!sku) return null;
   const parts = sku.split("-");
-  if (parts.length < 3) return null;
+  if (parts.length < 2) return null;
 
-  const colorCode = parts[parts.length - 1];
-  const doorCode  = parts[parts.length - 2];
-  const baseSku   = parts.slice(0, parts.length - 2).join("-");
+  const last = parts[parts.length - 1];
+  const prev = parts.length >= 3 ? parts[parts.length - 2] : "";
 
-  if (!DOOR_STYLE_MAP[doorCode] && !COLOR_MAP[colorCode]) return null;
+  // 3-part (Waypoint): base - DOOR - COLOR
+  if (parts.length >= 3 && DOOR_STYLE_MAP[prev] && COLOR_MAP_ALL[last]) {
+    const doorStyle = DOOR_STYLE_MAP[prev];
+    const color     = COLOR_MAP_ALL[last];
+    return {
+      baseSku:   parts.slice(0, parts.length - 2).join("-"),
+      doorCode:  prev,
+      colorCode: last,
+      doorStyle,
+      color,
+      label: `${doorStyle} - ${color}`,
+    };
+  }
 
-  const doorStyle = DOOR_STYLE_MAP[doorCode] ?? doorCode;
-  const color     = COLOR_MAP[colorCode]     ?? colorCode;
-  const label     = `${doorStyle} - ${color}`;
+  // 2-part (HCI / J&K): base - COLOR  (color is a native variant, no door code)
+  if (COLOR_MAP_ALL[last]) {
+    const color = COLOR_MAP_ALL[last];
+    return {
+      baseSku:   parts.slice(0, parts.length - 1).join("-"),
+      doorCode:  "",
+      colorCode: last,
+      doorStyle: "",
+      color,
+      label: color,
+    };
+  }
 
-  return { baseSku, doorCode, colorCode, doorStyle, color, label };
+  return null;
 }
 
 /**
- * Build a full SKU from a base SKU and Avis option names.
- * e.g. buildSkuFromAvisNames("W930", "Slim Shaker", "Painted Linen") → "W930-580F-PL"
+ * Build a full SKU from a base SKU and Avis option names (Waypoint).
+ * e.g. buildSkuFromAvisNames("W930", "Slim Shaker", "Painted Linen") -> "W930-580F-PL"
  * Returns null if either name can't be mapped to a code.
  */
 export function buildSkuFromAvisNames(
@@ -121,6 +182,8 @@ export interface SkuGroup {
 /**
  * Group sku_items by their decoded door style + color combination.
  * Falls back to Avis door_style/color properties when SKU can't be decoded.
+ * For color-only (HCI/J&K) SKUs the door style is blank, so the group label
+ * uses the color alone rather than "Unknown Style - <color>".
  */
 export function groupSkuItemsByStyle(skuItems: SkuItem[]): SkuGroup[] {
   const groupMap = new Map<string, SkuGroup>();
@@ -128,9 +191,11 @@ export function groupSkuItemsByStyle(skuItems: SkuItem[]): SkuGroup[] {
   for (const item of skuItems) {
     const decoded = decodeSku(item.sku);
 
-    const doorStyle = decoded?.doorStyle || item.door_style || "Unknown Style";
+    const doorStyle = decoded?.doorStyle || item.door_style || "";
     const color     = decoded?.color     || item.color      || "";
-    const label     = color ? `${doorStyle} - ${color}` : doorStyle;
+    const label     = doorStyle && color
+      ? `${doorStyle} - ${color}`
+      : (color || doorStyle || "Unknown");
 
     if (!groupMap.has(label)) {
       groupMap.set(label, { label, doorStyle, color, items: [] });
