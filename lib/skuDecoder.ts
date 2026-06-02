@@ -82,8 +82,8 @@ export const JK_COLOR_MAP: Record<string, string> = {
   "E1":  "Dove",
   "E2":  "Charcoal Gray",
   "K10": "Mocha Glazed",
-  "NS5": "Castle Grey",
-  "NS8": "White",
+  "S5":  "Castle Grey",
+  "S8":  "White",
 };
 
 // ── All color codes in one lookup (used to recognise the trailing segment) ─
