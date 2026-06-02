@@ -7,8 +7,9 @@ import { useStore } from "@/lib/store";
 import { useSession } from "next-auth/react";
 import { formatDateWithYear, parseOrderDate } from "@/lib/dateUtils";
 import { checkAttachmentGate } from "@/lib/stageGates";
-import { ArrowUp, ArrowDown, RotateCcw, ChevronRight, Download, X } from "lucide-react";
+import { ArrowUp, ArrowDown, RotateCcw, ChevronRight, X } from "lucide-react";
 import { AvatarWithProfile } from "./AvatarWithProfile";
+import { VendorExportPills } from "./VendorExportPills";
 import { useToast } from "./Toast";
 
 /**
@@ -118,9 +119,7 @@ export function OrderTable({
               {stage !== "Archived" && (
                 <th className="text-left px-3 py-2.5 text-[10px] uppercase tracking-[0.13em] text-cream/55 font-medium w-[180px]">Update Status</th>
               )}
-              {stage !== "New" && (
-                <th className="text-left px-3 py-2.5 text-[10px] uppercase tracking-[0.13em] text-cream/55 font-medium w-[110px]">Info</th>
-              )}
+              <th className="text-left px-3 py-2.5 text-[10px] uppercase tracking-[0.13em] text-cream/55 font-medium w-[140px]">PDF</th>
               <SortableHeader label="Payment"   col="payment_status" current={sortKey} dir={sortDir} onClick={setSort} width="w-[120px]" />
               <SortableHeader label="Team"      col="claimed_by"     current={sortKey} dir={sortDir} onClick={setSort} width="w-[80px]" />
             </tr>
@@ -281,20 +280,9 @@ function OrderRow({
           <UpdateStatusActions order={order} stage={stage} onOpenModal={onSelect} />
         </td>
       )}
-      {stage !== "New" && (
-        <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
-          <a
-            href={`/api/orders/${order.id}/export`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-white/4 border border-cream/15 text-cream/85 hover:bg-white/8"
-            title="Open the exported order PDF"
-          >
-            <Download className="w-3 h-3" />
-            Order PDF
-          </a>
-        </td>
-      )}
+      <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+        <VendorExportPills order={order} />
+      </td>
       <td className="px-3 py-2.5">
         <PaymentPill status={order.payment_status} />
       </td>

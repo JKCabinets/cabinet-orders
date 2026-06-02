@@ -336,7 +336,7 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
                 <Trash2 className="w-3 h-3" /> Delete
               </button>
             )}
-            {liveOrder.stage !== "New" && exportVendors.map((v) => (
+            {(liveOrder.stage !== "New" || !!liveOrder.claimed_by) && exportVendors.map((v) => (
               <a
                 key={v}
                 href={"/api/orders/" + encodeURIComponent(liveOrder.id) + "/export?vendor=" + encodeURIComponent(v)}
