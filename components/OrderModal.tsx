@@ -111,21 +111,7 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
   const [enteredGateError, setEnteredGateError] = useState(false);
   const [checkingAttachments, setCheckingAttachments] = useState(false);
   // Distinct vendors on this order, for per-manufacturer PDF export buttons.
-  // Sourced from the same /vendors endpoint the order detail panel uses, so
-  // labels stay consistent with the grouped SKU view.
   const [exportVendors, setExportVendors] = useState<string[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(`/api/orders/${encodeURIComponent(liveOrder.id)}/vendors`);
-        if (!res.ok) return;
-        const data = await res.json();
-        if (!cancelled) setExportVendors(Array.isArray(data.vendors) ? data.vendors : []);
-      } catch { /* silent */ }
-    })();
-    return () => { cancelled = true; };
-  }, [liveOrder.id]);
   // Admin PIN for manual stage changes from the modal (forward or back).
   // Normal flows (date entry → auto-advance, table buttons with gates)
   // do not require the PIN.
@@ -159,6 +145,20 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
 
   const liveOrder =
     (tab === "orders" ? orders : warranties).find((o) => o.id === order.id) ?? order;
+
+  // Fetch distinct vendors for this order (drives the per-vendor export pills).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/orders/" + encodeURIComponent(liveOrder.id) + "/vendors");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) setExportVendors(Array.isArray(data.vendors) ? data.vendors : []);
+      } catch { /* silent */ }
+    })();
+    return () => { cancelled = true; };
+  }, [liveOrder.id]);
   const stages = tab === "orders" ? ORDER_STAGES : WARRANTY_STAGES;
   const stageIdx = (stages as string[]).indexOf(liveOrder.stage);
 
@@ -337,12 +337,12 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
               </button>
             )}
             {liveOrder.stage !== "New" && exportVendors.map((v) => (
-              
+              <a
                 key={v}
-                href={`/api/orders/${encodeURIComponent(liveOrder.id)}/export?vendor=${encodeURIComponent(v)}`}
+                href={"/api/orders/" + encodeURIComponent(liveOrder.id) + "/export?vendor=" + encodeURIComponent(v)}
                 target="_blank"
                 rel="noopener noreferrer"
-                title={`Export the ${v} order PDF`}
+                title={"Export the " + v + " order PDF"}
                 className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-white/4 border border-cream/15 text-cream/85 hover:bg-white/8"
               >
                 <Download className="w-3 h-3" />
