@@ -96,6 +96,8 @@ export interface ActivityEntry {
 
 export interface SkuItem {
   sku: string;
+  /** Shopify variant id, captured at ingest. Authoritative key for vendor resolution. */
+  variant_id?: string;
   quantity: number;
   description?: string;
   /**

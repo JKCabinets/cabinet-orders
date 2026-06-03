@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { cleanInput } from "@/lib/auth";
 import { decodeHtmlEntities } from "@/lib/htmlEntities";
 import { decodeSku, buildSkuFromAvisNames } from "@/lib/skuDecoder";
+import { lookupVendorsForSkus } from "@/lib/vendorLookup";
 
 const SHOPIFY_SECRET = process.env.SHOPIFY_WEBHOOK_SECRET ?? "";
 
@@ -111,6 +112,10 @@ function buildOrder(payload: Record<string, unknown>) {
     // external data becomes raw internal data.
     return {
       sku: shopifyInput(sku),
+      // Globally-unique Shopify variant id, captured at ingest. Authoritative
+      // key for vendor resolution (shopify_products.id) — two vendors can share
+      // a base SKU but never a variant_id.
+      variant_id: String(i.variant_id ?? ""),
       quantity: Number(i.quantity ?? 1),
       description: shopifyInput(String(i.name ?? "")),
       door_style: shopifyInput(avisDoorStyle),
@@ -198,19 +203,16 @@ export async function POST(req: NextRequest) {
     const { customerName, customerEmail, customerPhone, shipTo, deliveryMethod, detail, skus, skuItems, notes, today, orderNumber, decodedDoorStyle, decodedColor } = buildOrder(payload);
     const orderId = orderNumber ? `SHO-${orderNumber}` : `SHO-${shopifyId.slice(-6)}`;
 
+    // Resolve the order-level vendor through the SAME layered resolver used at
+    // read time (variant_id -> family -> base SKU), so the stamp is consistent
+    // with the per-line vendor shown in the order panel and PDFs. For a mixed
+    // order this is the first line's vendor; the authoritative per-line
+    // breakdown is computed at read time via lookupVendorsForSkus.
     let vendorName = "";
-    const firstSkuFull = skuItems.find(i => i.sku)?.sku ?? "";
-    // Derive the base variant SKU regardless of composite shape:
-    //   Waypoint  base-DOOR-COLOR (3-part) -> base
-    //   HCI / J&K base-COLOR      (2-part) -> base
-    const firstSku = decodeSku(firstSkuFull)?.baseSku || firstSkuFull;
-    if (firstSku) {
-      const { data: products } = await supabase
-        .from("shopify_products")
-        .select("vendor")
-        .eq("sku", firstSku)
-        .limit(1);
-      if (products && products[0]?.vendor) vendorName = products[0].vendor;
+    const firstItem = skuItems.find(i => i.sku);
+    if (firstItem) {
+      const { vendorBySku } = await lookupVendorsForSkus([firstItem]);
+      vendorName = vendorBySku.get(firstItem.sku) ?? "";
     }
 
     const { error } = await supabase.from("orders").insert({
