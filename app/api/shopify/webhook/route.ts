@@ -182,6 +182,40 @@ export async function POST(req: NextRequest) {
   try { payload = JSON.parse(rawBody); }
   catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
 
+  // ─── Product updated ────────────────────────────────────────────
+  // Keep shopify_products current automatically. Without this, the table only
+  // refreshes on a manual sync, which is what let a stale/edited vendor drift
+  // (the B24 collision). Upserts one row per variant, matching the sync route's
+  // row shape exactly (onConflict: "id"), so auto- and manual-synced rows are
+  // identical. Handled here, before the order-id guard, since a product payload
+  // is not an order.
+  if (topic === "products/update") {
+    const productId = String(payload.id ?? "");
+    if (!/^\d+$/.test(productId)) {
+      return NextResponse.json({ error: "Invalid product id" }, { status: 400 });
+    }
+    const variants = (payload.variants as Array<Record<string, unknown>>) ?? [];
+    const vendorName = String(payload.vendor ?? "").trim();
+    const title = String(payload.title ?? "");
+    const rows = variants.map(variant => ({
+      id: String(variant.id),
+      title: `${title}${variants.length > 1 ? ` - ${String(variant.title ?? "")}` : ""}`,
+      sku: String(variant.sku ?? ""),
+      vendor: vendorName,
+      variant_id: String(variant.id),
+      price: parseFloat(String(variant.price ?? "0")),
+      inventory_quantity: Number(variant.inventory_quantity ?? 0),
+      synced_at: new Date().toISOString(),
+    }));
+    if (rows.length > 0) {
+      const { error } = await supabase
+        .from("shopify_products")
+        .upsert(rows, { onConflict: "id" });
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    return NextResponse.json({ received: true, synced: rows.length });
+  }
+
   const shopifyId = String(payload.id ?? "");
   if (!/^\d+$/.test(shopifyId)) {
     return NextResponse.json({ error: "Invalid order id" }, { status: 400 });
@@ -189,7 +223,7 @@ export async function POST(req: NextRequest) {
 
   // Whitelist topics — ignore anything else silently to avoid leaking which
   // topics we handle.
-  const ALLOWED_TOPICS = new Set(["orders/create", "orders/updated", "orders/cancelled", "orders/deleted"]);
+  const ALLOWED_TOPICS = new Set(["orders/create", "orders/updated", "orders/cancelled", "orders/deleted", "products/update"]);
   if (!ALLOWED_TOPICS.has(topic)) {
     return NextResponse.json({ received: true, skipped: "unhandled_topic" });
   }
