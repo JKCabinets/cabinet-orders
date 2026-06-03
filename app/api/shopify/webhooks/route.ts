@@ -1,38 +1,63 @@
 /**
- * Admin-only webhook management for the Shopify custom app.
+ * Admin-only webhook management for the Shopify custom app (GraphQL Admin API).
  *
- * GET  — list current webhook subscriptions (topic + address + api_version),
- *        so we can see exactly where the order webhooks deliver.
- * POST — register the products/update webhook, pointing at the SAME address the
- *        order webhooks use, so it reaches our webhook handler and verifies with
- *        the same HMAC secret. Idempotent: if a products/update subscription to
- *        that address already exists, it is left as-is.
+ * The order webhooks are registered via GraphQL webhookSubscriptionCreate (the
+ * modern mechanism), so REST /webhooks.json does NOT list them. We use GraphQL
+ * here for both listing and creating, to match how everything else was set up —
+ * one management surface, no REST/GraphQL split.
  *
- * Uses the app's own getShopifyToken() (OAuth client-credentials), identical to
- * the product sync route — no static token assumptions, same SSRF guard.
+ * GET  — list current webhookSubscriptions (topic + callbackUrl).
+ * POST — register products/update at the SAME callbackUrl the order webhooks
+ *        use, so it reaches our handler and verifies with the same HMAC secret.
+ *        Idempotent: skips if an equivalent subscription already exists.
+ *
+ * Uses the app's own getShopifyToken() (OAuth client-credentials), same as the
+ * product sync route. Same SSRF guard on the domain.
  */
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { getShopifyToken, isValidShopifyDomain } from "@/lib/shopify";
 
 const API_VERSION = "2026-04";
-const TARGET_TOPIC = "products/update";
+// Shopify GraphQL topics are UPPER_SNAKE: products/update -> PRODUCTS_UPDATE
+const TARGET_TOPIC = "PRODUCTS_UPDATE";
 
-interface ShopifyWebhook {
-  id: number;
+interface SubNode {
+  id: string;
   topic: string;
-  address: string;
-  api_version?: string;
-  format?: string;
+  callbackUrl: string | null;
 }
 
-async function listWebhooks(domain: string, token: string): Promise<ShopifyWebhook[]> {
-  const res = await fetch(`https://${domain}/admin/api/${API_VERSION}/webhooks.json`, {
+async function graphql(domain: string, token: string, query: string): Promise<Record<string, unknown>> {
+  const res = await fetch(`https://${domain}/admin/api/${API_VERSION}/graphql.json`, {
+    method: "POST",
     headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" },
+    body: JSON.stringify({ query }),
   });
   const text = await res.text();
-  if (!res.ok) throw new Error(`Shopify webhooks list error: ${res.status} ${text}`);
-  return (JSON.parse(text).webhooks ?? []) as ShopifyWebhook[];
+  if (!res.ok) throw new Error(`Shopify GraphQL error: ${res.status} ${text}`);
+  return JSON.parse(text) as Record<string, unknown>;
+}
+
+async function listSubscriptions(domain: string, token: string): Promise<SubNode[]> {
+  const q = `query {
+    webhookSubscriptions(first: 100) {
+      edges { node {
+        id
+        topic
+        endpoint { __typename ... on WebhookHttpEndpoint { callbackUrl } }
+      } }
+    }
+  }`;
+  const body = await graphql(domain, token, q);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const edges = (body as any)?.data?.webhookSubscriptions?.edges ?? [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return edges.map((e: any) => ({
+    id: String(e?.node?.id ?? ""),
+    topic: String(e?.node?.topic ?? ""),
+    callbackUrl: e?.node?.endpoint?.callbackUrl ?? null,
+  }));
 }
 
 export async function GET() {
@@ -43,15 +68,11 @@ export async function GET() {
   if (!isValidShopifyDomain(domain)) {
     return NextResponse.json({ error: "Invalid SHOPIFY_STORE_DOMAIN" }, { status: 500 });
   }
-
   try {
     const token = await getShopifyToken();
-    const webhooks = await listWebhooks(domain, token);
-    // Return just the useful fields, sorted by topic.
-    const summary = webhooks
-      .map(w => ({ id: w.id, topic: w.topic, address: w.address, api_version: w.api_version }))
+    const subs = (await listSubscriptions(domain, token))
       .sort((a, b) => a.topic.localeCompare(b.topic));
-    return NextResponse.json({ count: summary.length, webhooks: summary });
+    return NextResponse.json({ count: subs.length, subscriptions: subs });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 502 });
   }
@@ -65,39 +86,48 @@ export async function POST() {
   if (!isValidShopifyDomain(domain)) {
     return NextResponse.json({ error: "Invalid SHOPIFY_STORE_DOMAIN" }, { status: 500 });
   }
-
   try {
     const token = await getShopifyToken();
-    const existing = await listWebhooks(domain, token);
+    const subs = await listSubscriptions(domain, token);
 
-    // Derive the target address from an existing order webhook, so products/update
+    // Copy the callbackUrl from an existing ORDERS_* subscription so products/update
     // delivers to the exact same endpoint (and verifies with the same secret).
-    const orderHook = existing.find(w => w.topic.startsWith("orders/"));
-    if (!orderHook) {
+    const orderSub = subs.find(s => s.topic.startsWith("ORDERS_") && s.callbackUrl);
+    if (!orderSub || !orderSub.callbackUrl) {
       return NextResponse.json(
-        { error: "No existing orders/* webhook found to copy the address from. Refusing to guess." },
+        { error: "No existing ORDERS_* HTTP subscription found to copy the callbackUrl from. Refusing to guess.", seen: subs },
         { status: 409 }
       );
     }
-    const address = orderHook.address;
+    const callbackUrl = orderSub.callbackUrl;
 
-    // Idempotent: already registered to the same address?
-    const already = existing.find(w => w.topic === TARGET_TOPIC && w.address === address);
+    // Idempotent
+    const already = subs.find(s => s.topic === TARGET_TOPIC && s.callbackUrl === callbackUrl);
     if (already) {
-      return NextResponse.json({ ok: true, alreadyExists: true, id: already.id, topic: TARGET_TOPIC, address });
+      return NextResponse.json({ ok: true, alreadyExists: true, id: already.id, topic: TARGET_TOPIC, callbackUrl });
     }
 
-    const res = await fetch(`https://${domain}/admin/api/${API_VERSION}/webhooks.json`, {
-      method: "POST",
-      headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" },
-      body: JSON.stringify({ webhook: { topic: TARGET_TOPIC, address, format: "json" } }),
-    });
-    const text = await res.text();
-    if (!res.ok) {
-      return NextResponse.json({ error: `Shopify create error: ${res.status}`, body: text }, { status: 502 });
+    const mutation = `mutation {
+      webhookSubscriptionCreate(
+        topic: ${TARGET_TOPIC},
+        webhookSubscription: { callbackUrl: "${callbackUrl}", format: JSON }
+      ) {
+        webhookSubscription { id topic endpoint { __typename ... on WebhookHttpEndpoint { callbackUrl } } }
+        userErrors { field message }
+      }
+    }`;
+    const body = await graphql(domain, token, mutation);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = (body as any)?.data?.webhookSubscriptionCreate;
+    const errs = result?.userErrors ?? [];
+    if (errs.length > 0) {
+      return NextResponse.json({ error: "Shopify userErrors", userErrors: errs }, { status: 502 });
     }
-    const created = JSON.parse(text).webhook;
-    return NextResponse.json({ ok: true, created: { id: created.id, topic: created.topic, address: created.address } });
+    const sub = result?.webhookSubscription;
+    return NextResponse.json({
+      ok: true,
+      created: { id: sub?.id, topic: sub?.topic, callbackUrl: sub?.endpoint?.callbackUrl },
+    });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 502 });
   }
