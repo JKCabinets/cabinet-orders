@@ -15,6 +15,7 @@ import { checkAttachmentGate } from "@/lib/stageGates";
 import { AttachmentsPanel, type AttachmentsPanelHandle } from "./AttachmentsPanel";
 import { OrderDetails } from "./OrderDetails";
 import { DamageReportPanel } from "./DamageReportPanel";
+import { AcknowledgmentPanel } from "./AcknowledgmentPanel";
 
 interface OrderModalProps {
   order: Order;
@@ -763,6 +764,9 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
               reporterName={currentUserDisplayName}
             />
           )}
+
+          {/* Acknowledgments: per-vendor .xlsx reconciliation */}
+          <AcknowledgmentPanel orderId={liveOrder.id} eligible={liveOrder.stage !== "New" || !!liveOrder.claimed_by} />
 
           {/* Attachments */}
           <div ref={attachmentsAnchorRef}>
