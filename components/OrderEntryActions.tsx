@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Upload, Check, AlertTriangle } from "lucide-react";
+import { Upload, Check } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { useStore } from "@/lib/store";
 import { useToast } from "./Toast";
@@ -22,7 +22,7 @@ export function buildDiscrepancyMessage(
   ackByVendor: Record<string, AckSummary | null>
 ): string {
   const lines: string[] = [];
-  for (const [vendor, ack] of Object.entries(ackByVendor)) {
+  for (const ack of Object.values(ackByVendor)) {
     if (!ack || ack.verdict !== "red") continue;
     const r: ReconcileResult = ack.result;
     for (const f of r.fields.filter((x) => !x.matched)) {
@@ -82,14 +82,6 @@ export function OrderEntryActions({
     void advance(false);
   }
 
-  function onManualPush() {
-    if (typeof window !== "undefined") {
-      const msg = buildDiscrepancyMessage(order.name, status.ackByVendor);
-      if (!window.confirm(msg)) return;
-    }
-    void advance(true);
-  }
-
   if (status.loading) {
     return <span className="text-[10px] text-cream/40">…</span>;
   }
@@ -112,13 +104,13 @@ export function OrderEntryActions({
   if (status.anyRed) {
     return (
       <button
-        onClick={(e) => { e.stopPropagation(); onManualPush(); }}
+        onClick={(e) => { e.stopPropagation(); onOpenModal?.(order); }}
         disabled={busy}
         className={`${PILL} bg-[rgba(201,112,112,0.16)] border-[rgba(201,112,112,0.5)] text-[#e89090] hover:bg-[rgba(201,112,112,0.26)] disabled:opacity-50`}
-        title="Acknowledgment has discrepancies — review before pushing"
+        title="Acknowledgment has discrepancies — open to resubmit or push"
       >
         <span className="inline-flex items-center gap-1">
-          <AlertTriangle className="w-3 h-3" /> {busy ? "…" : mobile ? "Push" : "Manual Push Order"}
+          <Upload className="w-3 h-3" /> {busy ? "…" : mobile ? "Resubmit" : "Resubmit"}
         </span>
       </button>
     );
