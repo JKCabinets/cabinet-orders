@@ -3,6 +3,7 @@ import { requireAuth, cleanInput, rateLimitOr429 } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import { getShopifyToken } from "@/lib/shopify";
 import { ALLOWED_STAGES, isBackwardsMove, verifyAdminPin, fieldsToClearOnBackwardMove, describeFieldsCleared } from "@/lib/stageGuards";
+import { orderAllVendorsGreen } from "@/lib/acknowledgments";
 
 /** Push order updates back to Shopify */
 async function syncToShopify(
@@ -183,13 +184,13 @@ export async function PATCH(
   // attachments are a hard requirement. Only fires on the New → Entered
   // transition (re-saving an already-Entered order with stage="Entered"
   // shouldn't re-check attachments).
-  if (body.stage === "Entered" && currentStage === "New") {
+  if (body.stage === "Entered" && currentStage === "New" && !body.override_ack) {
     const { data: attachments } = await supabase
       .from("order_attachments")
       .select("id")
       .eq("order_id", id)
       .limit(1);
-    if (!attachments || attachments.length === 0) {
+    if (!(await orderAllVendorsGreen(id)) && (!attachments || attachments.length === 0)) {
       return NextResponse.json(
         { error: "Attach at least one file before marking this order as Entered" },
         { status: 400 },
