@@ -7,6 +7,7 @@ import { useStore } from "@/lib/store";
 import { useSession } from "next-auth/react";
 import { formatDateWithYear, parseOrderDate } from "@/lib/dateUtils";
 import { checkAttachmentGate } from "@/lib/stageGates";
+import { OrderEntryActions } from "./OrderEntryActions";
 import { ArrowUp, ArrowDown, RotateCcw, ChevronRight, X } from "lucide-react";
 import { AvatarWithProfile } from "./AvatarWithProfile";
 import { VendorExportPills } from "./VendorExportPills";
@@ -559,14 +560,18 @@ function UpdateStatusActions({
     if (isClaimedByMe) {
       return (
         <div className="flex items-center gap-1.5">
-          <button
-            onClick={() => withBusy(markEntered)}
-            disabled={busy}
-            className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30"
-            title="Requires an attached PDF"
-          >
-            {busy ? "..." : (mobile ? "Enter" : "Mark Entered")}
-          </button>
+          {order.source === "Shopify" && order.type === "order" ? (
+            <OrderEntryActions order={order} mobile={mobile} onOpenModal={onOpenModal} />
+          ) : (
+            <button
+              onClick={() => withBusy(markEntered)}
+              disabled={busy}
+              className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30"
+              title="Requires an attached PDF"
+            >
+              {busy ? "..." : (mobile ? "Enter" : "Mark Entered")}
+            </button>
+          )}
           <button
             onClick={() => withBusy(() => claimOrder(order.id, null))}
             disabled={busy}

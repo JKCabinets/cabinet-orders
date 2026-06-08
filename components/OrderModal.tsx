@@ -766,7 +766,7 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
           )}
 
           {/* Acknowledgments: per-vendor .xlsx reconciliation */}
-          <AcknowledgmentPanel orderId={liveOrder.id} eligible={liveOrder.stage !== "New" || !!liveOrder.claimed_by} onAllVendorsGreen={() => { if (liveOrder.stage === "New") { moveStage(liveOrder.id, "Entered", currentUserId).then((r) => { if (!r.ok) showToast(r.error ?? "Could not auto-advance to Entered", { kind: "error" }); }); } }} />
+          <AcknowledgmentPanel orderId={liveOrder.id} orderName={liveOrder.name} eligible={liveOrder.stage !== "New" || !!liveOrder.claimed_by} onAdvance={() => { if (liveOrder.stage === "New") moveStage(liveOrder.id, "Entered", currentUserId).then((r) => { if (!r.ok) showToast(r.error ?? "Could not move to Entered", { kind: "error" }); }); }} onAdvanceOverride={() => { if (liveOrder.stage === "New") moveStage(liveOrder.id, "Entered", currentUserId, undefined, true).then((r) => { if (!r.ok) showToast(r.error ?? "Could not move to Entered", { kind: "error" }); }); }} />
 
           {/* Attachments */}
           <div ref={attachmentsAnchorRef}>

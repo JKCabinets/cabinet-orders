@@ -20,7 +20,7 @@ interface StoreCtx {
   onlineUsers: string[];
   loading: boolean;
   addOrder: (o: Partial<Order> & { type: "order" | "warranty" }) => Promise<void>;
-  moveStage: (id: string, stage: Stage, enteredByName?: string, adminPin?: string) => Promise<{ ok: boolean; pinRequired?: boolean; error?: string }>;
+  moveStage: (id: string, stage: Stage, enteredByName?: string, adminPin?: string, overrideAck?: boolean) => Promise<{ ok: boolean; pinRequired?: boolean; error?: string }>;
   updateNotes: (id: string, notes: string) => Promise<void>;
   updateInternalNotes: (id: string, internal_notes: string) => Promise<void>;
   archiveOrder: (id: string) => Promise<void>;
@@ -250,6 +250,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     stage: Stage,
     enteredByName?: string,
     adminPin?: string,
+    overrideAck?: boolean,
   ): Promise<{ ok: boolean; pinRequired?: boolean; error?: string }> => {
     const t = today();
 
@@ -308,7 +309,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       res = await fetch(`/api/orders/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(adminPin ? { stage, admin_pin: adminPin } : { stage }),
+        body: JSON.stringify({ stage, ...(adminPin ? { admin_pin: adminPin } : {}), ...(overrideAck ? { override_ack: true } : {}) }),
       });
     } catch {
       // Network error — revert the optimistic update so the UI doesn't lie

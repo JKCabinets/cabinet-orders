@@ -1,53 +1,33 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Download, Check, X } from "lucide-react";
+import { Download, Check, X, AlertTriangle } from "lucide-react";
 import type { Order } from "@/lib/data";
-
-type AckVerdict = "green" | "red";
+import { useAckStatus } from "@/lib/ackStatus";
 
 /**
- * Per-vendor PDF export pills for an order, each now paired with a
- * reconciliation status icon (green check / red X) when an acknowledgment has
- * been submitted for that vendor. Self-contained: fetches the order's distinct
- * vendors plus the latest ack verdict per vendor, and renders one pill per
- * vendor. Renders nothing until the order is claimed (or has moved past New)
- * and at least one vendor resolves.
- * Used in both the order table row and the order modal header.
+ * Per-vendor PDF export pills for an order, each paired with a reconciliation
+ * status icon (green check / red X) once an acknowledgment has been submitted
+ * for that vendor. Reads the shared ack-status cache (one /vendors fetch per
+ * order backs the row and the modal). Renders nothing until the order is
+ * claimed (or past New) and at least one vendor resolves.
+ *
+ * When an order has moved past New while its latest ack is still red, it also
+ * shows a small "Manually pushed" badge — a derived flag (no schema change)
+ * so management can see a discrepancy was overridden, all the way through the
+ * pipeline. Used in both the table row and the modal header.
  */
 export function VendorExportPills({ order }: { order: Order }) {
   const eligible = order.stage !== "New" || !!order.claimed_by;
-  const [vendors, setVendors] = useState<string[]>([]);
-  const [ackByVendor, setAckByVendor] = useState<Record<string, AckVerdict | null>>({});
+  const status = useAckStatus(order.id, eligible);
+  const manuallyPushed = order.stage !== "New" && status.anyRed;
 
-  useEffect(() => {
-    if (!eligible) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/orders/" + encodeURIComponent(order.id) + "/vendors");
-        if (!res.ok) return;
-        const data = await res.json();
-        if (cancelled) return;
-        setVendors(Array.isArray(data.vendors) ? data.vendors : []);
-        const verdicts: Record<string, AckVerdict | null> = {};
-        const raw = data.ackByVendor ?? {};
-        for (const v of Object.keys(raw)) verdicts[v] = raw[v]?.verdict ?? null;
-        setAckByVendor(verdicts);
-      } catch {
-        /* silent — pills just won't render */
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [order.id, eligible]);
-
-  if (!eligible || vendors.length === 0) return null;
+  if (!eligible || status.vendors.length === 0) return null;
 
   return (
     <div className="flex items-center gap-1 flex-wrap">
-      {vendors.map((v) => {
+      {status.vendors.map((v) => {
         const label = v.replace(/\s+Cabinetry$/i, "");
-        const verdict = ackByVendor[v];
+        const verdict = status.ackByVendor[v]?.verdict ?? null;
         return (
           <span key={v} className="inline-flex items-center gap-1">
             <a
@@ -69,6 +49,16 @@ export function VendorExportPills({ order }: { order: Order }) {
           </span>
         );
       })}
+
+      {manuallyPushed && (
+        <span
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] uppercase tracking-wider font-medium bg-[rgba(201,112,112,0.14)] border border-[rgba(201,112,112,0.45)] text-[#e89090]"
+          title="Entered with unresolved acknowledgment discrepancies"
+        >
+          <AlertTriangle className="w-2.5 h-2.5" />
+          Manually pushed
+        </span>
+      )}
     </div>
   );
 }
