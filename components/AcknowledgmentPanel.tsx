@@ -6,11 +6,18 @@ import type { ReconcileResult } from "@/lib/reconcile";
 import { useToast } from "./Toast";
 
 type AckSummary = { verdict: "green" | "red"; uploaded_at: string; result: ReconcileResult };
+type VendorsResponse = { vendors: string[]; ackByVendor: Record<string, AckSummary | null> };
 
 interface AcknowledgmentPanelProps {
   orderId: string;
   /** Same gate the export pills use: claimed, or past New. */
   eligible: boolean;
+  /**
+   * Called after an upload comes back green AND every vendor on the order now
+   * has a green ack. The modal wires this to moveStage(order, "Entered") so a
+   * fully-reconciled order auto-advances. No-op if the order isn't in New.
+   */
+  onAllVendorsGreen?: () => void;
 }
 
 const FIELD_LABEL: Record<string, string> = { name: "Name", address: "Shipping address" };
@@ -26,6 +33,10 @@ function discrepancyCount(r: ReconcileResult): number {
   return r.fields.filter((f) => !f.matched).length + r.lines.filter((l) => l.status !== "match").length;
 }
 
+function allGreen(data: VendorsResponse): boolean {
+  return data.vendors.length > 0 && data.vendors.every((v) => data.ackByVendor[v]?.verdict === "green");
+}
+
 /**
  * Per-vendor acknowledgment reconciliation, shown in the order modal.
  *
@@ -35,9 +46,10 @@ function discrepancyCount(r: ReconcileResult): number {
  * — on red — an expandable breakdown of exactly which fields and line items are
  * off. Only Waypoint reconciliation exists today, so non-Waypoint vendors are
  * not shown here yet. Self-contained: fetches its own status and refreshes
- * after each upload.
+ * after each upload. When an upload turns the whole order green, it calls
+ * onAllVendorsGreen so the modal can auto-advance to Entered.
  */
-export function AcknowledgmentPanel({ orderId, eligible }: AcknowledgmentPanelProps) {
+export function AcknowledgmentPanel({ orderId, eligible, onAllVendorsGreen }: AcknowledgmentPanelProps) {
   const { showToast } = useToast();
   const [vendors, setVendors] = useState<string[]>([]);
   const [ackByVendor, setAckByVendor] = useState<Record<string, AckSummary | null>>({});
@@ -47,15 +59,20 @@ export function AcknowledgmentPanel({ orderId, eligible }: AcknowledgmentPanelPr
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingVendorRef = useRef<string | null>(null);
 
-  async function load() {
+  async function load(): Promise<VendorsResponse | null> {
     try {
       const res = await fetch("/api/orders/" + encodeURIComponent(orderId) + "/vendors");
-      if (!res.ok) return;
+      if (!res.ok) return null;
       const data = await res.json();
-      setVendors(Array.isArray(data.vendors) ? data.vendors : []);
-      setAckByVendor((data.ackByVendor ?? {}) as Record<string, AckSummary | null>);
+      const next: VendorsResponse = {
+        vendors: Array.isArray(data.vendors) ? data.vendors : [],
+        ackByVendor: (data.ackByVendor ?? {}) as Record<string, AckSummary | null>,
+      };
+      setVendors(next.vendors);
+      setAckByVendor(next.ackByVendor);
+      return next;
     } catch {
-      /* silent — panel just won't show status */
+      return null;
     } finally {
       setLoading(false);
     }
@@ -91,14 +108,17 @@ export function AcknowledgmentPanel({ orderId, eligible }: AcknowledgmentPanelPr
       const data = await res.json();
       if (!res.ok) {
         showToast(data.error ?? "Upload failed", { kind: "error" });
+        return;
+      }
+      const verdict: string | undefined = data?.result?.verdict;
+      const fresh = await load(); // refresh to the new latest row
+      if (verdict === "green" && fresh && allGreen(fresh)) {
+        showToast("Acknowledgment matched — moving order to Entered", { kind: "success" });
+        onAllVendorsGreen?.();
+      } else if (verdict === "green") {
+        showToast("Acknowledgment matched", { kind: "success" });
       } else {
-        const verdict: string | undefined = data?.result?.verdict;
-        if (verdict === "green") {
-          showToast("Acknowledgment matched — no discrepancies", { kind: "success" });
-        } else {
-          showToast("Acknowledgment has discrepancies — see details", { kind: "warn" });
-        }
-        await load(); // refresh to the new latest row
+        showToast("Acknowledgment has discrepancies — see details", { kind: "warn" });
       }
     } catch {
       showToast("Upload failed", { kind: "error" });
