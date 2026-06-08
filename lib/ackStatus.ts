@@ -109,3 +109,19 @@ export function useAckStatus(orderId: string, enabled: boolean): AckStatus {
   if (!enabled) return EMPTY;
   return cache.get(orderId) ?? EMPTY;
 }
+
+// ── Row → modal auto-picker handoff ─────────────────────────────────────────
+// The table's Submit/Resubmit sets a one-shot flag, then opens the modal; the
+// modal consumes it on open and pops the .xlsx picker. Keeps the typed
+// onOpenModal "reason" out of the row→page→modal chain.
+const ackPickerRequests = new Set<string>();
+export function requestAckPicker(orderId: string): void {
+  ackPickerRequests.add(orderId);
+}
+export function consumeAckPicker(orderId: string): boolean {
+  if (ackPickerRequests.has(orderId)) {
+    ackPickerRequests.delete(orderId);
+    return true;
+  }
+  return false;
+}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { X, Clock, ChevronRight, Archive, RotateCcw, Trash2, Loader2, Download } from "lucide-react";
+import { X, Check, Clock, ChevronRight, Archive, RotateCcw, Trash2, Loader2, Download } from "lucide-react";
 import clsx from "clsx";
 import { useSession } from "next-auth/react";
 import {
@@ -15,7 +15,8 @@ import { checkAttachmentGate } from "@/lib/stageGates";
 import { AttachmentsPanel, type AttachmentsPanelHandle } from "./AttachmentsPanel";
 import { OrderDetails } from "./OrderDetails";
 import { DamageReportPanel } from "./DamageReportPanel";
-import { AcknowledgmentPanel } from "./AcknowledgmentPanel";
+import { AcknowledgmentPanel, type AcknowledgmentPanelHandle } from "./AcknowledgmentPanel";
+import { consumeAckPicker } from "@/lib/ackStatus";
 
 interface OrderModalProps {
   order: Order;
@@ -122,6 +123,7 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
   const pinInputRef = useRef<HTMLInputElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const attachmentsRef = useRef<AttachmentsPanelHandle>(null);
+  const ackPanelRef = useRef<AcknowledgmentPanelHandle>(null);
   const attachmentsAnchorRef = useRef<HTMLDivElement>(null);
 
   // When the modal opens because of a missing-attachment gate, show a
@@ -146,6 +148,15 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
 
   const liveOrder =
     (tab === "orders" ? orders : warranties).find((o) => o.id === order.id) ?? order;
+
+  // If the modal was opened via the row Submit/Resubmit, pop the .xlsx picker.
+  useEffect(() => {
+    if (consumeAckPicker(liveOrder.id)) {
+      requestAnimationFrame(() => {
+        setTimeout(() => ackPanelRef.current?.openFilePicker(), 200);
+      });
+    }
+  }, [liveOrder.id]);
 
   // Fetch distinct vendors for this order (drives the per-vendor export pills).
   useEffect(() => {
@@ -418,72 +429,60 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
           {/* Pipeline stage */}
           <div className="px-6 py-5" style={SECTION_BORDER}>
             <p className={LABEL}>Pipeline stage</p>
-            <div className="flex flex-col gap-1.5">
-              {stages.map((s, i) => {
-                const isActive = liveOrder.stage === s;
-                const isPast = stageIdx > i;
-                const isBackwards = i < stageIdx && !isActive;
-                const color = STAGE_COLOR[s] ?? "#91a597";
-                const isEnteredGate = s === "Entered" && liveOrder.stage === "New";
-                return (
-                  <button
-                    key={s}
-                    onClick={() => handleMoveStage(s as Stage)}
-                    disabled={checkingAttachments}
-                    className="flex items-center gap-3 px-3.5 py-2.5 rounded-brand text-[12px] transition-all duration-300 ease-brand text-left disabled:opacity-60"
-                    style={
-                      isActive
-                        ? {
-                            background: `${color}1f`,
-                            border: `0.5px solid ${color}66`,
-                            boxShadow: `inset 0 1px 0 rgba(255,255,255,0.10)`,
-                            color: color,
+            <div className="glass-sage rounded-panel px-4 py-4 mt-1">
+              <div className="flex items-start">
+                {stages.map((s, i) => {
+                  const isActive = liveOrder.stage === s;
+                  const isPast = stageIdx > i;
+                  const color = STAGE_COLOR[s] ?? "#91a597";
+                  const isEnteredGate = s === "Entered" && liveOrder.stage === "New";
+                  const lineDone = "rgba(145,165,151,0.55)";
+                  const lineTodo = "rgba(255,255,255,0.12)";
+                  return (
+                    <div key={s} className="flex-1 flex flex-col items-center min-w-0">
+                      <div className="flex items-center w-full">
+                        <span className="flex-1 h-[1.5px] rounded-full" style={{ background: i === 0 ? "transparent" : (i <= stageIdx ? lineDone : lineTodo) }} />
+                        <button
+                          type="button"
+                          onClick={() => handleMoveStage(s as Stage)}
+                          disabled={checkingAttachments}
+                          title={isEnteredGate ? "Requires a matching acknowledgment or attachment" : isPast ? "Move back (admin PIN)" : s}
+                          className="relative flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-all duration-300 ease-brand disabled:opacity-60"
+                          style={
+                            isActive
+                              ? { background: color, boxShadow: `0 0 0 3px ${color}33, 0 0 10px ${color}66` }
+                              : isPast
+                              ? { background: `${color}cc` }
+                              : { background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.14)" }
                           }
-                        : {
-                            background: "rgba(255,255,255,0.04)",
-                            border: "0.5px solid rgba(255,255,255,0.08)",
-                            color: isPast ? "rgba(240,236,228,0.50)" : "rgba(240,236,228,0.75)",
-                          }
-                    }
-                    onMouseEnter={(e) => {
-                      if (isActive) return;
-                      const el = e.currentTarget as HTMLButtonElement;
-                      el.style.background = "rgba(255,255,255,0.07)";
-                      el.style.borderColor = "rgba(255,255,255,0.15)";
-                    }}
-                    onMouseLeave={(e) => {
-                      if (isActive) return;
-                      const el = e.currentTarget as HTMLButtonElement;
-                      el.style.background = "rgba(255,255,255,0.04)";
-                      el.style.borderColor = "rgba(255,255,255,0.08)";
-                    }}
-                  >
-                    <span
-                      className="w-2 h-2 rounded-full flex-shrink-0"
-                      style={{
-                        background: isActive ? color : isPast ? color + "55" : "rgba(255,255,255,0.18)",
-                        boxShadow: isActive ? `0 0 6px ${color}88` : "none",
-                      }}
-                    />
-                    <span className="flex-1 font-medium tracking-wide">{s}</span>
-                    {isActive && !checkingAttachments && <ChevronRight className="w-3.5 h-3.5 opacity-65" />}
-                    {isActive && checkingAttachments && <Loader2 className="w-3.5 h-3.5 opacity-65 animate-spin" />}
-                    {isEnteredGate && !isActive && (
-                      <span className="text-[9px] px-2 py-px rounded-full flex-shrink-0 uppercase tracking-wider font-medium"
-                        style={{ background: "rgba(212,146,42,0.15)", color: "#e8b56a", border: "0.5px solid rgba(212,146,42,0.40)" }}>
-                        PDF req.
-                      </span>
-                    )}
-                    {!isActive && (
-                      <span className="text-[9px] px-2 py-px rounded-full flex-shrink-0 uppercase tracking-wider font-medium"
-                        style={{ background: "rgba(232,144,144,0.12)", color: "#e89090", border: "0.5px solid rgba(232,144,144,0.35)" }}>
-                        Admin
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
+                        >
+                          {isActive && checkingAttachments ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: "#15110c" }} />
+                          ) : isPast ? (
+                            <Check className="w-3.5 h-3.5" strokeWidth={3} style={{ color: "#15110c" }} />
+                          ) : isActive ? (
+                            <span className="w-2 h-2 rounded-full" style={{ background: "rgba(0,0,0,0.5)" }} />
+                          ) : (
+                            <span className="w-1.5 h-1.5 rounded-full" style={{ background: isEnteredGate ? "#e8b56a" : "rgba(240,236,228,0.35)" }} />
+                          )}
+                        </button>
+                        <span className="flex-1 h-[1.5px] rounded-full" style={{ background: i === stages.length - 1 ? "transparent" : (i < stageIdx ? lineDone : lineTodo) }} />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleMoveStage(s as Stage)}
+                        disabled={checkingAttachments}
+                        className="mt-1.5 px-0.5 text-[9px] uppercase tracking-[0.07em] font-medium text-center leading-tight transition-colors disabled:opacity-60"
+                        style={{ color: isActive ? color : isPast ? "rgba(240,236,228,0.62)" : "rgba(240,236,228,0.40)" }}
+                      >
+                        {s}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
+
 
             {/* PIN prompt for backwards moves */}
             {pendingStage && (
@@ -670,7 +669,9 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
               <DateEditor order={liveOrder} updateOrderDetails={updateOrderDetails} />
             )}
 
-            {/* Customer-facing notes — Quote orders get structured display, others get plain textarea */}
+            {/* Acknowledgments: per-vendor .xlsx reconciliation */}
+          <AcknowledgmentPanel ref={ackPanelRef} orderId={liveOrder.id} orderName={liveOrder.name} eligible={liveOrder.stage !== "New" || !!liveOrder.claimed_by} onAdvance={() => { if (liveOrder.stage === "New") moveStage(liveOrder.id, "Entered", currentUserId).then((r) => { if (!r.ok) showToast(r.error ?? "Could not move to Entered", { kind: "error" }); }); }} onAdvanceOverride={() => { if (liveOrder.stage === "New") moveStage(liveOrder.id, "Entered", currentUserId, undefined, true).then((r) => { if (!r.ok) showToast(r.error ?? "Could not move to Entered", { kind: "error" }); }); }} />
+          {/* Customer-facing notes — Quote orders get structured display, others get plain textarea */}
             {liveOrder.source === "Manual" && liveOrder.notes?.includes("QUOTE REQUEST") ? (
               <QuoteInfoPanel notes={liveOrder.notes} />
             ) : (
@@ -765,8 +766,6 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
             />
           )}
 
-          {/* Acknowledgments: per-vendor .xlsx reconciliation */}
-          <AcknowledgmentPanel orderId={liveOrder.id} orderName={liveOrder.name} eligible={liveOrder.stage !== "New" || !!liveOrder.claimed_by} onAdvance={() => { if (liveOrder.stage === "New") moveStage(liveOrder.id, "Entered", currentUserId).then((r) => { if (!r.ok) showToast(r.error ?? "Could not move to Entered", { kind: "error" }); }); }} onAdvanceOverride={() => { if (liveOrder.stage === "New") moveStage(liveOrder.id, "Entered", currentUserId, undefined, true).then((r) => { if (!r.ok) showToast(r.error ?? "Could not move to Entered", { kind: "error" }); }); }} />
 
           {/* Attachments */}
           <div ref={attachmentsAnchorRef}>

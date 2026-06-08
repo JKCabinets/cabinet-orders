@@ -5,7 +5,7 @@ import { Upload, Check } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { useStore } from "@/lib/store";
 import { useToast } from "./Toast";
-import { useAckStatus, type AckSummary } from "@/lib/ackStatus";
+import { useAckStatus, requestAckPicker, type AckSummary } from "@/lib/ackStatus";
 import type { ReconcileResult } from "@/lib/reconcile";
 import type { Order } from "@/lib/data";
 
@@ -104,7 +104,7 @@ export function OrderEntryActions({
   if (status.anyRed) {
     return (
       <button
-        onClick={(e) => { e.stopPropagation(); onOpenModal?.(order); }}
+        onClick={(e) => { e.stopPropagation(); requestAckPicker(order.id); onOpenModal?.(order); }}
         disabled={busy}
         className={`${PILL} bg-[rgba(201,112,112,0.16)] border-[rgba(201,112,112,0.5)] text-[#e89090] hover:bg-[rgba(201,112,112,0.26)] disabled:opacity-50`}
         title="Acknowledgment has discrepancies — open to resubmit or push"
@@ -119,7 +119,7 @@ export function OrderEntryActions({
   // No acknowledgment yet → Submit order (opens modal + picker)
   return (
     <button
-      onClick={(e) => { e.stopPropagation(); onOpenModal?.(order); }}
+      onClick={(e) => { e.stopPropagation(); requestAckPicker(order.id); onOpenModal?.(order); }}
       disabled={busy}
       className={`${PILL} bg-terracotta/20 border-terracotta/45 text-terracotta hover:bg-terracotta/30 disabled:opacity-50`}
       title="Upload the manufacturer's .xlsx acknowledgment"
