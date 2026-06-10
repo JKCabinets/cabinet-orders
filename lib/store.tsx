@@ -2,7 +2,7 @@
 
 import React, {
   createContext, useContext, useState,
-  useCallback, useEffect, ReactNode,
+  useCallback, useEffect, useRef, ReactNode,
 } from "react";
 import { useSession } from "next-auth/react";
 import {
@@ -158,24 +158,35 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Only load data once session is authenticated
-  useEffect(() => {
-    if (status !== "authenticated") return;
-
-    async function load() {
-      setLoading(true);
+  // Shared loader for orders/warranties/team. Used by the initial mount
+  // (which shows the spinner) and by realtime reconnect (a background
+  // catch-up that must NOT flip the spinner or flash the board). An
+  // in-flight guard keeps a flurry of reconnects from stacking refetches.
+  const refetchInFlight = useRef(false);
+  const refetchAll = useCallback(async (opts?: { showLoading?: boolean }) => {
+    if (refetchInFlight.current) return;
+    refetchInFlight.current = true;
+    if (opts?.showLoading) setLoading(true);
+    try {
       const [ordersRes, warrantiesRes, teamRes] = await Promise.all([
         apiCall("/api/orders?type=order"),
         apiCall("/api/orders?type=warranty"),
         apiCall("/api/team"),
       ]);
-      if (ordersRes?.data)     setOrders(ordersRes.data.map(shapeOrder));
+      if (ordersRes?.data) setOrders(ordersRes.data.map(shapeOrder));
       if (warrantiesRes?.data) setWarranties(warrantiesRes.data.map(shapeOrder));
-      if (teamRes?.data)       setTeam(teamRes.data.map(shapeTeamMember));
-      setLoading(false);
+      if (teamRes?.data) setTeam(teamRes.data.map(shapeTeamMember));
+    } finally {
+      if (opts?.showLoading) setLoading(false);
+      refetchInFlight.current = false;
     }
-    load();
-  }, [status]);
+  }, []);
+
+  // Only load data once session is authenticated
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    refetchAll({ showLoading: true });
+  }, [status, refetchAll]);
 
   // Realtime: subscribe to orders table changes. Edits made by other
   // users (or other tabs of the same user) flow into the store
@@ -201,9 +212,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setWarranties((prev) => prev.filter((o) => o.id !== id));
     },
     onReconnect: () => {
-      // On reconnect, do nothing for now — events missed during a brief
-      // disconnect are rare and idempotent merges handle most cases.
-      // Phase 2 may add an explicit refetch here.
+      // Catch up on anything missed while disconnected. Background refetch —
+      // no spinner, idempotent with the live merges above.
+      void refetchAll();
     },
   });
 
