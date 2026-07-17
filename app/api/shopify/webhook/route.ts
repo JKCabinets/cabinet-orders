@@ -60,6 +60,42 @@ function verifyShopifyHmac(body: string, hmacHeader: string): boolean {
   return crypto.timingSafeEqual(expected, provided);
 }
 
+/**
+ * Does a composite SKU legitimately derive from the variant's own SKU?
+ *
+ * `properties[_sku]` is written by the storefront bridge (sku-avis-bridge.js)
+ * and is therefore CLIENT-SETTABLE — a buyer can forge it via devtools or a
+ * hand-rolled /cart/add.js call. The line item's `sku` comes from Shopify's
+ * product data and cannot be tampered with, so it is the authority.
+ *
+ * A legitimate composite is the variant SKU, optionally followed by a
+ * separator plus vendor-specific suffixes:
+ *   HCI       B09FHD  -> B09FHD-MSL
+ *   Waypoint  B24     -> B24-570F-PN
+ *   J&K       B24-S1  -> B24-S1        (the bridge's append is idempotent)
+ *
+ * The separator check is what stops variant B24 from accepting a forged
+ * "B240-570F-PN" (a real, different base SKU) as a match.
+ */
+function compositeMatchesVariant(composite: string, variantSku: string): boolean {
+  const c = composite.trim().toUpperCase();
+  const v = variantSku.trim().toUpperCase();
+  if (!c || !v) return true; // nothing authoritative to compare against
+  if (c === v) return true;
+  if (!c.startsWith(v)) return false;
+  const next = c.charAt(v.length);
+  return next !== "" && !/[A-Z0-9]/.test(next);
+}
+
+/**
+ * Activity-trail wording for a rejected `_sku`. Shared by the create and
+ * update paths so the two produce byte-identical text — the update path
+ * dedupes against it.
+ */
+function skuMismatchNote(a: { description: string; claimed: string; actual: string }): string {
+  return `SKU mismatch on "${a.description}" \u2014 submitted "${a.claimed}" does not match the variant SKU "${a.actual}". Submitted value ignored; SKU rebuilt from the variant.`;
+}
+
 function buildOrder(payload: Record<string, unknown>) {
   const lineItems = (payload.line_items as Array<Record<string, unknown>>) ?? [];
   const customer = (payload.customer as Record<string, unknown>) ?? {};
@@ -89,6 +125,10 @@ function buildOrder(payload: Record<string, unknown>) {
     ? `${itemNames.slice(0, 2).join(", ")}${itemNames.length > 2 ? ` +${itemNames.length - 2} more` : ""}`
     : itemNames[0] ?? "Shopify order";
 
+  // Lines whose submitted `_sku` failed validation. Collected here (buildOrder
+  // is pure / DB-free) and written to order_activity by the caller.
+  const skuAnomalies: Array<{ description: string; claimed: string; actual: string }> = [];
+
   const skuItems = lineItems.map(i => {
     const props = (i.properties as Array<{ name: string; value: string }>) ?? [];
 
@@ -97,11 +137,33 @@ function buildOrder(payload: Record<string, unknown>) {
 
     const skuProp = props.find(p => p.name === "_sku");
     const baseVariantSku = String(i.sku ?? i.variant_id ?? "");
+    // The variant's own SKU from Shopify product data — the tamper-proof
+    // authority. Deliberately NOT baseVariantSku, which falls back to
+    // variant_id: a numeric id that no legitimate composite starts with,
+    // so validating against it would flag every line as a mismatch.
+    const variantSku = String(i.sku ?? "");
 
     const avisDoorStyle   = getProp("_Door Style", "Door Style");
     const avisColorSelect = getProp("_Color Selection", "Color Selection");
 
     let sku = skuProp?.value || "";
+
+    // `properties[_sku]` is client-settable, and buildOrder trusts it first.
+    // Verify it derives from the variant's real SKU; if it does not, discard
+    // it and fall through to the rebuild chain below (Avis names, else the
+    // bare variant SKU) so the stored value comes from authoritative data.
+    // Price is fixed by variant id, so a forged _sku cannot underpay — but it
+    // would make the team order the wrong item, and reconciliation would not
+    // catch it (the vendor ack echoes whatever was ordered).
+    if (sku && variantSku && !compositeMatchesVariant(sku, variantSku)) {
+      skuAnomalies.push({
+        description: String(i.name ?? ""),
+        claimed: sku,
+        actual: variantSku,
+      });
+      sku = "";
+    }
+
     if (!sku && baseVariantSku && avisDoorStyle && avisColorSelect) {
       sku = buildSkuFromAvisNames(baseVariantSku, avisDoorStyle, avisColorSelect) ?? baseVariantSku;
     }
@@ -150,6 +212,7 @@ function buildOrder(payload: Record<string, unknown>) {
     detail: shopifyInput(detail),
     skus,
     skuItems,
+    skuAnomalies,
     notes: shopifyInput(notes),
     today,
     orderNumber: shopifyInput(orderNumber),
@@ -234,7 +297,7 @@ export async function POST(req: NextRequest) {
       .from("orders").select("id").eq("shopify_id", shopifyId).single();
     if (existing) return NextResponse.json({ received: true, skipped: "duplicate" });
 
-    const { customerName, customerEmail, customerPhone, shipTo, deliveryMethod, detail, skus, skuItems, notes, today, orderNumber, decodedDoorStyle, decodedColor } = buildOrder(payload);
+    const { customerName, customerEmail, customerPhone, shipTo, deliveryMethod, detail, skus, skuItems, skuAnomalies, notes, today, orderNumber, decodedDoorStyle, decodedColor } = buildOrder(payload);
     const orderId = orderNumber ? `SHO-${orderNumber}` : `SHO-${shopifyId.slice(-6)}`;
 
     // Resolve the order-level vendor through the SAME layered resolver used at
@@ -287,6 +350,17 @@ export async function POST(req: NextRequest) {
       text: `Order received from Shopify${orderNumber ? ` (#${orderNumber})` : ""}`,
       time: today,
     });
+
+    // Surface any rejected _sku in the trail. The stored SKU is already the
+    // rebuilt, authoritative one — this makes the discrepancy visible rather
+    // than silently corrected.
+    for (const a of skuAnomalies) {
+      await supabase.from("order_activity").insert({
+        order_id: orderId,
+        text: skuMismatchNote(a),
+        time: today,
+      });
+    }
   }
 
   // ─── Order updated ────────────────────────────────────────────────────────
@@ -298,7 +372,7 @@ export async function POST(req: NextRequest) {
 
     if (existing) {
       const today = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "America/Phoenix" });
-      const { detail, skus, skuItems, notes, shipTo, customerPhone, customerEmail, deliveryMethod } = buildOrder(payload);
+      const { detail, skus, skuItems, skuAnomalies, notes, shipTo, customerPhone, customerEmail, deliveryMethod } = buildOrder(payload);
 
       const fulfillmentStatus = String(payload.fulfillment_status ?? "");
       const updates: Record<string, unknown> = {
@@ -325,6 +399,27 @@ export async function POST(req: NextRequest) {
         text: "Order updated in Shopify",
         time: today,
       });
+
+      // orders/updated fires repeatedly (payment, fulfillment, edits), and a
+      // forged _sku persists across them — so dedupe against notes already on
+      // the trail instead of appending the same warning on every event.
+      if (skuAnomalies.length > 0) {
+        const { data: priorNotes } = await supabase
+          .from("order_activity")
+          .select("text")
+          .eq("order_id", existing.id)
+          .like("text", "SKU mismatch on %");
+        const seen = new Set((priorNotes ?? []).map((n: { text: string }) => n.text));
+        for (const a of skuAnomalies) {
+          const text = skuMismatchNote(a);
+          if (seen.has(text)) continue;
+          await supabase.from("order_activity").insert({
+            order_id: existing.id,
+            text,
+            time: today,
+          });
+        }
+      }
     }
   }
 
