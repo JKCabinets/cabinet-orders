@@ -21,7 +21,7 @@
  */
 
 import { supabase } from "@/lib/supabase";
-import { decodeSku, DOOR_STYLE_MAP, HCI_COLOR_MAP, JK_COLOR_MAP } from "@/lib/skuDecoder";
+import { decodeSku, doorStyleMap, hciColorMap, jkColorMap, ensureSkuMaps } from "@/lib/skuDecoder";
 
 const UNKNOWN_VENDOR = "__UNASSIGNED__";
 
@@ -70,11 +70,11 @@ function vendorFamilyFromSku(fullSku: string): string | null {
   const prev = parts.length >= 3 ? parts[parts.length - 2] : "";
 
   // Waypoint: a real door code in the door position
-  if (parts.length >= 3 && DOOR_STYLE_MAP[prev]) return VENDOR_WAYPOINT;
+  if (parts.length >= 3 && doorStyleMap()[prev]) return VENDOR_WAYPOINT;
 
   // HCI vs J&K by trailing color code (disjoint sets)
-  if (HCI_COLOR_MAP[last]) return VENDOR_HCI;
-  if (JK_COLOR_MAP[last]) return VENDOR_JK;
+  if (hciColorMap()[last]) return VENDOR_HCI;
+  if (jkColorMap()[last]) return VENDOR_JK;
 
   return null;
 }
@@ -83,6 +83,9 @@ export async function lookupVendorsForSkus(
   skuItems: ResolvableItem[],
   fallbackOrderVendor?: string | null
 ): Promise<VendorLookupResult> {
+  // Warm the mapping cache before any decode/classify runs (no-op once loaded).
+  await ensureSkuMaps();
+
   const vendorBySku = new Map<string, string>();
   const fallback = (fallbackOrderVendor ?? "").trim();
 

@@ -18,7 +18,7 @@
  * (e.g. via SheetJS/xlsx in the upload route); this module stays I/O-free and
  * unit-testable.
  */
-import { DOOR_STYLE_MAP, COLOR_NAME_TO_CODE } from "@/lib/skuDecoder";
+import { doorStyleMap, colorNameToCode } from "@/lib/skuDecoder";
 
 export interface AckLineItem {
   base_sku: string;
@@ -92,7 +92,7 @@ export function parseWaypointAck(sheetName: string, grid: Grid): ParsedAck {
       // Group/Style header: text in col A, no qty
       if (a && qty === null) {
         const m = a.match(/-\s*([0-9]{3}[A-Z]|BUTT)-([A-Z ]+)\s*$/);
-        if (m && DOOR_STYLE_MAP[m[1].trim()]) {
+        if (m && doorStyleMap()[m[1].trim()]) {
           curDoor = m[1].trim();
           curColorName = m[2].trim();
         }
@@ -103,11 +103,12 @@ export function parseWaypointAck(sheetName: string, grid: Grid): ParsedAck {
       // Line item: qty present + base sku in desc
       if (qty !== null && desc) {
         const base = desc.trim();
-        const colorCode = COLOR_NAME_TO_CODE[curColorName.toUpperCase() as keyof typeof COLOR_NAME_TO_CODE]
-          ?? COLOR_NAME_TO_CODE[
-              (Object.keys(COLOR_NAME_TO_CODE).find(
+        const nameToCode = colorNameToCode();
+        const colorCode = nameToCode[curColorName.toUpperCase()]
+          ?? nameToCode[
+              Object.keys(nameToCode).find(
                 k => k.toUpperCase() === curColorName.toUpperCase()
-              ) ?? "") as keyof typeof COLOR_NAME_TO_CODE
+              ) ?? ""
             ]
           ?? "";
         const composite = curDoor && colorCode

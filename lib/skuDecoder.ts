@@ -1,102 +1,32 @@
-/**
- * skuDecoder.ts
- *
- * Decodes the door-style and color segments from a SKU, and builds full SKUs
- * from Avis option names (Waypoint only).
- *
- * Two SKU shapes are supported:
- *   Waypoint   {base}-{doorCode}-{colorCode}   e.g. W930-580F-PL  (door + color)
- *   HCI / J&K  {base}-{colorCode}              e.g. B09FHD-MSL    (color only)
- *
- * Waypoint door/color come from Avis line-item properties; HCI/J&K color comes
- * from a native Shopify variant, with the code appended by the storefront SKU
- * bridge. The shapes are told apart by the code tables, not by segment count.
- */
+// SKU decoder — pure decode/build logic over the table-backed mapping cache.
+//
+// The door/color maps NO LONGER live here as hardcoded constants. They are
+// loaded from the `sku_mappings` table via lib/skuMappings and exposed as
+// synchronous getters over a warm in-memory cache. Async callers must
+// `await ensureSkuMaps()` before decoding (see lib/skuMappings). Re-exported
+// below so existing importers (vendorLookup, waypointAck) keep importing from
+// "@/lib/skuDecoder".
 
-// ── Waypoint — Door Style: code -> human-readable name ───────────────────
-export const DOOR_STYLE_MAP: Record<string, string> = {
-  "570F": "Arizona",
-  "460F": "Gilbert",
-  "410F": "Shaker",
-  "530S": "Slab",
-  "580F": "Slim Shaker",
-  "470F": "Vista",
-  "BUTT": "Butt",
-};
+import {
+  doorStyleMap,
+  doorStyleNameToCode,
+  colorNameToCode,
+  colorMapAll,
+} from "@/lib/skuMappings";
 
-// ── Waypoint — Door Style: Avis option name -> SKU code (reverse) ────────
-export const DOOR_STYLE_NAME_TO_CODE: Record<string, string> = {
-  "Arizona":    "570F",
-  "Gilbert":    "460F",
-  "Shaker":     "410F",
-  "Slab":       "530S",
-  "Slim Shaker":"580F",
-  "Vista":      "470F",
-  "Butt":       "BUTT",
-};
-
-// ── Waypoint — Color: code -> human-readable name ────────────────────────
-export const COLOR_MAP: Record<string, string> = {
-  "ML": "Maple Latte",
-  "MR": "Maple Rye",
-  "MS": "Maple Slate",
-  "MT": "Maple Truffle",
-  "PB": "Painted Black",
-  "PH": "Painted Harbor",
-  "PL": "Painted Linen",
-  "PN": "Painted Navy",
-  "PO": "Painted Oat",
-  "PS": "Painted Sage",
-  "PV": "Painted Vanilla",
-};
-
-// ── Waypoint — Color: Avis option name -> SKU code (reverse) ─────────────
-export const COLOR_NAME_TO_CODE: Record<string, string> = {
-  "Maple Latte":   "ML",
-  "Maple Rye":     "MR",
-  "Maple Slate":   "MS",
-  "Maple Truffle": "MT",
-  "Painted Black": "PB",
-  "Painted Harbor":"PH",
-  "Painted Linen": "PL",
-  "Painted Navy":  "PN",
-  "Painted Oat":   "PO",
-  "Painted Sage":  "PS",
-  "Painted Vanilla":"PV",
-};
-
-// ── HCI — Color: code -> name (native-variant colors; no door segment) ───
-//    Keep these in sync with the HCI overlay's attachingSku codes.
-export const HCI_COLOR_MAP: Record<string, string> = {
-  "WHS": "White Shaker",
-  "GRS": "Gray Shaker",
-  "MSL": "Modern Slate",
-  "SIB": "Signature Blue",
-  "ONB": "Onyx Black",
-  "WHN": "Nano White",
-  "GRN": "Nano Green",
-};
-
-// ── J&K — Color: code -> name (native-variant colors; no door segment) ───
-//    Forward-looking: confirm against the J&K overlay codes once that store
-//    is live. No J&K orders flow until then.
-export const JK_COLOR_MAP: Record<string, string> = {
-  "S1":  "Java Coffee",
-  "H9":  "Pearl Glaze",
-  "E1":  "Dove",
-  "E2":  "Charcoal Gray",
-  "K10": "Mocha Glazed",
-  "S5":  "Castle Grey",
-  "S8":  "White",
-};
-
-// ── All color codes in one lookup (used to recognise the trailing segment) ─
-//    Codes do not collide across vendors, so a flat merge is unambiguous.
-export const COLOR_MAP_ALL: Record<string, string> = {
-  ...COLOR_MAP,
-  ...HCI_COLOR_MAP,
-  ...JK_COLOR_MAP,
-};
+// Re-export the mapping accessors + cache controls so consumers have one home.
+export {
+  ensureSkuMaps,
+  refreshSkuMaps,
+  skuMapsUnavailable,
+  doorStyleMap,
+  doorStyleNameToCode,
+  colorMap,
+  colorNameToCode,
+  hciColorMap,
+  jkColorMap,
+  colorMapAll,
+} from "@/lib/skuMappings";
 
 export interface DecodedSku {
   baseSku: string;
@@ -119,13 +49,16 @@ export function decodeSku(sku: string): DecodedSku | null {
   const parts = sku.split("-");
   if (parts.length < 2) return null;
 
+  const doors = doorStyleMap();
+  const colorsAll = colorMapAll();
+
   const last = parts[parts.length - 1];
   const prev = parts.length >= 3 ? parts[parts.length - 2] : "";
 
   // 3-part (Waypoint): base - DOOR - COLOR
-  if (parts.length >= 3 && DOOR_STYLE_MAP[prev] && COLOR_MAP_ALL[last]) {
-    const doorStyle = DOOR_STYLE_MAP[prev];
-    const color     = COLOR_MAP_ALL[last];
+  if (parts.length >= 3 && doors[prev] && colorsAll[last]) {
+    const doorStyle = doors[prev];
+    const color     = colorsAll[last];
     return {
       baseSku:   parts.slice(0, parts.length - 2).join("-"),
       doorCode:  prev,
@@ -137,8 +70,8 @@ export function decodeSku(sku: string): DecodedSku | null {
   }
 
   // 2-part (HCI / J&K): base - COLOR  (color is a native variant, no door code)
-  if (COLOR_MAP_ALL[last]) {
-    const color = COLOR_MAP_ALL[last];
+  if (colorsAll[last]) {
+    const color = colorsAll[last];
     return {
       baseSku:   parts.slice(0, parts.length - 1).join("-"),
       doorCode:  "",
@@ -162,8 +95,8 @@ export function buildSkuFromAvisNames(
   doorStyleName: string,
   colorName: string
 ): string | null {
-  const doorCode  = DOOR_STYLE_NAME_TO_CODE[doorStyleName];
-  const colorCode = COLOR_NAME_TO_CODE[colorName];
+  const doorCode  = doorStyleNameToCode()[doorStyleName];
+  const colorCode = colorNameToCode()[colorName];
   if (!doorCode || !colorCode) return null;
   return `${baseSku}-${doorCode}-${colorCode}`;
 }
