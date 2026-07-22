@@ -3,7 +3,8 @@ import crypto from "crypto";
 import { supabase } from "@/lib/supabase";
 import { cleanInput } from "@/lib/auth";
 import { decodeHtmlEntities } from "@/lib/htmlEntities";
-import { decodeSku, buildSkuFromAvisNames } from "@/lib/skuDecoder";
+import { decodeSku, buildSkuFromAvisNamesDetailed, ensureSkuMaps, skuMapsUnavailable } from "@/lib/skuDecoder";
+import type { ReviewReason } from "@/lib/data";
 import { lookupVendorsForSkus } from "@/lib/vendorLookup";
 
 const SHOPIFY_SECRET = process.env.SHOPIFY_WEBHOOK_SECRET ?? "";
@@ -128,6 +129,15 @@ function buildOrder(payload: Record<string, unknown>) {
   // Lines whose submitted `_sku` failed validation. Collected here (buildOrder
   // is pure / DB-free) and written to order_activity by the caller.
   const skuAnomalies: Array<{ description: string; claimed: string; actual: string }> = [];
+  // Human-readable notes for lines flagged needs_review (unmapped / decoder
+  // unavailable / missing sku). Written to order_activity by the caller;
+  // deduped on the repeat-firing update path.
+  const reviewNotes: string[] = [];
+
+  // Maps are warmed by `await ensureSkuMaps()` in the caller before buildOrder
+  // runs. If the table couldn't load, this is stable for the whole pass and
+  // every line is flagged decoder_unavailable (never a crash, never dropped).
+  const mapsDown = skuMapsUnavailable();
 
   const skuItems = lineItems.map(i => {
     const props = (i.properties as Array<{ name: string; value: string }>) ?? [];
@@ -136,54 +146,99 @@ function buildOrder(payload: Record<string, unknown>) {
       props.find(p => names.includes(p.name))?.value ?? "";
 
     const skuProp = props.find(p => p.name === "_sku");
-    const baseVariantSku = String(i.sku ?? i.variant_id ?? "");
+    // Blank-aware base: a Shopify sku of "" (empty, not null) must still fall
+    // back to variant_id. The old `??` kept the empty string and the line was
+    // then dropped by `.filter`; now it falls back, and a line with nothing at
+    // all is KEPT + flagged missing_sku rather than silently disappearing.
+    const variantIdStr = String(i.variant_id ?? "");
+    const rawSku = typeof i.sku === "string" ? i.sku.trim() : "";
+    const baseVariantSku = rawSku || variantIdStr;
     // The variant's own SKU from Shopify product data — the tamper-proof
-    // authority. Deliberately NOT baseVariantSku, which falls back to
-    // variant_id: a numeric id that no legitimate composite starts with,
-    // so validating against it would flag every line as a mismatch.
-    const variantSku = String(i.sku ?? "");
+    // authority. Deliberately NOT baseVariantSku (which falls back to the
+    // numeric variant_id), so validation compares against a real SKU only.
+    const variantSku = rawSku;
 
     const avisDoorStyle   = getProp("_Door Style", "Door Style");
     const avisColorSelect = getProp("_Color Selection", "Color Selection");
 
-    let sku = skuProp?.value || "";
+    const desc = String(i.name ?? "");
+    let sku = (skuProp?.value ?? "").trim();
+    let reviewReason: ReviewReason | null = null;
 
-    // `properties[_sku]` is client-settable, and buildOrder trusts it first.
-    // Verify it derives from the variant's real SKU; if it does not, discard
-    // it and fall through to the rebuild chain below (Avis names, else the
-    // bare variant SKU) so the stored value comes from authoritative data.
-    // Price is fixed by variant id, so a forged _sku cannot underpay — but it
-    // would make the team order the wrong item, and reconciliation would not
-    // catch it (the vendor ack echoes whatever was ordered).
+    // (a) Forged `_sku` (client-settable) — verify it derives from the real
+    // variant SKU. Cache-independent, so always checked. On mismatch: record
+    // the anomaly (caller writes the activity note), flag the line, and fall
+    // through to the rebuild chain so the stored value is authoritative.
     if (sku && variantSku && !compositeMatchesVariant(sku, variantSku)) {
-      skuAnomalies.push({
-        description: String(i.name ?? ""),
-        claimed: sku,
-        actual: variantSku,
-      });
+      skuAnomalies.push({ description: desc, claimed: sku, actual: variantSku });
+      reviewReason = "sku_mismatch";
       sku = "";
     }
 
-    if (!sku && baseVariantSku && avisDoorStyle && avisColorSelect) {
-      sku = buildSkuFromAvisNames(baseVariantSku, avisDoorStyle, avisColorSelect) ?? baseVariantSku;
+    // (b) Rebuild from Avis names (Waypoint) — only when maps are available.
+    // If the names are present but not yet coded, keep the raw base and flag
+    // unmapped_value, naming which value is missing so an admin knows what to add.
+    if (!mapsDown && !sku && baseVariantSku && avisDoorStyle && avisColorSelect) {
+      const built = buildSkuFromAvisNamesDetailed(baseVariantSku, avisDoorStyle, avisColorSelect);
+      if (built.sku) {
+        sku = built.sku;
+      } else {
+        sku = baseVariantSku;
+        if (!reviewReason) {
+          reviewReason = "unmapped_value";
+          const which = [
+            built.unmappedDoor ? `door "${built.unmappedDoor}"` : "",
+            built.unmappedColor ? `color "${built.unmappedColor}"` : "",
+          ].filter(Boolean).join(" and ");
+          reviewNotes.push(`Needs review on "${desc}" \u2014 ${which || "value"} not yet mapped to a SKU code; kept raw SKU "${shopifyInput(baseVariantSku)}".`);
+        }
+      }
     }
+
+    // (c) Fall back to the base SKU.
     if (!sku) sku = baseVariantSku;
 
-    // Normalize every string field via shopifyInput (decode any HTML entities
-    // Shopify may have included, then trim). This is the boundary where
-    // external data becomes raw internal data.
+    // (d) Truly no SKU anywhere: KEEP the line with an identifiable placeholder
+    // (so multiple such lines don't collide on the reconcile SKU key) and flag
+    // missing_sku. Suppressed when mapsDown — (e) supersedes with one note.
+    if (!sku) {
+      sku = variantIdStr || `NO-SKU:${desc.slice(0, 40) || "line"}`;
+      if (!reviewReason && !mapsDown) {
+        reviewReason = "missing_sku";
+        reviewNotes.push(`Needs review on "${desc}" \u2014 Shopify line had no SKU; kept placeholder "${shopifyInput(sku)}".`);
+      }
+    }
+
+    const normSku = shopifyInput(sku);
+
+    // (e) Systemic: the mapping table couldn't load, so this line was
+    // interpreted with no maps at all. Highest precedence (agreed): supersede
+    // any same-line reason. A superseded sku_mismatch is still preserved in
+    // skuAnomalies -> the activity trail, so nothing is lost.
+    if (mapsDown) {
+      reviewReason = "decoder_unavailable";
+      reviewNotes.push(`Needs review on "${desc}" \u2014 SKU mapping table unavailable at ingest; kept raw SKU "${normSku}". Re-decode once mappings load.`);
+    }
+
+    // Persisted display fields — decode for ALL vendors so the client never
+    // decodes; Avis names are the fallback. Blank for an uninterpretable line.
+    const decoded = mapsDown ? null : decodeSku(normSku);
+    const door_style = decoded?.doorStyle || shopifyInput(avisDoorStyle) || "";
+    const color      = decoded?.color     || shopifyInput(avisColorSelect) || "";
+
     return {
-      sku: shopifyInput(sku),
+      sku: normSku,
       // Globally-unique Shopify variant id, captured at ingest. Authoritative
       // key for vendor resolution (shopify_products.id) — two vendors can share
       // a base SKU but never a variant_id.
-      variant_id: String(i.variant_id ?? ""),
+      variant_id: variantIdStr,
       quantity: Number(i.quantity ?? 1),
-      description: shopifyInput(String(i.name ?? "")),
-      door_style: shopifyInput(avisDoorStyle),
-      color: shopifyInput(avisColorSelect),
+      description: shopifyInput(desc),
+      door_style,
+      color,
+      ...(reviewReason ? { needs_review: true, review_reason: reviewReason } : {}),
     };
-  }).filter(i => i.sku);
+  });
 
   const skus = skuItems.map(i => i.sku).filter(Boolean).join(", ");
 
@@ -213,6 +268,7 @@ function buildOrder(payload: Record<string, unknown>) {
     skus,
     skuItems,
     skuAnomalies,
+    reviewNotes,
     notes: shopifyInput(notes),
     today,
     orderNumber: shopifyInput(orderNumber),
@@ -297,7 +353,11 @@ export async function POST(req: NextRequest) {
       .from("orders").select("id").eq("shopify_id", shopifyId).single();
     if (existing) return NextResponse.json({ received: true, skipped: "duplicate" });
 
-    const { customerName, customerEmail, customerPhone, shipTo, deliveryMethod, detail, skus, skuItems, skuAnomalies, notes, today, orderNumber, decodedDoorStyle, decodedColor } = buildOrder(payload);
+    // Warm the mapping cache before decoding. Degrade, never crash: a failed
+    // load leaves skuMapsUnavailable() true and every line is flagged
+    // decoder_unavailable, so the order still ingests.
+    try { await ensureSkuMaps(); } catch { /* degrade to decoder_unavailable */ }
+    const { customerName, customerEmail, customerPhone, shipTo, deliveryMethod, detail, skus, skuItems, skuAnomalies, reviewNotes, notes, today, orderNumber, decodedDoorStyle, decodedColor } = buildOrder(payload);
     const orderId = orderNumber ? `SHO-${orderNumber}` : `SHO-${shopifyId.slice(-6)}`;
 
     // Resolve the order-level vendor through the SAME layered resolver used at
@@ -329,6 +389,7 @@ export async function POST(req: NextRequest) {
       archived: false,
       shopify_id: shopifyId,
       sku_items: skuItems,
+      needs_review: skuItems.some(i => i.needs_review),
       door_style: decodedDoorStyle,
       color: decodedColor,
       delivery_window: "",
@@ -361,6 +422,13 @@ export async function POST(req: NextRequest) {
         time: today,
       });
     }
+    for (const text of reviewNotes) {
+      await supabase.from("order_activity").insert({
+        order_id: orderId,
+        text,
+        time: today,
+      });
+    }
   }
 
   // ─── Order updated ────────────────────────────────────────────────────────
@@ -372,7 +440,8 @@ export async function POST(req: NextRequest) {
 
     if (existing) {
       const today = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "America/Phoenix" });
-      const { detail, skus, skuItems, skuAnomalies, notes, shipTo, customerPhone, customerEmail, deliveryMethod } = buildOrder(payload);
+      try { await ensureSkuMaps(); } catch { /* degrade to decoder_unavailable */ }
+      const { detail, skus, skuItems, skuAnomalies, reviewNotes, notes, shipTo, customerPhone, customerEmail, deliveryMethod } = buildOrder(payload);
 
       const fulfillmentStatus = String(payload.fulfillment_status ?? "");
       const updates: Record<string, unknown> = {
@@ -380,6 +449,7 @@ export async function POST(req: NextRequest) {
         sku: skus || "—",
         notes,
         sku_items: skuItems,
+        needs_review: skuItems.some(i => i.needs_review),
         ship_to: shipTo,
         customer_phone: customerPhone,
         customer_email: customerEmail,
@@ -413,6 +483,25 @@ export async function POST(req: NextRequest) {
         for (const a of skuAnomalies) {
           const text = skuMismatchNote(a);
           if (seen.has(text)) continue;
+          await supabase.from("order_activity").insert({
+            order_id: existing.id,
+            text,
+            time: today,
+          });
+        }
+      }
+
+      // Needs-review notes — same dedupe discipline as the mismatch notes
+      // above, so repeat orders/updated events don't re-append the same flag.
+      if (reviewNotes.length > 0) {
+        const { data: priorReview } = await supabase
+          .from("order_activity")
+          .select("text")
+          .eq("order_id", existing.id)
+          .like("text", "Needs review on %");
+        const seenReview = new Set((priorReview ?? []).map((n: { text: string }) => n.text));
+        for (const text of reviewNotes) {
+          if (seenReview.has(text)) continue;
           await supabase.from("order_activity").insert({
             order_id: existing.id,
             text,

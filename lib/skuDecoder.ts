@@ -85,6 +85,34 @@ export function decodeSku(sku: string): DecodedSku | null {
   return null;
 }
 
+export interface AvisBuildResult {
+  /** The composite SKU, or null if either name is not yet coded. */
+  sku: string | null;
+  /** The door-style name that had no code (null when the door mapped fine). */
+  unmappedDoor: string | null;
+  /** The color name that had no code (null when the color mapped fine). */
+  unmappedColor: string | null;
+}
+
+/**
+ * Build a full SKU from a base SKU and Avis option names (Waypoint),
+ * reporting WHICH value (door and/or color) was unmapped when it can't.
+ * Callers that only need the string can use buildSkuFromAvisNames below.
+ */
+export function buildSkuFromAvisNamesDetailed(
+  baseSku: string,
+  doorStyleName: string,
+  colorName: string
+): AvisBuildResult {
+  const doorCode  = doorStyleNameToCode()[doorStyleName];
+  const colorCode = colorNameToCode()[colorName];
+  return {
+    sku: doorCode && colorCode ? `${baseSku}-${doorCode}-${colorCode}` : null,
+    unmappedDoor:  doorCode  ? null : (doorStyleName || null),
+    unmappedColor: colorCode ? null : (colorName || null),
+  };
+}
+
 /**
  * Build a full SKU from a base SKU and Avis option names (Waypoint).
  * e.g. buildSkuFromAvisNames("W930", "Slim Shaker", "Painted Linen") -> "W930-580F-PL"
@@ -95,10 +123,7 @@ export function buildSkuFromAvisNames(
   doorStyleName: string,
   colorName: string
 ): string | null {
-  const doorCode  = doorStyleNameToCode()[doorStyleName];
-  const colorCode = colorNameToCode()[colorName];
-  if (!doorCode || !colorCode) return null;
-  return `${baseSku}-${doorCode}-${colorCode}`;
+  return buildSkuFromAvisNamesDetailed(baseSku, doorStyleName, colorName).sku;
 }
 
 export interface SkuItem {
