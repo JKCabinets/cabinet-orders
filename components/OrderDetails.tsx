@@ -251,6 +251,18 @@ export function OrderDetails({ orderId, skuItems, readOnly = false }: OrderDetai
               </div>
             </div>
 
+            {item.modifications && item.modifications.length > 0 && (
+              <div className="flex flex-col gap-0.5 pl-4 pb-1 -mt-0.5">
+                {item.modifications.map((mod, mi) => (
+                  <div key={mi} className="flex items-center gap-2 px-2 text-[10px]">
+                    <span className="text-cream/35">↳</span>
+                    <span className="font-mono text-cream/70">{mod.sku}</span>
+                    <span className="text-cream/50">{mod.label}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {backorderIdx === idx && (
               <BackorderEditor
                 item={item}

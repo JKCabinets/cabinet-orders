@@ -215,7 +215,7 @@ export async function GET(
         const reviewTag = rf.needs_review
           ? ` <span class="review-pill">\u26a0 ${h(REVIEW_LABEL[rf.review_reason ?? ""] ?? "review")}</span>`
           : "";
-        return `
+        const mainRow = `
     <tr class="${rf.needs_review ? "review-row" : ""}">
       <td>${rowIndex++}</td>
       <td class="mono">${h(displaySku)}</td>
@@ -224,6 +224,16 @@ export async function GET(
       <td class="center">${h(item.quantity ?? 1)}</td>
       <td class="right">—</td>
     </tr>`;
+        // Attaching modification sub-SKUs — one indented sub-row each, so
+        // the vendor sees exactly which mods to build under the cabinet.
+        const mods = (item as { modifications?: Array<{ sku: string; label: string }> }).modifications ?? [];
+        const modRows = mods.map(m => `
+    <tr class="mod-row">
+      <td></td>
+      <td class="mono">\u21b3 ${h(m.sku)}</td>
+      <td class="mod-label" colspan="4">${text(m.label)}</td>
+    </tr>`).join("");
+        return mainRow + modRows;
       }).join("");
 
       return sectionRow + itemRows;
@@ -386,6 +396,8 @@ export async function GET(
     .items-table th { background: #f5f5f5; font-weight: 700; padding: 5px 7px; border: 1px solid #d0d0d0; text-align: left; font-size: 9.5px; }
     .items-table td { padding: 5px 7px; border: 1px solid #d0d0d0; vertical-align: top; }
     .items-table .mono { font-family: 'Courier New', monospace; font-size: 9px; }
+    .mod-row td { background: #fafafa; color: #555; font-size: 9px; padding-top: 2px; padding-bottom: 2px; }
+    .mod-row .mod-label { font-style: italic; }
     .right  { text-align: right; }
     .center { text-align: center; }
 
