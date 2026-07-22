@@ -142,8 +142,12 @@ function buildOrder(payload: Record<string, unknown>) {
   const skuItems = lineItems.map(i => {
     const props = (i.properties as Array<{ name: string; value: string }>) ?? [];
 
-    const getProp = (...names: string[]) =>
-      props.find(p => names.includes(p.name))?.value ?? "";
+    // Avis names the door/color option properties "_Door Style 1" / "Color
+    // Selection 1" — a hidden-underscore variant plus a trailing selection
+    // index — and older/other configs use the bare or visible form. Match the
+    // whole family so Waypoint decodes regardless of the exact Avis naming.
+    const getPropLike = (re: RegExp) =>
+      props.find(p => re.test(p.name))?.value ?? "";
 
     const skuProp = props.find(p => p.name === "_sku");
     // Blank-aware base: a Shopify sku of "" (empty, not null) must still fall
@@ -158,8 +162,8 @@ function buildOrder(payload: Record<string, unknown>) {
     // numeric variant_id), so validation compares against a real SKU only.
     const variantSku = rawSku;
 
-    const avisDoorStyle   = getProp("_Door Style", "Door Style");
-    const avisColorSelect = getProp("_Color Selection", "Color Selection");
+    const avisDoorStyle   = getPropLike(/^_?Door\s*Style(\s*\d+)?$/i);
+    const avisColorSelect = getPropLike(/^_?Color\s*Selection(\s*\d+)?$/i);
 
     const desc = String(i.name ?? "");
     let sku = (skuProp?.value ?? "").trim();
