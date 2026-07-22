@@ -13,6 +13,17 @@ const h = escapeHtml;
 // backfill removed those, and the Shopify webhook now decodes at ingress.)
 const text = (s: unknown) => h(String(s ?? ""));
 
+// Per-line review flags (Step 3/4) live in the sku_items JSONB. The export
+// route types items via skuDecoder's SkuItem (no review fields), so read
+// them through this narrow cast rather than widening that shared type.
+type ReviewFields = { needs_review?: boolean; review_reason?: string };
+const REVIEW_LABEL: Record<string, string> = {
+  unmapped_value: "Unmapped value",
+  decoder_unavailable: "Decoder unavailable",
+  sku_mismatch: "SKU mismatch",
+  missing_sku: "Missing SKU",
+};
+
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -268,6 +279,16 @@ export async function GET(
     ? `<div class="vendor-banner">For vendor: <strong>${h(vendorFilter)}</strong></div>`
     : "";
 
+  // Needs-review banner — surfaces flagged lines on the printout so a
+  // wrong-spec order isn't entered from a clean-looking PDF. Order-wide
+  // (shown on the combined and per-vendor PDFs alike).
+  const reviewLines = allSkuItems.filter(i => (i as ReviewFields).needs_review);
+  const needsReviewBanner = reviewLines.length > 0
+    ? `<div class="review-banner">\u26a0 NEEDS REVIEW \u2014 ${reviewLines.length} line${reviewLines.length > 1 ? "s" : ""}: `
+      + reviewLines.map(i => `${h(i.sku || "\u2014")} (${h(REVIEW_LABEL[(i as ReviewFields).review_reason ?? ""] ?? "review")})`).join("; ")
+      + `</div>`
+    : "";
+
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -314,6 +335,19 @@ export async function GET(
       margin-bottom: 10px;
       font-size: 11px;
       color: #1a3e60;
+      border-radius: 2px;
+    }
+
+    /* Needs-review banner — order has line items flagged for review */
+    .review-banner {
+      background: #fff4e6;
+      border: 1px solid #e0a848;
+      border-left: 4px solid #c9772e;
+      padding: 8px 12px;
+      margin-bottom: 10px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #7a4a12;
       border-radius: 2px;
     }
 
@@ -415,6 +449,7 @@ export async function GET(
     <div class="order-title"><span>Order#</span> ${h(order.id)}</div>
   </div>
 
+  ${needsReviewBanner}
   ${vendorSubHeader}
 
   <table class="info-table">

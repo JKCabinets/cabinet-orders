@@ -106,6 +106,7 @@ function shapeOrder(raw: Record<string, unknown>): Order {
     door_style: (raw.door_style as string) ?? "",
     color: (raw.color as string) ?? "",
     sku_items: (raw.sku_items as { sku: string; quantity: number; description?: string }[]) ?? [],
+    needs_review: (raw.needs_review as boolean) ?? false,
     claimed_by: (raw.claimed_by as string | null) ?? null,
     entered_by: (raw.entered_by as string | null) ?? null,
     vendor: (raw.vendor as string) ?? "",
