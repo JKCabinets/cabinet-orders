@@ -20,8 +20,12 @@ export function VendorExportPills({ order }: { order: Order }) {
   const eligible = order.stage !== "New" || !!order.claimed_by;
   const status = useAckStatus(order.id, eligible);
   const manuallyPushed = order.stage !== "New" && status.anyRed;
+  const needsReview = !!order.needs_review;
 
-  if (!eligible || status.vendors.length === 0) return null;
+  // Render when there are vendor pills OR a needs-review flag. The
+  // needs-review badge must show even on New/unclaimed orders, where the
+  // vendor pills are still gated.
+  if (!needsReview && (!eligible || status.vendors.length === 0)) return null;
 
   return (
     <div className="flex items-center gap-1 flex-wrap">
@@ -57,6 +61,16 @@ export function VendorExportPills({ order }: { order: Order }) {
         >
           <AlertTriangle className="w-2.5 h-2.5" />
           Manually pushed
+        </span>
+      )}
+
+      {needsReview && (
+        <span
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] uppercase tracking-wider font-medium bg-[rgba(224,168,72,0.14)] border border-[rgba(224,168,72,0.45)] text-[#e8b866]"
+          title="One or more lines need review — open the order for details"
+        >
+          <AlertTriangle className="w-2.5 h-2.5" />
+          Needs review
         </span>
       )}
     </div>

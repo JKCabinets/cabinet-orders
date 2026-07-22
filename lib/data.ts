@@ -186,6 +186,9 @@ export interface Order {
   door_style?: string;
   color?: string;
   sku_items?: SkuItem[];
+  // Derived rollup: any sku_item flagged needs_review (Step 3). Drives the
+  // row/board "Needs review" badge and the list filter.
+  needs_review?: boolean;
   // Production timeline
   production_start_date?: string | null;
   production_est_finish_date?: string | null;

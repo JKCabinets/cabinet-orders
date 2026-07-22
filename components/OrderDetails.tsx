@@ -342,7 +342,7 @@ export function OrderDetails({ orderId, skuItems, readOnly = false }: OrderDetai
                 <AlertTriangle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" style={{ color: "#e8b866" }} />
                 <div className="min-w-0">
                   <p className="text-[11px] font-medium text-cream">
-                    {reviewSummary.count} line{reviewSummary.count > 1 ? "s" : ""} need review
+                    {reviewSummary.count} line{reviewSummary.count > 1 ? "s" : ""} need{reviewSummary.count > 1 ? "" : "s"} review
                   </p>
                   <p className="text-[10px] text-cream/65">{reviewSummary.reasons}</p>
                 </div>
