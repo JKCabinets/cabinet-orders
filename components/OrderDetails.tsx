@@ -4,7 +4,6 @@ import { useState, useEffect, useMemo } from "react";
 import { Plus, Trash2, Check, X, Pencil, AlertTriangle } from "lucide-react";
 import { SkuItem } from "@/lib/data";
 import { useStore } from "@/lib/store";
-import { decodeSku } from "@/lib/skuDecoder";
 
 interface OrderDetailsProps {
   orderId: string;
@@ -60,9 +59,11 @@ export function OrderDetails({ orderId, skuItems, readOnly = false }: OrderDetai
     const map = new Map<string, Group>();
     localSkuItems.forEach((item, index) => {
       const vendor = item.sku ? (vendorBySku[item.sku] ?? "") : "";
-      const decoded = item.sku ? decodeSku(item.sku) : null;
-      const style = decoded?.doorStyle ?? "";
-      const colorVal = decoded?.color ?? "";
+      // Read the fields decoded + persisted server-side at ingest. The maps
+      // are server-only now, so the client never decodes. Orders not yet
+      // backfilled show an ungrouped style/color until the backfill runs.
+      const style = item.door_style ?? "";
+      const colorVal = item.color ?? "";
       const key = `${vendor}|||${style}|||${colorVal}`;
       const group = map.get(key) ?? { vendor, style, color: colorVal, items: [] };
       group.items.push({ item, index });

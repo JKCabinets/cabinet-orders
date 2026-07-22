@@ -94,6 +94,12 @@ export interface ActivityEntry {
   time: string;
 }
 
+export type ReviewReason =
+  | "unmapped_value"      // a door/color name has no sku_code yet
+  | "decoder_unavailable" // the sku_mappings table could not be loaded
+  | "sku_mismatch"        // a client-forged _sku was rejected
+  | "missing_sku";        // the Shopify line carried no SKU at all
+
 export interface SkuItem {
   sku: string;
   /** Shopify variant id, captured at ingest. Authoritative key for vendor resolution. */
@@ -110,6 +116,20 @@ export interface SkuItem {
   backordered?: boolean;
   expected_ready_date?: string | null; // YYYY-MM-DD
   backorder_notes?: string;
+  /**
+   * Decoded display fields, persisted at ingest for ALL vendors (Waypoint
+   * from Avis names, HCI/J&K from their composite SKU) so the UI never
+   * decodes in the browser. Written by the webhook and the one-time backfill.
+   */
+  door_style?: string;
+  color?: string;
+  /**
+   * Per-line review flag. The LINE is authoritative (which line + why);
+   * orders.needs_review is a derived rollup. Clears on fix / re-decode; the
+   * order_activity note is the permanent record.
+   */
+  needs_review?: boolean;
+  review_reason?: ReviewReason;
 }
 
 export type BackorderStatus = "none" | "pending" | "ready";
