@@ -73,6 +73,7 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
   const { moveStage, updateOrderDetails, updateNotes, updateInternalNotes, archiveOrder, unarchiveOrder, deleteOrder, orders, warranties, team, claimOrder: rawClaimOrder } = useStore();
   const { showToast } = useToast();
   const [claimBusy, setClaimBusy] = useState(false);
+  const [reDecodeBusy, setReDecodeBusy] = useState(false);
 
   // Wrap claimOrder with the same conflict-toast UX used in OrderTable.
   // Returns void; busy state is set/unset around the call so the button
@@ -106,6 +107,8 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
   const sessUser = session?.user as { id?: string; name?: string; username?: string } | undefined;
   const currentUserId = sessUser?.id ?? undefined;
   const currentUserDisplayName = sessUser?.name ?? undefined;
+  // Admin gate for the Re-decode action (route enforces it server-side too).
+  const isAdmin = team.find((m) => m.id === currentUserId)?.role === "admin";
   const [notes, setNotes] = useState(order.notes);
   const [notesChanged, setNotesChanged] = useState(false);
   const [internalNotes, setInternalNotes] = useState(order.internal_notes ?? "");
@@ -302,6 +305,25 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
     }
   }
 
+  // Re-decode this order's stored lines against the CURRENT mappings and
+  // clear any flags that now resolve. Realtime refreshes the view on success.
+  async function handleReDecode() {
+    setReDecodeBusy(true);
+    try {
+      const res = await fetch("/api/admin/orders/" + encodeURIComponent(liveOrder.id) + "/re-decode", { method: "POST" });
+      const data = await res.json().catch(() => ({} as { error?: string; message?: string; still_flagged?: number }));
+      if (!res.ok) {
+        showToast(data.error ?? "Re-decode failed", { kind: "error" });
+      } else {
+        showToast(data.message ?? "Re-decoded", { kind: (data.still_flagged ?? 0) > 0 ? "warn" : "success" });
+      }
+    } catch {
+      showToast("Network error — re-decode not run", { kind: "error" });
+    } finally {
+      setReDecodeBusy(false);
+    }
+  }
+
   const isCompleted = liveOrder.stage === "Delivered" || liveOrder.stage === "Resolved";
 
   return (
@@ -361,6 +383,18 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
                 {v} PDF
               </a>
             ))}
+            {isAdmin && liveOrder.needs_review && (
+              <button
+                onClick={handleReDecode}
+                disabled={reDecodeBusy}
+                title="Re-run decode against current mappings and clear resolved flags"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider transition-all disabled:opacity-50"
+                style={{ background: "rgba(224,168,72,0.14)", border: "0.5px solid rgba(224,168,72,0.45)", color: "#e8b866" }}
+              >
+                {reDecodeBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
+                Re-decode
+              </button>
+            )}
             <button
               onClick={onClose}
               className="p-1.5 rounded-lg transition-all hover:text-[#e8e3da]"
