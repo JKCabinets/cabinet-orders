@@ -5,6 +5,23 @@ import { Plus, Trash2, Check, X, Pencil, AlertTriangle } from "lucide-react";
 import { SkuItem } from "@/lib/data";
 import { useStore } from "@/lib/store";
 
+// Friendly labels + tooltips for per-line review reasons (Step 4a), keyed by
+// SkuItem.review_reason. Falls back gracefully for any unknown value.
+const REVIEW_REASON_LABEL: Record<string, string> = {
+  unmapped_value: "Unmapped value",
+  decoder_unavailable: "Decoder unavailable",
+  sku_mismatch: "SKU mismatch",
+  missing_sku: "Missing SKU",
+};
+const REVIEW_REASON_HELP: Record<string, string> = {
+  unmapped_value: "A door or color name has no SKU code yet. Add the code in the mappings admin, then re-decode this order.",
+  decoder_unavailable: "The SKU mapping table couldn't be read when this order arrived, so the raw SKU was kept. Re-decode once mappings are available.",
+  sku_mismatch: "A submitted _sku didn't derive from the variant's real SKU. The real SKU was used instead.",
+  missing_sku: "This Shopify line had no SKU; a placeholder was kept so the line wasn't dropped.",
+};
+function reviewReasonLabel(r?: string): string { return (r && REVIEW_REASON_LABEL[r]) || "Review"; }
+function reviewReasonHelp(r?: string): string { return (r && REVIEW_REASON_HELP[r]) || "This line needs review."; }
+
 interface OrderDetailsProps {
   orderId: string;
   doorStyle: string;
@@ -88,6 +105,19 @@ export function OrderDetails({ orderId, skuItems, readOnly = false }: OrderDetai
     const only = groupedSkuItems[0];
     return !!(only && (only.vendor || only.style || only.color));
   }, [groupedSkuItems]);
+
+  // Step 4a — roll up per-line review flags for the summary strip. Distinct
+  // reasons in first-seen order, e.g. "Unmapped value, Missing SKU".
+  const reviewSummary = useMemo(() => {
+    const flagged = localSkuItems.filter(i => i.needs_review);
+    if (flagged.length === 0) return null;
+    const seen: string[] = [];
+    for (const i of flagged) {
+      const label = reviewReasonLabel(i.review_reason);
+      if (!seen.includes(label)) seen.push(label);
+    }
+    return { count: flagged.length, reasons: seen.join(", ") };
+  }, [localSkuItems]);
 
   async function saveSkuItems(items: SkuItem[]) {
     setLocalSkuItems(items);
@@ -175,6 +205,16 @@ export function OrderDetails({ orderId, skuItems, readOnly = false }: OrderDetai
                 {item.description ?? "—"}
               </span>
               <div className="col-span-3 flex items-center justify-end gap-1">
+                {item.needs_review && (
+                  <span
+                    className="inline-flex items-center justify-center w-4 h-4 rounded-full flex-shrink-0"
+                    style={{ background: "rgba(224,168,72,0.16)", color: "#e8b866", border: "0.5px solid rgba(224,168,72,0.45)" }}
+                    title={`Needs review \u2014 ${reviewReasonLabel(item.review_reason)}: ${reviewReasonHelp(item.review_reason)}`}
+                    aria-label={`Needs review: ${reviewReasonLabel(item.review_reason)}`}
+                  >
+                    <AlertTriangle className="w-2.5 h-2.5" />
+                  </span>
+                )}
                 <button
                   onClick={() => setBackorderIdx(backorderIdx === idx ? null : idx)}
                   className="flex items-center gap-1 text-[9px] font-medium px-2 py-0.5 rounded-full transition-colors uppercase tracking-wider"
@@ -294,6 +334,20 @@ export function OrderDetails({ orderId, skuItems, readOnly = false }: OrderDetai
           )
         ) : (
           <div className="flex flex-col gap-1">
+            {reviewSummary && (
+              <div
+                className="flex items-start gap-2 px-3 py-2 mb-1 rounded-lg"
+                style={{ background: "rgba(224,168,72,0.10)", border: "0.5px solid rgba(224,168,72,0.40)" }}
+              >
+                <AlertTriangle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" style={{ color: "#e8b866" }} />
+                <div className="min-w-0">
+                  <p className="text-[11px] font-medium text-cream">
+                    {reviewSummary.count} line{reviewSummary.count > 1 ? "s" : ""} need review
+                  </p>
+                  <p className="text-[10px] text-cream/65">{reviewSummary.reasons}</p>
+                </div>
+              </div>
+            )}
             {/* Header */}
             {localSkuItems.length > 0 && (
               <div className="grid grid-cols-12 gap-1.5 px-2 mb-0.5">
