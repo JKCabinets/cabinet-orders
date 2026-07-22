@@ -187,7 +187,9 @@ export function OrderDetails({ orderId, skuItems, readOnly = false }: OrderDetai
       ? (isReady
           ? "bg-[rgba(76,175,122,0.06)] hover:bg-[rgba(76,175,122,0.10)]"
           : "bg-[rgba(224,128,48,0.06)] hover:bg-[rgba(224,128,48,0.10)]")
-      : "hover:bg-[rgba(255,255,255,0.04)]";
+      : item.needs_review
+        ? "bg-[rgba(224,168,72,0.07)] hover:bg-[rgba(224,168,72,0.12)]"
+        : "hover:bg-[rgba(255,255,255,0.04)]";
     return (
       <div key={idx}>
         {editingItemIdx === idx ? (

@@ -211,11 +211,15 @@ export async function GET(
 
       const itemRows = group.items.map(item => {
         const displaySku = item.sku ?? "—";
+        const rf = item as ReviewFields;
+        const reviewTag = rf.needs_review
+          ? ` <span class="review-pill">\u26a0 ${h(REVIEW_LABEL[rf.review_reason ?? ""] ?? "review")}</span>`
+          : "";
         return `
-    <tr>
+    <tr class="${rf.needs_review ? "review-row" : ""}">
       <td>${rowIndex++}</td>
       <td class="mono">${h(displaySku)}</td>
-      <td>${text(item.description ?? "—")}</td>
+      <td>${text(item.description ?? "—")}${reviewTag}</td>
       <td class="right">—</td>
       <td class="center">${h(item.quantity ?? 1)}</td>
       <td class="right">—</td>
@@ -282,7 +286,7 @@ export async function GET(
   // Needs-review banner — surfaces flagged lines on the printout so a
   // wrong-spec order isn't entered from a clean-looking PDF. Order-wide
   // (shown on the combined and per-vendor PDFs alike).
-  const reviewLines = allSkuItems.filter(i => (i as ReviewFields).needs_review);
+  const reviewLines = filteredSkuItems.filter(i => (i as ReviewFields).needs_review);
   const needsReviewBanner = reviewLines.length > 0
     ? `<div class="review-banner">\u26a0 NEEDS REVIEW \u2014 ${reviewLines.length} line${reviewLines.length > 1 ? "s" : ""}: `
       + reviewLines.map(i => `${h(i.sku || "\u2014")} (${h(REVIEW_LABEL[(i as ReviewFields).review_reason ?? ""] ?? "review")})`).join("; ")
@@ -349,6 +353,22 @@ export async function GET(
       font-weight: 600;
       color: #7a4a12;
       border-radius: 2px;
+    }
+
+    /* Flagged line highlight in the items table */
+    .review-row td { background: #fff4e6; }
+    .review-pill {
+      display: inline-block;
+      font-size: 8px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #7a4a12;
+      background: #ffe8c7;
+      border: 1px solid #e0a848;
+      border-radius: 2px;
+      padding: 0 4px;
+      margin-left: 4px;
     }
 
     .info-table { width: 100%; border-collapse: collapse; border: 1px solid #d0d0d0; margin-bottom: 10px; }
