@@ -98,7 +98,14 @@ export type ReviewReason =
   | "unmapped_value"      // a door/color name has no sku_code yet
   | "decoder_unavailable" // the sku_mappings table could not be loaded
   | "sku_mismatch"        // a client-forged _sku was rejected
-  | "missing_sku";        // the Shopify line carried no SKU at all
+  | "missing_sku"         // the Shopify line carried no SKU at all
+  | "missing_mod_value";  // a modification is missing its depth value
+
+/** A modification sub-SKU attached to a parent cabinet line (Step 2). */
+export interface SkuModification {
+  sku: string;   // e.g. "RD-4", "ID-13", "RTKL"
+  label: string; // human label, e.g. 'Reduce Depth to 4"'
+}
 
 export interface SkuItem {
   sku: string;
@@ -130,6 +137,8 @@ export interface SkuItem {
    */
   needs_review?: boolean;
   review_reason?: ReviewReason;
+  /** Attaching modification sub-SKUs (Waypoint). Travel with the parent line. */
+  modifications?: SkuModification[];
 }
 
 export type BackorderStatus = "none" | "pending" | "ready";

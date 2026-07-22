@@ -26,6 +26,7 @@ export {
   hciColorMap,
   jkColorMap,
   colorMapAll,
+  modificationMap,
 } from "@/lib/skuMappings";
 
 export interface DecodedSku {

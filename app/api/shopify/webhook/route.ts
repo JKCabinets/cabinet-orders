@@ -3,7 +3,8 @@ import crypto from "crypto";
 import { supabase } from "@/lib/supabase";
 import { cleanInput } from "@/lib/auth";
 import { decodeHtmlEntities } from "@/lib/htmlEntities";
-import { decodeSku, buildSkuFromAvisNamesDetailed, ensureSkuMaps, skuMapsUnavailable } from "@/lib/skuDecoder";
+import { decodeSku, buildSkuFromAvisNamesDetailed, ensureSkuMaps, skuMapsUnavailable, modificationMap } from "@/lib/skuDecoder";
+import { parseModifications } from "@/lib/modifications";
 import type { ReviewReason } from "@/lib/data";
 import { lookupVendorsForSkus } from "@/lib/vendorLookup";
 
@@ -230,6 +231,21 @@ function buildOrder(payload: Record<string, unknown>) {
     const door_style = decoded?.doorStyle || shopifyInput(avisDoorStyle) || "";
     const color      = decoded?.color     || shopifyInput(avisColorSelect) || "";
 
+    // Waypoint modifications -> attaching sub-SKUs (RD-4, ID-13, RTKL, ...).
+    // Skipped when maps are down (the line is already decoder_unavailable).
+    const mods = mapsDown
+      ? { subs: [], unmapped: [], missingValue: [] }
+      : parseModifications(props, modificationMap());
+    // Mod flags are lower priority than a SKU decode issue: only set a
+    // reason if the line isn't already flagged.
+    if (!reviewReason && mods.unmapped.length > 0) {
+      reviewReason = "unmapped_value";
+      reviewNotes.push(`Needs review on "${desc}" \u2014 modification "${mods.unmapped[0]}" not yet mapped to a SKU code.`);
+    } else if (!reviewReason && mods.missingValue.length > 0) {
+      reviewReason = "missing_mod_value";
+      reviewNotes.push(`Needs review on "${desc}" \u2014 modification "${mods.missingValue[0]}" is missing its depth value.`);
+    }
+
     return {
       sku: normSku,
       // Globally-unique Shopify variant id, captured at ingest. Authoritative
@@ -240,6 +256,7 @@ function buildOrder(payload: Record<string, unknown>) {
       description: shopifyInput(desc),
       door_style,
       color,
+      ...(mods.subs.length > 0 ? { modifications: mods.subs } : {}),
       ...(reviewReason ? { needs_review: true, review_reason: reviewReason } : {}),
     };
   });

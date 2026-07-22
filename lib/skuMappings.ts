@@ -34,6 +34,7 @@ export interface SkuMapsBundle {
   hciColorMap: Record<string, string>;         // HCI color code -> name
   jkColorMap: Record<string, string>;          // J&K color code -> name
   colorMapAll: Record<string, string>;         // all vendors' color code -> name
+  modificationMap: Record<string, string>;     // Waypoint modification name -> code
 }
 
 function emptyBundle(): SkuMapsBundle {
@@ -41,6 +42,7 @@ function emptyBundle(): SkuMapsBundle {
     doorStyleMap: {}, doorStyleNameToCode: {},
     colorMap: {}, colorNameToCode: {},
     hciColorMap: {}, jkColorMap: {}, colorMapAll: {},
+    modificationMap: {},
   };
 }
 
@@ -79,6 +81,8 @@ async function load(): Promise<void> {
     } else if (r.vendor === VENDOR_JK && r.kind === "color") {
       b.jkColorMap[code] = name;
       b.colorMapAll[code] = name;
+    } else if (r.vendor === VENDOR_WAYPOINT && r.kind === "modification") {
+      b.modificationMap[name] = code; // name -> code, for sub-SKU composition
     }
     // other (vendor, kind) combinations are ignored by design
   }
@@ -118,3 +122,4 @@ export const colorNameToCode = () => cache?.colorNameToCode ?? EMPTY;
 export const hciColorMap = () => cache?.hciColorMap ?? EMPTY;
 export const jkColorMap = () => cache?.jkColorMap ?? EMPTY;
 export const colorMapAll = () => cache?.colorMapAll ?? EMPTY;
+export const modificationMap = () => cache?.modificationMap ?? EMPTY;
