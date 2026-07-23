@@ -20,6 +20,11 @@
  */
 import { doorStyleMap, colorNameToCode } from "@/lib/skuDecoder";
 
+export interface AckAttribute {
+  label: string;
+  value: string;
+}
+
 export interface AckLineItem {
   base_sku: string;
   door_code: string;
@@ -28,6 +33,10 @@ export interface AckLineItem {
   composite_sku: string;
   qty: number;
   list_price: number | null;
+  /** Modification sub-SKU codes read off the attribute rows (e.g. RD-13, RTKB). */
+  modifications: string[];
+  /** Every attribute row under this line, verbatim — kept for the stored record. */
+  attributes: AckAttribute[];
 }
 
 export interface ParsedAck {
@@ -43,6 +52,50 @@ export type Grid = Array<Array<string | number | null>>;
 
 function s(v: string | number | null | undefined): string {
   return v === null || v === undefined ? "" : String(v).trim();
+}
+
+type AttrResult =
+  | { kind: "mod"; code: string }
+  | { kind: "unreadable" }
+  | { kind: "ignore" };
+
+/**
+ * Interpret one attribute row sitting under a line item.
+ *
+ * Waypoint states modifications in prose beneath the cabinet rather than as
+ * their own line items:
+ *   DEPTH   / "REDUCED DEPTH - 13 inches"   -> RD-13
+ *   TOEKICK / "BOTH RECESSED TK"            -> RTKB
+ * Mapping them onto our modification sub-SKU codes is what lets the reconciler
+ * verify them against the order. Attributes that carry no modification (BOX
+ * CONSTRUCTION, or a standard depth/toe kick) are recorded but ignored.
+ *
+ * An attribute that clearly DOES carry a modification but cannot be read is
+ * reported as "unreadable" rather than skipped — silently passing a depth we
+ * could not parse is precisely the failure this gate exists to prevent.
+ */
+function interpretAttribute(label: string, value: string): AttrResult {
+  const L = label.trim().toUpperCase().replace(/\s+/g, "");
+  const V = value.trim().toUpperCase();
+
+  if (L === "DEPTH") {
+    const reduced = /REDUC/.test(V);
+    const increased = /INCREAS/.test(V);
+    if (!reduced && !increased) return { kind: "ignore" }; // e.g. a standard depth
+    const num = V.match(/(\d+(?:\.\d+)?)/)?.[1] ?? "";
+    if (!num) return { kind: "unreadable" };
+    return { kind: "mod", code: `${reduced ? "RD" : "ID"}-${num}` };
+  }
+
+  if (L === "TOEKICK") {
+    if (!/RECESS/.test(V)) return { kind: "ignore" }; // e.g. a standard toe kick
+    if (/\bBOTH\b/.test(V)) return { kind: "mod", code: "RTKB" };
+    if (/\bLEFT\b/.test(V)) return { kind: "mod", code: "RTKL" };
+    if (/\bRIGHT\b/.test(V)) return { kind: "mod", code: "RTKR" };
+    return { kind: "unreadable" }; // recessed, but we cannot tell which side
+  }
+
+  return { kind: "ignore" };
 }
 
 export function parseWaypointAck(sheetName: string, grid: Grid): ParsedAck {
@@ -100,6 +153,22 @@ export function parseWaypointAck(sheetName: string, grid: Grid): ParsedAck {
         continue;
       }
 
+      // Attribute row: no col-A label, no qty, but a label/value pair in C/D.
+      // These describe the PRECEDING line item. Modification-bearing ones
+      // become sub-SKU codes; an unreadable one is kept verbatim so it surfaces
+      // as a discrepancy instead of vanishing.
+      if (!a && qty === null && desc) {
+        const value = cell(r, 3);
+        const last = items[items.length - 1];
+        if (last && value) {
+          last.attributes.push({ label: desc, value });
+          const res = interpretAttribute(desc, value);
+          if (res.kind === "mod") last.modifications.push(res.code);
+          else if (res.kind === "unreadable") last.modifications.push(`${desc}: ${value}`);
+        }
+        continue;
+      }
+
       // Line item: qty present + base sku in desc
       if (qty !== null && desc) {
         // Waypoint spells a manual door modifier with a space ("B24 BUTT");
@@ -125,6 +194,8 @@ export function parseWaypointAck(sheetName: string, grid: Grid): ParsedAck {
           composite_sku: composite,
           qty,
           list_price: price,
+          modifications: [],
+          attributes: [],
         });
       }
     }

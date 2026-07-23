@@ -23,6 +23,8 @@ export interface AckLineItem {
   composite_sku: string;
   qty: number;
   list_price?: number | null;
+  /** Modification sub-SKU codes read off the ack's attribute rows (RD-13, RTKB). */
+  modifications?: string[];
 }
 
 export interface ParsedAck {
@@ -36,6 +38,8 @@ export interface ParsedAck {
 export interface OrderLineItem {
   sku: string;
   quantity: number;
+  /** Modification sub-SKU codes stored on the order line (RD-13, RTKB). */
+  modifications?: string[];
 }
 
 export interface OrderForReconcile {
@@ -45,13 +49,16 @@ export interface OrderForReconcile {
   sku_items: OrderLineItem[];
 }
 
-export type LineStatus = "match" | "qty_mismatch" | "missing_from_ack" | "extra_in_ack";
+export type LineStatus = "match" | "qty_mismatch" | "mod_mismatch" | "missing_from_ack" | "extra_in_ack";
 
 export interface LineResult {
   composite_sku: string;
   status: LineStatus;
   order_qty: number | null;
   ack_qty: number | null;
+  /** Modifications on each side — populated so the UI can name the difference. */
+  order_mods?: string[];
+  ack_mods?: string[];
 }
 
 export interface FieldResult {
@@ -137,12 +144,20 @@ export function reconcileAck(
   // canonical composite; the ack's spelling is the fallback for lines that
   // only Waypoint has (extra_in_ack), which would otherwise have no display.
   const displayBySku = new Map<string, string>();
+  // Modifications are compared per composite SKU as a multiset. That cannot say
+  // WHICH duplicate line differs when a SKU repeats, but it flags any
+  // difference — a cabinet built to the wrong depth is the thing to catch.
+  const orderModsBySku = new Map<string, string[]>();
+  const ackModsBySku = new Map<string, string[]>();
   const orderBySku = new Map<string, number>();
   for (const it of order.sku_items) {
     const k = skuKey(it.sku);
     if (!k) continue;
     orderBySku.set(k, (orderBySku.get(k) ?? 0) + (Number(it.quantity) || 0));
     if (!displayBySku.has(k)) displayBySku.set(k, (it.sku ?? "").trim());
+    if (it.modifications?.length) {
+      orderModsBySku.set(k, [...(orderModsBySku.get(k) ?? []), ...it.modifications]);
+    }
   }
   const ackBySku = new Map<string, number>();
   for (const it of ack.items) {
@@ -150,6 +165,9 @@ export function reconcileAck(
     if (!k) continue;
     ackBySku.set(k, (ackBySku.get(k) ?? 0) + (Number(it.qty) || 0));
     if (!displayBySku.has(k)) displayBySku.set(k, (it.composite_sku ?? "").trim());
+    if (it.modifications?.length) {
+      ackModsBySku.set(k, [...(ackModsBySku.get(k) ?? []), ...it.modifications]);
+    }
   }
 
   const allSkus = new Set<string>([...orderBySku.keys(), ...ackBySku.keys()]);
@@ -157,11 +175,29 @@ export function reconcileAck(
   for (const sku of Array.from(allSkus).sort()) {
     const o = orderBySku.has(sku) ? orderBySku.get(sku)! : null;
     const a = ackBySku.has(sku) ? ackBySku.get(sku)! : null;
+    const om = orderModsBySku.get(sku) ?? [];
+    const am = ackModsBySku.get(sku) ?? [];
+    const normMods = (xs: string[]) => xs.map(x => x.trim().toUpperCase()).sort();
+    const oN = normMods(om), aN = normMods(am);
+    const modsEqual = oN.length === aN.length && oN.every((m, i) => m === aN[i]);
+
     let status: LineStatus;
-    if (o !== null && a !== null) status = o === a ? "match" : "qty_mismatch";
-    else if (o !== null && a === null) status = "missing_from_ack";
+    if (o !== null && a !== null) {
+      // Quantity first: a wrong count is the bigger problem, and reporting one
+      // issue per line keeps the panel readable.
+      if (o !== a) status = "qty_mismatch";
+      else if (!modsEqual) status = "mod_mismatch";
+      else status = "match";
+    } else if (o !== null && a === null) status = "missing_from_ack";
     else status = "extra_in_ack";
-    lines.push({ composite_sku: displayBySku.get(sku) ?? sku, status, order_qty: o, ack_qty: a });
+
+    lines.push({
+      composite_sku: displayBySku.get(sku) ?? sku,
+      status,
+      order_qty: o,
+      ack_qty: a,
+      ...(om.length || am.length ? { order_mods: om, ack_mods: am } : {}),
+    });
   }
   const lines_ok = lines.every(l => l.status === "match");
 

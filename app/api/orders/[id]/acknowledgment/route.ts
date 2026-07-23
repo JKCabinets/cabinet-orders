@@ -122,6 +122,14 @@ export async function POST(
     sku_items: waypointLines.map((it) => ({
       sku: it.sku,
       quantity: Number(it.quantity) || 0,
+      // Carry the line's modification sub-SKUs through; without them the mod
+      // gate has nothing on the order side to compare against.
+      //
+      // Cast because lib/skuDecoder's SkuItem is the narrower, older shape and
+      // predates modifications (lib/data's SkuItem has them). The export route
+      // reads its review fields the same way. Backlog: unify the two SkuItems.
+      modifications: ((it as { modifications?: Array<{ sku: string }> }).modifications ?? [])
+        .map((m) => m.sku),
     })),
   };
 

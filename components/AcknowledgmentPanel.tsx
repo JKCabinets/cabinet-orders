@@ -24,11 +24,22 @@ interface AcknowledgmentPanelProps {
 
 const FIELD_LABEL: Record<string, string> = { name: "Name", address: "Shipping address" };
 
-function lineIssue(status: string, orderQty: number | null, ackQty: number | null): string {
-  if (status === "qty_mismatch") return `ordered ${orderQty}, acknowledged ${ackQty}`;
-  if (status === "missing_from_ack") return "on the order, missing from the acknowledgment";
-  if (status === "extra_in_ack") return "on the acknowledgment, not on the order";
-  return status;
+function lineIssue(l: {
+  status: string;
+  order_qty: number | null;
+  ack_qty: number | null;
+  order_mods?: string[];
+  ack_mods?: string[];
+}): string {
+  if (l.status === "qty_mismatch") return `ordered ${l.order_qty}, acknowledged ${l.ack_qty}`;
+  if (l.status === "mod_mismatch") {
+    const o = (l.order_mods ?? []).join(", ") || "none";
+    const a = (l.ack_mods ?? []).join(", ") || "none";
+    return `modifications differ — order: ${o} · acknowledgment: ${a}`;
+  }
+  if (l.status === "missing_from_ack") return "on the order, missing from the acknowledgment";
+  if (l.status === "extra_in_ack") return "on the acknowledgment, not on the order";
+  return l.status;
 }
 
 function discrepancyCount(r: ReconcileResult): number {
@@ -200,7 +211,7 @@ export const AcknowledgmentPanel = forwardRef<AcknowledgmentPanelHandle, Acknowl
                               <p className="text-cream/75">
                                 <span className="font-mono text-cream/90">{l.composite_sku}</span>
                                 {" — "}
-                                <span style={{ color: "#e89090" }}>{lineIssue(l.status, l.order_qty, l.ack_qty)}</span>
+                                <span style={{ color: "#e89090" }}>{lineIssue(l)}</span>
                               </p>
                             </div>
                           ))}
