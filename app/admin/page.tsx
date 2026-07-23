@@ -219,6 +219,11 @@ export default function AdminPage() {
             <p className="text-sm font-medium text-[#e8e3da] mb-1">Vendors</p>
             <p className="text-[11px] text-[rgba(232,227,218,0.40)]">Manage vendor RMA contact emails for damage report drafts.</p>
           </a>
+          <a href="/admin/mappings"
+            className="group p-4 bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.10)] rounded-xl hover:bg-[rgba(255,255,255,0.07)] hover:border-[rgba(86,100,72,0.35)] transition-all">
+            <p className="text-sm font-medium text-[#e8e3da] mb-1">SKU mappings</p>
+            <p className="text-[11px] text-[rgba(232,227,218,0.40)]">Assign SKU codes to Avis door styles, colors, and modifications — no deploy needed.</p>
+          </a>
         </div>
 
         <AuditLog />
