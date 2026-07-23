@@ -1,4 +1,4 @@
-import { decodeSku, buildSkuFromAvisNamesDetailed } from "@/lib/skuDecoder";
+import { decodeSku, buildSkuFromAvisNamesDetailed, modificationMap } from "@/lib/skuDecoder";
 import type { SkuItem, ReviewReason } from "@/lib/data";
 
 /**
@@ -50,22 +50,48 @@ function sameItem(a: SkuItem, b: SkuItem): boolean {
   );
 }
 
+/**
+ * Which of a line's stored modification sub-SKUs no longer resolve?
+ *
+ * A sub-SKU is the TYPE code plus an optional value ("RD-13", "RTKB"), so it
+ * is still valid while its type code is present in the current map. Comparing
+ * against the map's VALUES (not its names) means this keeps working whatever
+ * the Avis label is called.
+ */
+function unmappedMods(item: SkuItem): string[] {
+  const mods = item.modifications ?? [];
+  if (mods.length === 0) return [];
+  const codes = Object.values(modificationMap()).filter(Boolean);
+  return mods
+    .filter(m => !codes.some(c => m.sku === c || m.sku.startsWith(c + "-")))
+    .map(m => m.label || m.sku);
+}
+
+/**
+ * Clear a line's flag only if its modifications also still resolve — a line
+ * whose SKU decodes can still be un-buildable because a mod lost its code.
+ */
+function settle(item: SkuItem, modIssues: string[]): SkuItem {
+  return modIssues.length > 0 ? setFlag(item, "unmapped_value") : clearFlag(item);
+}
+
 export function reDecodeItems(items: SkuItem[]): ReDecodeResult {
   let resolvedCount = 0;
   let changed = false;
 
   const out = items.map(item => {
     const wasFlagged = !!item.needs_review;
+    const modIssues = unmappedMods(item);
 
     // 1) Stored SKU decodes as-is.
     const decoded = item.sku ? decodeSku(item.sku) : null;
     if (decoded && (decoded.doorStyle || decoded.color)) {
-      const next = clearFlag({
+      const next = settle({
         ...item,
         door_style: decoded.doorStyle || item.door_style || "",
         color: decoded.color || item.color || "",
-      });
-      if (wasFlagged) resolvedCount++;
+      }, modIssues);
+      if (wasFlagged && !next.needs_review) resolvedCount++;
       if (!sameItem(item, next)) changed = true;
       return next;
     }
@@ -75,13 +101,13 @@ export function reDecodeItems(items: SkuItem[]): ReDecodeResult {
       const built = buildSkuFromAvisNamesDetailed(item.sku, item.door_style, item.color);
       if (built.sku) {
         const d2 = decodeSku(built.sku);
-        const next = clearFlag({
+        const next = settle({
           ...item,
           sku: built.sku,
           door_style: d2?.doorStyle || item.door_style,
           color: d2?.color || item.color,
-        });
-        if (wasFlagged) resolvedCount++;
+        }, modIssues);
+        if (wasFlagged && !next.needs_review) resolvedCount++;
         changed = true; // sku changed at minimum
         return next;
       }
@@ -91,7 +117,13 @@ export function reDecodeItems(items: SkuItem[]): ReDecodeResult {
       return next;
     }
 
-    // 3) Nothing to resolve from stored data — leave untouched.
+    // 3) Nothing to decode from stored data — but a mod may still have lost
+    //    its code, which is worth flagging on its own.
+    if (modIssues.length > 0) {
+      const next = setFlag(item, "unmapped_value");
+      if (!sameItem(item, next)) changed = true;
+      return next;
+    }
     return item;
   });
 
