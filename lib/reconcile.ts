@@ -100,9 +100,17 @@ function normAddress(s: string): string {
     .toUpperCase();
 }
 
-/** Normalize a composite SKU for comparison. */
-function normSku(s: string): string {
-  return (s ?? "").replace(/\s+/g, "").trim().toUpperCase();
+/**
+ * Canonical key for SKU matching — alphanumerics only, uppercased.
+ *
+ * Vendors spell the same cabinet with different separators: Waypoint's ack
+ * writes "B24 BUTT" where our composite is "B24-BUTT". Comparing raw strings
+ * put them in different buckets and reported ONE cabinet as TWO discrepancies
+ * (missing_from_ack + extra_in_ack). Matching on separator-stripped keys fixes
+ * that; the original spelling is preserved separately for display.
+ */
+function skuKey(s: string): string {
+  return (s ?? "").replace(/[^0-9A-Za-z]/g, "").toUpperCase();
 }
 
 export function reconcileAck(
@@ -125,17 +133,23 @@ export function reconcileAck(
   }
 
   // --- Gate 1: line items (match on composite SKU, sum qty per composite) ---
+  // Display spelling per key. The ORDER's form wins because it is our
+  // canonical composite; the ack's spelling is the fallback for lines that
+  // only Waypoint has (extra_in_ack), which would otherwise have no display.
+  const displayBySku = new Map<string, string>();
   const orderBySku = new Map<string, number>();
   for (const it of order.sku_items) {
-    const k = normSku(it.sku);
+    const k = skuKey(it.sku);
     if (!k) continue;
     orderBySku.set(k, (orderBySku.get(k) ?? 0) + (Number(it.quantity) || 0));
+    if (!displayBySku.has(k)) displayBySku.set(k, (it.sku ?? "").trim());
   }
   const ackBySku = new Map<string, number>();
   for (const it of ack.items) {
-    const k = normSku(it.composite_sku);
+    const k = skuKey(it.composite_sku);
     if (!k) continue;
     ackBySku.set(k, (ackBySku.get(k) ?? 0) + (Number(it.qty) || 0));
+    if (!displayBySku.has(k)) displayBySku.set(k, (it.composite_sku ?? "").trim());
   }
 
   const allSkus = new Set<string>([...orderBySku.keys(), ...ackBySku.keys()]);
@@ -147,7 +161,7 @@ export function reconcileAck(
     if (o !== null && a !== null) status = o === a ? "match" : "qty_mismatch";
     else if (o !== null && a === null) status = "missing_from_ack";
     else status = "extra_in_ack";
-    lines.push({ composite_sku: sku, status, order_qty: o, ack_qty: a });
+    lines.push({ composite_sku: displayBySku.get(sku) ?? sku, status, order_qty: o, ack_qty: a });
   }
   const lines_ok = lines.every(l => l.status === "match");
 

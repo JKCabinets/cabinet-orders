@@ -102,7 +102,10 @@ export function parseWaypointAck(sheetName: string, grid: Grid): ParsedAck {
 
       // Line item: qty present + base sku in desc
       if (qty !== null && desc) {
-        const base = desc.trim();
+        // Waypoint spells a manual door modifier with a space ("B24 BUTT");
+        // our composite hyphenates it ("B24-BUTT"). Normalize the internal
+        // whitespace so the reconstructed composite matches the OMS form.
+        const base = desc.trim().replace(/\s+/g, "-");
         const nameToCode = colorNameToCode();
         const colorCode = nameToCode[curColorName.toUpperCase()]
           ?? nameToCode[
