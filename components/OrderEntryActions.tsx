@@ -9,11 +9,22 @@ import { useAckStatus, requestAckPicker, type AckSummary } from "@/lib/ackStatus
 import type { ReconcileResult } from "@/lib/reconcile";
 import type { Order } from "@/lib/data";
 
-function lineIssue(status: string, orderQty: number | null, ackQty: number | null): string {
-  if (status === "qty_mismatch") return `ordered ${orderQty}, acknowledged ${ackQty}`;
-  if (status === "missing_from_ack") return "missing from the acknowledgment";
-  if (status === "extra_in_ack") return "on the acknowledgment, not on the order";
-  return status;
+function lineIssue(l: {
+  status: string;
+  order_qty: number | null;
+  ack_qty: number | null;
+  order_mods?: string[];
+  ack_mods?: string[];
+}): string {
+  if (l.status === "qty_mismatch") return `ordered ${l.order_qty}, acknowledged ${l.ack_qty}`;
+  if (l.status === "mod_mismatch") {
+    const o = (l.order_mods ?? []).join(", ") || "none";
+    const a = (l.ack_mods ?? []).join(", ") || "none";
+    return `modifications differ — order: ${o} vs ack: ${a}`;
+  }
+  if (l.status === "missing_from_ack") return "missing from the acknowledgment";
+  if (l.status === "extra_in_ack") return "on the acknowledgment, not on the order";
+  return l.status;
 }
 
 /** Build the confirm-dialog text listing exactly what didn't match. */
@@ -29,7 +40,7 @@ export function buildDiscrepancyMessage(
       lines.push(`• ${f.field === "name" ? "Name" : f.field === "address" ? "Shipping address" : f.field}: order "${f.order_value || "—"}" vs ack "${f.ack_value || "—"}"`);
     }
     for (const l of r.lines.filter((x) => x.status !== "match")) {
-      lines.push(`• ${l.composite_sku} — ${lineIssue(l.status, l.order_qty, l.ack_qty)}`);
+      lines.push(`• ${l.composite_sku} — ${lineIssue(l)}`);
     }
   }
   return (
