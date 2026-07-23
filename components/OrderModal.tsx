@@ -383,13 +383,17 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
                 {v} PDF
               </a>
             ))}
-            {isAdmin && liveOrder.needs_review && (
+            {isAdmin && (
               <button
                 onClick={handleReDecode}
                 disabled={reDecodeBusy}
-                title="Re-run decode against current mappings and clear resolved flags"
+                title="Re-run decode against the current mappings — clears flags that now resolve, and raises any that no longer do"
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider transition-all disabled:opacity-50"
-                style={{ background: "rgba(224,168,72,0.14)", border: "0.5px solid rgba(224,168,72,0.45)", color: "#e8b866" }}
+                style={
+                  liveOrder.needs_review
+                    ? { background: "rgba(224,168,72,0.14)", border: "0.5px solid rgba(224,168,72,0.45)", color: "#e8b866" }
+                    : { background: "rgba(255,255,255,0.04)", border: "0.5px solid rgba(255,255,255,0.12)", color: "rgba(232,227,218,0.60)" }
+                }
               >
                 {reDecodeBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
                 Re-decode
