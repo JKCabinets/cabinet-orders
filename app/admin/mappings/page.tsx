@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { AppShell, PageHeader } from "@/components/AppShell";
 import { useToast } from "@/components/Toast";
-import { Table2, RefreshCw, Loader2, AlertTriangle, Search } from "lucide-react";
+import { Table2, RefreshCw, Loader2, AlertTriangle, Search, Download } from "lucide-react";
 import clsx from "clsx";
 
 /**
@@ -40,6 +40,22 @@ const KIND_LABEL: Record<string, string> = {
 
 const KIND_ORDER = ["door_style", "color", "modification"];
 
+interface DriftItem {
+  id: string;
+  detected_at: string;
+  vendor: string;
+  kind: string;
+  avis_name: string;
+  kind_of_drift: string;
+  detail: string;
+}
+
+const DRIFT_LABEL: Record<string, string> = {
+  new_value: "new in Avis",
+  orphaned: "gone from Avis",
+  renamed: "renamed",
+};
+
 export default function MappingsPage() {
   const { data: session } = useSession();
   const { showToast } = useToast();
@@ -54,6 +70,8 @@ export default function MappingsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [drift, setDrift] = useState<DriftItem[]>([]);
   // Enter blurs the input, so the commit would otherwise run twice.
   const committingRef = useRef(false);
 
@@ -75,9 +93,83 @@ export default function MappingsPage() {
     }
   }, []);
 
+  const loadDrift = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/mappings/drift");
+      const data = await res.json();
+      if (res.ok) setDrift(data.items ?? []);
+    } catch {
+      /* the drift panel is supplementary — never block the page on it */
+    }
+  }, []);
+
   useEffect(() => {
-    if (isAdmin) void load();
-  }, [isAdmin, load]);
+    if (isAdmin) {
+      void load();
+      void loadDrift();
+    }
+  }, [isAdmin, load, loadDrift]);
+
+  // Dry run first, always: show what would change, then ask.
+  async function handleSync() {
+    setSyncing(true);
+    try {
+      const dry = await fetch("/api/admin/sync-avis-catalog", { method: "POST" }).then(r => r.json());
+      if (dry.error) {
+        showToast(dry.error, { kind: "error" });
+        return;
+      }
+      const nNew = (dry.creates ?? []).length;
+      const nRen = (dry.renames ?? []).length;
+      const nOrph = (dry.orphans ?? []).length;
+      if (nNew === 0 && nRen === 0 && nOrph === 0 && (dry.new_links ?? 0) === 0) {
+        showToast("Already in step with Avis - nothing to change", { kind: "success" });
+        return;
+      }
+      const ok = window.confirm(
+        `Avis sync\n\n` +
+          `${nNew} new value(s) to add (no code)\n` +
+          `${nRen} rename(s)\n` +
+          `${nOrph} mapping(s) Avis no longer offers\n\n` +
+          `Codes are never changed. Nothing is deleted. Apply?`,
+      );
+      if (!ok) return;
+      const res = await fetch("/api/admin/sync-avis-catalog?apply=1", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast(data.error ?? "Sync failed", { kind: "error" });
+        return;
+      }
+      showToast(
+        `Synced - ${(data.creates ?? []).length} added, ${(data.renames ?? []).length} renamed, ${(data.orphans ?? []).length} orphaned`,
+        { kind: (data.orphans ?? []).length > 0 ? "warn" : "success" },
+      );
+      await load();
+      await loadDrift();
+    } catch {
+      showToast("Network error - the sync did not run", { kind: "error" });
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  async function resolveDrift(id: string) {
+    try {
+      const res = await fetch("/api/admin/mappings/drift", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, resolved: true }),
+      });
+      if (!res.ok) {
+        const d = await res.json();
+        showToast(d.error ?? "Could not dismiss", { kind: "error" });
+        return;
+      }
+      setDrift(prev => prev.filter(d => d.id !== id));
+    } catch {
+      showToast("Network error - not dismissed", { kind: "error" });
+    }
+  }
 
   // Mark a value as never needing a code, or put it back in the queue.
   async function setCodeRequired(row: MappingRow, code_required: boolean) {
@@ -273,7 +365,51 @@ export default function MappingsPage() {
             )}
             Refresh cache
           </button>
+          <button
+            onClick={handleSync}
+            disabled={syncing}
+            title="Pull the Avis option catalog and reconcile it with these mappings"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[rgba(255,255,255,0.10)] text-xs text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] hover:border-[rgba(86,100,72,0.55)] transition-all disabled:opacity-50 whitespace-nowrap"
+          >
+            {syncing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+            Sync from Avis
+          </button>
         </div>
+
+        {drift.length > 0 && (
+          <div className="mb-6 border border-[rgba(224,168,72,0.35)] rounded-xl overflow-hidden">
+            <div className="px-4 py-2.5 bg-[rgba(224,168,72,0.10)] flex items-center gap-2">
+              <AlertTriangle className="w-3.5 h-3.5" style={{ color: "#e8b866" }} />
+              <p className="text-xs" style={{ color: "#e8b866" }}>
+                Catalog drift &mdash; {drift.length} open
+              </p>
+            </div>
+            {drift.map((d, i) => (
+              <div
+                key={d.id}
+                className={clsx(
+                  "flex items-start gap-3 px-4 py-2.5",
+                  i > 0 && "border-t border-[rgba(255,255,255,0.07)]",
+                )}
+              >
+                <span className="text-[10px] uppercase tracking-wider text-cream/45 whitespace-nowrap mt-0.5">
+                  {DRIFT_LABEL[d.kind_of_drift] ?? d.kind_of_drift}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs text-[#e8e3da] truncate">{d.avis_name}</p>
+                  <p className="text-[10px] text-[rgba(232,227,218,0.40)]">{d.detail}</p>
+                </div>
+                <button
+                  onClick={() => void resolveDrift(d.id)}
+                  title="Dismiss - the sync reopens it if the situation recurs"
+                  className="text-[10px] uppercase tracking-wider text-cream/40 hover:text-cream/75 underline whitespace-nowrap"
+                >
+                  dismiss
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
 
         {loading ? (
           <div className="min-h-[30vh] flex items-center justify-center">

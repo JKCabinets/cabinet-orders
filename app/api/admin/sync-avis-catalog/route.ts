@@ -5,6 +5,8 @@ import { refreshSkuMaps } from "@/lib/skuDecoder";
 import {
   extractCatalogValues,
   planSync,
+  driftFromPlan,
+  driftKey,
   type AvisSetRaw,
   type ExistingMapping,
   type ExistingProvenance,
@@ -96,7 +98,7 @@ export async function POST(req: NextRequest) {
   // ── 2) Current state ─────────────────────────────────────────────────────
   const { data: mRows, error: mErr } = await supabase
     .from("sku_mappings")
-    .select("id, vendor, kind, avis_name, sku_code, source, active");
+    .select("id, vendor, kind, avis_name, sku_code, source, active, code_required");
   if (mErr) return NextResponse.json({ error: mErr.message }, { status: 500 });
 
   const { data: pRows, error: pErr } = await supabase
@@ -104,11 +106,45 @@ export async function POST(req: NextRequest) {
     .select("value_id, mapping_id, avis_value_name");
   if (pErr) return NextResponse.json({ error: pErr.message }, { status: 500 });
 
+  const { data: dRows, error: dErr } = await supabase
+    .from("sku_mapping_drift_log")
+    .select("id, vendor, kind, avis_name, kind_of_drift")
+    .eq("resolved", false);
+  if (dErr) return NextResponse.json({ error: dErr.message }, { status: 500 });
+
   const plan = planSync(
     values,
     (mRows ?? []) as ExistingMapping[],
     (pRows ?? []) as ExistingProvenance[],
   );
+
+  // ── Drift: what is new, and what has since been put right ────────────────
+  type OpenDrift = { id: string; vendor: string; kind: string; avis_name: string; kind_of_drift: string };
+  const open = (dRows ?? []) as OpenDrift[];
+  const openKeys = new Set(open.map(d => driftKey(d.vendor, d.kind, d.avis_name, d.kind_of_drift)));
+
+  // Only log an open item once — a persistent orphan should not accumulate a
+  // row on every nightly run.
+  const driftToWrite = driftFromPlan(plan).filter(
+    d => d.resolved || !openKeys.has(driftKey(d.vendor, d.kind, d.avis_name, d.kind_of_drift)),
+  );
+
+  // Close items the world has fixed: an orphan Avis offers again, or a new
+  // value that now has a code (or was marked as not needing one).
+  const offeredKeys = new Set(
+    values.map(v => `${v.vendor}\u0000${v.kind}\u0000${v.name.trim().toLowerCase()}`),
+  );
+  const settledKeys = new Set(
+    ((mRows ?? []) as Array<ExistingMapping & { code_required?: boolean }>)
+      .filter(m => m.sku_code !== null || m.code_required === false)
+      .map(m => `${m.vendor}\u0000${m.kind}\u0000${m.avis_name.trim().toLowerCase()}`),
+  );
+  const driftToResolve = open.filter(d => {
+    const k = `${d.vendor}\u0000${d.kind}\u0000${d.avis_name.trim().toLowerCase()}`;
+    if (d.kind_of_drift === "orphaned") return offeredKeys.has(k);
+    if (d.kind_of_drift === "new_value") return settledKeys.has(k);
+    return false;
+  });
 
   if (!apply) {
     return NextResponse.json({
@@ -118,6 +154,8 @@ export async function POST(req: NextRequest) {
       creates: plan.creates,
       renames: plan.renames,
       orphans: plan.orphans,
+      drift_to_log: driftToWrite,
+      drift_to_resolve: driftToResolve.length,
       message: "Nothing was written. Re-run with ?apply=1 to make these changes.",
     });
   }
@@ -196,7 +234,30 @@ export async function POST(req: NextRequest) {
       if (error) throw new Error(`touching last_seen_at: ${error.message}`);
     }
 
-    // 3e. Record the run.
+    // 3e. Drift log — one open row per item, plus closing anything since fixed.
+    if (driftToWrite.length > 0) {
+      const { error } = await supabase.from("sku_mapping_drift_log").insert(
+        driftToWrite.map(d => ({
+          vendor: d.vendor,
+          kind: d.kind,
+          avis_name: d.avis_name,
+          kind_of_drift: d.kind_of_drift,
+          detail: d.detail,
+          resolved: d.resolved,
+          resolved_at: d.resolved ? now : null,
+        })),
+      );
+      if (error) throw new Error(`writing drift log: ${error.message}`);
+    }
+    if (driftToResolve.length > 0) {
+      const { error } = await supabase
+        .from("sku_mapping_drift_log")
+        .update({ resolved: true, resolved_at: now })
+        .in("id", driftToResolve.map(d => d.id));
+      if (error) throw new Error(`closing drift: ${error.message}`);
+    }
+
+    // 3f. Record the run.
     await supabase.from("sku_mapping_sync_runs").insert({
       ran_by: ranBy,
       ok: true,
@@ -207,7 +268,7 @@ export async function POST(req: NextRequest) {
       details: { creates: plan.creates, renames: plan.renames, orphans: plan.orphans },
     });
 
-    // 3f. Make the new rows live for decoding straight away.
+    // 3g. Make the new rows live for decoding straight away.
     let cache_refreshed = true;
     try {
       await refreshSkuMaps();
@@ -222,6 +283,8 @@ export async function POST(req: NextRequest) {
       creates: plan.creates,
       renames: plan.renames,
       orphans: plan.orphans,
+      drift_logged: driftToWrite.length,
+      drift_resolved: driftToResolve.length,
       cache_refreshed,
     });
   } catch (e) {

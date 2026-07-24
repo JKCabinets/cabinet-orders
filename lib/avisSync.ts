@@ -332,3 +332,74 @@ export function planSync(
     },
   };
 }
+
+/* ── Drift log ──────────────────────────────────────────────────────────── */
+
+export type DriftKind = "new_value" | "renamed" | "orphaned";
+
+export interface DriftRow {
+  vendor: string;
+  kind: string;
+  avis_name: string;
+  kind_of_drift: DriftKind;
+  detail: string;
+  /** Renames are history, not a queue item — nothing is left to decide. */
+  resolved: boolean;
+}
+
+/**
+ * Turn a plan into drift-log rows.
+ *
+ * new_value and orphaned are OPEN items: one needs a code, the other needs a
+ * decision about whether to remove it. A rename is recorded already resolved —
+ * the code carried across automatically, so there is nothing to action; it is
+ * logged so the change is visible after the fact.
+ */
+export function driftFromPlan(plan: SyncPlan): DriftRow[] {
+  const rows: DriftRow[] = [];
+
+  for (const c of plan.creates) {
+    rows.push({
+      vendor: c.vendor,
+      kind: c.kind,
+      avis_name: c.avis_name,
+      kind_of_drift: "new_value",
+      detail: `New in Avis (${c.from}). Needs a SKU code, or mark it as not needing one.`,
+      resolved: false,
+    });
+  }
+
+  for (const r of plan.renames) {
+    rows.push({
+      vendor: AVIS_VENDOR,
+      kind: "",
+      avis_name: r.to_name,
+      kind_of_drift: "renamed",
+      detail:
+        `Renamed in Avis from "${r.from_name}" to "${r.to_name}". ` +
+        (r.sku_code ? `Code ${r.sku_code} carried across.` : `Still has no code.`),
+      resolved: true,
+    });
+  }
+
+  for (const o of plan.orphans) {
+    rows.push({
+      vendor: o.vendor,
+      kind: o.kind,
+      avis_name: o.avis_name,
+      kind_of_drift: "orphaned",
+      detail:
+        `Avis no longer offers this value` +
+        (o.sku_code ? ` (code ${o.sku_code}).` : `.`) +
+        ` Remove the mapping, or restore the value in Avis.`,
+      resolved: false,
+    });
+  }
+
+  return rows;
+}
+
+/** Stable identity for an open drift item, for de-duplication across runs. */
+export function driftKey(vendor: string, kind: string, name: string, drift: string): string {
+  return `${vendor}\u0000${kind}\u0000${(name ?? "").trim().toLowerCase()}\u0000${drift}`;
+}
