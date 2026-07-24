@@ -40,7 +40,11 @@ export function parseModifications(
   props: Array<{ name: string; value: string }>,
   modMap: Record<string, string>,
 ): ParsedMods {
-  const get = (re: RegExp) => (props.find(p => re.test(p.name))?.value ?? "").trim();
+  // Avis label_cart becomes the property name, so whitespace typed into the
+  // option ("Modifications ") rides into the order. Trim names before
+  // matching so that can never silently drop a line's modifications.
+  const cleaned = props.map(p => ({ name: (p.name ?? "").trim(), value: p.value ?? "" }));
+  const get = (re: RegExp) => (cleaned.find(p => re.test(p.name))?.value ?? "").trim();
   const subs: SkuModification[] = [];
   const unmapped: string[] = [];
   const missingValue: string[] = [];
@@ -51,7 +55,7 @@ export function parseModifications(
   // Any "…Modifications" list property (comma-separated). Category prefix
   // (Base/Wall/Tall/Vanity) optional; leading underscore optional.
   const LIST_RE = /^_?(?:[A-Za-z]+\s+)?Modifications$/i;
-  for (const p of props) {
+  for (const p of cleaned) {
     if (LIST_RE.test(p.name)) {
       for (const part of (p.value ?? "").split(",")) {
         const name = part.trim();

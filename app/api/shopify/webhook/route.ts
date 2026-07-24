@@ -147,8 +147,10 @@ function buildOrder(payload: Record<string, unknown>) {
     // Selection 1" — a hidden-underscore variant plus a trailing selection
     // index — and older/other configs use the bare or visible form. Match the
     // whole family so Waypoint decodes regardless of the exact Avis naming.
+    // Match on the TRIMMED name: label_cart comes straight from Avis, so a
+    // stray space there ("Door Style 1 ") would otherwise match nothing.
     const getPropLike = (re: RegExp) =>
-      props.find(p => re.test(p.name))?.value ?? "";
+      props.find(p => re.test((p.name ?? "").trim()))?.value ?? "";
 
     const skuProp = props.find(p => p.name === "_sku");
     // Blank-aware base: a Shopify sku of "" (empty, not null) must still fall
