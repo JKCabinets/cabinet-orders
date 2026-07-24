@@ -29,24 +29,10 @@ export async function GET(req: NextRequest) {
   const { data, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // Auto-advance any "In production" orders whose est finish date has passed
-  const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
-  const todayLabel = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "America/Phoenix" });
-  const toAdvance = (data ?? []).filter(
-    o => o.stage === "In production" && o.production_est_finish_date && o.production_est_finish_date < today
-  );
-  for (const o of toAdvance) {
-    await supabase.from("orders").update({
-      stage: "At cross dock",
-      stage_entered_at: new Date().toISOString(),
-    }).eq("id", o.id);
-    await supabase.from("order_activity").insert({
-      order_id: o.id,
-      text: `Production complete — automatically moved to "At cross dock"`,
-      time: todayLabel,
-    });
-    o.stage = "At cross dock"; // reflect in this response immediately
-  }
+  // Step 4 (In production -> At cross dock) is owned solely by the
+  // production-complete cron. It used to ALSO happen here, on every list fetch,
+  // with a different comparison (`<` vs the cron's `<=`) and no Shopify sync —
+  // so whichever ran first decided both the timing and whether Shopify was told.
 
   // Shape activity into array format the frontend expects
   const shaped = (data ?? []).map((o) => ({
