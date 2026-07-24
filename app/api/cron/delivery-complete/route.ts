@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { supabase } from "@/lib/supabase";
+import { syncStageToShopify } from "@/lib/shopifyStageSync";
 
 /**
  * Verify the cron Bearer token using a constant-time compare. Fails CLOSED
@@ -28,7 +29,7 @@ export async function GET(req: NextRequest) {
 
   const { data: orders, error } = await supabase
     .from("orders")
-    .select("id, name, scheduled_delivery_date")
+    .select("id, name, shopify_id, scheduled_delivery_date")
     .eq("stage", "At cross dock")
     .eq("archived", false)
     .lte("scheduled_delivery_date", today)
@@ -43,6 +44,8 @@ export async function GET(req: NextRequest) {
     month: "short", day: "numeric", timeZone: "America/Phoenix",
   });
 
+  const results: { id: string; name: string; shopify_synced: boolean }[] = [];
+
   for (const order of orders) {
     await supabase.from("orders").update({
       stage: "Delivered",
@@ -53,7 +56,19 @@ export async function GET(req: NextRequest) {
       text: `Delivery date reached — moved to "Delivered" automatically`,
       time: todayLabel,
     });
+
+    // Keep Shopify in step. Without this the Shopify order showed
+    // "At cross dock" forever, even once the OMS said Delivered.
+    let shopify_synced = false;
+    if (order.shopify_id) {
+      try {
+        await syncStageToShopify(order.shopify_id, "Delivered");
+        shopify_synced = true;
+      } catch {}
+    }
+
+    results.push({ id: order.id, name: order.name, shopify_synced });
   }
 
-  return NextResponse.json({ ok: true, advanced: orders.length });
+  return NextResponse.json({ ok: true, advanced: results.length, orders: results });
 }
