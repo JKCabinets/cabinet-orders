@@ -108,6 +108,7 @@ env:
     - SUPABASE_JWT_SECRET
     - NEXT_PUBLIC_SUPABASE_URL
     - NEXT_PUBLIC_SUPABASE_ANON_KEY
+    - AVIS_API_TOKEN
 
 # ─── Useful aliases ───────────────────────────────────────────────────
 # Run with: kamal <alias>
