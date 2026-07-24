@@ -18,7 +18,7 @@ import { refreshSkuMaps } from "@/lib/skuDecoder";
  * Admin only. The page's role check is UX; this is the actual gate.
  */
 
-const SELECT = "id, vendor, kind, avis_name, sku_code, source, role, active";
+const SELECT = "id, vendor, kind, avis_name, sku_code, source, role, active, code_required";
 
 /** Codes are short, uppercase, alphanumeric (410F, PL, RD, RTKB, BUTT). */
 const CODE_RE = /^[A-Z0-9-]{1,24}$/;
@@ -42,7 +42,7 @@ export async function PATCH(req: NextRequest) {
   const auth = await requireAdmin();
   if (auth instanceof NextResponse) return auth;
 
-  let body: { id?: unknown; sku_code?: unknown };
+  let body: { id?: unknown; sku_code?: unknown; code_required?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -52,22 +52,45 @@ export async function PATCH(req: NextRequest) {
   const id = typeof body.id === "string" ? body.id.trim() : "";
   if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
 
-  // Empty string clears the code (back to "needs a code"); anything else must
-  // look like a code. Normalizing here keeps the table consistent no matter how
-  // it was typed.
-  const raw = typeof body.sku_code === "string" ? body.sku_code.trim().toUpperCase() : "";
-  const sku_code: string | null = raw === "" ? null : raw;
-  if (sku_code !== null && !CODE_RE.test(sku_code)) {
+  // Whitelist: only these two are writable here. vendor/kind/avis_name are the
+  // identity the Avis sync matches on, so they stay read-only.
+  const update: { sku_code?: string | null; code_required?: boolean } = {};
+
+  if (body.sku_code !== undefined) {
+    // Empty string clears the code (back to "needs a code"); anything else must
+    // look like a code. Normalizing here keeps the table consistent however it
+    // was typed.
+    const raw = typeof body.sku_code === "string" ? body.sku_code.trim().toUpperCase() : "";
+    const sku_code: string | null = raw === "" ? null : raw;
+    if (sku_code !== null && !CODE_RE.test(sku_code)) {
+      return NextResponse.json(
+        { error: "A code is 1-24 characters, letters/numbers/hyphen only (e.g. 410F, PL, RTKB)." },
+        { status: 400 },
+      );
+    }
+    update.sku_code = sku_code;
+  }
+
+  // False marks a value that never needs a code — e.g. "Recessed Toe Kick",
+  // a selector whose real code comes from its Options sub-option. Such rows
+  // drop out of the "needs a code" count instead of nagging forever.
+  if (body.code_required !== undefined) {
+    if (typeof body.code_required !== "boolean") {
+      return NextResponse.json({ error: "code_required must be true or false" }, { status: 400 });
+    }
+    update.code_required = body.code_required;
+  }
+
+  if (Object.keys(update).length === 0) {
     return NextResponse.json(
-      { error: "A code is 1–24 characters, letters/numbers/hyphen only (e.g. 410F, PL, RTKB)." },
+      { error: "Nothing to update - send sku_code and/or code_required." },
       { status: 400 },
     );
   }
 
-  // Whitelist the column: only sku_code is writable from this page.
   const { data, error } = await supabase
     .from("sku_mappings")
-    .update({ sku_code })
+    .update(update)
     .eq("id", id)
     .select(SELECT)
     .single();

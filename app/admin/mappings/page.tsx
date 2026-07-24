@@ -28,6 +28,8 @@ interface MappingRow {
   source: string;
   role: string;
   active: boolean;
+  /** False for selector values that never need a code (e.g. "Recessed Toe Kick"). */
+  code_required: boolean;
 }
 
 const KIND_LABEL: Record<string, string> = {
@@ -76,6 +78,34 @@ export default function MappingsPage() {
   useEffect(() => {
     if (isAdmin) void load();
   }, [isAdmin, load]);
+
+  // Mark a value as never needing a code, or put it back in the queue.
+  async function setCodeRequired(row: MappingRow, code_required: boolean) {
+    setSavingId(row.id);
+    try {
+      const res = await fetch("/api/admin/mappings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: row.id, code_required }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast(data.error ?? "Could not update the row", { kind: "error" });
+        return;
+      }
+      setRows((prev) => prev.map((r) => (r.id === row.id ? (data.row as MappingRow) : r)));
+      showToast(
+        code_required
+          ? `${row.avis_name} needs a code again`
+          : `${row.avis_name} marked as not needing a code`,
+        { kind: "success" },
+      );
+    } catch {
+      showToast("Network error - not saved", { kind: "error" });
+    } finally {
+      setSavingId(null);
+    }
+  }
 
   async function commitCode(row: MappingRow, value: string) {
     if (committingRef.current) return;
@@ -147,10 +177,10 @@ export default function MappingsPage() {
     );
   }
 
-  const needsCode = rows.filter((r) => !r.sku_code);
+  const needsCode = rows.filter((r) => !r.sku_code && r.code_required);
   const q = query.trim().toLowerCase();
   const visible = rows.filter((r) => {
-    if (onlyNeedsCode && r.sku_code) return false;
+    if (onlyNeedsCode && (r.sku_code || !r.code_required)) return false;
     if (!q) return true;
     return (
       r.avis_name.toLowerCase().includes(q) ||
@@ -297,6 +327,7 @@ export default function MappingsPage() {
                             onStartEdit={() => setEditingId(row.id)}
                             onCancel={() => setEditingId(null)}
                             onCommit={(v) => void commitCode(row, v)}
+                            onSetCodeRequired={(v) => void setCodeRequired(row, v)}
                           />
                         ))}
                       </div>
@@ -327,6 +358,7 @@ function MappingRowView({
   onStartEdit,
   onCancel,
   onCommit,
+  onSetCodeRequired,
 }: {
   row: MappingRow;
   first: boolean;
@@ -335,14 +367,18 @@ function MappingRowView({
   onStartEdit: () => void;
   onCancel: () => void;
   onCommit: (value: string) => void;
+  onSetCodeRequired: (v: boolean) => void;
 }) {
-  const missing = !row.sku_code;
+  // A row only "needs" a code when one is expected of it.
+  const missing = !row.sku_code && row.code_required;
+  const exempt = !row.sku_code && !row.code_required;
   return (
     <div
       className={clsx(
         "flex items-center gap-3 px-4 py-2.5",
         !first && "border-t border-[rgba(255,255,255,0.07)]",
         missing && "bg-[rgba(224,168,72,0.06)]",
+        exempt && "opacity-70",
         !row.active && "opacity-50",
       )}
     >
@@ -355,9 +391,32 @@ function MappingRowView({
       </div>
 
       {missing && !editing && (
-        <span className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-[#e8b866] whitespace-nowrap">
-          <AlertTriangle className="w-3 h-3" /> needs a code
-        </span>
+        <>
+          <span className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-[#e8b866] whitespace-nowrap">
+            <AlertTriangle className="w-3 h-3" /> needs a code
+          </span>
+          <button
+            onClick={() => onSetCodeRequired(false)}
+            title="This value never needs a code - e.g. a selector whose real code comes from another option"
+            className="text-[10px] uppercase tracking-wider text-cream/40 hover:text-cream/75 underline whitespace-nowrap"
+          >
+            not needed
+          </button>
+        </>
+      )}
+      {exempt && !editing && (
+        <>
+          <span className="text-[10px] uppercase tracking-wider text-cream/30 whitespace-nowrap">
+            no code needed
+          </span>
+          <button
+            onClick={() => onSetCodeRequired(true)}
+            title="Put this value back in the needs-a-code queue"
+            className="text-[10px] uppercase tracking-wider text-cream/40 hover:text-cream/75 underline whitespace-nowrap"
+          >
+            undo
+          </button>
+        </>
       )}
 
       {editing ? (
