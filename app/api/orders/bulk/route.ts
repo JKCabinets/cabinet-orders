@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, rateLimitOr429 } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
-import { getShopifyToken } from "@/lib/shopify";
+import { syncStageToShopify } from "@/lib/shopifyStageSync";
 import {
   ALLOWED_STAGES,
   stageIndex,
@@ -26,48 +26,6 @@ interface BulkResult {
  * Push a single order's stage change back to Shopify. Mirrors syncToShopify in
  * /api/orders/[id]/route.ts but minimized for the bulk path (only stage + tags).
  */
-async function syncStageToShopify(shopifyId: string, stage: string): Promise<boolean> {
-  const domain = process.env.SHOPIFY_STORE_DOMAIN;
-  if (!domain || !shopifyId) return false;
-  if (!/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/i.test(domain)) return false;
-  if (!/^\d+$/.test(shopifyId)) return false;
-
-  let token: string;
-  try { token = await getShopifyToken(); } catch { return false; }
-
-  let currentAttributes: { name: string; value: string }[] = [];
-  try {
-    const getRes = await fetch(
-      `https://${domain}/admin/api/2024-01/orders/${shopifyId}.json?fields=note_attributes`,
-      { headers: { "X-Shopify-Access-Token": token } }
-    );
-    if (getRes.ok) {
-      const j = await getRes.json();
-      currentAttributes = j.order?.note_attributes ?? [];
-    }
-  } catch { return false; }
-
-  const attrMap = new Map(currentAttributes.map((a: { name: string; value: string }) => [a.name, a.value]));
-  attrMap.set("Production Stage", stage);
-
-  try {
-    const res = await fetch(
-      `https://${domain}/admin/api/2024-01/orders/${shopifyId}.json`,
-      {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", "X-Shopify-Access-Token": token },
-        body: JSON.stringify({
-          order: {
-            id: shopifyId,
-            note_attributes: Array.from(attrMap.entries()).map(([name, value]) => ({ name, value })),
-            tags: `JK Order, ${stage}`,
-          },
-        }),
-      }
-    );
-    return res.ok;
-  } catch { return false; }
-}
 
 export async function POST(req: NextRequest) {
   const auth = await requireAuth();

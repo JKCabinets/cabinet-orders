@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, cleanInput, rateLimitOr429 } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import { getShopifyToken } from "@/lib/shopify";
+import { mergeTags } from "@/lib/shopifyStageSync";
 import { ALLOWED_STAGES, isBackwardsMove, verifyAdminPin, fieldsToClearOnBackwardMove, describeFieldsCleared } from "@/lib/stageGuards";
 import { orderAllVendorsGreen } from "@/lib/acknowledgments";
 
@@ -36,6 +37,9 @@ async function syncToShopify(
 
   // Fetch current note_attributes from Shopify so we don't overwrite unrelated ones
   let currentAttributes: { name: string; value: string }[] = [];
+  // null means we could NOT read the tags, in which case we leave them
+  // alone rather than replacing a list we never saw.
+  let currentTags: string | null = null;
   try {
     const getRes = await fetch(
       `https://${domain}/admin/api/2024-01/orders/${shopifyId}.json?fields=note_attributes,tags,note`,
@@ -44,6 +48,7 @@ async function syncToShopify(
     if (getRes.ok) {
       const getJson = await getRes.json();
       currentAttributes = getJson.order?.note_attributes ?? [];
+      currentTags = typeof getJson.order?.tags === "string" ? getJson.order.tags : "";
     }
   } catch {}
 
@@ -70,8 +75,10 @@ async function syncToShopify(
     orderPayload.note = updates.notes;
   }
 
-  if (updates.stage !== undefined) {
-    orderPayload.tags = `JK Order, ${updates.stage}`;
+  // Merge, never replace. A bare assignment here discarded the vendor
+  // tags (HCI Order, Waypoint) on every stage change.
+  if (updates.stage !== undefined && currentTags !== null) {
+    orderPayload.tags = mergeTags(currentTags, String(updates.stage));
   }
 
   const res = await fetch(

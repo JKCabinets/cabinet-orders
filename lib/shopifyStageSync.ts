@@ -11,6 +11,9 @@ import { getShopifyToken } from "@/lib/shopify";
  *
  * Writes the "Production Stage" note attribute and merges the stage into the
  * order's tags. Both are merges, never replacements — see mergeTags.
+ *
+ * Returns whether Shopify actually accepted the write, so callers can record
+ * the truth rather than assuming success.
  */
 
 /**
@@ -43,16 +46,16 @@ export function mergeTags(existing: string, stage: string): string {
   return ["JK Order", stage, ...kept].join(", ");
 }
 
-export async function syncStageToShopify(shopifyId: string, stage: string) {
+export async function syncStageToShopify(shopifyId: string, stage: string): Promise<boolean> {
   const domain = process.env.SHOPIFY_STORE_DOMAIN;
-  if (!domain || !shopifyId) return;
+  if (!domain || !shopifyId) return false;
 
   // Defense against SSRF via misconfigured env / order corruption
-  if (!/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/i.test(domain)) return;
-  if (!/^\d+$/.test(shopifyId)) return;
+  if (!/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/i.test(domain)) return false;
+  if (!/^\d+$/.test(shopifyId)) return false;
 
   let token: string;
-  try { token = await getShopifyToken(); } catch { return; }
+  try { token = await getShopifyToken(); } catch { return false; }
 
   let currentAttributes: { name: string; value: string }[] = [];
   // null means we could NOT read the tags. In that case we leave them alone
@@ -82,15 +85,20 @@ export async function syncStageToShopify(shopifyId: string, stage: string) {
     orderPayload.tags = mergeTags(currentTags, stage);
   }
 
-  await fetch(
-    `https://${domain}/admin/api/2024-01/orders/${shopifyId}.json`,
-    {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Shopify-Access-Token": token,
-      },
-      body: JSON.stringify({ order: orderPayload }),
-    }
-  );
+  try {
+    const res = await fetch(
+      `https://${domain}/admin/api/2024-01/orders/${shopifyId}.json`,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Shopify-Access-Token": token,
+        },
+        body: JSON.stringify({ order: orderPayload }),
+      }
+    );
+    return res.ok;
+  } catch {
+    return false;
+  }
 }

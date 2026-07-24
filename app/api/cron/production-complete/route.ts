@@ -68,8 +68,7 @@ export async function GET(req: NextRequest) {
     let shopify_synced = false;
     if (order.shopify_id) {
       try {
-        await syncStageToShopify(order.shopify_id, "At cross dock");
-        shopify_synced = true;
+        shopify_synced = await syncStageToShopify(order.shopify_id, "At cross dock");
       } catch {}
     }
 
