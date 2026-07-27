@@ -1,25 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import crypto from "crypto";
+import { verifyCronAuth } from "@/lib/cronAuth";
 import { supabase } from "@/lib/supabase";
 import { syncStageToShopify } from "@/lib/shopifyStageSync";
-
-/**
- * Verify the cron Bearer token using a constant-time compare. Fails CLOSED
- * if no CRON_SECRET is configured — the old code silently accepted any
- * caller when the secret env var was unset.
- */
-function verifyCronAuth(req: NextRequest): boolean {
-  const cronSecret = process.env.CRON_SECRET;
-  if (!cronSecret) return false;
-
-  const authHeader = req.headers.get("authorization") ?? "";
-  const expected = `Bearer ${cronSecret}`;
-
-  const a = Buffer.from(authHeader);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length) return false;
-  try { return crypto.timingSafeEqual(a, b); } catch { return false; }
-}
 
 export async function GET(req: NextRequest) {
   if (!verifyCronAuth(req)) {

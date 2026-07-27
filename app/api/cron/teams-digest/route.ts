@@ -1,37 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import crypto from "crypto";
+import { verifyCronAuth } from "@/lib/cronAuth";
 import { supabase } from "@/lib/supabase";
 import { SLA_TARGETS, daysInStage } from "@/lib/sla";
 import type { Order, OrderStage } from "@/lib/data";
-
-/**
- * GET /api/cron/teams-digest
- *
- * Daily morning summary posted to Microsoft Teams. Runs weekdays from the
- * Hetzner host crontab via ~/cron-jobs/run-cron.sh. Computes:
- *   - Active orders per stage
- *   - Overdue counts per stage (against SLA_TARGETS)
- *   - New orders created in the last 24 hours
- *
- * Posts a Teams Adaptive Card via a Power Automate workflow webhook.
- * The webhook URL goes in TEAMS_WEBHOOK_URL.
- *
- * Auth: standard Bearer cron secret. Skipped silently (with 200 OK) if
- * TEAMS_WEBHOOK_URL isn't configured — better to fail open here than
- * have cron retries pile up while you set up the workflow.
- */
-
-/** Constant-time auth check. Fails CLOSED with no CRON_SECRET. */
-function verifyCronAuth(req: NextRequest): boolean {
-  const cronSecret = process.env.CRON_SECRET;
-  if (!cronSecret) return false;
-  const authHeader = req.headers.get("authorization") ?? "";
-  const expected = `Bearer ${cronSecret}`;
-  const a = Buffer.from(authHeader);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length) return false;
-  try { return crypto.timingSafeEqual(a, b); } catch { return false; }
-}
 
 const STAGES: OrderStage[] = ["New", "Entered", "In production", "At cross dock"];
 
