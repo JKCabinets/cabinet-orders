@@ -7,8 +7,8 @@ import type { Order, OrderStage } from "@/lib/data";
 /**
  * GET /api/cron/teams-digest
  *
- * Daily morning summary posted to Microsoft Teams. Runs weekdays via
- * Vercel cron (configured in vercel.json). Computes:
+ * Daily morning summary posted to Microsoft Teams. Runs weekdays from the
+ * Hetzner host crontab via ~/cron-jobs/run-cron.sh. Computes:
  *   - Active orders per stage
  *   - Overdue counts per stage (against SLA_TARGETS)
  *   - New orders created in the last 24 hours
@@ -153,7 +153,7 @@ export async function GET(req: NextRequest) {
         title: "Open dashboard",
         url: process.env.NEXTAUTH_URL
           ? `${process.env.NEXTAUTH_URL}/dashboard`
-          : "https://cabinet-orders.vercel.app/dashboard",
+          : "https://www.ordersjkcabinets2you.com/dashboard",
       },
     ],
   };
