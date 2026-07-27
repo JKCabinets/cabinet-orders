@@ -88,7 +88,7 @@ env:
     NODE_ENV: production
     # NextAuth needs to know its own URL to construct callback links.
     # This changes when we cut over to the real domain.
-    NEXTAUTH_URL: https://ordersjkcabinets2you.com
+    NEXTAUTH_URL: https://www.ordersjkcabinets2you.com
     PORT: "3000"
     HOSTNAME: "0.0.0.0"
   secret:
