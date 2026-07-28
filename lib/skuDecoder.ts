@@ -127,13 +127,12 @@ export function buildSkuFromAvisNames(
   return buildSkuFromAvisNamesDetailed(baseSku, doorStyleName, colorName).sku;
 }
 
-export interface SkuItem {
-  sku: string;
-  quantity: number;
-  description?: string;
-  door_style?: string;
-  color?: string;
-}
+// SkuItem is defined once, in lib/data.ts (the full shape). Imported for local
+// use here AND re-exported, so the many `import { SkuItem } from
+// "@/lib/skuDecoder"` call sites keep working and receive the complete type —
+// no more casts at this boundary.
+import type { SkuItem } from "@/lib/data";
+export type { SkuItem };
 
 export interface SkuGroup {
   label: string;
