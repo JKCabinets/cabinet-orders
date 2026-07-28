@@ -23,11 +23,13 @@ export {
 } from "@/lib/stageLogic";
 export type { StageFlow } from "@/lib/stageLogic";
 
-/** Admin PIN for backwards moves. Reads from env first; falls back to the
- * legacy hardcoded value so existing deployments keep working until
- * ADMIN_BACKWARD_PIN is configured. Constant-time compared on every check. */
-export const ADMIN_PIN: string =
-  process.env.ADMIN_BACKWARD_PIN || "4951";
+/** Admin PIN for backwards moves. Read from ADMIN_BACKWARD_PIN, with NO
+ * fallback: if the env var is unset the PIN is the empty string, and because a
+ * real PIN can never be empty (and verifyAdminPin length-checks), every
+ * backward move is rejected. Fail closed — a missing secret blocks the
+ * privileged action rather than reverting to a hardcoded value. Constant-time
+ * compared on every check. */
+export const ADMIN_PIN: string = process.env.ADMIN_BACKWARD_PIN ?? "";
 
 /** Constant-time string equality. Returns false on length mismatch (no throw). */
 export function timingSafeStringEqual(a: string, b: string): boolean {
