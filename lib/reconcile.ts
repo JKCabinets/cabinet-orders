@@ -51,6 +51,57 @@ export interface OrderForReconcile {
 
 export type LineStatus = "match" | "qty_mismatch" | "mod_mismatch" | "missing_from_ack" | "extra_in_ack";
 
+/**
+ * describeLineIssue — human-readable summary of one reconciled line.
+ *
+ * Single source of truth for how a LineStatus is described to a person. It
+ * previously lived as `lineIssue` in TWO components (AcknowledgmentPanel and
+ * OrderEntryActions), which drifted: the mod-mismatch separator and the
+ * missing-from-ack phrasing differed. Those differences were deliberate
+ * per-surface wording, so they are preserved here behind `terse` rather than
+ * flattened:
+ *   - AcknowledgmentPanel (full review panel) -> verbose form (default).
+ *   - OrderEntryActions   (Manual Push dialog) -> terse form.
+ *
+ * Living next to LineStatus means a new status can't be added without this
+ * describer being right here to update.
+ */
+export interface LineIssueInput {
+  status: string;
+  order_qty: number | null;
+  ack_qty: number | null;
+  order_mods?: string[];
+  ack_mods?: string[];
+}
+
+export function describeLineIssue(l: LineIssueInput, opts?: { terse?: boolean }): string {
+  const terse = opts?.terse ?? false;
+
+  if (l.status === "qty_mismatch") {
+    return `ordered ${l.order_qty}, acknowledged ${l.ack_qty}`;
+  }
+
+  if (l.status === "mod_mismatch") {
+    const o = (l.order_mods ?? []).join(", ") || "none";
+    const a = (l.ack_mods ?? []).join(", ") || "none";
+    return terse
+      ? `modifications differ — order: ${o} vs ack: ${a}`
+      : `modifications differ — order: ${o} · acknowledgment: ${a}`;
+  }
+
+  if (l.status === "missing_from_ack") {
+    return terse
+      ? "missing from the acknowledgment"
+      : "on the order, missing from the acknowledgment";
+  }
+
+  if (l.status === "extra_in_ack") {
+    return "on the acknowledgment, not on the order";
+  }
+
+  return l.status;
+}
+
 export interface LineResult {
   composite_sku: string;
   status: LineStatus;

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, forwardRef, useImperativeHandle } from "react";
+import { describeLineIssue } from "@/lib/reconcile";
 import { Upload, Loader2, Check, X, ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
 import type { ReconcileResult } from "@/lib/reconcile";
 import { useToast } from "./Toast";
@@ -24,23 +25,6 @@ interface AcknowledgmentPanelProps {
 
 const FIELD_LABEL: Record<string, string> = { name: "Name", address: "Shipping address" };
 
-function lineIssue(l: {
-  status: string;
-  order_qty: number | null;
-  ack_qty: number | null;
-  order_mods?: string[];
-  ack_mods?: string[];
-}): string {
-  if (l.status === "qty_mismatch") return `ordered ${l.order_qty}, acknowledged ${l.ack_qty}`;
-  if (l.status === "mod_mismatch") {
-    const o = (l.order_mods ?? []).join(", ") || "none";
-    const a = (l.ack_mods ?? []).join(", ") || "none";
-    return `modifications differ — order: ${o} · acknowledgment: ${a}`;
-  }
-  if (l.status === "missing_from_ack") return "on the order, missing from the acknowledgment";
-  if (l.status === "extra_in_ack") return "on the acknowledgment, not on the order";
-  return l.status;
-}
 
 function discrepancyCount(r: ReconcileResult): number {
   return r.fields.filter((f) => !f.matched).length + r.lines.filter((l) => l.status !== "match").length;
@@ -211,7 +195,7 @@ export const AcknowledgmentPanel = forwardRef<AcknowledgmentPanelHandle, Acknowl
                               <p className="text-cream/75">
                                 <span className="font-mono text-cream/90">{l.composite_sku}</span>
                                 {" — "}
-                                <span style={{ color: "#e89090" }}>{lineIssue(l)}</span>
+                                <span style={{ color: "#e89090" }}>{describeLineIssue(l)}</span>
                               </p>
                             </div>
                           ))}
