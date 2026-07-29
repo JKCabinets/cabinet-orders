@@ -3,28 +3,24 @@
 import React, { useMemo, useState } from "react";
 import Link from "next/link";
 import { useStore } from "@/lib/store";
-import { Order, ORDER_STAGES, OrderStage, getBackorderStatus } from "@/lib/data";
+import { Order, ORDER_STAGES, OrderStage, STAGE_ACCENT, getBackorderStatus } from "@/lib/data";
 import { rollupBackorders, summarizeBackorders, type BackorderSummary } from "@/lib/backorders";
 import { parseOrderDate } from "@/lib/dateUtils";
+import { slaTier, slaRuleFor, hoursInStage, formatStageAge, type SlaTier } from "@/lib/sla";
 import { PageHeader } from "@/components/AppShell";
 import { OrderModal } from "@/components/OrderModal";
 import { NewOrderModal } from "@/components/NewOrderModal";
 import { Plus, Search, ChevronRight, PackageX } from "lucide-react";
 
-const STAGE_ACCENT: Record<OrderStage, string> = {
-  "New":            "#c97070",
-  "Entered":        "#d4922a",
-  "In production":  "#c8b84a",
-  "At cross dock":  "#5a8db8",
-  "Delivered":      "#8fbe70",
-};
+// STAGE_ACCENT now comes from lib/data.ts, shared with the Custom and
+// Sample pages instead of being a sixth private copy.
 
 function stageToSlug(stage: OrderStage): string {
   return stage.toLowerCase().replace(/\s+/g, "-");
 }
 
 export function DashboardClient() {
-  const { orders } = useStore();
+  const { orders, customs, samples, warranties } = useStore();
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [showNewForm, setShowNewForm] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -46,25 +42,52 @@ export function DashboardClient() {
     return map;
   }, [active]);
 
+  // ── SLA per order type ──────────────────────────────────────────────
+  // One row per category, not per stage: four stages x four types is
+  // sixteen cells, which is not a glance. /sla carries the stage detail.
+  const slaCategories = useMemo(() => {
+    const groups: { key: string; label: string; rows: Order[] }[] = [
+      { key: "order",    label: "Standard", rows: orders },
+      { key: "custom",   label: "Custom",   rows: customs },
+      { key: "sample",   label: "Samples",  rows: samples },
+      { key: "warranty", label: "Warranty", rows: warranties },
+    ];
+    const now = Date.now();
+    return groups.map(g => {
+      const rows = g.rows.filter(o => !o.archived);
+      let soft = 0;
+      let hard = 0;
+      for (const o of rows) {
+        const tier: SlaTier = slaTier(o, now);
+        if (tier === "hard") hard++;
+        else if (tier === "soft") soft++;
+      }
+      return { key: g.key, label: g.label, total: rows.length, soft, hard };
+    });
+  }, [orders, customs, samples, warranties]);
+
   // ── Needs Attention list ────────────────────────────────────────────
   const needsAttention = useMemo(() => {
     const now = Date.now();
-    const dayMs = 1000 * 60 * 60 * 24;
     type Flagged = { order: Order; reason: string; severity: "high" | "med" };
     const items: Flagged[] = [];
 
     for (const o of active) {
-      const orderTime = parseOrderDate(o.date);
-      const ageDays = orderTime !== null ? Math.floor((now - orderTime) / dayMs) : null;
-
-      // Overdue in New (>5 days)
-      if (o.stage === "New" && ageDays !== null && ageDays > 5) {
-        items.push({ order: o, reason: `${ageDays}d in New`, severity: "high" });
-        continue;
-      }
-      // Unclaimed New >24h
-      if (o.stage === "New" && !o.claimed_by && ageDays !== null && ageDays >= 1) {
-        items.push({ order: o, reason: "Unclaimed >24h", severity: "med" });
+      // One shared rule replaces a hardcoded "> 5 days in New" plus a
+      // separate ">= 1 day unclaimed" check. lib/sla covers every stage,
+      // measures from stage_entered_at rather than order age, and knows a
+      // production order with its dates set is fine at 42 days.
+      const tier = slaTier(o, now);
+      if (tier !== "ok") {
+        const rule = slaRuleFor(o);
+        const age = formatStageAge(hoursInStage(o, now));
+        const unclaimed = o.stage === "New" && !o.claimed_by;
+        const reason = unclaimed
+          ? `Unclaimed ${age}`
+          : rule?.waitingFor
+            ? `${age} awaiting ${rule.waitingFor}`
+            : `${age} in ${o.stage}`;
+        items.push({ order: o, reason, severity: tier === "hard" ? "high" : "med" });
         continue;
       }
       // Has backorders pending
@@ -180,7 +203,7 @@ export function DashboardClient() {
         </div>
 
         {/* ── SLA mini panel ── */}
-        <SLAMiniPanel byStage={byStage} />
+        <SLAMiniPanel categories={slaCategories} />
 
         {/* ── Backorders — only shown when there's something to see ── */}
         {backorderSummary.distinctSkus > 0 && (
@@ -353,48 +376,21 @@ function StageCard({
 
 /* ─── SLA mini panel ──────────────────────────────────────────────── */
 
-// SLA targets in days per stage. An order is "overdue" if its current age in
-// its current stage exceeds this target. Tune these as your team's SLAs evolve.
-const SLA_TARGETS: Record<OrderStage, number> = {
-  "New":            3,
-  "Entered":        2,
-  "In production":  14,
-  "At cross dock":  5,
-  "Delivered":      Infinity, // no SLA on Delivered
-};
+// SLA thresholds and the definition of "overdue" live in lib/sla.ts. This
+// file used to carry a private copy of SLA_TARGETS with identical values --
+// which was luck, not design, since nothing kept them in step.
 
-function SLAMiniPanel({ byStage }: { byStage: Record<OrderStage, Order[]> }) {
-  // Average age in each stage (in days). Useful as a glanceable SLA view.
-  function avgDays(orders: Order[]): number | null {
-    if (orders.length === 0) return null;
-    const now = Date.now();
-    const total = orders.reduce((sum, o) => {
-      const t = parseOrderDate(o.date);
-      if (t === null) return sum;
-      return sum + Math.floor((now - t) / (1000 * 60 * 60 * 24));
-    }, 0);
-    return Math.round(total / orders.length);
-  }
+interface SlaCategory {
+  key: string;
+  label: string;
+  total: number;
+  /** Past the soft (24h) threshold but not the hard one. */
+  soft: number;
+  /** Past the hard (48h) threshold. */
+  hard: number;
+}
 
-  // Per-stage overdue counts — orders past the SLA target for their stage
-  function overdueInStage(stage: OrderStage): number {
-    const target = SLA_TARGETS[stage];
-    if (!isFinite(target)) return 0;
-    return byStage[stage].filter(o => {
-      const t = parseOrderDate(o.date);
-      if (t === null) return false;
-      const age = Math.floor((Date.now() - t) / (1000 * 60 * 60 * 24));
-      return age > target;
-    }).length;
-  }
-
-  const cells: { stage: OrderStage; label: string }[] = [
-    { stage: "New",            label: "New" },
-    { stage: "Entered",        label: "Entered" },
-    { stage: "In production",  label: "Production" },
-    { stage: "At cross dock",  label: "Cross dock" },
-  ];
-
+function SLAMiniPanel({ categories }: { categories: SlaCategory[] }) {
   return (
     <div className="glass-sage rounded-panel p-5 lg:p-6">
       <div className="mb-4">
@@ -403,42 +399,31 @@ function SLAMiniPanel({ byStage }: { byStage: Record<OrderStage, Order[]> }) {
           SLA at <em className="italic-storm">a glance</em>
         </h2>
       </div>
+      <p className="text-[12px] text-cream/55 -mt-2 mb-4">
+        Active rows per order type, and how many are past 24h (warn) or 48h (act).
+      </p>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {cells.map(({ stage, label }) => {
-          const avg = avgDays(byStage[stage]);
-          const target = SLA_TARGETS[stage];
-          const overdue = overdueInStage(stage);
-          const isAtRisk = avg !== null && isFinite(target) && avg > target;
-          const ageColor = isAtRisk ? "#e89090" : (avg === null ? "#a0a09a" : "#e8e3da");
-          return (
-            <div key={stage} className="flex flex-col gap-1.5">
-              {/* Label + target on one tight line — previously used
-                  justify-between, which spread them to opposite edges on
-                  wide screens and left a huge gap between them. */}
-              <div className="flex items-baseline gap-2 flex-wrap">
-                <div className="text-[10px] uppercase tracking-[0.13em] text-cream/55">{label}</div>
-                {isFinite(target) && (
-                  <div className="text-[9px] text-cream/40 font-mono">tgt {target}d</div>
-                )}
+        {categories.map(c => (
+          <div key={c.key} className="flex flex-col gap-1.5">
+            <div className="text-[10px] uppercase tracking-[0.13em] text-cream/55">{c.label}</div>
+            <div className="flex items-baseline gap-2">
+              <div
+                className="font-display text-[26px] leading-none"
+                style={{ color: c.hard > 0 ? "#e89090" : c.total === 0 ? "#a0a09a" : "#e8e3da" }}
+              >
+                {c.total}
               </div>
-              <div className="flex items-baseline gap-2">
-                <div className="font-display text-[26px] leading-none" style={{ color: ageColor }}>
-                  {avg ?? "—"}
-                </div>
-                <div className="text-[11px] text-cream/55">
-                  {avg !== null && "days avg"}
-                </div>
-              </div>
-              <div className="text-[10px]">
-                {overdue > 0 ? (
-                  <span style={{ color: "#e89090" }}>{overdue} overdue</span>
-                ) : (
-                  <span className="text-cream/40">on track</span>
-                )}
-              </div>
+              <div className="text-[11px] text-cream/55">active</div>
             </div>
-          );
-        })}
+            <div className="text-[10px] flex items-center gap-2 flex-wrap">
+              {c.hard > 0 && <span className="text-terracotta">{c.hard} over 48h</span>}
+              {c.soft > 0 && <span style={{ color: "#d4922a" }}>{c.soft} over 24h</span>}
+              {c.hard === 0 && c.soft === 0 && (
+                <span className="text-cream/40">{c.total === 0 ? "none active" : "on track"}</span>
+              )}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );

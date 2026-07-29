@@ -334,6 +334,32 @@ export const STAGE_LIST_BY_TYPE: Record<OrderType, Stage[]> = {
 };
 
 /**
+ * Dot colour per stage, across every flow.
+ *
+ * NOTE: near-identical maps are currently duplicated in OrderModal,
+ * SLAClient, BulkActionBar, Sidebar (STAGE_DOT) and WarrantyClient
+ * (WARRANTY_STAGE_ACCENT). This is the one shared copy; new code uses it,
+ * and folding the existing five into it is a worthwhile tidy-up.
+ */
+export const STAGE_ACCENT: Record<string, string> = {
+  // Standard order flow — samples share these names
+  "New":           "#c97070",
+  "Entered":       "#d4922a",
+  "In production": "#c8b84a",
+  "At cross dock": "#5a8db8",
+  "Delivered":     "#8fbe70",
+  // Warranty flow
+  "New claim":     "#c97070",
+  "In review":     "#d4922a",
+  "Parts ordered": "#c8b84a",
+  "Shipped":       "#5a8db8",
+  "Resolved":      "#8fbe70",
+  // Custom flow contributes one stage of its own; the rest reuse the
+  // names above ("In review" is shared with warranty, same colour).
+  "Ordered":       "#d0a63c",
+};
+
+/**
  * The next stage this row would advance to, per ITS OWN flow.
  *
  * Replaces hardcoded next-stage maps, which were all written against the

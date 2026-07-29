@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import {
   LayoutDashboard, LineChart, ShieldCheck, Archive, Settings, LogOut,
-  Calendar, ChevronDown, Menu, X, PackageX,
+  Calendar, ChevronDown, Menu, X, PackageX, FileText, Package,
 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { ORDER_STAGES, OrderStage } from "@/lib/data";
@@ -42,7 +42,7 @@ interface SidebarProps {
 export function Sidebar({ open, onClose }: SidebarProps) {
   const pathname = usePathname();
   const { data: session } = useSession();
-  const { orders, team, onlineUsers } = useStore();
+  const { orders, customs, samples, warranties, team, onlineUsers } = useStore();
   const user = session?.user as { name?: string; role?: string } | undefined;
   const isAdmin = user?.role === "admin";
 
@@ -57,8 +57,18 @@ export function Sidebar({ open, onClose }: SidebarProps) {
   const backorderCount = rollupBackorders(activeOrders).length;
   const archivedCount = orders.filter(o => o.archived).length;
 
+  // Alternate Orders badges. Active = not archived and not at the terminal
+  // stage. Custom counts from "New" onward, i.e. every open quote.
+  const customCount = customs.filter(
+    o => !o.archived && o.stage !== "Delivered").length;
+  const sampleCount = samples.filter(
+    o => !o.archived && o.stage !== "Delivered").length;
+  const warrantyCount = warranties.filter(
+    o => !o.archived && o.stage !== "Resolved").length;
+
   const [ordersOpen, setOrdersOpen] = useState(true);
   const [overviewOpen, setOverviewOpen] = useState(true);
+  const [altOpen, setAltOpen] = useState(true);
   const [otherOpen, setOtherOpen] = useState(true);
 
   return (
@@ -146,6 +156,18 @@ export function Sidebar({ open, onClose }: SidebarProps) {
               ))}
             </SidebarSection>
 
+            {/* ── Alternate Orders ── */}
+            {/* Warranty moved here out of "Other" and gained a count badge. */}
+            <SidebarSection
+              label="Alternate Orders"
+              open={altOpen}
+              onToggle={() => setAltOpen(v => !v)}
+            >
+              <NavItem href="/custom" icon={<FileText className="w-3.5 h-3.5" />} label="Custom Orders" count={customCount} pathname={pathname} />
+              <NavItem href="/samples" icon={<Package className="w-3.5 h-3.5" />} label="Sample Orders" count={sampleCount} pathname={pathname} />
+              <NavItem href="/warranty" icon={<ShieldCheck className="w-3.5 h-3.5" />} label="Warranty" count={warrantyCount} pathname={pathname} />
+            </SidebarSection>
+
             {/* ── Other ── */}
             <SidebarSection
               label="Other"
@@ -153,7 +175,6 @@ export function Sidebar({ open, onClose }: SidebarProps) {
               onToggle={() => setOtherOpen(v => !v)}
             >
               <NavItem href="/calendar" icon={<Calendar className="w-3.5 h-3.5" />} label="Calendar" pathname={pathname} />
-              <NavItem href="/warranty" icon={<ShieldCheck className="w-3.5 h-3.5" />} label="Warranty" pathname={pathname} />
               <NavItem
                 href="/orders/archived"
                 icon={<Archive className="w-3.5 h-3.5" />}
