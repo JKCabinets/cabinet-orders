@@ -2,12 +2,12 @@
 
 import { useState, useMemo, useRef, useEffect } from "react";
 import { Archive, ChevronDown, Loader2, X, AlertCircle } from "lucide-react";
-import { Order, ORDER_STAGES, WARRANTY_STAGES, Stage } from "@/lib/data";
+import { Order, ORDER_STAGES, STAGE_LIST_BY_TYPE, Stage } from "@/lib/data";
 import { useStore } from "@/lib/store";
 
 interface BulkActionBarProps {
+  /** The rows carry their own `type`; no tab prop is needed or wanted. */
   selectedOrders: Order[];
-  tab: "orders" | "warranty";
   onClear: () => void;
   onDone: () => void;
 }
@@ -41,7 +41,7 @@ interface ConfirmState {
   requiresPin: boolean;
 }
 
-export function BulkActionBar({ selectedOrders, tab, onClear, onDone }: BulkActionBarProps) {
+export function BulkActionBar({ selectedOrders, onClear, onDone }: BulkActionBarProps) {
   const { bulkAction } = useStore();
   const [confirming, setConfirming] = useState<ConfirmState | null>(null);
   const [adminPin, setAdminPin] = useState("");
@@ -67,7 +67,11 @@ export function BulkActionBar({ selectedOrders, tab, onClear, onDone }: BulkActi
     return selectedOrders.every(o => o.stage === first) ? first : null;
   }, [selectedOrders, count]);
 
-  const stages = tab === "orders" ? ORDER_STAGES : WARRANTY_STAGES;
+  // Every page selects within a single type, so the first row's type is
+  // the batch's type. `stages` is computed before the count===0 early
+  // return below, hence the fallback.
+  const batchType = selectedOrders[0]?.type;
+  const stages = batchType ? STAGE_LIST_BY_TYPE[batchType] : ORDER_STAGES;
 
   // Hide entirely when nothing selected
   if (count === 0) return null;

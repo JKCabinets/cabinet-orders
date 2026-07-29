@@ -567,7 +567,11 @@ function UpdateStatusActions({
               onClick={() => withBusy(markEntered)}
               disabled={busy}
               className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30"
-              title="Requires an attached PDF"
+              title={
+                order.type === "sample"
+                  ? "Samples need no acknowledgment"
+                  : "Requires an attached PDF"
+              }
             >
               {busy ? "..." : (mobile ? "Enter" : "Mark Entered")}
             </button>

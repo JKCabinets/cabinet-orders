@@ -202,7 +202,6 @@ export function SLAClient() {
       {selectedOrder && (
         <OrderModal
           order={selectedOrder}
-          tab="orders"
           onClose={() => setSelectedOrder(null)}
           onStageChange={(s) => setSelectedOrder(prev => prev ? { ...prev, stage: s } : null)}
         />

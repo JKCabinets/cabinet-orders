@@ -198,13 +198,12 @@ export function DashboardClient() {
       {selectedOrder && (
         <OrderModal
           order={selectedOrder}
-          tab="orders"
           onClose={() => setSelectedOrder(null)}
           onStageChange={(stage) => setSelectedOrder(prev => prev ? { ...prev, stage } : null)}
         />
       )}
       {showNewForm && (
-        <NewOrderModal tab="orders" onClose={() => setShowNewForm(false)} />
+        <NewOrderModal type="order" onClose={() => setShowNewForm(false)} />
       )}
       {searchOpen && (
         <SearchOverlay

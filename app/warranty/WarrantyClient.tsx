@@ -171,19 +171,17 @@ export function WarrantyClient() {
       {selectedOrder && (
         <OrderModal
           order={selectedOrder}
-          tab="warranty"
           initialReason={modalReason}
           onClose={() => { setSelectedOrder(null); setModalReason(undefined); }}
           onStageChange={(s) => setSelectedOrder(prev => prev ? { ...prev, stage: s } : null)}
         />
       )}
       {showNewForm && (
-        <NewOrderModal tab="warranty" onClose={() => setShowNewForm(false)} />
+        <NewOrderModal type="warranty" onClose={() => setShowNewForm(false)} />
       )}
       {selectMode && selectedIds.size > 0 && (
         <BulkActionBar
           selectedOrders={selectedOrders}
-          tab="warranty"
           onClear={() => setSelectedIds(new Set())}
           onDone={() => { setSelectMode(false); setSelectedIds(new Set()); }}
         />

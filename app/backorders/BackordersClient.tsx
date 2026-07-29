@@ -111,7 +111,6 @@ export function BackordersClient() {
       {selectedOrder && (
         <OrderModal
           order={selectedOrder}
-          tab="orders"
           onClose={() => setSelectedOrder(null)}
           onStageChange={(stage) =>
             setSelectedOrder(prev => prev ? { ...prev, stage } : null)

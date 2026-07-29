@@ -5,7 +5,7 @@ import { X, Check, Clock, ChevronRight, Archive, RotateCcw, Trash2, Loader2, Dow
 import clsx from "clsx";
 import { useSession } from "next-auth/react";
 import {
-  Order, Stage, ORDER_STAGES, WARRANTY_STAGES,
+  Order, Stage, ORDER_STAGES, STAGE_LIST_BY_TYPE,
   AVATAR_COLOR_STYLES,
 } from "@/lib/data";
 import { useStore } from "@/lib/store";
@@ -19,8 +19,12 @@ import { AcknowledgmentPanel, type AcknowledgmentPanelHandle } from "./Acknowled
 import { consumeAckPicker } from "@/lib/ackStatus";
 
 interface OrderModalProps {
+  /**
+   * The row. Its `type` is the single source of truth for which stage
+   * list to offer and which panels to render -- there is deliberately no
+   * `tab` prop telling us again, because the two could disagree.
+   */
   order: Order;
-  tab: "orders" | "warranty";
   onClose: () => void;
   onStageChange: (stage: Stage) => void;
   /**
@@ -69,8 +73,8 @@ const LABEL = "text-[10px] uppercase tracking-[0.16em] text-cream/50 mb-1.5";
 // the previous footgun where the modal's hardcoded "4951" and Vercel's env
 // var could drift out of sync, breaking every backward move silently.
 
-export function OrderModal({ order, tab, onClose, onStageChange, initialReason }: OrderModalProps) {
-  const { moveStage, updateOrderDetails, updateNotes, updateInternalNotes, archiveOrder, unarchiveOrder, deleteOrder, orders, warranties, team, claimOrder: rawClaimOrder } = useStore();
+export function OrderModal({ order, onClose, onStageChange, initialReason }: OrderModalProps) {
+  const { moveStage, updateOrderDetails, updateNotes, updateInternalNotes, archiveOrder, unarchiveOrder, deleteOrder, allOrders, team, claimOrder: rawClaimOrder } = useStore();
   const { showToast } = useToast();
   const [claimBusy, setClaimBusy] = useState(false);
   const [reDecodeBusy, setReDecodeBusy] = useState(false);
@@ -149,8 +153,11 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
     });
   }, [initialReason]);
 
-  const liveOrder =
-    (tab === "orders" ? orders : warranties).find((o) => o.id === order.id) ?? order;
+  // Search EVERY type. This used to pick between `orders` and
+  // `warranties` from the `tab` prop, so a sample or custom row -- in
+  // neither list -- fell through to the static prop and rendered from a
+  // frozen snapshot with no realtime updates.
+  const liveOrder = allOrders.find((o) => o.id === order.id) ?? order;
 
   // If the modal was opened via the row Submit/Resubmit, pop the .xlsx picker.
   useEffect(() => {
@@ -174,7 +181,9 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
     })();
     return () => { cancelled = true; };
   }, [liveOrder.id]);
-  const stages = tab === "orders" ? ORDER_STAGES : WARRANTY_STAGES;
+  // ORDER_STAGES is a runtime fallback only: shapeOrder casts the DB value
+  // to OrderType, so a corrupted `type` column would lie to the compiler.
+  const stages = STAGE_LIST_BY_TYPE[liveOrder.type] ?? ORDER_STAGES;
   const stageIdx = (stages as string[]).indexOf(liveOrder.stage);
 
   useEffect(() => {
@@ -703,7 +712,10 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
             </div>
 
             {/* Production & Delivery Dates — editable from Entered stage forward */}
-            {liveOrder.type === "order" && liveOrder.stage !== "New" && (
+            {/* Warranty claims have no production or delivery dates.
+                Standard, sample and custom orders all do -- phrased as
+                "not warranty" so a new type gets this by default. */}
+            {liveOrder.type !== "warranty" && liveOrder.stage !== "New" && (
               <DateEditor order={liveOrder} updateOrderDetails={updateOrderDetails} />
             )}
 
@@ -780,8 +792,8 @@ export function OrderModal({ order, tab, onClose, onStageChange, initialReason }
             </div>
           </div>
 
-          {/* Order details */}
-          {liveOrder.type === "order" && (
+          {/* Order details -- every type except warranty carries SKU lines */}
+          {liveOrder.type !== "warranty" && (
             <OrderDetails
               orderId={liveOrder.id}
               doorStyle={liveOrder.door_style ?? ""}

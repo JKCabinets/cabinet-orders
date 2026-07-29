@@ -15,6 +15,14 @@ import { useRealtimeOrders } from "./useRealtimeOrders";
 import { usePresence } from "./usePresence";
 
 interface StoreCtx {
+  /**
+   * Every row of the `orders` table, regardless of type. A consumer that
+   * holds an Order and wants its LIVE counterpart must search this, not
+   * one of the per-type lists below -- OrderModal used to pick between
+   * `orders` and `warranties` from a prop, which silently fell back to a
+   * stale snapshot for any row in neither.
+   */
+  allOrders: Order[];
   orders: Order[];
   warranties: Order[];
   samples: Order[];
@@ -626,7 +634,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   return (
     <Store.Provider value={{
-      orders, warranties, samples, customs, team, onlineUsers, loading,
+      allOrders, orders, warranties, samples, customs, team, onlineUsers, loading,
       addOrder, moveStage, updateNotes, updateInternalNotes, updateOrderDetails, archiveOrder, unarchiveOrder, deleteOrder, bulkAction,
       claimOrder, addTeamMember, updateTeamMember, deactivateTeamMember, deleteTeamMember,
       updateTeamMemberProfile, uploadAvatar,

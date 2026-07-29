@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { X, Plus, Trash2 } from "lucide-react";
 import { useStore } from "@/lib/store";
-import { Source, SkuItem } from "@/lib/data";
+import { Source, SkuItem, TYPE_UI, type OrderType } from "@/lib/data";
 
 interface ShopifyProduct {
   id: string;
@@ -15,7 +15,12 @@ interface ShopifyProduct {
 }
 
 interface NewOrderModalProps {
-  tab: "orders" | "warranty";
+  /**
+   * The row type to create. This is the ONE component that still needs to
+   * be told -- OrderModal and BulkActionBar read `.type` off the rows they
+   * are handed, but here the row does not exist yet.
+   */
+  type: OrderType;
   onClose: () => void;
 }
 
@@ -41,7 +46,10 @@ const GLASS_INPUT: React.CSSProperties = {
 
 const LABEL_CLS = "block text-[10px] uppercase tracking-widest text-[rgba(232,227,218,0.35)] mb-1.5";
 
-export function NewOrderModal({ tab, onClose }: NewOrderModalProps) {
+// Destructured as `orderType` so it cannot shadow anything named `type`
+// elsewhere in this file.
+export function NewOrderModal({ type: orderType, onClose }: NewOrderModalProps) {
+  const ui = TYPE_UI[orderType] ?? TYPE_UI.order;
   const { addOrder, team } = useStore();
   const activeTeam = team.filter((m) => m.active);
 
@@ -137,7 +145,7 @@ export function NewOrderModal({ tab, onClose }: NewOrderModalProps) {
     e.preventDefault();
     if (!name.trim()) return;
     addOrder({
-      type: tab === "orders" ? "order" : "warranty",
+      type: orderType,
       name, detail,
       sku: skuItems.map((i) => i.sku).join(", ") || "",
       source, member, notes,
@@ -173,7 +181,7 @@ export function NewOrderModal({ tab, onClose }: NewOrderModalProps) {
           style={{ borderBottom: "0.5px solid rgba(255,255,255,0.15)" }}
         >
           <h2 className="text-sm font-semibold text-[#e8e3da]">
-            {tab === "orders" ? "Add Custom Order" : "New warranty claim"}
+            {ui.createTitle}
           </h2>
           <button
             onClick={onClose}
@@ -229,17 +237,17 @@ export function NewOrderModal({ tab, onClose }: NewOrderModalProps) {
             />
           </Field>
 
-          <Field label={tab === "orders" ? "Description" : "Issue description"}>
+          <Field label={ui.detailLabel}>
             <input
               value={detail}
               onChange={(e) => setDetail(e.target.value)}
-              placeholder={tab === "orders" ? "e.g. Full kitchen · shaker" : "e.g. Door hinge alignment"}
+              placeholder={ui.detailPlaceholder}
               style={GLASS_INPUT}
               className="placeholder:text-[rgba(232,227,218,0.20)]"
             />
           </Field>
 
-          {tab === "orders" && (
+          {orderType !== "warranty" && (
             <div className="grid grid-cols-2 gap-3">
               <Field label="Door style">
                 <input value={doorStyle} onChange={(e) => setDoorStyle(e.target.value)}
@@ -476,7 +484,7 @@ export function NewOrderModal({ tab, onClose }: NewOrderModalProps) {
                 color: "#a0b890",
               }}
             >
-              {tab === "orders" ? "Create order" : "Log claim"}
+              {ui.createCta}
             </button>
           </div>
         </form>

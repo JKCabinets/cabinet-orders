@@ -305,6 +305,58 @@ export const ID_PREFIX_BY_TYPE: Record<OrderType, string> = {
   custom: "CST",
 };
 
+/**
+ * Which stage list to offer for a row, keyed by its type.
+ *
+ * Replaces the binary `tab === "orders" ? ORDER_STAGES : WARRANTY_STAGES`
+ * that was duplicated in OrderModal and BulkActionBar. Samples map to
+ * SAMPLE_STAGES (the three they actually use) while still being ORDERED by
+ * ORDER_STAGE_ORDER in lib/stageLogic -- offering a subset is a UI choice,
+ * the ordering is what backward-move detection reads.
+ */
+export const STAGE_LIST_BY_TYPE: Record<OrderType, Stage[]> = {
+  order: ORDER_STAGES,
+  sample: SAMPLE_STAGES,
+  warranty: WARRANTY_STAGES,
+  custom: CUSTOM_STAGES,
+};
+
+/**
+ * Per-type wording for the create-order modal, in one place so a new type
+ * cannot ship showing warranty labels on its form.
+ */
+export const TYPE_UI: Record<OrderType, {
+  createTitle: string;
+  createCta: string;
+  detailLabel: string;
+  detailPlaceholder: string;
+}> = {
+  order: {
+    createTitle: "Add order",
+    createCta: "Create order",
+    detailLabel: "Description",
+    detailPlaceholder: "e.g. Full kitchen · shaker",
+  },
+  custom: {
+    createTitle: "Add Custom Order",
+    createCta: "Create order",
+    detailLabel: "Description",
+    detailPlaceholder: "e.g. Full kitchen · shaker",
+  },
+  sample: {
+    createTitle: "Add sample order",
+    createCta: "Create order",
+    detailLabel: "Description",
+    detailPlaceholder: "e.g. Door sample · Painted Linen",
+  },
+  warranty: {
+    createTitle: "New warranty claim",
+    createCta: "Log claim",
+    detailLabel: "Issue description",
+    detailPlaceholder: "e.g. Door hinge alignment",
+  },
+};
+
 export const STAGE_STATUS: Record<string, "red" | "amber" | "green"> = {
   New: "red", Entered: "amber", "In production": "green",
   "At cross dock": "amber", Delivered: "green",

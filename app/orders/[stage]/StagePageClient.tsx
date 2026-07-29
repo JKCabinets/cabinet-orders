@@ -175,19 +175,17 @@ export function StagePageClient({ stage }: Props) {
       {selectedOrder && (
         <OrderModal
           order={selectedOrder}
-          tab="orders"
           initialReason={modalReason}
           onClose={() => { setSelectedOrder(null); setModalReason(undefined); }}
           onStageChange={(s) => setSelectedOrder(prev => prev ? { ...prev, stage: s } : null)}
         />
       )}
       {showNewForm && (
-        <NewOrderModal tab="orders" onClose={() => setShowNewForm(false)} />
+        <NewOrderModal type="order" onClose={() => setShowNewForm(false)} />
       )}
 
       <BulkActionBar
         selectedOrders={selectedOrders}
-        tab="orders"
         onClear={() => setSelectedIds(new Set())}
         onDone={() => { setSelectMode(false); setSelectedIds(new Set()); }}
       />
