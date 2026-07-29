@@ -314,12 +314,43 @@ export const ID_PREFIX_BY_TYPE: Record<OrderType, string> = {
  * ORDER_STAGE_ORDER in lib/stageLogic -- offering a subset is a UI choice,
  * the ordering is what backward-move detection reads.
  */
+/**
+ * NOT to be confused with STAGE_ORDER_BY_TYPE in lib/stageLogic.ts.
+ *
+ *   STAGE_ORDER_BY_TYPE  the FULL ordering, for index maths and
+ *                        backward-move detection. Samples map to all five
+ *                        ORDER stages, because they share the names.
+ *   STAGE_LIST_BY_TYPE   the subset a type is OFFERED in the UI. Samples
+ *                        get three: New, Entered, Delivered.
+ *
+ * A sample skipping "In production" is a forward move in the first and
+ * simply absent from the second. Both are correct; keep them in step.
+ */
 export const STAGE_LIST_BY_TYPE: Record<OrderType, Stage[]> = {
   order: ORDER_STAGES,
   sample: SAMPLE_STAGES,
   warranty: WARRANTY_STAGES,
   custom: CUSTOM_STAGES,
 };
+
+/**
+ * The next stage this row would advance to, per ITS OWN flow.
+ *
+ * Replaces hardcoded next-stage maps, which were all written against the
+ * standard order flow. A custom order at "New" advances to "In review",
+ * not "Entered" -- and "Entered" is not even in its flow, so advancing it
+ * there would strand the row at a stage stageIndex() cannot resolve.
+ *
+ * Returns undefined at the last stage, or if the current stage is not in
+ * the type's offered list (e.g. a sample sitting at "In production",
+ * which is reachable but not offered).
+ */
+export function nextStageFor(order: Pick<Order, "type" | "stage">): Stage | undefined {
+  const list = STAGE_LIST_BY_TYPE[order.type] ?? STAGE_LIST_BY_TYPE.order;
+  const i = list.indexOf(order.stage);
+  if (i < 0) return undefined;
+  return list[i + 1];
+}
 
 /**
  * Per-type wording for the create-order modal, in one place so a new type

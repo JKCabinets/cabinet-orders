@@ -124,16 +124,32 @@ const CUSTOM_RULES: Partial<Record<string, SlaRule>> = {
 };
 
 /**
+ * Warranty claims: the front half is on us, the back half is not.
+ *
+ * A claim waiting on a vendor for parts, or in transit, can legitimately
+ * run for weeks -- and unlike the production stages there is no date field
+ * to gate a clock on, so those stages get no rule rather than a long one.
+ *
+ * This is the FIRST SLA warranty has ever had: the old SLA_TARGETS is
+ * Record<OrderStage, number>, so warranty stages never matched a target.
+ * Expect warranty claims to start appearing in SLA counts.
+ */
+const WARRANTY_RULES: Partial<Record<string, SlaRule>> = {
+  "New claim": { softHours: SOFT_HOURS, hardHours: HARD_HOURS },
+  "In review": { softHours: SOFT_HOURS, hardHours: HARD_HOURS },
+  // "Parts ordered" and "Shipped": no rule. Waiting on a vendor or a
+  // carrier, with no date field that would say when to stop worrying.
+  // "Resolved": terminal.
+};
+
+/**
  * The rules, per row type. One table, so tuning a type is a local edit and
  * adding a type is one entry.
- *
- * Warranty deliberately has no rules: it has no SLA today either (the old
- * SLA_TARGETS is typed to OrderStage, so warranty stages never matched).
  */
 export const SLA_RULES: Record<OrderType, Partial<Record<string, SlaRule>>> = {
   order: STANDARD_RULES,
   sample: STANDARD_RULES,
-  warranty: {},
+  warranty: WARRANTY_RULES,
   custom: CUSTOM_RULES,
 };
 
