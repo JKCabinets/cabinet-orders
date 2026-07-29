@@ -1,12 +1,12 @@
 "use client";
 
 import React, {
-  createContext, useContext, useState,
+  createContext, useContext, useState, useMemo,
   useCallback, useEffect, useRef, ReactNode,
 } from "react";
 import { useSession } from "next-auth/react";
 import {
-  Order, Stage, TeamMember,
+  Order, OrderType, Stage, TeamMember,
   Member, Source, ORDER_STAGES, WARRANTY_STAGES, AvatarColor, Role,
 } from "./data";
 import { fieldsToClearOnBackwardMove } from "./stageLogic";
@@ -16,10 +16,12 @@ import { usePresence } from "./usePresence";
 interface StoreCtx {
   orders: Order[];
   warranties: Order[];
+  samples: Order[];
+  customs: Order[];
   team: TeamMember[];
   onlineUsers: string[];
   loading: boolean;
-  addOrder: (o: Partial<Order> & { type: "order" | "warranty" }) => Promise<void>;
+  addOrder: (o: Partial<Order> & { type: OrderType }) => Promise<void>;
   moveStage: (id: string, stage: Stage, enteredByName?: string, adminPin?: string, overrideAck?: boolean) => Promise<{ ok: boolean; pinRequired?: boolean; error?: string }>;
   updateNotes: (id: string, notes: string) => Promise<void>;
   updateInternalNotes: (id: string, internal_notes: string) => Promise<void>;
@@ -91,7 +93,7 @@ async function apiCall(url: string, method = "GET", body?: unknown) {
 function shapeOrder(raw: Record<string, unknown>): Order {
   return {
     id: raw.id as string,
-    type: (raw.type as "order" | "warranty") ?? "order",
+    type: (raw.type as OrderType) ?? "order",
     name: raw.name as string,
     source: (raw.source as Source) ?? "Manual",
     detail: (raw.detail as string) ?? "",
@@ -120,6 +122,35 @@ function shapeOrder(raw: Record<string, unknown>): Order {
     production_est_finish_date: (raw.production_est_finish_date as string | null) ?? null,
     scheduled_delivery_date: (raw.scheduled_delivery_date as string | null) ?? null,
   };
+}
+
+/** Id prefix per row type. Keeps the audit log readable at a glance. */
+const ID_PREFIX_BY_TYPE: Record<string, string> = {
+  order: "ORD",
+  warranty: "WRN",
+  sample: "SMP",
+  custom: "CST",
+};
+
+/**
+ * Replace the rows of each successfully-fetched type, leaving every other
+ * type untouched.
+ *
+ * This preserves the old per-list `if (res?.data)` behaviour: a type whose
+ * fetch failed keeps whatever rows it already had rather than being wiped
+ * to empty. Order WITHIN a type is preserved (the API's ordering), and
+ * order across types is irrelevant because consumers filter by type.
+ */
+function mergeFetched(
+  prev: Order[],
+  fetched: { type: string; res?: { data?: Record<string, unknown>[] } | null }[],
+): Order[] {
+  let next = prev;
+  for (const { type, res } of fetched) {
+    if (!res?.data) continue;
+    next = [...next.filter(o => o.type !== type), ...res.data.map(shapeOrder)];
+  }
+  return next;
 }
 
 function shapeTeamMember(raw: Record<string, unknown>): TeamMember {
@@ -154,8 +185,16 @@ function shapeTeamMember(raw: Record<string, unknown>): TeamMember {
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const { status } = useSession();
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [warranties, setWarranties] = useState<Order[]>([]);
+  // ONE array for every row of the `orders` table, whatever its type.
+  // The per-type lists below are derived, not stored. Previously `orders`
+  // and `warranties` were separate useState arrays, so every mutation had
+  // to write to both -- twenty paired setter calls, each a place a new
+  // type could be forgotten. Adding a type is now one useMemo line.
+  const [allOrders, setAllOrders] = useState<Order[]>([]);
+  const orders     = useMemo(() => allOrders.filter(o => o.type === "order"),    [allOrders]);
+  const warranties = useMemo(() => allOrders.filter(o => o.type === "warranty"), [allOrders]);
+  const samples    = useMemo(() => allOrders.filter(o => o.type === "sample"),   [allOrders]);
+  const customs    = useMemo(() => allOrders.filter(o => o.type === "custom"),   [allOrders]);
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -169,13 +208,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     refetchInFlight.current = true;
     if (opts?.showLoading) setLoading(true);
     try {
-      const [ordersRes, warrantiesRes, teamRes] = await Promise.all([
+      const [ordersRes, warrantiesRes, samplesRes, customsRes, teamRes] = await Promise.all([
         apiCall("/api/orders?type=order"),
         apiCall("/api/orders?type=warranty"),
+        apiCall("/api/orders?type=sample"),
+        apiCall("/api/orders?type=custom"),
         apiCall("/api/team"),
       ]);
-      if (ordersRes?.data) setOrders(ordersRes.data.map(shapeOrder));
-      if (warrantiesRes?.data) setWarranties(warrantiesRes.data.map(shapeOrder));
+      setAllOrders(prev => mergeFetched(prev, [
+        { type: "order",    res: ordersRes },
+        { type: "warranty", res: warrantiesRes },
+        { type: "sample",   res: samplesRes },
+        { type: "custom",   res: customsRes },
+      ]));
       if (teamRes?.data) setTeam(teamRes.data.map(shapeTeamMember));
     } finally {
       if (opts?.showLoading) setLoading(false);
@@ -193,24 +238,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // users (or other tabs of the same user) flow into the store
   // automatically — no manual refresh needed.
   useRealtimeOrders({
+    // No type routing here any more. One array holds every type, so a
+    // sample or custom row inserted by another tab lands correctly
+    // without these handlers knowing those types exist.
     onInsert: (row) => {
-      if (row.type === "warranty") {
-        setWarranties((prev) =>
-          prev.some((o) => o.id === row.id) ? prev : [row, ...prev],
-        );
-      } else {
-        setOrders((prev) =>
-          prev.some((o) => o.id === row.id) ? prev : [row, ...prev],
-        );
-      }
+      setAllOrders((prev) =>
+        prev.some((o) => o.id === row.id) ? prev : [row, ...prev],
+      );
     },
     onUpdate: (row) => {
-      const setter = row.type === "warranty" ? setWarranties : setOrders;
-      setter((prev) => prev.map((o) => (o.id === row.id ? row : o)));
+      setAllOrders((prev) => prev.map((o) => (o.id === row.id ? row : o)));
     },
     onDelete: (id) => {
-      setOrders((prev) => prev.filter((o) => o.id !== id));
-      setWarranties((prev) => prev.filter((o) => o.id !== id));
+      setAllOrders((prev) => prev.filter((o) => o.id !== id));
     },
     onReconnect: () => {
       // Catch up on anything missed while disconnected. Background refetch —
@@ -225,7 +265,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const today = () => new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
-  const addOrder = useCallback(async (partial: Partial<Order> & { type: "order" | "warranty" }) => {
+  const addOrder = useCallback(async (partial: Partial<Order> & { type: OrderType }) => {
     const res = await apiCall("/api/orders", "POST", {
       type: partial.type, name: partial.name, detail: partial.detail,
       sku: partial.sku, source: partial.source, member: partial.member, notes: partial.notes,
@@ -237,23 +277,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     });
     if (res?.data) {
       const newItem = shapeOrder(res.data);
-      if (partial.type === "order") setOrders(prev => [newItem, ...prev]);
-      else setWarranties(prev => [newItem, ...prev]);
+      setAllOrders(prev => [newItem, ...prev]);
     } else {
+      // NOTE: this fabricates a local row after a FAILED post, so it
+      // disappears on the next refetch. Same anti-pattern addTeamMember
+      // was fixed for (see its comment). Preserved verbatim here --
+      // removing it is a behaviour change and deserves its own commit.
       const t = today();
-      const isOrder = partial.type === "order";
+      const isWarranty = partial.type === "warranty";
       const newItem: Order = {
-        id: isOrder ? `ORD-${Date.now()}` : `WRN-${String(Date.now()).slice(-4)}`,
+        // Warranty ids keep their existing 4-digit short form.
+        id: isWarranty
+          ? `WRN-${String(Date.now()).slice(-4)}`
+          : `${ID_PREFIX_BY_TYPE[partial.type] ?? "ORD"}-${Date.now()}`,
         type: partial.type, name: partial.name || "Unknown",
         source: (partial.source as Source) || "Manual",
         detail: partial.detail || "—",
-        stage: isOrder ? ORDER_STAGES[0] : WARRANTY_STAGES[0],
+        // Only warranties start outside the order flow. Samples and
+        // custom orders both start at "New" -- ORDER_STAGES[0] for a
+        // sample, CUSTOM_STAGES[0] for a custom order, same string.
+        stage: isWarranty ? WARRANTY_STAGES[0] : ORDER_STAGES[0],
         member: (partial.member as Member) || "AX",
         date: t, sku: partial.sku || "—", notes: partial.notes || "",
         activity: [{ text: "Order logged", time: t }], archived: false,
       };
-      if (isOrder) setOrders(prev => [newItem, ...prev]);
-      else setWarranties(prev => [newItem, ...prev]);
+      setAllOrders(prev => [newItem, ...prev]);
     }
   }, []);
 
@@ -271,18 +319,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // (rather than the closed-over `orders`) to be sure we capture the
     // freshest state — older versions of this code lost concurrent
     // updates that landed between render and the click.
-    let ordersBefore: Order[] = [];
-    let warrantiesBefore: Order[] = [];
-    setOrders(prev => { ordersBefore = prev; return prev; });
-    setWarranties(prev => { warrantiesBefore = prev; return prev; });
+    let allBefore: Order[] = [];
+    setAllOrders(prev => { allBefore = prev; return prev; });
 
     // Compute the local clear-fields mirror of what the server will do on
     // a backward move. Without this, the UI would briefly show stale dates
     // until the next data refresh pulled them back as null.
-    const targetOrder = ordersBefore.find(o => o.id === id)
-      ?? warrantiesBefore.find(o => o.id === id);
+    const targetOrder = allBefore.find(o => o.id === id);
+    // Pass the row's type. Stage names are shared across flows now, so
+    // resolving "Delivered" blind would use the ORDER index for a custom
+    // order and clear the wrong fields.
     const cleared = targetOrder
-      ? fieldsToClearOnBackwardMove(targetOrder.stage, stage)
+      ? fieldsToClearOnBackwardMove(targetOrder.stage, stage, targetOrder.type)
       : null;
 
     const update = (list: Order[]) => list.map(o =>
@@ -310,8 +358,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         activity: [...o.activity, { text: `Moved to "${stage}"`, time: t }]
       } : o
     );
-    setOrders(prev => update(prev));
-    setWarranties(prev => update(prev));
+    setAllOrders(prev => update(prev));
 
     // Use fetch directly here (not the generic apiCall) so we can read the
     // 403 body and surface `admin_pin_required` to the caller — apiCall
@@ -326,8 +373,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     } catch {
       // Network error — revert the optimistic update so the UI doesn't lie
       // about state we never persisted.
-      setOrders(ordersBefore);
-      setWarranties(warrantiesBefore);
+      setAllOrders(allBefore);
       return { ok: false, error: "network_error" };
     }
 
@@ -336,8 +382,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // Server rejected — revert everything we did optimistically. Without
     // this, the order appears moved for a few seconds and then snaps back
     // when the next data refresh pulls the true state from the server.
-    setOrders(ordersBefore);
-    setWarranties(warrantiesBefore);
+    setAllOrders(allBefore);
 
     // Parse the error body so callers can branch on `admin_pin_required`.
     let payload: { error?: string; message?: string } = {};
@@ -352,15 +397,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const updateNotes = useCallback(async (id: string, notes: string) => {
     const update = (list: Order[]) => list.map(o => o.id === id ? { ...o, notes } : o);
-    setOrders(prev => update(prev));
-    setWarranties(prev => update(prev));
+    setAllOrders(prev => update(prev));
     await apiCall(`/api/orders/${id}`, "PATCH", { notes });
   }, []);
 
   const updateInternalNotes = useCallback(async (id: string, internal_notes: string) => {
     const update = (list: Order[]) => list.map(o => o.id === id ? { ...o, internal_notes } : o);
-    setOrders(prev => update(prev));
-    setWarranties(prev => update(prev));
+    setAllOrders(prev => update(prev));
     await apiCall(`/api/orders/${id}`, "PATCH", { internal_notes });
   }, []);
 
@@ -369,8 +412,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const update = (list: Order[]) => list.map(o =>
       o.id === id ? { ...o, archived: true, activity: [...o.activity, { text: "Moved to archive", time: t }] } : o
     );
-    setOrders(prev => update(prev));
-    setWarranties(prev => update(prev));
+    setAllOrders(prev => update(prev));
     await apiCall(`/api/orders/${id}`, "PATCH", { archived: true });
   }, []);
 
@@ -379,21 +421,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const update = (list: Order[]) => list.map(o =>
       o.id === id ? { ...o, archived: false, activity: [...o.activity, { text: "Restored from archive", time: t }] } : o
     );
-    setOrders(prev => update(prev));
-    setWarranties(prev => update(prev));
+    setAllOrders(prev => update(prev));
     await apiCall(`/api/orders/${id}`, "PATCH", { archived: false });
   }, []);
 
   const updateOrderDetails = useCallback(async (id: string, details: { door_style?: string; color?: string; sku_items?: { sku: string; quantity: number; description?: string }[]; production_start_date?: string | null; production_est_finish_date?: string | null; scheduled_delivery_date?: string | null }) => {
     const update = (list: Order[]) => list.map(o => o.id === id ? { ...o, ...details } : o);
-    setOrders(prev => update(prev));
-    setWarranties(prev => update(prev));
+    setAllOrders(prev => update(prev));
     await apiCall(`/api/orders/${id}`, "PATCH", details);
   }, []);
 
   const deleteOrder = useCallback(async (id: string) => {
-    setOrders(prev => prev.filter(o => o.id !== id));
-    setWarranties(prev => prev.filter(o => o.id !== id));
+    setAllOrders(prev => prev.filter(o => o.id !== id));
     await apiCall(`/api/orders/${id}`, "DELETE");
   }, []);
 
@@ -440,12 +479,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
     // Always refresh from server so local state matches reality. This is
     // simpler and safer than trying to reconcile per-row optimistic updates.
-    const [ordersRes, warrantiesRes] = await Promise.all([
+    const [ordersRes, warrantiesRes, samplesRes, customsRes] = await Promise.all([
       apiCall("/api/orders?type=order"),
       apiCall("/api/orders?type=warranty"),
+      apiCall("/api/orders?type=sample"),
+      apiCall("/api/orders?type=custom"),
     ]);
-    if (ordersRes?.data) setOrders(ordersRes.data.map(shapeOrder));
-    if (warrantiesRes?.data) setWarranties(warrantiesRes.data.map(shapeOrder));
+    setAllOrders(prev => mergeFetched(prev, [
+      { type: "order",    res: ordersRes },
+      { type: "warranty", res: warrantiesRes },
+      { type: "sample",   res: samplesRes },
+      { type: "custom",   res: customsRes },
+    ]));
 
     return {
       succeeded: data.succeeded ?? 0,
@@ -459,13 +504,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // /api/orders/[id]/claim endpoint which delegates to the atomic
     // SQL function. If the server reports a different state than we
     // assumed (e.g. someone else already had it), reconcile.
-    const prevList = [...orders, ...warranties];
-    const prev = prevList.find(o => o.id === id)?.claimed_by ?? null;
+    const prev = allOrders.find(o => o.id === id)?.claimed_by ?? null;
 
     const optimistic = (list: Order[]) =>
       list.map(o => (o.id === id ? { ...o, claimed_by: claimedBy } : o));
-    setOrders(prev2 => optimistic(prev2));
-    setWarranties(prev2 => optimistic(prev2));
+    setAllOrders(prev2 => optimistic(prev2));
 
     try {
       const res = await fetch(`/api/orders/${id}/claim`, {
@@ -478,8 +521,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const serverClaimedBy = (body?.claimed_by ?? null) as string | null;
       const reconcile = (list: Order[]) =>
         list.map(o => (o.id === id ? { ...o, claimed_by: serverClaimedBy } : o));
-      setOrders(prev2 => reconcile(prev2));
-      setWarranties(prev2 => reconcile(prev2));
+      setAllOrders(prev2 => reconcile(prev2));
 
       if (!res.ok || body?.ok === false) {
         return {
@@ -493,11 +535,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       // Network failure — revert to whatever was there before
       const revert = (list: Order[]) =>
         list.map(o => (o.id === id ? { ...o, claimed_by: prev } : o));
-      setOrders(prev2 => revert(prev2));
-      setWarranties(prev2 => revert(prev2));
+      setAllOrders(prev2 => revert(prev2));
       return { ok: false, claimedBy: prev, reason: "network_error" };
     }
-  }, [orders, warranties]);
+  }, [allOrders]);
 
   const addTeamMember = useCallback(async (m: Omit<TeamMember, "id">): Promise<{ ok: boolean; error?: string; temporaryPassword?: string }> => {
     const res = await apiCall("/api/team", "POST", {
@@ -589,7 +630,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   return (
     <Store.Provider value={{
-      orders, warranties, team, onlineUsers, loading,
+      orders, warranties, samples, customs, team, onlineUsers, loading,
       addOrder, moveStage, updateNotes, updateInternalNotes, updateOrderDetails, archiveOrder, unarchiveOrder, deleteOrder, bulkAction,
       claimOrder, addTeamMember, updateTeamMember, deactivateTeamMember, deleteTeamMember,
       updateTeamMemberProfile, uploadAvatar,
