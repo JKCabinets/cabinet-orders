@@ -87,7 +87,44 @@ export type WarrantyStage =
   | "Shipped"
   | "Resolved";
 
-export type Stage = OrderStage | WarrantyStage;
+/**
+ * Row discriminator on the `orders` table.
+ *
+ * Warranty claims, sample orders, and custom (quote-form) orders all live in
+ * the same table as standard orders, separated by this column. The list API
+ * filters on it: /api/orders?type=order|warranty|sample|custom.
+ */
+export type OrderType = "order" | "warranty" | "sample" | "custom";
+
+/**
+ * Custom (quote-form) orders get their own flow: a quote is reviewed and
+ * priced before anything is ordered, so New / In review / Ordered precede
+ * the production stages.
+ *
+ * NOTE: stage strings are NOT globally unique any more. "New",
+ * "In production", "At cross dock" and "Delivered" are shared with
+ * OrderStage, and "In review" is also a WarrantyStage. Always resolve a
+ * stage against the row's `type` via STAGE_ORDER_BY_TYPE in
+ * lib/stageLogic.ts -- never by searching the arrays blind.
+ */
+export type CustomStage =
+  | "New"
+  | "In review"
+  | "Ordered"
+  | "In production"
+  | "At cross dock"
+  | "Delivered";
+
+/**
+ * Sample orders reuse OrderStage verbatim. A sample is an ordinary Shopify
+ * order that skips the manufacturer, so it carries the same stage names and
+ * shares ORDER_STAGE_ORDER. In practice it moves New -> Entered ->
+ * Delivered; the intermediate stages simply never get set, and skipping
+ * forward is not a backwards move.
+ */
+export type SampleStage = OrderStage;
+
+export type Stage = OrderStage | WarrantyStage | CustomStage;
 
 export interface ActivityEntry {
   text: string;
@@ -173,7 +210,7 @@ export function getBackorderStatus(
 
 export interface Order {
   id: string;
-  type: "order" | "warranty";
+  type: OrderType;
   name: string;
   source: Source;
   detail: string;
@@ -218,7 +255,10 @@ export interface Order {
   delivery_method?: string;
   // Shopify payment status — financial_status from the Shopify order.
   // One of: paid, partially_paid, pending, refunded, partially_refunded,
-  // voided, authorized. NULL for custom (manual) orders.
+  // voided, authorized. NULL for manually-created orders that have no
+  // Shopify counterpart. This comment predates the `type` discriminator and
+  // does NOT refer to type === "custom" -- a custom order may or may not
+  // have a payment status depending on how it was raised.
   payment_status?: string | null;
   // ISO timestamp of when the order entered its current stage. Updated
   // automatically (DB trigger + app code) whenever `stage` changes. Used
@@ -233,6 +273,19 @@ export const ORDER_STAGES: OrderStage[] = [
 
 export const WARRANTY_STAGES: WarrantyStage[] = [
   "New claim", "In review", "Parts ordered", "Shipped", "Resolved",
+];
+
+export const CUSTOM_STAGES: CustomStage[] = [
+  "New", "In review", "Ordered", "In production", "At cross dock", "Delivered",
+];
+
+/**
+ * The stages a sample order is actually offered in the UI. The underlying
+ * ordering is ORDER_STAGE_ORDER (see SampleStage), so a sample jumping
+ * Entered -> Delivered is an ordinary forward move.
+ */
+export const SAMPLE_STAGES: OrderStage[] = [
+  "New", "Entered", "Delivered",
 ];
 
 export const STAGE_STATUS: Record<string, "red" | "amber" | "green"> = {

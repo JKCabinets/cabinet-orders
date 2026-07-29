@@ -17,18 +17,73 @@ export const WARRANTY_STAGE_ORDER = [
   "New claim", "In review", "Parts ordered", "Shipped", "Resolved",
 ] as const;
 
+export const CUSTOM_STAGE_ORDER = [
+  "New", "In review", "Ordered", "In production", "At cross dock", "Delivered",
+] as const;
+
 export const ALLOWED_STAGES: ReadonlySet<string> = new Set<string>([
   ...ORDER_STAGE_ORDER,
   ...WARRANTY_STAGE_ORDER,
+  ...CUSTOM_STAGE_ORDER,
 ]);
 
-export type StageFlow = "order" | "warranty" | "unknown";
+export type StageFlow = "order" | "warranty" | "custom" | "unknown";
 
-export function stageIndex(stage: string): { idx: number; flow: StageFlow } {
+/**
+ * Which stage ordering applies to a row, keyed by its `type` column.
+ *
+ * `sample` maps to ORDER_STAGE_ORDER deliberately -- see SampleStage in
+ * lib/data.ts. Sharing the array is what lets samples reuse backward-move
+ * detection, date clearing, and the Shopify stage tags unchanged.
+ */
+export const STAGE_ORDER_BY_TYPE: Record<string, readonly string[]> = {
+  order: ORDER_STAGE_ORDER,
+  sample: ORDER_STAGE_ORDER,
+  warranty: WARRANTY_STAGE_ORDER,
+  custom: CUSTOM_STAGE_ORDER,
+};
+
+/**
+ * Samples report flow "order" because they share the order array; that is
+ * what makes fieldsToClearOnBackwardMove apply to them correctly.
+ */
+const FLOW_BY_TYPE: Record<string, StageFlow> = {
+  order: "order",
+  sample: "order",
+  warranty: "warranty",
+  custom: "custom",
+};
+
+/**
+ * Resolve a stage name to its position within its flow.
+ *
+ * PASS `type` WHENEVER YOU HAVE IT. Stage names are no longer globally
+ * unique: "New", "Delivered", "In production" and "At cross dock" appear in
+ * both the order and custom flows, and "In review" is in both warranty and
+ * custom. Without `type` this falls back to the legacy search order --
+ * order, then warranty, then custom -- which is exactly the old behaviour
+ * for every stage string that existed before custom orders, but WILL
+ * mis-resolve a custom row.
+ *
+ * An unrecognised type falls through to the legacy path rather than
+ * throwing, so a corrupted `type` column degrades instead of 500ing.
+ */
+export function stageIndex(stage: string, type?: string): { idx: number; flow: StageFlow } {
+  if (type) {
+    const arr = STAGE_ORDER_BY_TYPE[type];
+    if (arr) {
+      const idx = arr.indexOf(stage);
+      return idx >= 0
+        ? { idx, flow: FLOW_BY_TYPE[type] ?? "unknown" }
+        : { idx: -1, flow: "unknown" };
+    }
+  }
   const orderIdx = (ORDER_STAGE_ORDER as readonly string[]).indexOf(stage);
   if (orderIdx >= 0) return { idx: orderIdx, flow: "order" };
   const warrantyIdx = (WARRANTY_STAGE_ORDER as readonly string[]).indexOf(stage);
   if (warrantyIdx >= 0) return { idx: warrantyIdx, flow: "warranty" };
+  const customIdx = (CUSTOM_STAGE_ORDER as readonly string[]).indexOf(stage);
+  if (customIdx >= 0) return { idx: customIdx, flow: "custom" };
   return { idx: -1, flow: "unknown" };
 }
 
@@ -38,9 +93,13 @@ export function stageIndex(stage: string): { idx: number; flow: StageFlow } {
  * warranty) are treated as NOT backwards — the caller should reject those
  * separately if they're disallowed.
  */
-export function isBackwardsMove(currentStage: string, targetStage: string): boolean {
-  const current = stageIndex(currentStage);
-  const target = stageIndex(targetStage);
+export function isBackwardsMove(
+  currentStage: string,
+  targetStage: string,
+  type?: string,
+): boolean {
+  const current = stageIndex(currentStage, type);
+  const target = stageIndex(targetStage, type);
   if (current.flow === "unknown" || target.flow === "unknown") return false;
   if (current.flow !== target.flow) return false;
   return target.idx < current.idx;
@@ -70,10 +129,17 @@ export function isBackwardsMove(currentStage: string, targetStage: string): bool
 export function fieldsToClearOnBackwardMove(
   currentStage: string,
   targetStage: string,
+  type?: string,
 ): Record<string, string | null> | null {
-  if (!isBackwardsMove(currentStage, targetStage)) return null;
-  const target = stageIndex(targetStage);
-  if (target.flow !== "order") return null; // warranty has no date transitions
+  if (!isBackwardsMove(currentStage, targetStage, type)) return null;
+  const target = stageIndex(targetStage, type);
+  // Warranty has no date-driven transitions. Custom orders DO have
+  // production and delivery stages, but their indices differ from
+  // ORDER_STAGE_ORDER (which the rules below are written against), so
+  // clearing is deliberately skipped for now rather than computed wrongly.
+  // TODO: revisit when the custom order modal + date fields are specified.
+  // Samples report flow "order" and so DO get the standard clearing.
+  if (target.flow !== "order") return null;
 
   // Mixed value type:
   //   - `null` for date columns and nullable text (entered_by). These are

@@ -13,7 +13,8 @@ export async function GET(req: NextRequest) {
   const archived = searchParams.get("archived");
 
   // Whitelist `type` so a malicious caller can't request arbitrary row sets
-  if (type !== "order" && type !== "warranty") {
+  if (type !== "order" && type !== "warranty"
+      && type !== "sample" && type !== "custom") {
     return NextResponse.json({ error: "Invalid type" }, { status: 422 });
   }
 
