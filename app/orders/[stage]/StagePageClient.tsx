@@ -8,7 +8,8 @@ import { OrderTable } from "@/components/OrderTable";
 import { OrderModal } from "@/components/OrderModal";
 import { NewOrderModal } from "@/components/NewOrderModal";
 import { BulkActionBar } from "@/components/BulkActionBar";
-import { Plus, Search, CheckSquare, X } from "lucide-react";
+import Link from "next/link";
+import { Plus, Search, CheckSquare, X, CalendarDays } from "lucide-react";
 
 const STAGE_DESCRIPTION: Record<string, { eyebrow: string; accent: string }> = {
   "New":            { eyebrow: "Orders awaiting entry",         accent: "orders" },
@@ -17,6 +18,16 @@ const STAGE_DESCRIPTION: Record<string, { eyebrow: string; accent: string }> = {
   "At cross dock":  { eyebrow: "Awaiting customer call & delivery", accent: "scheduling" },
   "Delivered":      { eyebrow: "Completed",                     accent: "delivered" },
   "Archived":       { eyebrow: "Stored archive",                accent: "archive" },
+};
+
+// Stage pages that have a matching calendar view.
+//   In production -> production calendar (start / est-finish dates)
+//   At cross dock -> delivery calendar; the build is finished, so the date
+//                    that matters next is the delivery, not the build window.
+// Stages absent from this map render no calendar button.
+const STAGE_CALENDAR_VIEW: Partial<Record<string, "production" | "delivery">> = {
+  "In production": "production",
+  "At cross dock": "delivery",
 };
 
 interface Props {
@@ -72,6 +83,7 @@ export function StagePageClient({ stage }: Props) {
   );
 
   const desc = STAGE_DESCRIPTION[stage] ?? { eyebrow: "Orders", accent: "" };
+  const calendarView = STAGE_CALENDAR_VIEW[stage];
 
   return (
     <>
@@ -80,6 +92,16 @@ export function StagePageClient({ stage }: Props) {
         title={stage}
         right={
           <>
+            {calendarView && (
+              <Link
+                href={`/calendar?view=${calendarView}`}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] uppercase tracking-wider bg-white/4 border border-cream/18 text-cream/85 hover:bg-white/8 transition-all"
+                title="Open the matching calendar view"
+              >
+                <CalendarDays className="w-3.5 h-3.5" />
+                Calendar
+              </Link>
+            )}
             <button
               onClick={toggleSelectMode}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] uppercase tracking-wider transition-all ${

@@ -60,6 +60,16 @@ export default function CalendarPage() {
 
   useEffect(() => { fetchOrders(); }, []);
 
+  // Deep-link support: /calendar?view=production | ?view=delivery
+  // Read from window.location rather than useSearchParams(): that hook forces
+  // a Suspense boundary at build time, and Next build-rule errors are NOT
+  // caught by the tsc gate. Runs on mount only, so a missing/garbage param
+  // simply leaves the default view in place.
+  useEffect(() => {
+    const v = new URLSearchParams(window.location.search).get("view");
+    if (v === "production" || v === "delivery") setView(v);
+  }, []);
+
   async function fetchOrders() {
     setLoading(true);
     try {

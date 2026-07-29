@@ -120,8 +120,8 @@ export function DashboardClient() {
     <>
       <PageHeader
         eyebrow={`Overview · ${new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" })}`}
-        title="Morning"
-        accent="briefing"
+        title="JK Cabinets"
+        accent="OMS Dashboard"
         right={
           <>
             <button
