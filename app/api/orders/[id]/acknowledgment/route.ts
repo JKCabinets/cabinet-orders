@@ -27,6 +27,33 @@ import * as XLSX from "xlsx";
 const VENDOR = "Waypoint Cabinetry"; // canonical vendors-table string for Waypoint
 const MAX_BYTES = 5 * 1024 * 1024;
 
+/**
+ * Log a rejected ack upload so an intermittent failure is diagnosable
+ * after the fact.
+ *
+ * Every rejection path below used to return its status code silently, so
+ * "the ack upload fails sometimes" could not be attributed to a branch or
+ * a file. One structured line to stdout, which Kamal captures:
+ *
+ *   docker logs <container> | grep ack-reject
+ *
+ * METADATA ONLY. Never log sheet contents.
+ */
+function logAckReject(
+  orderId: string,
+  branch: string,
+  file?: File | null,
+  extra?: Record<string, unknown>,
+) {
+  console.warn("[ack-reject]", JSON.stringify({
+    branch,
+    order_id: orderId,
+    file_name: file?.name ?? null,
+    file_size: file?.size ?? null,
+    ...extra,
+  }));
+}
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -45,16 +72,20 @@ export async function POST(
   try {
     form = await req.formData();
   } catch {
+    logAckReject(id, "not_multipart");
     return NextResponse.json({ error: "Expected multipart form data" }, { status: 400 });
   }
   const file = form.get("file");
   if (!(file instanceof File)) {
+    logAckReject(id, "no_file");
     return NextResponse.json({ error: "No file provided (field 'file')" }, { status: 400 });
   }
   if (!file.name.toLowerCase().endsWith(".xlsx")) {
+    logAckReject(id, "not_xlsx", file);
     return NextResponse.json({ error: "File must be a .xlsx" }, { status: 400 });
   }
   if (file.size > MAX_BYTES) {
+    logAckReject(id, "too_large", file, { max_bytes: MAX_BYTES });
     return NextResponse.json({ error: "File too large (max 5 MB)" }, { status: 413 });
   }
 
@@ -68,6 +99,10 @@ export async function POST(
     const ws = sheetName ? wb.Sheets[sheetName] : undefined;
     const ref = ws?.["!ref"];
     if (!ws || !ref) {
+      logAckReject(id, "no_readable_sheet", file, {
+        sheet_name: sheetName ?? null,
+        sheet_count: wb.SheetNames.length,
+      });
       return NextResponse.json({ error: "Workbook has no readable sheet" }, { status: 422 });
     }
     const range = XLSX.utils.decode_range(ref);
@@ -83,12 +118,26 @@ export async function POST(
       }
       grid.push(row);
     }
-  } catch {
+  } catch (e) {
+    logAckReject(id, "xlsx_unreadable", file, {
+      reason: e instanceof Error ? e.message : String(e),
+    });
     return NextResponse.json({ error: "Could not read the .xlsx file" }, { status: 422 });
   }
 
   const ack = parseWaypointAck(sheetName, grid);
   if (ack.items.length === 0) {
+    // The most likely rejection for a file that looks valid: the workbook
+    // parsed but the parser recognised no lines. Grid dimensions are what
+    // separate "wrong file entirely" (tiny or oddly-shaped grid) from
+    // "right file, parser missed the layout" (plausible grid).
+    logAckReject(id, "no_line_items", file, {
+      sheet_name: sheetName ?? null,
+      grid_rows: grid.length,
+      grid_cols: grid[0]?.length ?? 0,
+      parsed_po: ack.po ?? null,
+      parsed_waypoint_order: ack.waypoint_order ?? null,
+    });
     return NextResponse.json(
       { error: "No line items found — is this a Waypoint acknowledgment export?" },
       { status: 422 }
@@ -149,6 +198,10 @@ export async function POST(
   });
   if (insErr) {
     // Surface the failure — never report success on a failed write (Principle #3).
+    logAckReject(id, "insert_failed", file, {
+      reason: insErr.message,
+      verdict: result.verdict,
+    });
     return NextResponse.json(
       { error: "Reconciled, but failed to save the result. Please retry." },
       { status: 500 }
