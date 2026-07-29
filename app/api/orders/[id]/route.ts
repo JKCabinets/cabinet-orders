@@ -155,13 +155,16 @@ export async function PATCH(
   // values AFTER the update has been applied.)
   const { data: currentRow } = await supabase
     .from("orders")
-    .select("stage")
+    .select("stage, type")
     .eq("id", id)
     .single();
   if (!currentRow) {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
   }
   const currentStage: string = currentRow.stage;
+  // The row's type decides WHICH stage ordering applies. Stage names are
+  // shared across flows now, so every stage comparison below needs it.
+  const currentType: string = currentRow.type ?? "order";
 
   // ── Stage validation & backward-PIN gate ──────────────────────────────
   // Mirrors `/api/orders/bulk` — the single-order PATCH previously accepted
@@ -174,7 +177,7 @@ export async function PATCH(
         { status: 422 },
       );
     }
-    if (isBackwardsMove(currentStage, body.stage)) {
+    if (isBackwardsMove(currentStage, body.stage, currentType)) {
       if (!verifyAdminPin(body.admin_pin)) {
         return NextResponse.json(
           { error: "admin_pin_required", message: "Backwards moves require admin PIN" },
@@ -191,7 +194,13 @@ export async function PATCH(
   // attachments are a hard requirement. Only fires on the New → Entered
   // transition (re-saving an already-Entered order with stage="Entered"
   // shouldn't re-check attachments).
-  if (body.stage === "Entered" && currentStage === "New" && !body.override_ack) {
+  //
+  // SAMPLES ARE EXEMPT. They ship from JK's own stock under the
+  // "JK Cabinets 2 You" vendor, so there is no manufacturer
+  // acknowledgment to attach. Keyed on the type read from the DB, not on
+  // anything the client sends. Samples still have to be claimed.
+  if (body.stage === "Entered" && currentStage === "New"
+      && currentType !== "sample" && !body.override_ack) {
     const { data: attachments } = await supabase
       .from("order_attachments")
       .select("id")
@@ -272,7 +281,7 @@ export async function PATCH(
   // but possible) keeps its explicit value.
   let clearedFields: Record<string, string | null> | null = null;
   if (typeof body.stage === "string") {
-    clearedFields = fieldsToClearOnBackwardMove(currentStage, body.stage);
+    clearedFields = fieldsToClearOnBackwardMove(currentStage, body.stage, currentType);
     if (clearedFields) {
       for (const [k, v] of Object.entries(clearedFields)) {
         if (updates[k] === undefined) updates[k] = v;

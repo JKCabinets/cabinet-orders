@@ -98,13 +98,18 @@ export async function POST(req: NextRequest) {
   // require it — the batch is admin-gated or not.
   let backwardsMoveDetected = false;
   if (action === "move" && targetStage) {
-    const targetInfo = stageIndex(targetStage);
     for (const id of ids) {
       const order = orderMap.get(id);
       if (!order) continue;
-      const currentInfo = stageIndex(order.stage);
-      // Backwards if in the same flow and target idx < current idx
-      if (currentInfo.flow === targetInfo.flow && targetInfo.idx < currentInfo.idx) {
+      // Resolve BOTH stages against THIS row's type. A batch can mix
+      // types, and stage names are shared across flows, so one target
+      // index computed for the whole batch is wrong for some rows.
+      const rowType = (order.type as string) ?? "order";
+      const currentInfo = stageIndex(order.stage, rowType);
+      const targetInfo = stageIndex(targetStage, rowType);
+      // idx < 0 means the stage is not in this row's flow at all -- that
+      // is an invalid move, not a backwards one.
+      if (currentInfo.idx >= 0 && targetInfo.idx >= 0 && targetInfo.idx < currentInfo.idx) {
         backwardsMoveDetected = true;
         break;
       }
@@ -155,7 +160,9 @@ export async function POST(req: NextRequest) {
       // ── GATE: moving New → Entered requires at least one attachment ───────
       // Mirrors the gate in OrderModal.tsx (doMoveStage). Per-row failure
       // mode: report it, continue with the rest.
-      if (targetStage === "Entered" && order.stage === "New") {
+      // Samples are exempt: no manufacturer ack exists to attach.
+      if (targetStage === "Entered" && order.stage === "New"
+          && ((order.type as string) ?? "order") !== "sample") {
         const { count, error: countError } = await supabase
           .from("order_attachments")
           .select("id", { count: "exact", head: true })
@@ -189,7 +196,8 @@ export async function POST(req: NextRequest) {
       // E.g. moving At cross dock → In production clears the delivery date,
       // since the order won't actually be delivered on the date that was
       // booked while it was still cross-docked.
-      const cleared = fieldsToClearOnBackwardMove(order.stage, targetStage);
+      const cleared = fieldsToClearOnBackwardMove(
+        order.stage, targetStage, (order.type as string) ?? "order");
       if (cleared) Object.assign(updates, cleared);
 
       const { error: updateError } = await supabase
@@ -299,11 +307,13 @@ export async function GET(req: NextRequest) {
 
   const { data: orders, error } = await supabase
     .from("orders")
-    .select("id, stage")
+    .select("id, stage, type")
     .in("id", ids);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const targetInfo = stageIndex(targetStage);
+  // Target index is resolved PER ROW below, not once for the batch --
+  // stage names are shared across flows, so one index cannot be right
+  // for a mixed-type set of ids.
   let requiresPin = false;
   const checks: { id: string; will_pass: boolean; reason?: string }[] = [];
 
@@ -335,12 +345,16 @@ export async function GET(req: NextRequest) {
       continue;
     }
 
-    const currentInfo = stageIndex(order.stage);
-    if (currentInfo.flow === targetInfo.flow && targetInfo.idx < currentInfo.idx) {
+    // Same per-row resolution as the POST path above.
+    const rowType = (order.type as string) ?? "order";
+    const currentInfo = stageIndex(order.stage, rowType);
+    const targetInfo = stageIndex(targetStage, rowType);
+    if (currentInfo.idx >= 0 && targetInfo.idx >= 0 && targetInfo.idx < currentInfo.idx) {
       requiresPin = true;
     }
 
-    if (targetStage === "Entered" && order.stage === "New") {
+    // Samples are exempt from the attachment gate.
+    if (targetStage === "Entered" && order.stage === "New" && rowType !== "sample") {
       const attCount = attachmentMap.get(id) ?? 0;
       if (attCount === 0) {
         checks.push({ id, will_pass: false, reason: "needs_attachment" });

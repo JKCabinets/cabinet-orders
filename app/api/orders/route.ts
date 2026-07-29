@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, cleanInput, rateLimitOr429 } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
+import { ORDER_TYPES, ID_PREFIX_BY_TYPE, type OrderType } from "@/lib/data";
 
 export async function GET(req: NextRequest) {
   const auth = await requireAuth();
@@ -13,8 +14,7 @@ export async function GET(req: NextRequest) {
   const archived = searchParams.get("archived");
 
   // Whitelist `type` so a malicious caller can't request arbitrary row sets
-  if (type !== "order" && type !== "warranty"
-      && type !== "sample" && type !== "custom") {
+  if (!ORDER_TYPES.includes(type as OrderType)) {
     return NextResponse.json({ error: "Invalid type" }, { status: 422 });
   }
 
@@ -61,19 +61,33 @@ export async function POST(req: NextRequest) {
   }
   if (!body.name) return NextResponse.json({ error: "name is required" }, { status: 422 });
 
+  // Whitelist `type` on WRITE as well as read. Previously any string was
+  // accepted, so a POST could insert a row whose type belongs to no flow:
+  // stageIndex returns -1, no move ever registers as backwards so the
+  // admin-PIN gate never fires, and it appears on no list page because
+  // every page filters by a known type. Invisible and ungated.
+  const rawType = body.type === undefined ? "order" : body.type;
+  if (typeof rawType !== "string" || !ORDER_TYPES.includes(rawType as OrderType)) {
+    return NextResponse.json({ error: "Invalid type" }, { status: 422 });
+  }
+  const type = rawType as OrderType;
+
   const today = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "America/Phoenix" });
-  const isOrder = body.type !== "warranty";
-  const id = isOrder
-    ? `ORD-${Date.now()}`
-    : `WRN-${String(Date.now()).slice(-4).padStart(4, "0")}`;
+  const isWarranty = type === "warranty";
+  // Warranty ids keep their existing 4-digit short form.
+  const id = isWarranty
+    ? `WRN-${String(Date.now()).slice(-4).padStart(4, "0")}`
+    : `${ID_PREFIX_BY_TYPE[type]}-${Date.now()}`;
 
   const newOrder = {
     id,
-    type:       body.type    ?? "order",
+    type,
     name:       cleanInput(body.name as string),
     source:     body.source  ?? "Manual",
     detail:     cleanInput((body.detail as string) ?? ""),
-    stage:      isOrder ? "New" : "New claim",
+    // Only warranties start outside the order flow. Samples and custom
+    // orders both start at "New".
+    stage:      isWarranty ? "New claim" : "New",
     member:     body.member  ?? "AX",
     date:       today,
     sku:        cleanInput((body.sku as string) ?? ""),

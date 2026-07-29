@@ -8,6 +8,7 @@ import { useSession } from "next-auth/react";
 import {
   Order, OrderType, Stage, TeamMember,
   Member, Source, ORDER_STAGES, WARRANTY_STAGES, AvatarColor, Role,
+  ID_PREFIX_BY_TYPE,
 } from "./data";
 import { fieldsToClearOnBackwardMove } from "./stageLogic";
 import { useRealtimeOrders } from "./useRealtimeOrders";
@@ -124,13 +125,8 @@ function shapeOrder(raw: Record<string, unknown>): Order {
   };
 }
 
-/** Id prefix per row type. Keeps the audit log readable at a glance. */
-const ID_PREFIX_BY_TYPE: Record<string, string> = {
-  order: "ORD",
-  warranty: "WRN",
-  sample: "SMP",
-  custom: "CST",
-};
+// ID_PREFIX_BY_TYPE now lives in lib/data.ts, shared with the API insert
+// in app/api/orders/route.ts so the two cannot drift apart.
 
 /**
  * Replace the rows of each successfully-fetched type, leaving every other

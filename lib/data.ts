@@ -288,6 +288,23 @@ export const SAMPLE_STAGES: OrderStage[] = [
   "New", "Entered", "Delivered",
 ];
 
+/**
+ * Every valid value of the `type` discriminator, in one place, so reads
+ * and writes whitelist against the same list.
+ */
+export const ORDER_TYPES: OrderType[] = ["order", "warranty", "sample", "custom"];
+
+/**
+ * Id prefix per row type. Shared by the API insert and the store's
+ * offline fallback so the two cannot drift.
+ */
+export const ID_PREFIX_BY_TYPE: Record<OrderType, string> = {
+  order: "ORD",
+  warranty: "WRN",
+  sample: "SMP",
+  custom: "CST",
+};
+
 export const STAGE_STATUS: Record<string, "red" | "amber" | "green"> = {
   New: "red", Entered: "amber", "In production": "green",
   "At cross dock": "amber", Delivered: "green",
