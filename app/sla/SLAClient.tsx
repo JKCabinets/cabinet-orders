@@ -3,38 +3,37 @@
 import { useState, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { useStore } from "@/lib/store";
-import { Order, OrderStage, AVATAR_COLOR_STYLES, Stage } from "@/lib/data";
-import { SLA_TARGETS, daysInStage, isOverdue } from "@/lib/sla";
+import {
+  Order, OrderStage, OrderType, AVATAR_COLOR_STYLES, Stage,
+  STAGE_ACCENT, STAGE_LIST_BY_TYPE, nextStageFor,
+} from "@/lib/data";
+import {
+  SLA_RULES, slaTier, slaRuleFor, hoursInStage, formatStageAge,
+} from "@/lib/sla";
 import { AppShell, PageHeader } from "@/components/AppShell";
 import { OrderModal } from "@/components/OrderModal";
 import { AlertTriangle, ArrowRight, Archive } from "lucide-react";
 import clsx from "clsx";
 
-// Stages with an SLA target. Delivered/Resolved have target Infinity
-// so they never appear here.
-const TRACKED_STAGES: OrderStage[] = ["New", "Entered", "In production", "At cross dock"];
-
-// Softened brand colors per stage (match the rest of the app)
-const STAGE_COLOR: Record<string, string> = {
-  "New":              "#c97070",
-  "Entered":          "#d4922a",
-  "In production":    "#c8b84a",
-  "At cross dock":    "#5a8db8",
-  "Delivered":        "#8fbe70",
-};
-
-// Determine what the most-likely next action is for an overdue order.
-// In New → claim it. In any later stage → move to next stage.
-// (Archive is always available as a secondary action.)
-const NEXT_STAGE: Partial<Record<OrderStage, OrderStage>> = {
-  "New":              "Entered",
-  "Entered":          "In production",
-  "In production":    "At cross dock",
-  "At cross dock":    "Delivered",
-};
+// Tracked stages are DERIVED per type: the stages of that type's own flow
+// that carry a rule in SLA_RULES. There is no hardcoded list here any more,
+// so adding a stage or a type grows this page without editing it.
+//
+// Stage colours come from lib/data's STAGE_ACCENT rather than a private
+// copy, and the next stage from nextStageFor rather than a hardcoded map
+// that only knew the standard order flow.
+const CATEGORIES: { key: OrderType; label: string }[] = [
+  { key: "order",    label: "Standard orders" },
+  { key: "custom",   label: "Custom orders" },
+  { key: "sample",   label: "Sample orders" },
+  { key: "warranty", label: "Warranty claims" },
+];
 
 export function SLAClient() {
-  const { orders, team, claimOrder, moveStage, archiveOrder } = useStore();
+  const {
+    orders, customs, samples, warranties,
+    team, claimOrder, moveStage, archiveOrder,
+  } = useStore();
   const { data: session } = useSession();
   // See OrderTable for the full story. We standardize on team_members.id
   // (post-v18 migration) for ALL ownership comparisons — immutable,
@@ -44,51 +43,64 @@ export function SLAClient() {
 
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
 
-  // Active (non-archived, non-warranty) orders only
-  const active = useMemo(() => orders.filter(o => !o.archived), [orders]);
-
-  // Overdue orders grouped by stage. Each group sorted by days descending
-  // so the worst offenders are at the top.
-  const overdueByStage = useMemo(() => {
-    const result: Record<OrderStage, Order[]> = {
-      "New": [], "Entered": [], "In production": [], "At cross dock": [], "Delivered": [],
+  // ─── Per-category rollup ──────────────────────────────────────────
+  // Each order type is its own category with its own stages, rules and
+  // overdue list. Stages come from the intersection of the type's flow
+  // (STAGE_LIST_BY_TYPE) and the stages that actually carry a rule, so a
+  // stage with no SLA -- Delivered, or warranty's Parts ordered -- is simply
+  // absent rather than special-cased.
+  const categories = useMemo(() => {
+    const now = Date.now();
+    const lists: Record<OrderType, Order[]> = {
+      order: orders, custom: customs, sample: samples, warranty: warranties,
     };
-    for (const o of active) {
-      if (isOverdue(o)) {
-        const stage = o.stage as OrderStage;
-        if (stage in result) result[stage].push(o);
+    return CATEGORIES.map(({ key, label }) => {
+      const rows = (lists[key] ?? []).filter(o => !o.archived);
+      const rules = SLA_RULES[key] ?? {};
+      const stages = (STAGE_LIST_BY_TYPE[key] ?? []).filter(s => rules[s]);
+
+      const overdueByStage: Record<string, Order[]> = {};
+      for (const s of stages) overdueByStage[s] = [];
+      let totalFlagged = 0;
+      for (const o of rows) {
+        if (slaTier(o, now) === "ok") continue;
+        if (!overdueByStage[o.stage]) continue;
+        overdueByStage[o.stage].push(o);
+        totalFlagged++;
       }
-    }
-    for (const stage of TRACKED_STAGES) {
-      result[stage].sort((a, b) => (daysInStage(b) ?? 0) - (daysInStage(a) ?? 0));
-    }
-    return result;
-  }, [active]);
+      // Worst offenders first.
+      for (const s of stages) {
+        overdueByStage[s].sort(
+          (a, b) => (hoursInStage(b, now) ?? 0) - (hoursInStage(a, now) ?? 0));
+      }
 
-  const totalOverdue = TRACKED_STAGES.reduce((sum, s) => sum + overdueByStage[s].length, 0);
+      const trends = stages.map(stage => {
+        const inStage = rows.filter(o => o.stage === stage);
+        const ages = inStage
+          .map(o => hoursInStage(o, now))
+          .filter((h): h is number => h !== null);
+        const avgHours = ages.length === 0
+          ? 0
+          : ages.reduce((s, h) => s + h, 0) / ages.length;
+        const rule = rules[stage];
+        const flaggedCount = inStage.filter(o => slaTier(o, now) !== "ok").length;
+        return {
+          stage,
+          count: inStage.length,
+          avgHours: Math.round(avgHours),
+          softHours: rule?.softHours ?? 0,
+          hardHours: rule?.hardHours ?? 0,
+          waitingFor: rule?.waitingFor,
+          flaggedCount,
+          flaggedRatio: inStage.length === 0 ? 0 : flaggedCount / inStage.length,
+        };
+      });
 
-  // ─── Trends ───────────────────────────────────────────────────────
-  // For each tracked stage, compute the average days in stage across
-  // ALL orders currently in that stage (overdue or not). This gives
-  // a "how is each step pacing right now" snapshot.
-  const trendsByStage = useMemo(() => {
-    return TRACKED_STAGES.map(stage => {
-      const inStage = active.filter(o => o.stage === stage);
-      const ages = inStage.map(o => daysInStage(o)).filter((d): d is number => d !== null);
-      const avg = ages.length === 0 ? 0 : ages.reduce((s, d) => s + d, 0) / ages.length;
-      const target = SLA_TARGETS[stage];
-      const overdueCount = inStage.filter(o => isOverdue(o)).length;
-      const overdueRatio = inStage.length === 0 ? 0 : overdueCount / inStage.length;
-      return {
-        stage,
-        count: inStage.length,
-        avgDays: Math.round(avg * 10) / 10,
-        target,
-        overdueCount,
-        overdueRatio,
-      };
+      return { key, label, rows, stages, trends, overdueByStage, totalFlagged };
     });
-  }, [active]);
+  }, [orders, customs, samples, warranties]);
+
+  const totalOverdue = categories.reduce((sum, c) => sum + c.totalFlagged, 0);
 
   return (
     <AppShell>
@@ -123,80 +135,93 @@ export function SLAClient() {
           )}
         </div>
 
-        {/* ── Trends ──────────────────────────────────────────────── */}
-        <div className="glass-sage rounded-panel p-5 lg:p-6">
-          <div className="mb-4">
-            <div className="eyebrow mb-1">Stage health</div>
-            <h2 className="font-display text-[22px] text-cream">
-              Pacing <em className="italic-storm">right now</em>
-            </h2>
-            <p className="text-[12px] text-cream/55 mt-1">
-              Average days in each stage across all active orders, and the share that are past target.
-            </p>
-          </div>
+        {/* ── One section per order type ──────────────────────────── */}
+        {categories.map(cat => {
+          if (cat.rows.length === 0) return null;
+          const maxAvg = Math.max(
+            1,
+            ...cat.trends.map(x => Math.max(x.avgHours, x.hardHours * 1.5)),
+          );
+          return (
+            <div key={cat.key} className="space-y-4">
+              <div className="glass-sage rounded-panel p-5 lg:p-6">
+                <div className="mb-4">
+                  <div className="eyebrow mb-1">Stage health</div>
+                  <h2 className="font-display text-[22px] text-cream">
+                    {cat.label}
+                  </h2>
+                  <p className="text-[12px] text-cream/55 mt-1">
+                    {cat.rows.length} active
+                    {cat.totalFlagged > 0
+                      ? ` · ${cat.totalFlagged} past target`
+                      : " · all on track"}
+                  </p>
+                </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
-            <div>
-              <div className="text-[10px] uppercase tracking-[0.13em] text-cream/45 mb-3">Average days in stage</div>
-              <div className="space-y-3">
-                {trendsByStage.map(t => (
-                  <BarRow
-                    key={t.stage}
-                    label={t.stage}
-                    value={t.avgDays}
-                    max={Math.max(...trendsByStage.map(x => Math.max(x.avgDays, x.target * 1.5)))}
-                    target={t.target}
-                    valueLabel={`${t.avgDays}d`}
-                    targetLabel={`tgt ${t.target}d`}
-                    color={STAGE_COLOR[t.stage]}
-                    pastTarget={t.avgDays > t.target}
-                  />
-                ))}
+                {cat.trends.length === 0 ? (
+                  <p className="text-[12px] text-cream/45">No stages in this flow carry an SLA.</p>
+                ) : (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-[0.13em] text-cream/45 mb-3">Average time in stage</div>
+                      <div className="space-y-3">
+                        {cat.trends.map(t => (
+                          <BarRow
+                            key={t.stage}
+                            label={t.stage}
+                            value={t.avgHours}
+                            max={maxAvg}
+                            target={t.hardHours}
+                            valueLabel={formatStageAge(t.avgHours)}
+                            targetLabel={`tgt ${t.hardHours}h`}
+                            color={STAGE_ACCENT[t.stage]}
+                            pastTarget={t.avgHours > t.hardHours}
+                          />
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="text-[10px] uppercase tracking-[0.13em] text-cream/45 mb-3">Share past target</div>
+                      <div className="space-y-3">
+                        {cat.trends.map(t => (
+                          <BarRow
+                            key={t.stage}
+                            label={t.waitingFor ? `${t.stage} — awaiting ${t.waitingFor}` : t.stage}
+                            value={t.flaggedRatio * 100}
+                            max={100}
+                            valueLabel={`${Math.round(t.flaggedRatio * 100)}%`}
+                            secondaryLabel={`${t.flaggedCount}/${t.count}`}
+                            color={STAGE_ACCENT[t.stage]}
+                            pastTarget={t.flaggedRatio > 0}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
 
-            <div>
-              <div className="text-[10px] uppercase tracking-[0.13em] text-cream/45 mb-3">Share of orders past target</div>
-              <div className="space-y-3">
-                {trendsByStage.map(t => (
-                  <BarRow
-                    key={t.stage}
-                    label={t.stage}
-                    value={t.overdueRatio * 100}
-                    max={100}
-                    valueLabel={`${Math.round(t.overdueRatio * 100)}%`}
-                    secondaryLabel={`${t.overdueCount}/${t.count}`}
-                    color={STAGE_COLOR[t.stage]}
-                    pastTarget={t.overdueRatio > 0}
+              {cat.stages.map(stage => {
+                const flagged = cat.overdueByStage[stage];
+                if (!flagged || flagged.length === 0) return null;
+                return (
+                  <OverdueStageBlock
+                    key={`${cat.key}-${stage}`}
+                    stage={stage}
+                    orders={flagged}
+                    team={team}
+                    currentUserId={currentUserId}
+                    onOpenOrder={setSelectedOrder}
+                    onClaim={(id) => claimOrder(id, currentUserId)}
+                    onAdvance={(id, target) => moveStage(id, target as Stage, currentUserId ?? undefined)}
+                    onArchive={(id) => archiveOrder(id)}
                   />
-                ))}
-              </div>
+                );
+              })}
             </div>
-          </div>
-        </div>
-
-        {/* ── Operational: overdue orders by stage ────────────────── */}
-        {totalOverdue > 0 && (
-          <div className="space-y-4">
-            {TRACKED_STAGES.map(stage => {
-              const orders = overdueByStage[stage];
-              if (orders.length === 0) return null;
-              return (
-                <OverdueStageBlock
-                  key={stage}
-                  stage={stage}
-                  orders={orders}
-                  team={team}
-                  currentUserId={currentUserId}
-                  onOpenOrder={setSelectedOrder}
-                  onClaim={(id) => claimOrder(id, currentUserId)}
-                  onAdvance={(id, target) => moveStage(id, target as Stage, currentUserId ?? undefined)}
-                  onArchive={(id) => archiveOrder(id)}
-                />
-              );
-            })}
-          </div>
-        )}
+          );
+        })}
       </div>
 
       {selectedOrder && (
@@ -216,18 +241,22 @@ function OverdueStageBlock({
   stage, orders, team, currentUserId, onOpenOrder,
   onClaim, onAdvance, onArchive,
 }: {
-  stage: OrderStage;
+  // `string`, not OrderStage: this block now renders warranty and custom
+  // stages too, which are not members of OrderStage.
+  stage: string;
   orders: Order[];
   team: Array<{ id: string; name: string; username: string; initials: string; avatarColor: keyof typeof AVATAR_COLOR_STYLES }>;
   currentUserId: string | null;
   onOpenOrder: (o: Order) => void;
   onClaim: (id: string) => Promise<unknown>;
-  onAdvance: (id: string, target: OrderStage) => Promise<unknown>;
+  onAdvance: (id: string, target: Stage) => Promise<unknown>;
   onArchive: (id: string) => Promise<unknown>;
 }) {
-  const color = STAGE_COLOR[stage] ?? "#a0a09a";
-  const target = SLA_TARGETS[stage];
-  const next = NEXT_STAGE[stage];
+  const color = STAGE_ACCENT[stage] ?? "#a0a09a";
+  // Rule and next stage both come from the FIRST row, because a block only
+  // ever holds rows of one type at one stage.
+  const rule = orders.length > 0 ? slaRuleFor(orders[0]) : undefined;
+  const next = orders.length > 0 ? nextStageFor(orders[0]) : undefined;
 
   return (
     <div className="glass-sage rounded-panel overflow-hidden">
@@ -237,7 +266,9 @@ function OverdueStageBlock({
           {stage}
         </h3>
         <span className="text-[10px] uppercase tracking-wider text-cream/45 ml-auto">
-          target {isFinite(target) ? `${target}d` : "—"} · {orders.length} overdue
+          {rule ? `${rule.softHours}h / ${rule.hardHours}h` : "—"}
+          {rule?.waitingFor ? ` awaiting ${rule.waitingFor}` : ""}
+          {` · ${orders.length} past target`}
         </span>
       </div>
 
@@ -269,16 +300,18 @@ function OverdueRow({
   team: Array<{ id: string; name: string; username: string; initials: string; avatarColor: keyof typeof AVATAR_COLOR_STYLES }>;
   currentUserId: string | null;
   color: string;
-  nextStage?: OrderStage;
+  nextStage?: Stage;
   onOpen: () => void;
   onClaim: () => Promise<unknown>;
   onAdvance?: () => Promise<unknown>;
   onArchive: () => Promise<unknown>;
 }) {
   const [busy, setBusy] = useState(false);
-  const days = daysInStage(order);
-  const target = SLA_TARGETS[order.stage as OrderStage];
-  const daysOver = days !== null && isFinite(target) ? days - target : null;
+  const hours = hoursInStage(order);
+  const tier = slaTier(order);
+  const rule = slaRuleFor(order);
+  // Terracotta past the hard threshold, amber past the soft one.
+  const tierColor = tier === "hard" ? "#e89090" : "#d4922a";
 
   // Stage-aware owner (matches the rest of the app)
   const isNew = order.stage === "New";
@@ -301,14 +334,22 @@ function OverdueRow({
       <div
         className="flex flex-col items-center justify-center rounded-brand px-2.5 py-1.5 flex-shrink-0"
         style={{
-          background: "rgba(232,144,144,0.12)",
-          border: "0.5px solid rgba(232,144,144,0.35)",
+          background: `${tierColor}1f`,
+          border: `0.5px solid ${tierColor}59`,
           minWidth: 52,
         }}
-        title={`${days}d in stage, target ${target}d`}
+        title={
+          rule
+            ? `${formatStageAge(hours)} in stage · warn ${rule.softHours}h · act ${rule.hardHours}h`
+            : `${formatStageAge(hours)} in stage`
+        }
       >
-        <span className="font-display text-[18px] leading-none" style={{ color: "#e89090" }}>+{daysOver}</span>
-        <span className="text-[8px] uppercase tracking-wider text-cream/55 mt-0.5">days over</span>
+        <span className="font-display text-[18px] leading-none" style={{ color: tierColor }}>
+          {formatStageAge(hours)}
+        </span>
+        <span className="text-[8px] uppercase tracking-wider text-cream/55 mt-0.5">
+          {tier === "hard" ? "act now" : "in stage"}
+        </span>
       </div>
 
       {/* Order body */}
