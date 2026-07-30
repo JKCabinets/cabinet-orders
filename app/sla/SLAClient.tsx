@@ -8,7 +8,7 @@ import {
   STAGE_ACCENT, STAGE_LIST_BY_TYPE, nextStageFor,
 } from "@/lib/data";
 import {
-  SLA_RULES, slaTier, slaRuleFor, hoursInStage, formatStageAge,
+  SLA_RULES, slaTier, slaRuleFor, hoursInStage, slaAgeHours, formatStageAge,
 } from "@/lib/sla";
 import { AppShell, PageHeader } from "@/components/AppShell";
 import { OrderModal } from "@/components/OrderModal";
@@ -76,23 +76,41 @@ export function SLAClient() {
 
       const trends = stages.map(stage => {
         const inStage = rows.filter(o => o.stage === stage);
-        const ages = inStage
-          .map(o => hoursInStage(o, now))
-          .filter((h): h is number => h !== null);
-        const avgHours = ages.length === 0
-          ? 0
-          : ages.reduce((s, h) => s + h, 0) / ages.length;
         const rule = rules[stage];
+        const soft = rule?.softHours ?? 24;
+        const hard = rule?.hardHours ?? 48;
+
+        // Only rows whose clock is RUNNING get bucketed. In production and
+        // At cross dock stop their clock once the awaited dates exist, so
+        // bucketing everything would report "3 over 48h" beside "0 past
+        // target". `count` stays the true population of the stage.
+        const measured = inStage.filter(o => !rule?.clockRuns || rule.clockRuns(o));
+
+        // Aged on each row's OWN clock: New runs on the order date, so a
+        // bounced order shows its real age rather than a reset stage clock.
+        const ages = measured
+          .map(o => (rule ? slaAgeHours(o, rule, now) : hoursInStage(o, now)))
+          .filter((h): h is number => h !== null);
+
+        const buckets = {
+          fresh: ages.filter(h => h < soft).length,
+          warn: ages.filter(h => h >= soft && h < hard).length,
+          over: ages.filter(h => h >= hard).length,
+        };
+        const oldestHours = ages.length === 0 ? null : Math.max(...ages);
         const flaggedCount = inStage.filter(o => slaTier(o, now) !== "ok").length;
+
         return {
           stage,
           count: inStage.length,
-          avgHours: Math.round(avgHours),
-          softHours: rule?.softHours ?? 0,
-          hardHours: rule?.hardHours ?? 0,
+          measuredCount: measured.length,
+          buckets,
+          oldestHours,
+          softHours: soft,
+          hardHours: hard,
           waitingFor: rule?.waitingFor,
+          measuresFrom: rule?.measureFrom === "created" ? "created" : "stage",
           flaggedCount,
-          flaggedRatio: inStage.length === 0 ? 0 : flaggedCount / inStage.length,
         };
       });
 
@@ -138,10 +156,6 @@ export function SLAClient() {
         {/* ── One section per order type ──────────────────────────── */}
         {categories.map(cat => {
           if (cat.rows.length === 0) return null;
-          const maxAvg = Math.max(
-            1,
-            ...cat.trends.map(x => Math.max(x.avgHours, x.hardHours * 1.5)),
-          );
           return (
             <div key={cat.key} className="space-y-4">
               <div className="glass-sage rounded-panel p-5 lg:p-6">
@@ -161,43 +175,10 @@ export function SLAClient() {
                 {cat.trends.length === 0 ? (
                   <p className="text-[12px] text-cream/45">No stages in this flow carry an SLA.</p>
                 ) : (
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
-                    <div>
-                      <div className="text-[10px] uppercase tracking-[0.13em] text-cream/45 mb-3">Average time in stage</div>
-                      <div className="space-y-3">
-                        {cat.trends.map(t => (
-                          <BarRow
-                            key={t.stage}
-                            label={t.stage}
-                            value={t.avgHours}
-                            max={maxAvg}
-                            target={t.hardHours}
-                            valueLabel={formatStageAge(t.avgHours)}
-                            targetLabel={`tgt ${t.hardHours}h`}
-                            color={STAGE_ACCENT[t.stage]}
-                            pastTarget={t.avgHours > t.hardHours}
-                          />
-                        ))}
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="text-[10px] uppercase tracking-[0.13em] text-cream/45 mb-3">Share past target</div>
-                      <div className="space-y-3">
-                        {cat.trends.map(t => (
-                          <BarRow
-                            key={t.stage}
-                            label={t.waitingFor ? `${t.stage} — awaiting ${t.waitingFor}` : t.stage}
-                            value={t.flaggedRatio * 100}
-                            max={100}
-                            valueLabel={`${Math.round(t.flaggedRatio * 100)}%`}
-                            secondaryLabel={`${t.flaggedCount}/${t.count}`}
-                            color={STAGE_ACCENT[t.stage]}
-                            pastTarget={t.flaggedRatio > 0}
-                          />
-                        ))}
-                      </div>
-                    </div>
+                  <div className="space-y-4">
+                    {cat.trends.map(t => (
+                      <StageAgingRow key={t.stage} trend={t} />
+                    ))}
                   </div>
                 )}
               </div>
@@ -232,6 +213,87 @@ export function SLAClient() {
         />
       )}
     </AppShell>
+  );
+}
+
+/* ─── Stage aging ───────────────────────────────────────────────────── */
+
+/**
+ * One stage's queue, as a shape rather than an average.
+ *
+ * A segmented bar splits the rows whose clock is running into under-soft,
+ * soft-to-hard and over-hard, and the oldest is called out separately because
+ * that is the row you act on. An average across one or two orders told you
+ * nothing an individual row did not.
+ */
+function StageAgingRow({ trend }: {
+  trend: {
+    stage: string;
+    count: number;
+    measuredCount: number;
+    buckets: { fresh: number; warn: number; over: number };
+    oldestHours: number | null;
+    softHours: number;
+    hardHours: number;
+    waitingFor?: string;
+    measuresFrom: string;
+    flaggedCount: number;
+  };
+}) {
+  const t = trend;
+  const total = Math.max(1, t.measuredCount);
+  const pct = (n: number) => `${(n / total) * 100}%`;
+  const color = STAGE_ACCENT[t.stage] ?? "#a0a09a";
+  const ageWord = t.measuresFrom === "created" ? "old" : "in stage";
+
+  return (
+    <div>
+      <div className="flex items-baseline gap-2 flex-wrap mb-1.5">
+        <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: color }} />
+        <span className="text-[12px] text-cream/85">{t.stage}</span>
+        {t.waitingFor && (
+          <span className="text-[10px] text-cream/40">awaiting {t.waitingFor}</span>
+        )}
+        <span className="text-[10px] text-cream/40 ml-auto">
+          {t.count} in stage
+          {t.measuredCount !== t.count && ` · ${t.measuredCount} on the clock`}
+        </span>
+        <span
+          className="text-[11px] font-mono"
+          style={{ color: t.flaggedCount > 0 ? "#e89090" : "rgba(232,227,218,0.45)" }}
+        >
+          {t.oldestHours === null
+            ? "—"
+            : `oldest ${formatStageAge(t.oldestHours)} ${ageWord}`}
+        </span>
+      </div>
+
+      {t.measuredCount === 0 ? (
+        <div className="h-1.5 rounded-full bg-white/6" />
+      ) : (
+        <div className="h-1.5 rounded-full overflow-hidden flex bg-white/6">
+          {t.buckets.fresh > 0 && (
+            <div style={{ width: pct(t.buckets.fresh), background: "rgba(143,190,112,0.55)" }} />
+          )}
+          {t.buckets.warn > 0 && (
+            <div style={{ width: pct(t.buckets.warn), background: "#d4922a" }} />
+          )}
+          {t.buckets.over > 0 && (
+            <div style={{ width: pct(t.buckets.over), background: "#e89090" }} />
+          )}
+        </div>
+      )}
+
+      <div className="flex items-center gap-3 mt-1 text-[10px]">
+        <span className="text-cream/40">{t.buckets.fresh} under {t.softHours}h</span>
+        <span style={{ color: t.buckets.warn > 0 ? "#d4922a" : "rgba(232,227,218,0.30)" }}>
+          {t.buckets.warn} over {t.softHours}h
+        </span>
+        <span style={{ color: t.buckets.over > 0 ? "#e89090" : "rgba(232,227,218,0.30)" }}>
+          {t.buckets.over} over {t.hardHours}h
+        </span>
+      </div>
+    </div>
   );
 }
 

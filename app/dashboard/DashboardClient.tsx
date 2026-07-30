@@ -6,7 +6,9 @@ import { useStore } from "@/lib/store";
 import { Order, ORDER_STAGES, OrderStage, STAGE_ACCENT, getBackorderStatus } from "@/lib/data";
 import { rollupBackorders, summarizeBackorders, type BackorderSummary } from "@/lib/backorders";
 import { parseOrderDate } from "@/lib/dateUtils";
-import { slaTier, slaRuleFor, hoursInStage, formatStageAge, type SlaTier } from "@/lib/sla";
+import {
+  slaTier, slaRuleFor, hoursInStage, slaAgeHours, formatStageAge, type SlaTier,
+} from "@/lib/sla";
 import { PageHeader } from "@/components/AppShell";
 import { OrderModal } from "@/components/OrderModal";
 import { NewOrderModal } from "@/components/NewOrderModal";
@@ -57,12 +59,28 @@ export function DashboardClient() {
       const rows = g.rows.filter(o => !o.archived);
       let soft = 0;
       let hard = 0;
+      // The oldest row that has a clock running at all -- the one worth
+      // clicking through for. Rows in a stage with no rule, or whose clock
+      // has stopped because the awaited dates exist, are skipped.
+      let oldestHours: number | null = null;
+      let oldestStage = "";
       for (const o of rows) {
         const tier: SlaTier = slaTier(o, now);
         if (tier === "hard") hard++;
         else if (tier === "soft") soft++;
+        const rule = slaRuleFor(o);
+        if (!rule) continue;
+        if (rule.clockRuns && !rule.clockRuns(o)) continue;
+        const h = slaAgeHours(o, rule, now);
+        if (h !== null && (oldestHours === null || h > oldestHours)) {
+          oldestHours = h;
+          oldestStage = o.stage;
+        }
       }
-      return { key: g.key, label: g.label, total: rows.length, soft, hard };
+      return {
+        key: g.key, label: g.label, total: rows.length, soft, hard,
+        oldestHours, oldestStage,
+      };
     });
   }, [orders, customs, samples, warranties]);
 
@@ -388,6 +406,10 @@ interface SlaCategory {
   soft: number;
   /** Past the hard (48h) threshold. */
   hard: number;
+  /** Age of the oldest row with a running clock, in hours. */
+  oldestHours: number | null;
+  /** Which stage that oldest row is sitting in. */
+  oldestStage: string;
 }
 
 function SLAMiniPanel({ categories }: { categories: SlaCategory[] }) {
@@ -422,6 +444,11 @@ function SLAMiniPanel({ categories }: { categories: SlaCategory[] }) {
                 <span className="text-cream/40">{c.total === 0 ? "none active" : "on track"}</span>
               )}
             </div>
+            {c.oldestHours !== null && (
+              <div className="text-[10px] text-cream/45">
+                oldest {formatStageAge(c.oldestHours)} in {c.oldestStage}
+              </div>
+            )}
           </div>
         ))}
       </div>
