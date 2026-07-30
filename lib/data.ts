@@ -265,6 +265,15 @@ export interface Order {
   // by the SLA page to compute real per-stage age rather than total
   // order age. May be null on legacy rows that pre-date schema v9.
   stage_entered_at?: string | null;
+  /**
+   * Row insert timestamp. Distinct from `date`, which is a DISPLAY string
+   * ("Jul 22") with no time component and no year.
+   *
+   * Used by the SLA rules whose measureFrom is "created" -- currently the
+   * New stages, which must not have their clock reset by an order being
+   * bounced backwards into New.
+   */
+  created_at?: string | null;
 }
 
 export const ORDER_STAGES: OrderStage[] = [

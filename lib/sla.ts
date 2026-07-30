@@ -73,6 +73,19 @@ export interface SlaRule {
   clockRuns?: (order: Order) => boolean;
   /** Human-readable object of the wait, for UI copy. */
   waitingFor?: string;
+  /**
+   * Which clock this stage runs on. Defaults to "stage".
+   *
+   * "stage"    time since stage_entered_at -- "how long stuck HERE"
+   * "created"  time since the row was created -- "how long has this
+   *            existed without being dealt with"
+   *
+   * New uses "created" deliberately. An order moved backwards into New has
+   * been alive the whole time and is now back at the start, which is worse
+   * than a fresh order -- but the stage clock would reset and make it look
+   * newer than everything else on the board.
+   */
+  measureFrom?: "stage" | "created";
 }
 
 const SOFT_HOURS = 24;
@@ -97,7 +110,9 @@ const deliveryDateMissing = (o: Order): boolean =>
 
 /** Standard Shopify cabinet orders. Samples share this: same stage names. */
 const STANDARD_RULES: Partial<Record<string, SlaRule>> = {
-  "New":     { softHours: SOFT_HOURS, hardHours: HARD_HOURS },
+  // Measured from the order date, so bouncing an order back to New cannot
+  // reset its clock. Every later stage asks "how long stuck here" instead.
+  "New":     { softHours: SOFT_HOURS, hardHours: HARD_HOURS, measureFrom: "created" },
   "Entered": { softHours: SOFT_HOURS, hardHours: HARD_HOURS },
   "In production": {
     softHours: SOFT_HOURS,
@@ -116,7 +131,7 @@ const STANDARD_RULES: Partial<Record<string, SlaRule>> = {
 
 /** Custom orders: quote-specific early stages, then the shared gated ones. */
 const CUSTOM_RULES: Partial<Record<string, SlaRule>> = {
-  "New":       { softHours: SOFT_HOURS, hardHours: HARD_HOURS },
+  "New":       { softHours: SOFT_HOURS, hardHours: HARD_HOURS, measureFrom: "created" },
   "In review": { softHours: SOFT_HOURS, hardHours: HARD_HOURS },
   "Ordered":   { softHours: SOFT_HOURS, hardHours: HARD_HOURS },
   "In production": STANDARD_RULES["In production"],
@@ -135,7 +150,8 @@ const CUSTOM_RULES: Partial<Record<string, SlaRule>> = {
  * Expect warranty claims to start appearing in SLA counts.
  */
 const WARRANTY_RULES: Partial<Record<string, SlaRule>> = {
-  "New claim": { softHours: SOFT_HOURS, hardHours: HARD_HOURS },
+  // Same reasoning as New: measured from when the claim was filed.
+  "New claim": { softHours: SOFT_HOURS, hardHours: HARD_HOURS, measureFrom: "created" },
   "In review": { softHours: SOFT_HOURS, hardHours: HARD_HOURS },
   // "Parts ordered" and "Shipped": no rule. Waiting on a vendor or a
   // carrier, with no date field that would say when to stop worrying.
@@ -178,6 +194,37 @@ export function hoursInStage(order: Order, now: number = Date.now()): number | n
 }
 
 /**
+ * Hours since the row was created.
+ *
+ * Prefers created_at. Falls back to parsing the `date` DISPLAY string,
+ * which has no time component ("Jul 22"), so it resolves to midnight and
+ * over-reports by up to a day -- acceptable only as a last resort for rows
+ * that somehow lack created_at.
+ */
+export function hoursSinceCreated(order: Order, now: number = Date.now()): number | null {
+  if (order.created_at) {
+    const t = new Date(order.created_at).getTime();
+    if (isFinite(t)) return (now - t) / (1000 * 60 * 60);
+  }
+  const t = parseOrderDate(order.date);
+  if (t === null) return null;
+  return (now - t) / (1000 * 60 * 60);
+}
+
+/**
+ * The age a rule actually measures. See SlaRule.measureFrom.
+ */
+export function slaAgeHours(
+  order: Order,
+  rule: SlaRule,
+  now: number = Date.now(),
+): number | null {
+  return rule.measureFrom === "created"
+    ? hoursSinceCreated(order, now)
+    : hoursInStage(order, now);
+}
+
+/**
  * Evaluate an order against its rule.
  *
  * Returns "ok" when there is no rule for the stage, when the rule's clock is
@@ -187,7 +234,8 @@ export function slaTier(order: Order, now: number = Date.now()): SlaTier {
   const rule = slaRuleFor(order);
   if (!rule) return "ok";
   if (rule.clockRuns && !rule.clockRuns(order)) return "ok";
-  const hours = hoursInStage(order, now);
+  // Which clock depends on the rule -- New runs on the order date.
+  const hours = slaAgeHours(order, rule, now);
   if (hours === null) return "ok";
   if (hours >= rule.hardHours) return "hard";
   if (hours >= rule.softHours) return "soft";

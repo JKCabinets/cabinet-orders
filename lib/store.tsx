@@ -109,6 +109,9 @@ function shapeOrder(raw: Record<string, unknown>): Order {
     stage: (raw.stage as Stage) ?? "New",
     member: (raw.member as Member) ?? "AX",
     date: (raw.date as string) ?? "",
+    // /api/orders selects `*`, so this has always been on the wire -- it
+    // just was not mapped through. The SLA rules for New need it.
+    created_at: (raw.created_at as string | null) ?? null,
     sku: (raw.sku as string) ?? "",
     notes: (raw.notes as string) ?? "",
     internal_notes: (raw.internal_notes as string) ?? "",
