@@ -274,6 +274,20 @@ export interface Order {
    * bounced backwards into New.
    */
   created_at?: string | null;
+  /**
+   * When a warranty claim was REPORTED by the customer, as distinct from
+   * when this row was created.
+   *
+   * Set on promotion from claim_submissions.received_at. A claim submitted
+   * Thursday evening and promoted Monday morning was reported Thursday --
+   * and per Terms 12.3 the reporting windows are conditions precedent to
+   * the claim, so this is the timestamp that matters both legally and for
+   * the SLA clock.
+   *
+   * Null on every other flow, and null on every row until the intake work
+   * lands. The rules fall back to created_at when it is absent.
+   */
+  reported_at?: string | null;
 }
 
 export const ORDER_STAGES: OrderStage[] = [

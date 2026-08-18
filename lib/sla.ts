@@ -84,8 +84,13 @@ export interface SlaRule {
    * been alive the whole time and is now back at the start, which is worse
    * than a fresh order -- but the stage clock would reset and make it look
    * newer than everything else on the board.
+   *
+   * "reported" is for promoted warranty claims: the clock runs from when
+   * the CUSTOMER reported the issue, not from when a staff member got
+   * round to promoting the submission. Without it, triage delay is
+   * invisible to the system built to surface delay.
    */
-  measureFrom?: "stage" | "created";
+  measureFrom?: "stage" | "created" | "reported";
 }
 
 const SOFT_HOURS = 24;
@@ -212,6 +217,22 @@ export function hoursSinceCreated(order: Order, now: number = Date.now()): numbe
 }
 
 /**
+ * Hours since the customer reported the issue.
+ *
+ * Falls back to hoursSinceCreated when reported_at is absent -- which is
+ * every row today, and every row that did not arrive through the public
+ * claims intake. So switching a rule to "reported" is a no-op until
+ * promotion starts setting the column.
+ */
+export function hoursSinceReported(order: Order, now: number = Date.now()): number | null {
+  if (order.reported_at) {
+    const t = new Date(order.reported_at).getTime();
+    if (isFinite(t)) return (now - t) / (1000 * 60 * 60);
+  }
+  return hoursSinceCreated(order, now);
+}
+
+/**
  * The age a rule actually measures. See SlaRule.measureFrom.
  */
 export function slaAgeHours(
@@ -219,9 +240,12 @@ export function slaAgeHours(
   rule: SlaRule,
   now: number = Date.now(),
 ): number | null {
-  return rule.measureFrom === "created"
-    ? hoursSinceCreated(order, now)
-    : hoursInStage(order, now);
+  switch (rule.measureFrom) {
+    case "created":  return hoursSinceCreated(order, now);
+    case "reported": return hoursSinceReported(order, now);
+    // undefined and "stage" both mean the stage clock.
+    default:         return hoursInStage(order, now);
+  }
 }
 
 /**
