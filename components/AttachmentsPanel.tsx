@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from "react";
-import { Paperclip, Upload, X, Download, FileText, Image, File, Loader2, Trash2 } from "lucide-react";
+import { Paperclip, Upload, X, Download, FileText, Image, File, Loader2, Trash2, FileCheck } from "lucide-react";
 import clsx from "clsx";
 
 interface Attachment {
@@ -13,6 +13,12 @@ interface Attachment {
   file_type: string;
   uploaded_by: string;
   created_at: string;
+  /**
+   * What this attachment IS, not its file type.
+   * "general" | "proof_of_delivery". Optional because rows created before
+   * the kind column existed are returned without it by older caches.
+   */
+  kind?: string;
 }
 
 interface AttachmentsPanelProps {
@@ -27,6 +33,9 @@ interface AttachmentsPanelProps {
  */
 export interface AttachmentsPanelHandle {
   openFilePicker: () => void;
+  /** Opens the picker that uploads as proof_of_delivery. Used by the
+   *  delivery gate to land the user on the right action. */
+  openReceiptPicker: () => void;
 }
 
 function formatBytes(bytes: number): string {
@@ -50,9 +59,11 @@ export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPa
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const receiptInputRef = useRef<HTMLInputElement>(null);
 
   useImperativeHandle(ref, () => ({
     openFilePicker: () => fileInputRef.current?.click(),
+    openReceiptPicker: () => receiptInputRef.current?.click(),
   }), []);
 
   useEffect(() => {
@@ -70,7 +81,10 @@ export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPa
     fetchAttachments();
   }, [orderId]);
 
-  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleUpload(
+    e: React.ChangeEvent<HTMLInputElement>,
+    kind: "general" | "proof_of_delivery" = "general",
+  ) {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
@@ -81,6 +95,7 @@ export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPa
       const formData = new FormData();
       formData.append("file", file);
       formData.append("orderId", orderId);
+      formData.append("kind", kind);
 
       try {
         const res = await fetch("/api/orders/attachments", { method: "POST", body: formData });
@@ -97,6 +112,7 @@ export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPa
 
     setUploading(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
+    if (receiptInputRef.current) receiptInputRef.current.value = "";
   }
 
   async function handleDownload(attachment: Attachment) {
@@ -133,24 +149,42 @@ export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPa
         <p className="text-[10px] uppercase tracking-[0.16em] text-cream/50 font-medium">
           Attachments {attachments.length > 0 && <span className="text-cream/65 ml-1">({attachments.length})</span>}
         </p>
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          disabled={uploading}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-cream/18 bg-white/4 text-[11px] uppercase tracking-wider text-cream/85 hover:bg-white/8 hover:border-terracotta/40 transition-all disabled:opacity-50"
-        >
-          {uploading ? (
-            <><Loader2 className="w-3 h-3 animate-spin" /> Uploading…</>
-          ) : (
-            <><Upload className="w-3 h-3" /> Upload</>
-          )}
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => receiptInputRef.current?.click()}
+            disabled={uploading}
+            title="Signed delivery receipt — required before this order can be marked Delivered"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-cream/18 bg-white/4 text-[11px] uppercase tracking-wider text-cream/85 hover:bg-white/8 hover:border-terracotta/40 transition-all disabled:opacity-50"
+          >
+            <FileCheck className="w-3 h-3" /> Receipt
+          </button>
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-cream/18 bg-white/4 text-[11px] uppercase tracking-wider text-cream/85 hover:bg-white/8 hover:border-terracotta/40 transition-all disabled:opacity-50"
+          >
+            {uploading ? (
+              <><Loader2 className="w-3 h-3 animate-spin" /> Uploading…</>
+            ) : (
+              <><Upload className="w-3 h-3" /> Upload</>
+            )}
+          </button>
+        </div>
         <input
           ref={fileInputRef}
           type="file"
           multiple
           className="hidden"
-          onChange={handleUpload}
+          onChange={(e) => handleUpload(e, "general")}
           accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv"
+        />
+        <input
+          ref={receiptInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={(e) => handleUpload(e, "proof_of_delivery")}
+          accept="image/*,.pdf"
         />
       </div>
 
@@ -185,7 +219,14 @@ export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPa
             >
               <FileIcon type={att.file_type} />
               <div className="flex-1 min-w-0">
-                <p className="text-xs text-[#e8e3da] truncate">{att.file_name}</p>
+                <div className="flex items-center gap-1.5">
+                  <p className="text-xs text-[#e8e3da] truncate">{att.file_name}</p>
+                  {att.kind === "proof_of_delivery" && (
+                    <span className="flex-shrink-0 text-[8px] uppercase tracking-wider px-1.5 py-px rounded-full bg-[rgba(143,190,112,0.14)] border border-[rgba(143,190,112,0.40)] text-[#8fbe70]">
+                      receipt
+                    </span>
+                  )}
+                </div>
                 <p className="text-[10px] text-[rgba(232,227,218,0.30)]">
                   {formatBytes(att.file_size)} · {att.uploaded_by} · {new Date(att.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                 </p>
