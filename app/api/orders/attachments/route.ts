@@ -12,6 +12,23 @@ const MAX_FILENAME_LEN = 200;
 // 100 char ceiling matches what the bulk route uses for id validation.
 const ORDER_ID_RE = /^[A-Za-z0-9._-]{1,100}$/;
 
+/**
+ * What an attachment IS, as opposed to what file type it is.
+ *
+ *   general           manufacturer acknowledgments, exports, anything else
+ *   proof_of_delivery a signed delivery receipt
+ *
+ * MUST match the CHECK constraint on order_attachments.kind. The database
+ * would reject a mismatch, but the user would see a raw constraint error;
+ * validating here turns that into a clear 422.
+ *
+ * The gate on At cross dock -> Delivered looks for proof_of_delivery
+ * specifically, because every order at that stage already carries the ack
+ * PDFs from Entered and a plain attachment count would pass immediately.
+ */
+const ATTACHMENT_KINDS = ["general", "proof_of_delivery"] as const;
+type AttachmentKind = (typeof ATTACHMENT_KINDS)[number];
+
 function sanitizeFileName(name: string): string {
   // Restrict to alphanum, dot, underscore, hyphen — same as the quote-form
   // webhook so both ingest paths agree on what's storable.
@@ -61,6 +78,18 @@ export async function POST(req: NextRequest) {
   if (!file || !orderId) {
     return NextResponse.json({ error: "file and orderId required" }, { status: 422 });
   }
+
+  // Optional. Omitting it keeps the existing behaviour exactly: every
+  // upload that does not say otherwise is a general attachment.
+  const rawKind = formData.get("kind");
+  const kindStr = rawKind === null || rawKind === "" ? "general" : String(rawKind);
+  if (!(ATTACHMENT_KINDS as readonly string[]).includes(kindStr)) {
+    return NextResponse.json(
+      { error: `kind must be one of: ${ATTACHMENT_KINDS.join(", ")}` },
+      { status: 422 },
+    );
+  }
+  const kind = kindStr as AttachmentKind;
 
   // ── Validate orderId shape ────────────────────────────────────────────
   // The id is interpolated into a storage path below. Without validation,
@@ -121,6 +150,8 @@ export async function POST(req: NextRequest) {
       file_size: file.size,
       file_type: cleanInput(file.type || "application/octet-stream").slice(0, 200),
       uploaded_by: cleanInput(auth.session.user.name ?? auth.session.user.username),
+      // Whitelisted above, and constrained again by the DB CHECK.
+      kind,
     })
     .select()
     .single();
