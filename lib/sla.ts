@@ -155,8 +155,15 @@ const CUSTOM_RULES: Partial<Record<string, SlaRule>> = {
  * Expect warranty claims to start appearing in SLA counts.
  */
 const WARRANTY_RULES: Partial<Record<string, SlaRule>> = {
-  // Same reasoning as New: measured from when the claim was filed.
-  "New claim": { softHours: SOFT_HOURS, hardHours: HARD_HOURS, measureFrom: "created" },
+  // Measured from when the CUSTOMER reported the issue, not when this row
+  // was created.
+  //
+  // For a claim raised in-app those are the same moment: reported_at is
+  // null and hoursSinceReported falls back to created_at. For a claim
+  // promoted from a website submission they differ by however long triage
+  // took -- and per Terms 12.3 the reporting windows are conditions
+  // precedent to the claim, so the reported time is the one that counts.
+  "New claim": { softHours: SOFT_HOURS, hardHours: HARD_HOURS, measureFrom: "reported" },
   "In review": { softHours: SOFT_HOURS, hardHours: HARD_HOURS },
   // "Parts ordered" and "Shipped": no rule. Waiting on a vendor or a
   // carrier, with no date field that would say when to stop worrying.
