@@ -6,7 +6,7 @@ import { Order, Stage, AVATAR_COLOR_STYLES, getBackorderStatus } from "@/lib/dat
 import { useStore } from "@/lib/store";
 import { useSession } from "next-auth/react";
 import { formatDateWithYear, parseOrderDate } from "@/lib/dateUtils";
-import { checkAttachmentGate } from "@/lib/stageGates";
+import { checkAttachmentGate, checkDeliveryProofGate } from "@/lib/stageGates";
 import { OrderEntryActions } from "./OrderEntryActions";
 import { ArrowUp, ArrowDown, RotateCcw, ChevronRight, X } from "lucide-react";
 import { AvatarWithProfile } from "./AvatarWithProfile";
@@ -397,6 +397,137 @@ function PaymentPill({ status }: { status?: string | null }) {
  * the desktop table renders them separately into their own columns.
  */
 
+/**
+ * Confirm Delivery, gated on a signed delivery receipt.
+ *
+ *   idle        the normal Confirm Delivery button
+ *   no-receipt  the gate failed: attach one, or override
+ *   reason      overriding; the reason field must be non-empty
+ *
+ * Its own component rather than inline JSX because it needs state, and the
+ * renderer it replaces is a plain function rather than a component.
+ *
+ * The server enforces all of this independently -- see the delivery proof
+ * gate in app/api/orders/[id]/route.ts. This exists so the failure is
+ * actionable in one click instead of an error toast with no remedy.
+ */
+function ConfirmDeliveryActions({ order, mobile, onOpenModal }: {
+  order: Order;
+  mobile?: boolean;
+  onOpenModal?: (order: Order, reason?: "needs-attachment") => void;
+}) {
+  const { moveStage } = useStore();
+  const { showToast } = useToast();
+  const [busy, setBusy] = useState(false);
+  const [step, setStep] = useState<"idle" | "no-receipt" | "reason">("idle");
+  const [reason, setReason] = useState("");
+
+  const PILL = "px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all";
+
+  async function attempt(overrideReason?: string) {
+    setBusy(true);
+    try {
+      // Skip the client check when overriding -- we already know there is no
+      // receipt, and the server will demand the reason regardless.
+      if (!overrideReason) {
+        const gate = await checkDeliveryProofGate(order.id);
+        if (!gate.ok) {
+          if (gate.reason === "network") {
+            showToast(gate.message, { kind: "error" });
+            return;
+          }
+          setStep("no-receipt");
+          return;
+        }
+      }
+      const res = await moveStage(
+        order.id, "Delivered", undefined, undefined, undefined, overrideReason,
+      );
+      if (!res.ok) {
+        showToast(res.error ?? "Could not mark delivered", { kind: "error" });
+        return;
+      }
+      setStep("idle");
+      setReason("");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (step === "reason") {
+    return (
+      <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+        <input
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="Reason for overriding"
+          maxLength={300}
+          autoFocus
+          className="px-2.5 py-1 rounded-full text-[11px] bg-white/6 border border-cream/20 text-cream placeholder:text-cream/35 w-48"
+          style={{ fontSize: "16px" }}
+        />
+        <button
+          onClick={() => attempt(reason.trim())}
+          disabled={busy || reason.trim().length === 0}
+          title="Recorded in this order's activity against your name"
+          className={`${PILL} bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30 disabled:opacity-40 disabled:cursor-not-allowed`}
+        >
+          {busy ? "..." : "Save"}
+        </button>
+        <button
+          onClick={() => { setStep("idle"); setReason(""); }}
+          className={`${PILL} bg-white/4 border border-cream/15 text-cream/65 hover:bg-white/8`}
+        >
+          Cancel
+        </button>
+      </div>
+    );
+  }
+
+  if (step === "no-receipt") {
+    return (
+      <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+        <span className="text-[10px] uppercase tracking-wider" style={{ color: "#e89090" }}>
+          No receipt
+        </span>
+        <button
+          onClick={() => { setStep("idle"); onOpenModal?.(order); }}
+          title="Open the order and use the Receipt button in Attachments"
+          className={`${PILL} bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30`}
+        >
+          {mobile ? "Attach" : "Attach receipt"}
+        </button>
+        <button
+          onClick={() => setStep("reason")}
+          title="Mark delivered without a receipt. Requires a reason, recorded in the order activity."
+          className={`${PILL} bg-white/4 border border-cream/15 text-cream/65 hover:bg-white/8`}
+        >
+          Override
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <button
+        onClick={() => attempt()}
+        disabled={busy}
+        className={`${PILL} bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30`}
+      >
+        {busy ? "..." : (mobile ? "Confirm" : "Confirm Delivery")}
+      </button>
+      <button
+        onClick={(e) => { e.stopPropagation(); onOpenModal?.(order); }}
+        className={`${PILL} bg-white/4 border border-cream/15 text-cream/65 hover:bg-white/8 hover:text-cream/85`}
+        title="Open order to change delivery date"
+      >
+        {mobile ? "Date" : "Change date"}
+      </button>
+    </div>
+  );
+}
+
 function useRowActions(order: Order) {
   const { data: session } = useSession();
   const { claimOrder: rawClaimOrder, moveStage, archiveOrder, unarchiveOrder, team } = useStore();
@@ -657,24 +788,7 @@ function UpdateStatusActions({
   if (stage === "At cross dock") {
     const hasDate = !!order.scheduled_delivery_date;
     if (hasDate) {
-      return (
-        <div className="flex items-center gap-1.5">
-          <button
-            onClick={() => withBusy(() => moveStage(order.id, "Delivered"))}
-            disabled={busy}
-            className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30"
-          >
-            {busy ? "..." : (mobile ? "Confirm" : "Confirm Delivery")}
-          </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); onOpenModal?.(order); }}
-            className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-white/4 border border-cream/15 text-cream/65 hover:bg-white/8 hover:text-cream/85"
-            title="Open order to change delivery date"
-          >
-            {mobile ? "Date" : "Change date"}
-          </button>
-        </div>
-      );
+      return <ConfirmDeliveryActions order={order} mobile={mobile} onOpenModal={onOpenModal} />;
     }
     return (
       <button

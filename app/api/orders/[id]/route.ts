@@ -214,6 +214,44 @@ export async function PATCH(
     }
   }
 
+  // ── Delivery proof gate ─────────────────────────────────────
+  // At cross dock -> Delivered needs the signed delivery receipt, which the
+  // confirmation email already tells the customer they will sign.
+  //
+  // Looks for kind = 'proof_of_delivery' specifically. A plain attachment
+  // count would pass on the Entered-stage ack PDFs and enforce nothing.
+  //
+  // Samples are exempt, as with the ack gate.
+  //
+  // The override needs a REASON and is checked here, not just in the UI --
+  // otherwise it is decoration, which is exactly what override_ack is.
+  let deliveryOverrideReason: string | null = null;
+  if (body.stage === "Delivered" && currentStage === "At cross dock"
+      && currentType !== "sample") {
+    const { data: receipts } = await supabase
+      .from("order_attachments")
+      .select("id")
+      .eq("order_id", id)
+      .eq("kind", "proof_of_delivery")
+      .limit(1);
+    if (!receipts || receipts.length === 0) {
+      const reason =
+        typeof body.override_delivery_proof === "string"
+          ? cleanInput(body.override_delivery_proof).trim().slice(0, 300)
+          : "";
+      if (!reason) {
+        return NextResponse.json(
+          {
+            error: "delivery_proof_required",
+            message: "Attach the signed delivery receipt, or override with a reason.",
+          },
+          { status: 400 },
+        );
+      }
+      deliveryOverrideReason = reason;
+    }
+  }
+
   const updates: Record<string, unknown> = {};
   if (body.stage)                  updates.stage      = body.stage;
   // Bump stage_entered_at only when the stage ACTUALLY changes.
@@ -344,6 +382,17 @@ export async function PATCH(
 
   if (activityText) {
     await supabase.from("order_activity").insert({ order_id: id, text: activityText, time: today });
+  }
+
+  // A separate row, not appended to the stage-change text: an override is
+  // its own event, and each one should leave its own trace. The name comes
+  // from the session, never from the request body.
+  if (deliveryOverrideReason) {
+    await supabase.from("order_activity").insert({
+      order_id: id,
+      text: `Delivery proof overridden by ${auth.session.user.name ?? auth.session.user.username} — ${deliveryOverrideReason}`,
+      time: today,
+    });
   }
 
   // Shopify writeback — unchanged
