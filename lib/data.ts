@@ -312,6 +312,20 @@ export const SAMPLE_STAGES: OrderStage[] = [
 ];
 
 /**
+ * The vendor that marks a line as JK's own stock rather than a
+ * manufacturer's. An order is a SAMPLE only when EVERY line is this vendor.
+ *
+ * Must match `shopify_products.vendor` as Shopify stores it. Compared
+ * case-insensitively and trimmed via isSampleVendor, because a vendor name
+ * typed into Shopify is not a value anyone validates.
+ */
+export const SAMPLE_VENDOR = "JK Cabinets 2 You";
+
+export function isSampleVendor(vendor: string | null | undefined): boolean {
+  return String(vendor ?? "").trim().toLowerCase() === SAMPLE_VENDOR.toLowerCase();
+}
+
+/**
  * Every valid value of the `type` discriminator, in one place, so reads
  * and writes whitelist against the same list.
  */

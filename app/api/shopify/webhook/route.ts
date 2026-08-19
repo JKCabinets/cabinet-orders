@@ -6,6 +6,7 @@ import { decodeHtmlEntities } from "@/lib/htmlEntities";
 import { decodeSku, buildSkuFromAvisNamesDetailed, ensureSkuMaps, skuMapsUnavailable, modificationMap } from "@/lib/skuDecoder";
 import { parseModifications } from "@/lib/modifications";
 import type { ReviewReason } from "@/lib/data";
+import { isSampleVendor } from "@/lib/data";
 import { lookupVendorsForSkus } from "@/lib/vendorLookup";
 
 const SHOPIFY_SECRET = process.env.SHOPIFY_WEBHOOK_SECRET ?? "";
@@ -385,19 +386,42 @@ export async function POST(req: NextRequest) {
 
     // Resolve the order-level vendor through the SAME layered resolver used at
     // read time (variant_id -> family -> base SKU), so the stamp is consistent
-    // with the per-line vendor shown in the order panel and PDFs. For a mixed
-    // order this is the first line's vendor; the authoritative per-line
-    // breakdown is computed at read time via lookupVendorsForSkus.
+    // with the per-line vendor shown in the order panel and PDFs.
+    //
+    // EVERY line is resolved, not just the first. Two things depend on it:
+    // the order-level vendor stamp (still the first line's, for display
+    // consistency), and sample classification, which is a statement about
+    // ALL lines. lookupVendorsForSkus batches its queries, so resolving the
+    // whole order is the same number of round-trips as resolving one line.
     let vendorName = "";
-    const firstItem = skuItems.find(i => i.sku);
-    if (firstItem) {
-      const { vendorBySku } = await lookupVendorsForSkus([firstItem]);
-      vendorName = vendorBySku.get(firstItem.sku) ?? "";
+    let orderType: "order" | "sample" = "order";
+    const resolvableItems = skuItems.filter(i => i.sku);
+    if (resolvableItems.length > 0) {
+      const { vendorBySku, uniqueVendors, hasUnassigned } =
+        await lookupVendorsForSkus(resolvableItems);
+      vendorName = vendorBySku.get(resolvableItems[0].sku) ?? "";
+
+      // A SAMPLE is an order whose every line ships from JK's own stock.
+      // A mixed order is a STANDARD order: if samples ever arrive alongside
+      // cabinetry, the cabinetry drives the pipeline.
+      //
+      // hasUnassigned is the fail-safe. A line the resolver could not
+      // identify must never be assumed to be JK stock -- unknown means
+      // standard, so a resolution failure yields a normal order with the
+      // full pipeline rather than a sample that skips the ack gate.
+      if (
+        !hasUnassigned
+        && uniqueVendors.length === 1
+        && isSampleVendor(uniqueVendors[0])
+      ) {
+        orderType = "sample";
+      }
     }
 
     const { error } = await supabase.from("orders").insert({
       id: orderId,
-      type: "order",
+      // Classified above from the resolved vendors of every line.
+      type: orderType,
       name: customerName,
       source: "Shopify",
       detail,
@@ -431,7 +455,12 @@ export async function POST(req: NextRequest) {
 
     await supabase.from("order_activity").insert({
       order_id: orderId,
-      text: `Order received from Shopify${orderNumber ? ` (#${orderNumber})` : ""}`,
+      // Say when an order was classified as a sample. A silent
+      // reclassification is the kind of thing nobody can reconstruct later.
+      text: `Order received from Shopify${orderNumber ? ` (#${orderNumber})` : ""}`
+        + (orderType === "sample"
+            ? " \u00b7 classified as a sample order (all lines JK stock)"
+            : ""),
       time: today,
     });
 
