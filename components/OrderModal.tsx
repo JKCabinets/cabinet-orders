@@ -379,7 +379,11 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                 <Trash2 className="w-3 h-3" /> Delete
               </button>
             )}
-            {(liveOrder.stage !== "New" || !!liveOrder.claimed_by) && exportVendors.map((v) => (
+            {/* Per-manufacturer order PDF. Not for samples -- they ship from
+                JK's own stock, so there is no manufacturer to send one to. */}
+            {liveOrder.type !== "sample"
+              && (liveOrder.stage !== "New" || !!liveOrder.claimed_by)
+              && exportVendors.map((v) => (
               <a
                 key={v}
                 href={"/api/orders/" + encodeURIComponent(liveOrder.id) + "/export?vendor=" + encodeURIComponent(v)}
@@ -719,8 +723,19 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
               <DateEditor order={liveOrder} updateOrderDetails={updateOrderDetails} />
             )}
 
-            {/* Acknowledgments: per-vendor .xlsx reconciliation */}
-          <AcknowledgmentPanel ref={ackPanelRef} orderId={liveOrder.id} orderName={liveOrder.name} eligible={liveOrder.stage !== "New" || !!liveOrder.claimed_by} onAdvance={() => { if (liveOrder.stage === "New") moveStage(liveOrder.id, "Entered", currentUserId).then((r) => { if (!r.ok) showToast(r.error ?? "Could not move to Entered", { kind: "error" }); }); }} onAdvanceOverride={() => { if (liveOrder.stage === "New") moveStage(liveOrder.id, "Entered", currentUserId, undefined, true).then((r) => { if (!r.ok) showToast(r.error ?? "Could not move to Entered", { kind: "error" }); }); }} />
+            {/* Acknowledgments: per-vendor .xlsx reconciliation.
+
+                NOT for samples. They ship from JK's own stock, so there is no
+                manufacturer acknowledgment to reconcile against -- the server
+                already exempts them from the Entered gate (phase 1c), and this
+                stops the modal asking for a document that cannot exist.
+
+                Phrased "not sample" so a future order type inherits the panel
+                by default: showing it wrongly is cosmetic, hiding it wrongly
+                means a missed manufacturer confirmation. */}
+          {liveOrder.type !== "sample" && (
+            <AcknowledgmentPanel ref={ackPanelRef} orderId={liveOrder.id} orderName={liveOrder.name} eligible={liveOrder.stage !== "New" || !!liveOrder.claimed_by} onAdvance={() => { if (liveOrder.stage === "New") moveStage(liveOrder.id, "Entered", currentUserId).then((r) => { if (!r.ok) showToast(r.error ?? "Could not move to Entered", { kind: "error" }); }); }} onAdvanceOverride={() => { if (liveOrder.stage === "New") moveStage(liveOrder.id, "Entered", currentUserId, undefined, true).then((r) => { if (!r.ok) showToast(r.error ?? "Could not move to Entered", { kind: "error" }); }); }} />
+          )}
           {/* Customer-facing notes — Quote orders get structured display, others get plain textarea */}
             {liveOrder.source === "Manual" && liveOrder.notes?.includes("QUOTE REQUEST") ? (
               <QuoteInfoPanel notes={liveOrder.notes} />
