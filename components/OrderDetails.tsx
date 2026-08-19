@@ -252,13 +252,33 @@ export function OrderDetails({ orderId, skuItems, readOnly = false }: OrderDetai
             </div>
 
             {item.properties && item.properties.length > 0 && (
-              <div className="flex flex-wrap gap-x-3 gap-y-0.5 pl-4 pb-1 -mt-0.5">
-                {item.properties.map((p, pi) => (
-                  <span key={pi} className="text-[10px]">
-                    <span className="text-cream/35">{p.name}:</span>{" "}
-                    <span className="text-cream/70">{p.value}</span>
-                  </span>
-                ))}
+              <div className="flex flex-col gap-1 pl-4 pb-1.5 -mt-0.5">
+                {item.properties.map((p, pi) => {
+                  // A multi-select arrives comma-joined. Four colours a picker
+                  // has to find on a shelf should be four things to count, not
+                  // one sentence to parse.
+                  const values = p.value.split(",").map(v => v.trim()).filter(Boolean);
+                  return (
+                    <div key={pi} className="flex items-start gap-1.5 flex-wrap">
+                      <span className="text-[9px] uppercase tracking-wider text-cream/35 pt-[3px] flex-shrink-0">
+                        {p.name}
+                      </span>
+                      {values.length > 1 ? (
+                        values.map((v, vi) => (
+                          <span
+                            key={vi}
+                            className="text-[10px] px-1.5 py-px rounded-full text-cream/85"
+                            style={{ background: "rgba(255,255,255,0.05)", border: "0.5px solid rgba(232,227,218,0.14)" }}
+                          >
+                            {v}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-[10px] text-cream/85 pt-[2px]">{p.value}</span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
 
