@@ -251,6 +251,17 @@ export function OrderDetails({ orderId, skuItems, readOnly = false }: OrderDetai
               </div>
             </div>
 
+            {item.properties && item.properties.length > 0 && (
+              <div className="flex flex-wrap gap-x-3 gap-y-0.5 pl-4 pb-1 -mt-0.5">
+                {item.properties.map((p, pi) => (
+                  <span key={pi} className="text-[10px]">
+                    <span className="text-cream/35">{p.name}:</span>{" "}
+                    <span className="text-cream/70">{p.value}</span>
+                  </span>
+                ))}
+              </div>
+            )}
+
             {item.modifications && item.modifications.length > 0 && (
               <div className="flex flex-col gap-0.5 pl-4 pb-1 -mt-0.5">
                 {item.modifications.map((mod, mi) => (

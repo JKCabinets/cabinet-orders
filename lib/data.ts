@@ -168,6 +168,17 @@ export interface SkuItem {
   door_style?: string;
   color?: string;
   /**
+   * Raw Shopify line item properties the decoder did not consume, kept so
+   * nothing is silently dropped at ingest.
+   *
+   * door_style and color above are the DECODED values and take priority in
+   * the UI; this is what remains. For a sample order -- which has no cabinet
+   * SKU to decode -- it is the only place the customer's choices appear.
+   *
+   * Hidden properties (leading underscore, _apo) are filtered at ingest.
+   */
+  properties?: Array<{ name: string; value: string }>;
+  /**
    * Per-line review flag. The LINE is authoritative (which line + why);
    * orders.needs_review is a derived rollup. Clears on fix / re-decode; the
    * order_activity note is the permanent record.

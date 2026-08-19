@@ -265,6 +265,28 @@ function buildOrder(payload: Record<string, unknown>) {
       reviewNotes.push(`Needs review on "${desc}" \u2014 modification "${mods.missingValue[0]}" is missing its depth value.`);
     }
 
+    // Everything the decoder did not consume. The extractors above pull out
+    // the door style and colour they recognise; this keeps the rest, so a
+    // property under an unexpected name is visible instead of discarded.
+    //
+    // Hidden properties are skipped, matching the storefront Liquid: a
+    // leading "_" is Shopify's hidden convention and "_apo" belongs to the
+    // options app.
+    const visibleProps = props
+      .filter(p => {
+        const n = String(p?.name ?? "").trim();
+        const v = String(p?.value ?? "").trim();
+        if (!n || !v) return false;
+        if (n.startsWith("_")) return false;
+        if (n.toLowerCase().includes("_apo")) return false;
+        return true;
+      })
+      .slice(0, 20)
+      .map(p => ({
+        name: shopifyInput(String(p.name).trim()).slice(0, 100),
+        value: shopifyInput(String(p.value).trim()).slice(0, 300),
+      }));
+
     return {
       sku: normSku,
       // Globally-unique Shopify variant id, captured at ingest. Authoritative
@@ -276,6 +298,7 @@ function buildOrder(payload: Record<string, unknown>) {
       door_style,
       color,
       ...(mods.subs.length > 0 ? { modifications: mods.subs } : {}),
+      ...(visibleProps.length > 0 ? { properties: visibleProps } : {}),
       ...(reviewReason ? { needs_review: true, review_reason: reviewReason } : {}),
     };
   });
