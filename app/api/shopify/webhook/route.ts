@@ -385,7 +385,11 @@ export async function POST(req: NextRequest) {
 
   // Whitelist topics — ignore anything else silently to avoid leaking which
   // topics we handle.
-  const ALLOWED_TOPICS = new Set(["orders/create", "orders/updated", "orders/cancelled", "orders/deleted", "products/update"]);
+  // Shopify delivers order deletion as "orders/delete" (singular). The
+  // original set only had "orders/deleted", so a deletion would have been
+  // dropped as an unhandled topic. Both are accepted rather than betting on
+  // which spelling Shopify uses.
+  const ALLOWED_TOPICS = new Set(["orders/create", "orders/updated", "orders/cancelled", "orders/delete", "orders/deleted", "products/update"]);
   if (!ALLOWED_TOPICS.has(topic)) {
     return NextResponse.json({ received: true, skipped: "unhandled_topic" });
   }
@@ -624,7 +628,7 @@ export async function POST(req: NextRequest) {
   }
 
   // ─── Order deleted ────────────────────────────────────────────────────────
-  if (topic === "orders/deleted") {
+  if (topic === "orders/delete" || topic === "orders/deleted") {
     const { data: existing } = await supabase
       .from("orders").select("id").eq("shopify_id", shopifyId).single();
 

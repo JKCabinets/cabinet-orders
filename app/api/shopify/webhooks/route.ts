@@ -19,8 +19,49 @@ import { requireAdmin } from "@/lib/auth";
 import { getShopifyToken, isValidShopifyDomain } from "@/lib/shopify";
 
 const API_VERSION = "2026-04";
-// Shopify GraphQL topics are UPPER_SNAKE: products/update -> PRODUCTS_UPDATE
-const TARGET_TOPIC = "PRODUCTS_UPDATE";
+
+/**
+ * Every topic the handler in app/api/shopify/webhook/route.ts accepts.
+ * Shopify GraphQL topics are UPPER_SNAKE: products/update -> PRODUCTS_UPDATE.
+ *
+ * ORDERS_DELETE delivers as "orders/delete" (singular). The handler accepts
+ * both spellings, so this is safe either way.
+ */
+const TOPICS = [
+  "ORDERS_CREATE",
+  "ORDERS_UPDATED",
+  "ORDERS_CANCELLED",
+  "ORDERS_DELETE",
+  "PRODUCTS_UPDATE",
+] as const;
+
+/**
+ * Where Shopify should deliver. Resolution order:
+ *
+ *   1. SHOPIFY_WEBHOOK_CALLBACK_URL -- explicit override
+ *   2. an existing subscription's URL -- never repoint what already works
+ *   3. NEXTAUTH_URL + the handler path
+ *
+ * Throws rather than inventing one. NEXTAUTH_URL is the www host, which
+ * matters: a non-www callback would redirect, and Shopify treats a redirect
+ * as a delivery failure.
+ */
+function resolveCallbackUrl(subs: SubNode[]): string {
+  const explicit = (process.env.SHOPIFY_WEBHOOK_CALLBACK_URL ?? "").trim();
+  if (explicit) return explicit;
+
+  const existing = subs.find(s => s.callbackUrl)?.callbackUrl;
+  if (existing) return existing;
+
+  const base = (process.env.NEXTAUTH_URL ?? "").trim().replace(/\/+$/, "");
+  if (!base) {
+    throw new Error(
+      "Cannot determine a callback URL: no existing subscription, and neither "
+      + "SHOPIFY_WEBHOOK_CALLBACK_URL nor NEXTAUTH_URL is set."
+    );
+  }
+  return `${base}/api/shopify/webhook`;
+}
 
 interface SubNode {
   id: string;
@@ -78,6 +119,13 @@ export async function GET() {
   }
 }
 
+/**
+ * Register every topic the handler accepts, at one callback URL.
+ *
+ * Idempotent per topic: a topic already subscribed at that URL is reported as
+ * alreadyExists and left alone. One topic failing does not abort the rest --
+ * a missing scope on one should not block the other four.
+ */
 export async function POST() {
   const auth = await requireAdmin();
   if (auth instanceof NextResponse) return auth;
@@ -86,49 +134,60 @@ export async function POST() {
   if (!isValidShopifyDomain(domain)) {
     return NextResponse.json({ error: "Invalid SHOPIFY_STORE_DOMAIN" }, { status: 500 });
   }
+
+  let token: string;
+  let subs: SubNode[];
+  let callbackUrl: string;
   try {
-    const token = await getShopifyToken();
-    const subs = await listSubscriptions(domain, token);
-
-    // Copy the callbackUrl from an existing ORDERS_* subscription so products/update
-    // delivers to the exact same endpoint (and verifies with the same secret).
-    const orderSub = subs.find(s => s.topic.startsWith("ORDERS_") && s.callbackUrl);
-    if (!orderSub || !orderSub.callbackUrl) {
-      return NextResponse.json(
-        { error: "No existing ORDERS_* HTTP subscription found to copy the callbackUrl from. Refusing to guess.", seen: subs },
-        { status: 409 }
-      );
-    }
-    const callbackUrl = orderSub.callbackUrl;
-
-    // Idempotent
-    const already = subs.find(s => s.topic === TARGET_TOPIC && s.callbackUrl === callbackUrl);
-    if (already) {
-      return NextResponse.json({ ok: true, alreadyExists: true, id: already.id, topic: TARGET_TOPIC, callbackUrl });
-    }
-
-    const mutation = `mutation {
-      webhookSubscriptionCreate(
-        topic: ${TARGET_TOPIC},
-        webhookSubscription: { callbackUrl: "${callbackUrl}", format: JSON }
-      ) {
-        webhookSubscription { id topic endpoint { __typename ... on WebhookHttpEndpoint { callbackUrl } } }
-        userErrors { field message }
-      }
-    }`;
-    const body = await graphql(domain, token, mutation);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result = (body as any)?.data?.webhookSubscriptionCreate;
-    const errs = result?.userErrors ?? [];
-    if (errs.length > 0) {
-      return NextResponse.json({ error: "Shopify userErrors", userErrors: errs }, { status: 502 });
-    }
-    const sub = result?.webhookSubscription;
-    return NextResponse.json({
-      ok: true,
-      created: { id: sub?.id, topic: sub?.topic, callbackUrl: sub?.endpoint?.callbackUrl },
-    });
+    token = await getShopifyToken();
+    subs = await listSubscriptions(domain, token);
+    callbackUrl = resolveCallbackUrl(subs);
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 502 });
   }
+
+  const created: Array<{ topic: string; id: string }> = [];
+  const alreadyExists: Array<{ topic: string; id: string }> = [];
+  const failed: Array<{ topic: string; error: string }> = [];
+
+  for (const topic of TOPICS) {
+    const already = subs.find(s => s.topic === topic && s.callbackUrl === callbackUrl);
+    if (already) {
+      alreadyExists.push({ topic, id: already.id });
+      continue;
+    }
+    try {
+      // `topic` is a GraphQL enum so it is unquoted, and comes only from the
+      // TOPICS constant above. callbackUrl is a string and is JSON-encoded.
+      const mutation = `mutation {
+        webhookSubscriptionCreate(
+          topic: ${topic},
+          webhookSubscription: { callbackUrl: ${JSON.stringify(callbackUrl)}, format: JSON }
+        ) {
+          webhookSubscription { id topic endpoint { __typename ... on WebhookHttpEndpoint { callbackUrl } } }
+          userErrors { field message }
+        }
+      }`;
+      const body = await graphql(domain, token, mutation);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result = (body as any)?.data?.webhookSubscriptionCreate;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const errs: any[] = result?.userErrors ?? [];
+      if (errs.length > 0) {
+        failed.push({ topic, error: errs.map(e => e?.message ?? String(e)).join("; ") });
+        continue;
+      }
+      created.push({ topic, id: String(result?.webhookSubscription?.id ?? "") });
+    } catch (err) {
+      failed.push({ topic, error: String(err) });
+    }
+  }
+
+  return NextResponse.json({
+    ok: failed.length === 0,
+    callbackUrl,
+    created,
+    alreadyExists,
+    failed,
+  }, { status: failed.length === 0 ? 200 : 207 });
 }
