@@ -11,6 +11,22 @@ import { lookupVendorsForSkus } from "@/lib/vendorLookup";
 
 const SHOPIFY_SECRET = process.env.SHOPIFY_WEBHOOK_SECRET ?? "";
 
+/**
+ * Log a webhook outcome so an order that fails to appear is diagnosable.
+ *
+ * This route previously logged nothing at all, which meant "Shopify never
+ * called us", "called and the insert was rejected" and "called with a bad
+ * HMAC" were indistinguishable from the box -- and the Shopify admin
+ * webhook page shows stale delivery data.
+ *
+ *   docker logs <container> | grep shopify-webhook
+ *
+ * METADATA ONLY. Never customer names, addresses or line detail.
+ */
+function logWebhook(outcome: string, extra?: Record<string, unknown>) {
+  console.warn("[shopify-webhook]", JSON.stringify({ outcome, ...extra }));
+}
+
 // Reject payloads larger than 5 MB — Shopify's largest legitimate order payloads
 // are well under 1 MB; anything larger is either malformed or an abuse attempt.
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
@@ -318,6 +334,9 @@ export async function POST(req: NextRequest) {
   const topic = req.headers.get("x-shopify-topic") ?? "";
 
   if (!verifyShopifyHmac(rawBody, hmacHeader)) {
+    // A rejected HMAC and a webhook that never arrived look identical
+    // without this line.
+    logWebhook("hmac_rejected", { topic, body_bytes: rawBody.length });
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -375,7 +394,10 @@ export async function POST(req: NextRequest) {
   if (topic === "orders/create") {
     const { data: existing } = await supabase
       .from("orders").select("id").eq("shopify_id", shopifyId).single();
-    if (existing) return NextResponse.json({ received: true, skipped: "duplicate" });
+    if (existing) {
+      logWebhook("duplicate", { shopify_id: shopifyId, existing_id: existing.id });
+      return NextResponse.json({ received: true, skipped: "duplicate" });
+    }
 
     // Warm the mapping cache before decoding. Degrade, never crash: a failed
     // load leaves skuMapsUnavailable() true and every line is flagged
@@ -394,28 +416,40 @@ export async function POST(req: NextRequest) {
     // ALL lines. lookupVendorsForSkus batches its queries, so resolving the
     // whole order is the same number of round-trips as resolving one line.
     let vendorName = "";
-    let orderType: "order" | "sample" = "order";
     const resolvableItems = skuItems.filter(i => i.sku);
     if (resolvableItems.length > 0) {
-      const { vendorBySku, uniqueVendors, hasUnassigned } =
-        await lookupVendorsForSkus(resolvableItems);
+      const { vendorBySku } = await lookupVendorsForSkus(resolvableItems);
       vendorName = vendorBySku.get(resolvableItems[0].sku) ?? "";
+    }
 
-      // A SAMPLE is an order whose every line ships from JK's own stock.
-      // A mixed order is a STANDARD order: if samples ever arrive alongside
-      // cabinetry, the cabinetry drives the pipeline.
-      //
-      // hasUnassigned is the fail-safe. A line the resolver could not
-      // identify must never be assumed to be JK stock -- unknown means
-      // standard, so a resolution failure yields a normal order with the
-      // full pipeline rather than a sample that skips the ack gate.
-      if (
-        !hasUnassigned
-        && uniqueVendors.length === 1
-        && isSampleVendor(uniqueVendors[0])
-      ) {
-        orderType = "sample";
-      }
+    // ── Sample classification ────────────────────────────────────────────
+    // Read line_items[].vendor from the PAYLOAD, not the SKU resolver.
+    //
+    // The resolver is keyed entirely on the SKU, and JK's sample products
+    // carry an empty sku in shopify_products -- so routing classification
+    // through it produced an empty item list and silently classified every
+    // sample as a standard order.
+    //
+    // The payload always carries the vendor per line, and this is the same
+    // field the storefront Liquid reads for its "What happens next" block, so
+    // the two systems cannot disagree about what a sample order is.
+    const payloadLines = (payload.line_items as Array<Record<string, unknown>>) ?? [];
+    const lineVendors = payloadLines.map(l => String(l.vendor ?? "").trim());
+
+    // Every line must be JK stock. A mixed order is STANDARD: if samples ever
+    // arrive alongside cabinetry, the cabinetry drives the pipeline. A line
+    // with no vendor is unknown, and unknown is never assumed to be JK -- so
+    // the order keeps the full pipeline and the ack gate.
+    const orderType: "order" | "sample" =
+      lineVendors.length > 0 && lineVendors.every(v => v !== "" && isSampleVendor(v))
+        ? "sample"
+        : "order";
+
+    // Fall back to the payload for the order-level vendor stamp when the
+    // resolver found nothing -- an unsynced or SKU-less product, exactly the
+    // case above, would otherwise leave this blank.
+    if (!vendorName && lineVendors.length > 0) {
+      vendorName = lineVendors[0];
     }
 
     const { error } = await supabase.from("orders").insert({
@@ -451,7 +485,21 @@ export async function POST(req: NextRequest) {
       payment_status: payload.financial_status ?? null,
     });
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) {
+      // The type CHECK constraint rejected samples and custom orders for
+      // three weeks without a single log line. Never again.
+      logWebhook("insert_failed", {
+        order_id: orderId, shopify_id: shopifyId,
+        order_type: orderType, reason: error.message,
+      });
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    logWebhook("ingested", {
+      order_id: orderId, shopify_id: shopifyId,
+      order_type: orderType, lines: lineVendors.length,
+      vendors: Array.from(new Set(lineVendors)),
+    });
 
     await supabase.from("order_activity").insert({
       order_id: orderId,
