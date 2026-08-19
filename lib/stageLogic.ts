@@ -68,6 +68,23 @@ const FLOW_BY_TYPE: Record<string, StageFlow> = {
  * An unrecognised type falls through to the legacy path rather than
  * throwing, so a corrupted `type` column degrades instead of 500ing.
  */
+/**
+ * Is `stage` part of `type`'s OWN flow?
+ *
+ * ALLOWED_STAGES is the union of every flow, so it happily accepts
+ * "Parts ordered" on a custom order -- which strands the row where
+ * stageIndex returns -1 and no stage tab matches it. That is not
+ * hypothetical: it happened to QUO-1787174567522 on 2026-08-19.
+ *
+ * An UNKNOWN type falls back to the union rather than rejecting, so a row
+ * with a corrupted `type` column stays editable instead of becoming stuck.
+ */
+export function isStageAllowedForType(stage: string, type?: string | null): boolean {
+  const flow = type ? STAGE_ORDER_BY_TYPE[type] : undefined;
+  if (!flow) return ALLOWED_STAGES.has(stage);
+  return flow.includes(stage);
+}
+
 export function stageIndex(stage: string, type?: string): { idx: number; flow: StageFlow } {
   if (type) {
     const arr = STAGE_ORDER_BY_TYPE[type];

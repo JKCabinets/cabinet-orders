@@ -75,7 +75,12 @@ export function CustomClient() {
   // the action column stays inert -- the same technique WarrantyClient uses
   // with "New claim". Stage moves go through the modal, which offers the
   // correct per-type list. Phase 2c makes this column type-aware.
-  const tableStage = "In review";
+  // Was hardcoded to "In review" as a placeholder believed inert. It was
+  // not -- it matched the WARRANTY branch and moved a custom order to
+  // "Parts ordered". OrderTable now guards on the row's own flow, so the
+  // real stage is safe to pass; on the All tab no single stage describes
+  // the rows, so nothing is offered.
+  const tableStage = activeStage === "__all__" ? "__none__" : activeStage;
 
   return (
     <>

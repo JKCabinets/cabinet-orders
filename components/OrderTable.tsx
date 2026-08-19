@@ -2,7 +2,8 @@
 
 import { useState, useMemo } from "react";
 import clsx from "clsx";
-import { Order, Stage, AVATAR_COLOR_STYLES, getBackorderStatus } from "@/lib/data";
+import { Order, Stage, AVATAR_COLOR_STYLES, getBackorderStatus, nextStageFor } from "@/lib/data";
+import { STAGE_ORDER_BY_TYPE, ORDER_STAGE_ORDER } from "@/lib/stageLogic";
 import { useStore } from "@/lib/store";
 import { useSession } from "next-auth/react";
 import { formatDateWithYear, parseOrderDate } from "@/lib/dateUtils";
@@ -658,6 +659,63 @@ function StatusLabel({ order, stage }: { order: Order; stage: string }) {
   return <span className="text-[10px] text-cream/55">{stage}</span>;
 }
 
+/**
+ * The action column for a custom order in the part of its flow that diverges
+ * from the standard one.
+ *
+ * The next stage comes from nextStageFor, which reads the row's own flow, so
+ * this can never offer a move outside it -- which is exactly how a custom
+ * order ended up in the warranty pipeline.
+ */
+function CustomFlowActions({ order, mobile = false }: { order: Order; mobile?: boolean }) {
+  const { currentUserId, claimOrder, moveStage, busy, withBusy } = useRowActions(order);
+  const next = nextStageFor(order);
+  const claimedBy = order.claimed_by ?? null;
+  const isClaimedByMe = !!currentUserId && claimedBy === currentUserId;
+  const isClaimedByOther = !!claimedBy && !isClaimedByMe;
+
+  // Claiming works the same on every flow: it stops two people entering the
+  // same order, which has nothing to do with which stages exist.
+  if (isClaimedByOther) {
+    return <span className="text-[10px] text-cream/30 italic">—</span>;
+  }
+  if (!claimedBy) {
+    return (
+      <button
+        onClick={() => withBusy(() => claimOrder(order.id, currentUserId))}
+        disabled={busy || !currentUserId}
+        className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30 disabled:opacity-40"
+      >
+        {busy ? "..." : "Claim"}
+      </button>
+    );
+  }
+  if (!next) {
+    return <span className="text-[10px] text-cream/30 italic">—</span>;
+  }
+  return (
+    <div className="flex items-center gap-1.5">
+      <button
+        onClick={() => withBusy(() => moveStage(order.id, next as Stage, currentUserId ?? undefined))}
+        disabled={busy}
+        title={`Move to ${next}`}
+        className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30"
+      >
+        {busy ? "..." : (mobile ? next : `${next} →`)}
+      </button>
+      <button
+        onClick={() => withBusy(() => claimOrder(order.id, null))}
+        disabled={busy}
+        title="Release claim"
+        aria-label="Release claim"
+        className="w-6 h-6 flex items-center justify-center rounded-full text-cream/55 hover:text-cream hover:bg-white/10 transition-all"
+      >
+        <X className="w-3 h-3" />
+      </button>
+    </div>
+  );
+}
+
 function UpdateStatusActions({
   order, stage, mobile = false, onOpenModal,
 }: {
@@ -665,6 +723,29 @@ function UpdateStatusActions({
   onOpenModal?: (o: Order, reason?: "needs-attachment") => void;
 }) {
   const { currentUserId, claimOrder, moveStage, archiveOrder, busy, withBusy } = useRowActions(order);
+
+  // ── Flow guard ──────────────────────────────────────────────────────
+  // `stage` describes the TABLE, not this row. Branching on it blindly
+  // broke twice:
+  //
+  //   · an "All" tab passes one stage while the rows are in many
+  //   · "In review" exists in BOTH the warranty and custom flows, so a
+  //     custom order was offered the warranty action and moved to
+  //     "Parts ordered" -- a stage its flow does not contain
+  //
+  // Only branch when the prop genuinely describes this row.
+  const rowFlow = STAGE_ORDER_BY_TYPE[order.type] ?? ORDER_STAGE_ORDER;
+  if (order.stage !== stage || !rowFlow.includes(stage)) return null;
+
+  // Custom orders share the TAIL of the standard flow (In production ->
+  // At cross dock -> Delivered) and those branches below are correct for
+  // them. The first three stages are not: New advances to "In review" not
+  // "Entered", "In review" advances to "Ordered" not "Parts ordered", and
+  // "Ordered" has no branch at all.
+  if (order.type === "custom"
+      && (stage === "New" || stage === "In review" || stage === "Ordered")) {
+    return <CustomFlowActions order={order} mobile={mobile} />;
+  }
 
   async function markEntered() {
     const result = await (async () => {
@@ -818,7 +899,7 @@ function UpdateStatusActions({
   // ── Warranty stages ────────────────────────────────────────────────
   // Warranty has its own pipeline: New claim → In review → Parts ordered
   // → Shipped → Resolved. No production/delivery date gates apply.
-  if (stage === "New claim") {
+  if (stage === "New claim" && order.type === "warranty") {
     const claimedBy = order.claimed_by ?? null;
     const isClaimedByMe = !!currentUserId && claimedBy === currentUserId;
     const isClaimedByOther = !!claimedBy && !isClaimedByMe;
@@ -857,7 +938,7 @@ function UpdateStatusActions({
       </button>
     );
   }
-  if (stage === "In review") {
+  if (stage === "In review" && order.type === "warranty") {
     return (
       <button
         onClick={() => withBusy(() => moveStage(order.id, "Parts ordered" as Stage))}
@@ -868,7 +949,7 @@ function UpdateStatusActions({
       </button>
     );
   }
-  if (stage === "Parts ordered") {
+  if (stage === "Parts ordered" && order.type === "warranty") {
     return (
       <button
         onClick={() => withBusy(() => moveStage(order.id, "Shipped" as Stage))}
@@ -879,7 +960,7 @@ function UpdateStatusActions({
       </button>
     );
   }
-  if (stage === "Shipped") {
+  if (stage === "Shipped" && order.type === "warranty") {
     return (
       <button
         onClick={() => withBusy(() => moveStage(order.id, "Resolved" as Stage))}
@@ -890,7 +971,7 @@ function UpdateStatusActions({
       </button>
     );
   }
-  if (stage === "Resolved") {
+  if (stage === "Resolved" && order.type === "warranty") {
     return (
       <button
         onClick={() => withBusy(() => archiveOrder(order.id))}

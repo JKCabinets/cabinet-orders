@@ -16,6 +16,11 @@ export {
   ORDER_STAGE_ORDER,
   WARRANTY_STAGE_ORDER,
   ALLOWED_STAGES,
+  // Per-type stage validation. ALLOWED_STAGES is the union of every flow,
+  // so route handlers that only check it will accept a warranty stage on a
+  // custom order. These two are what a route needs to reject that.
+  STAGE_ORDER_BY_TYPE,
+  isStageAllowedForType,
   stageIndex,
   isBackwardsMove,
   fieldsToClearOnBackwardMove,

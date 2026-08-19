@@ -70,7 +70,10 @@ export function SamplesClient() {
   // already correct for them: the New branch offers claim + Mark Entered,
   // and the server exempts samples from the attachment gate (1c). No
   // suppression needed here, unlike CustomClient.
-  const tableStage = activeStage === "__all__" ? "New" : activeStage;
+  // The All tab used to claim every row was in New, so rows in other
+  // stages were offered New-stage actions. No single stage describes a
+  // mixed list.
+  const tableStage = activeStage === "__all__" ? "__none__" : activeStage;
 
   return (
     <>
