@@ -329,7 +329,14 @@ export async function POST(req: NextRequest) {
 
   const { error } = await supabase.from("orders").insert({
     id: orderId,
-    type: "order",
+    // A quote request IS a custom order at stage New -- the same thing a
+    // staff member creates by hand on /custom, arriving through a different
+    // door. It lands in Alternate Orders -> Custom Orders rather than the
+    // standard New queue.
+    //
+    // Custom orders do NOT sync to Shopify, which is correct here: this
+    // order has no Shopify counterpart to sync to.
+    type: "custom",
     name,
     source: "Manual",
     detail: "Custom quote request",
