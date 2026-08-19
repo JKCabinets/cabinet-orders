@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, cleanInput, rateLimitOr429 } from "@/lib/auth";
+import { SNIFF_BYTES, sniffMagicBytes, safeContentType } from "@/lib/fileValidation";
 import { supabase } from "@/lib/supabase";
 
 // Hard caps on attachment uploads. These match the quote-form webhook so the
@@ -127,6 +128,14 @@ export async function POST(req: NextRequest) {
   const safeName = sanitizeFileName(file.name);
   const filePath = `${orderId}/${Date.now()}-${safeName}`;
   const arrayBuffer = await file.arrayBuffer();
+
+  // Staff uploads legitimately include spreadsheets and documents, so the
+  // type is NOT restricted here. But the browser's claim is never stored
+  // directly: a dangerous filename or claim, or bytes we cannot identify,
+  // become application/octet-stream -- which a browser downloads rather
+  // than renders. That closes the stored-XSS path without blocking .xlsx.
+  const sniffed = sniffMagicBytes(new Uint8Array(arrayBuffer.slice(0, SNIFF_BYTES)));
+  const storedType = safeContentType(sniffed, file.name, file.type || "");
 
   const { error: uploadError } = await supabase.storage
     .from("order-attachments")

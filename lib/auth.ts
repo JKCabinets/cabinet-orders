@@ -98,6 +98,16 @@ export async function requireSelfOrAdmin(
  *
  * Returns "" for non-string input so callers don't have to null-guard.
  */
+/**
+ * Coerce to a trimmed string. Returns "" for anything that is not a string.
+ *
+ * ⚠ THIS DOES NOT SANITISE. It trims whitespace and nothing else. The name
+ * is misleading and several call sites have carried comments claiming that
+ * calling it makes a value safe for HTML output. It does not.
+ *
+ * For HTML output use escapeHtml() below, at the point of templating.
+ * Values rendered by React need neither -- React escapes its own children.
+ */
 export function cleanInput(input: unknown): string {
   if (typeof input !== "string") return "";
   return input.trim();

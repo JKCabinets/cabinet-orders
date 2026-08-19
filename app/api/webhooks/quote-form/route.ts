@@ -2,12 +2,40 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { supabase } from "@/lib/supabase";
 import { cleanInput, checkRateLimit } from "@/lib/auth";
+import {
+  SNIFF_BYTES, sniffMagicBytes, safeContentType,
+  PUBLIC_UPLOAD_TYPES, PUBLIC_UPLOAD_LABEL,
+} from "@/lib/fileValidation";
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
+/**
+ * Origins allowed to call this endpoint from a browser.
+ *
+ * Was "*", which let any site post to it. A PLAIN form POST sends no Origin
+ * header and is unaffected by CORS either way, so requests without an
+ * Origin are still served -- this only constrains scripted cross-site calls.
+ *
+ * Override with QUOTE_ALLOWED_ORIGINS (comma-separated) if the storefront
+ * ever moves. The default covers both www and apex.
+ */
+const ALLOWED_ORIGINS = (process.env.QUOTE_ALLOWED_ORIGINS
+  ?? "https://jkcabinets2you.com,https://www.jkcabinets2you.com")
+  .split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
+
+function corsFor(req: NextRequest): Record<string, string> {
+  const base = {
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Vary": "Origin",
+  };
+  const origin = (req.headers.get("origin") ?? "").toLowerCase();
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    return { ...base, "Access-Control-Allow-Origin": origin };
+  }
+  // No Origin (plain form post, server-to-server) or a disallowed one:
+  // send no ACAO header. The request still runs; a browser XHR from an
+  // unlisted origin simply cannot read the response.
+  return base;
+}
 
 const STORAGE_BUCKET = "order-attachments";
 const MAX_FILE_BYTES = 20 * 1024 * 1024; // 20 MB per file
@@ -24,8 +52,8 @@ const LEGACY_URL_HOST_ALLOWLIST = (process.env.QUOTE_LEGACY_URL_HOSTS ?? "")
   .map(s => s.trim().toLowerCase())
   .filter(Boolean);
 
-export async function OPTIONS() {
-  return new NextResponse(null, { status: 204, headers: CORS });
+export async function OPTIONS(req: NextRequest) {
+  return new NextResponse(null, { status: 204, headers: corsFor(req) });
 }
 
 function extractField(text: string, ...fieldNames: string[]): string {
@@ -75,6 +103,9 @@ function isAllowedLegacyUrl(url: string): boolean {
 }
 
 export async function POST(req: NextRequest) {
+  // Per-request, because the allowed origin is echoed back.
+  const CORS = corsFor(req);
+
   // ── Rate limit by IP (this is a public, unauthenticated endpoint) ─────────
   const allowed = await checkRateLimit(req, 10, 60_000, "quote-form");
   if (!allowed) {
@@ -159,6 +190,26 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // A human cannot fill this form in under two seconds. Same treatment
+  // as the honeypot: fake success, no database write, so the bot does
+  // not retry with a slower script.
+  //
+  // FRICTION, NOT A CONTROL. elapsed_ms is client-supplied and trivially
+  // forged -- it raises the cost of a naive bot and nothing more. It is
+  // a no-op until the form starts sending the field, which is
+  // deliberate: absent means skip, so this can land before the
+  // storefront changes.
+  const elapsedRaw = body.elapsed_ms;
+  if (elapsedRaw !== undefined && elapsedRaw !== null) {
+    const elapsed = Number(elapsedRaw);
+    if (Number.isFinite(elapsed) && elapsed >= 0 && elapsed < 2000) {
+      return NextResponse.json(
+        { ok: true, order_id: `QUO-${Date.now()}` },
+        { status: 201, headers: CORS },
+      );
+    }
+  }
+
   // ── Optional shared-secret check (constant-time) ──────────────────────────
   const secret = process.env.QUOTE_WEBHOOK_SECRET;
   if (secret) {
@@ -175,7 +226,13 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Belt-and-braces per-file checks
+  // Belt-and-braces per-file checks, plus type validation.
+  //
+  // The type is taken from the file's OWN BYTES, never from file.type --
+  // that is the browser's claim, and this endpoint is anonymous. An SVG or
+  // HTML file with an embedded script, uploaded with a chosen MIME, would
+  // otherwise execute when a staff member opened it via a signed URL.
+  const sniffedTypes = new Map<File, string>();
   for (const file of incomingFiles) {
     if (file.size > MAX_FILE_BYTES) {
       return NextResponse.json(
@@ -183,6 +240,18 @@ export async function POST(req: NextRequest) {
         { status: 413, headers: CORS },
       );
     }
+    const head = new Uint8Array(await file.slice(0, SNIFF_BYTES).arrayBuffer());
+    const mime = sniffMagicBytes(head);
+    if (!mime || !PUBLIC_UPLOAD_TYPES.has(mime)) {
+      return NextResponse.json(
+        {
+          error: `"${cleanInput(file.name)}" is not an accepted file type.`
+            + ` Please attach ${PUBLIC_UPLOAD_LABEL}.`,
+        },
+        { status: 415, headers: CORS },
+      );
+    }
+    sniffedTypes.set(file, mime);
   }
 
   const rawBody = body.notes || body.html || body.text || "";
@@ -204,7 +273,9 @@ export async function POST(req: NextRequest) {
   const extractedColor   = extractField(plainText, "Color", "Select Your Color", "Colour");
   const extractedDetails = extractField(plainText, "More Details", "Details", "Additional Details", "Notes");
 
-  // All inbound fields are sanitized — this data ends up in HTML exports later.
+  // Trimmed and length-capped. NOT escaped: cleanInput only trims. Anything
+  // templating these into HTML (the PDF export) must call escapeHtml at the
+  // point of output -- see the note on cleanInput in lib/auth.ts.
   const name    = cleanInput((body.name    || extractedName    || "Quote Request").slice(0, MAX_FIELD_LEN));
   const email   = cleanInput((body.email   || extractedEmail   || "").slice(0, MAX_FIELD_LEN));
   const phone   = cleanInput((body.phone   || extractedPhone   || "").slice(0, MAX_FIELD_LEN));
@@ -295,10 +366,14 @@ export async function POST(req: NextRequest) {
     const filePath = `${orderId}/${Date.now()}-${safeName}`;
     const arrayBuffer = await file.arrayBuffer();
 
+    // The sniffed type, never file.type. Validated above, so it is always
+    // present here.
+    const storedType = sniffedTypes.get(file) ?? "application/octet-stream";
+
     const { error: uploadError } = await supabase.storage
       .from(STORAGE_BUCKET)
       .upload(filePath, arrayBuffer, {
-        contentType: file.type || "application/octet-stream",
+        contentType: storedType,
         upsert: false,
       });
 
@@ -316,7 +391,7 @@ export async function POST(req: NextRequest) {
       file_name: cleanInput(file.name),
       file_path: filePath,
       file_size: file.size,
-      file_type: file.type || "application/octet-stream",
+      file_type: storedType,
       uploaded_by: "Customer (form submission)",
     });
 
