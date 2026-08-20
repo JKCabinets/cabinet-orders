@@ -208,7 +208,6 @@ export function SLAClient() {
   const allOrdersRef = useRef<HTMLDivElement>(null);
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState<string>("all");
-  const [filterStage, setFilterStage] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
 
   /** Apply a filter and scroll to the table, so "view all" stays on-page. */
@@ -224,7 +223,6 @@ export function SLAClient() {
     return allActive
       .filter(o => {
         if (filterType !== "all" && o.type !== filterType) return false;
-        if (filterStage !== "all" && o.stage !== filterStage) return false;
         if (filterStatus !== "all") {
           const past = slaTier(o, now) !== "ok";
           if (filterStatus === "past" && !past) return false;
@@ -249,14 +247,7 @@ export function SLAClient() {
         };
       })
       .sort((a, b) => (b.hours ?? -1) - (a.hours ?? -1));
-  }, [allActive, search, filterType, filterStage, filterStatus]);
-
-  /** Every stage across every flow, for the stage filter. */
-  const allStages = useMemo(() => {
-    const set = new Set<string>();
-    for (const c of categories) for (const s of STAGE_LIST_BY_TYPE[c.key] ?? []) set.add(s);
-    return Array.from(set);
-  }, [categories]);
+  }, [allActive, search, filterType, filterStatus]);
 
   // ─── Hydration ───────────────────────────────────────────────────
   // The store is populated CLIENT-side, so the server renders an empty
@@ -427,8 +418,6 @@ export function SLAClient() {
               </div>
               <FilterSelect value={filterType} onChange={setFilterType}
                 options={[{ v: "all", l: "All types" }, ...categories.map(c => ({ v: c.key, l: c.label }))]} />
-              <FilterSelect value={filterStage} onChange={setFilterStage}
-                options={[{ v: "all", l: "All stages" }, ...allStages.map(s => ({ v: s, l: s }))]} />
               <FilterSelect value={filterStatus} onChange={setFilterStatus}
                 options={[
                   { v: "all", l: "All status" },
