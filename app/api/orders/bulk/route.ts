@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { syncStageToShopify } from "@/lib/shopifyStageSync";
 import {
   ALLOWED_STAGES,
+  isStageAllowedForType,
   stageIndex,
   timingSafeStringEqual,
   ADMIN_PIN,
@@ -154,6 +155,24 @@ export async function POST(req: NextRequest) {
       // Skip no-op moves
       if (order.stage === targetStage) {
         results.push({ id, ok: true, shopify_synced: false });
+        continue;
+      }
+
+      // ── GATE: the target must belong to THIS row's flow ────────────
+      // The upfront ALLOWED_STAGES check is the UNION of every flow and
+      // runs before the rows are loaded, so it cannot know any row's type
+      // -- and a batch can mix types, so no single upfront check could.
+      //
+      // Without this a bulk move strands rows outside their own flow,
+      // exactly as the single PATCH did to QUO-1787174567522, but fifty at
+      // a time. Per-row failure like the attachment gate below: report it,
+      // carry on with the rest.
+      const rowType = (order.type as string) ?? "order";
+      if (!isStageAllowedForType(targetStage, rowType)) {
+        results.push({
+          id, ok: false,
+          error: `stage_not_in_flow: "${targetStage}" is not a stage in the ${rowType} flow`,
+        });
         continue;
       }
 
@@ -347,6 +366,14 @@ export async function GET(req: NextRequest) {
 
     // Same per-row resolution as the POST path above.
     const rowType = (order.type as string) ?? "order";
+
+    // Report an out-of-flow target BEFORE anything is written, so the
+    // confirm dialog shows it rather than the batch half-failing.
+    if (!isStageAllowedForType(targetStage, rowType)) {
+      checks.push({ id, will_pass: false, reason: "stage_not_in_flow" });
+      continue;
+    }
+
     const currentInfo = stageIndex(order.stage, rowType);
     const targetInfo = stageIndex(targetStage, rowType);
     if (currentInfo.idx >= 0 && targetInfo.idx >= 0 && targetInfo.idx < currentInfo.idx) {
