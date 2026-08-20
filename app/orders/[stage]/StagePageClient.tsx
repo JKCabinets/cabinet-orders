@@ -140,7 +140,7 @@ export function StagePageClient({ stage }: Props) {
             data-lpignore="true"
             data-form-type="other"
             name="stage-search-no-autofill"
-            className="w-full pl-9 pr-4 py-2 rounded-full text-[13px] bg-white/6 border border-cream/15 text-cream placeholder:text-cream/40 focus:border-terracotta/55 transition-colors"
+            className="field-glass w-full pl-9 pr-4 py-2 rounded-full text-[13px] transition-colors"
             style={{ fontSize: "16px" }}
           />
         </div>

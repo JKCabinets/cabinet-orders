@@ -248,10 +248,10 @@ export default function ShopifySyncPage() {
             <input value={search} onChange={e => setSearch(e.target.value)}
               onKeyDown={e => e.key === "Enter" && fetchProducts()}
               placeholder="Search by SKU or product name..."
-              className="w-full pl-9 pr-4 py-2.5 bg-[#181818] border border-[#2e2e2e] rounded-xl text-sm text-[#e8e2d4] placeholder:text-[#5a5650] focus:border-[#5a5650] focus:outline-none transition-colors" />
+              className="field-glass w-full pl-9 pr-4 py-2.5 rounded-xl text-sm focus:outline-none transition-colors" />
           </div>
           <select value={selectedVendor} onChange={e => { setSelectedVendor(e.target.value); setTimeout(fetchProducts, 0); }}
-            className="px-3 py-2.5 bg-[#181818] border border-[#2e2e2e] rounded-xl text-sm text-[#9e9888] focus:border-[#5a5650] focus:outline-none appearance-none min-w-[160px]">
+            className="field-glass px-3 py-2.5 rounded-xl text-sm focus:outline-none appearance-none min-w-[160px]">
             <option value="">All vendors</option>
             {allVendors.map(v => <option key={v} value={v === "No vendor" ? "" : v}>{v}</option>)}
           </select>

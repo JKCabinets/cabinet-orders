@@ -338,7 +338,7 @@ export default function MappingsPage() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search a value or code…"
-              className="w-full pl-9 pr-3 py-2 rounded-lg bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.10)] text-xs text-[#e8e3da] placeholder:text-cream/30 focus:outline-none focus:border-[rgba(86,100,72,0.55)]"
+              className="field-glass w-full pl-9 pr-3 py-2 rounded-lg text-xs focus:outline-none"
             />
           </div>
           <button

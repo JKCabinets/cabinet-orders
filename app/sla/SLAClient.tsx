@@ -381,7 +381,7 @@ export function SLAClient() {
               <select
                 value={breakdownType}
                 onChange={(e) => setBreakdownType(e.target.value as OrderType)}
-                className="px-2.5 py-1 rounded-full text-[11px] bg-white/5 border border-cream/15 text-cream/85"
+                className="field-glass px-2.5 py-1 rounded-full text-[11px]"
                 style={{ fontSize: "16px" }}
               >
                 {categories.map(c => (
