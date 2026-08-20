@@ -9,49 +9,24 @@
 import type { OrderStage, Order, OrderType } from "@/lib/data";
 import { parseOrderDate } from "@/lib/dateUtils";
 
-export const SLA_TARGETS: Record<OrderStage, number> = {
-  "New":            3,
-  "Entered":        2,
-  "In production":  14,
-  "At cross dock":  5,
-  "Delivered":      Infinity, // no SLA on Delivered
-};
-
-/**
- * How many days has the order been in its current stage?
- *
- * Prefers `stage_entered_at` (schema v9) for accurate per-stage age.
- * Falls back to `order.date` (the original creation date) for legacy
- * rows where the column is missing — in that case the value is total
- * order age, not stage age. Returns null only if both signals are
- * unavailable.
- */
-export function daysInStage(order: Order, now: number = Date.now()): number | null {
-  if (order.stage_entered_at) {
-    const t = new Date(order.stage_entered_at).getTime();
-    if (isFinite(t)) return Math.floor((now - t) / (1000 * 60 * 60 * 24));
-  }
-  const t = parseOrderDate(order.date);
-  if (t === null) return null;
-  return Math.floor((now - t) / (1000 * 60 * 60 * 24));
-}
-
-/** Is this order past its SLA target for its current stage? */
-export function isOverdue(order: Order, now: number = Date.now()): boolean {
-  const target = SLA_TARGETS[order.stage as OrderStage];
-  if (!isFinite(target)) return false;
-  const days = daysInStage(order, now);
-  if (days === null) return false;
-  return days > target;
-}
-
 /* ═══════════════════════════════════════════════════════════════════════
-   RULE-BASED SLA (step 1 of 2)
+   RULE-BASED SLA — the only model
    ═══════════════════════════════════════════════════════════════════════
 
-   Everything above this line is the OLD day-per-stage model, still in use by
-   SLAClient and the teams-digest cron. Step 2 migrates them here and deletes
-   it. Do not add new callers to SLA_TARGETS / isOverdue.
+   A day-per-stage table (SLA_TARGETS / daysInStage / isOverdue) lived above
+   this line until 2026-08-20. It is gone: SLAClient, the dashboard and the
+   teams-digest cron have all been migrated.
+
+   It was not merely superseded, it DISAGREED. Its New target was 3 days, so
+   an order unentered for 71 hours read as on track while the rules below call
+   it hard-overdue at 48. Two definitions of one thing in one file is how the
+   tag overwrite, the seven stage-colour maps and the stale realtime shaper all
+   happened, so it is deleted rather than deprecated.
+
+   daysInStage also fell back to parsing the `date` DISPLAY string when
+   stage_entered_at was absent -- returning total order age under a name that
+   promised stage age. hoursInStage below returns null instead, so the same
+   mistake is not available.
 */
 
 /** Two-tier severity. `soft` = warn, `hard` = act. */
