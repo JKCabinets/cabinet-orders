@@ -353,6 +353,16 @@ export function shapeOrder(raw: Record<string, unknown>): Order {
     production_start_date: (raw.production_start_date as string | null) ?? null,
     production_est_finish_date: (raw.production_est_finish_date as string | null) ?? null,
     scheduled_delivery_date: (raw.scheduled_delivery_date as string | null) ?? null,
+    // The other three delivery fields Order declares. Unmapped until
+    // 2026-08-20, so they were undefined on every row on every load path.
+    //
+    // delivery_date matters most: the At-cross-dock SLA rule tests
+    // `!o.delivery_date && !o.scheduled_delivery_date`, and with the first
+    // permanently undefined an order that HAS a delivery date would keep
+    // its clock running and flag overdue.
+    delivery_date: (raw.delivery_date as string | null) ?? null,
+    delivery_window: (raw.delivery_window as string) ?? "",
+    delivery_notes: (raw.delivery_notes as string) ?? "",
   };
 }
 
