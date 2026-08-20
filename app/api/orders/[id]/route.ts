@@ -3,7 +3,7 @@ import { requireAuth, cleanInput, rateLimitOr429 } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import { getShopifyToken } from "@/lib/shopify";
 import { mergeTags } from "@/lib/shopifyStageSync";
-import { ALLOWED_STAGES, isBackwardsMove, verifyAdminPin, fieldsToClearOnBackwardMove, describeFieldsCleared } from "@/lib/stageGuards";
+import { ALLOWED_STAGES, isStageAllowedForType, isBackwardsMove, verifyAdminPin, fieldsToClearOnBackwardMove, describeFieldsCleared } from "@/lib/stageGuards";
 import { orderAllVendorsGreen } from "@/lib/acknowledgments";
 
 /** Push order updates back to Shopify */
@@ -174,6 +174,23 @@ export async function PATCH(
     if (typeof body.stage !== "string" || !ALLOWED_STAGES.has(body.stage)) {
       return NextResponse.json(
         { error: "Invalid stage value" },
+        { status: 422 },
+      );
+    }
+    // ALLOWED_STAGES is the UNION of every flow, so the check above accepts
+    // a warranty stage on a custom order. Not hypothetical: on 2026-08-19
+    // QUO-1787174567522 was moved to "Parts ordered" and stranded there --
+    // no stage tab matched it and stageIndex returned -1.
+    //
+    // currentType comes from the DATABASE row, never from the body. A
+    // client that could name its own type could name one whose flow
+    // contains the stage it wanted.
+    if (!isStageAllowedForType(body.stage, currentType)) {
+      return NextResponse.json(
+        {
+          error: "stage_not_in_flow",
+          message: `"${body.stage}" is not a stage in the ${currentType} flow`,
+        },
         { status: 422 },
       );
     }
