@@ -9,6 +9,7 @@ import { parseOrderDate } from "@/lib/dateUtils";
 import {
   slaTier, slaRuleFor, hoursInStage, slaAgeHours, formatStageAge, type SlaTier,
 } from "@/lib/sla";
+import { SlaHealthByType, type SlaTypeRow } from "@/components/SlaHealthByType";
 import { PageHeader } from "@/components/AppShell";
 import { OrderModal } from "@/components/OrderModal";
 import { NewOrderModal } from "@/components/NewOrderModal";
@@ -47,7 +48,7 @@ export function DashboardClient() {
   // ── SLA per order type ──────────────────────────────────────────────
   // One row per category, not per stage: four stages x four types is
   // sixteen cells, which is not a glance. /sla carries the stage detail.
-  const slaCategories = useMemo(() => {
+  const slaCategories: SlaTypeRow[] = useMemo(() => {
     const groups: { key: string; label: string; rows: Order[] }[] = [
       { key: "order",    label: "Standard", rows: orders },
       { key: "custom",   label: "Custom",   rows: customs },
@@ -57,29 +58,32 @@ export function DashboardClient() {
     const now = Date.now();
     return groups.map(g => {
       const rows = g.rows.filter(o => !o.archived);
-      let soft = 0;
-      let hard = 0;
-      // The oldest row that has a clock running at all -- the one worth
-      // clicking through for. Rows in a stage with no rule, or whose clock
-      // has stopped because the awaited dates exist, are skipped.
+      // Identical to the computation on /sla, because both feed the same
+      // component. Only rows whose clock is RUNNING are counted: a stage with
+      // no rule, or one whose clockRuns has stopped because the awaited dates
+      // exist, is neither on track nor overdue -- it simply is not measured.
+      let onTrack = 0, overSoft = 0, overHard = 0;
       let oldestHours: number | null = null;
-      let oldestStage = "";
+      let oldestFrom: "created" | "stage" = "stage";
       for (const o of rows) {
-        const tier: SlaTier = slaTier(o, now);
-        if (tier === "hard") hard++;
-        else if (tier === "soft") soft++;
         const rule = slaRuleFor(o);
         if (!rule) continue;
         if (rule.clockRuns && !rule.clockRuns(o)) continue;
+        const tier: SlaTier = slaTier(o, now);
+        if (tier === "hard") overHard++;
+        else if (tier === "soft") overSoft++;
+        else onTrack++;
         const h = slaAgeHours(o, rule, now);
         if (h !== null && (oldestHours === null || h > oldestHours)) {
           oldestHours = h;
-          oldestStage = o.stage;
+          // New measures from the ORDER DATE, so its age reads "28d old"
+          // rather than an elapsed stage time. The table decides the wording.
+          oldestFrom = rule.measureFrom === "created" ? "created" : "stage";
         }
       }
       return {
-        key: g.key, label: g.label, total: rows.length, soft, hard,
-        oldestHours, oldestStage,
+        key: g.key, label: g.label, active: rows.length,
+        onTrack, overSoft, overHard, oldestHours, oldestFrom,
       };
     });
   }, [orders, customs, samples, warranties]);
@@ -398,21 +402,17 @@ function StageCard({
 // file used to carry a private copy of SLA_TARGETS with identical values --
 // which was luck, not design, since nothing kept them in step.
 
-interface SlaCategory {
-  key: string;
-  label: string;
-  total: number;
-  /** Past the soft (24h) threshold but not the hard one. */
-  soft: number;
-  /** Past the hard (48h) threshold. */
-  hard: number;
-  /** Age of the oldest row with a running clock, in hours. */
-  oldestHours: number | null;
-  /** Which stage that oldest row is sitting in. */
-  oldestStage: string;
-}
-
-function SLAMiniPanel({ categories }: { categories: SlaCategory[] }) {
+/**
+ * SLA at a glance.
+ *
+ * The table itself is components/SlaHealthByType -- the SAME component /sla
+ * renders. No onSelectType here, so the rows are read-only; the markup does
+ * not fork between the two pages.
+ *
+ * The private SlaCategory interface this used to carry is gone; the shared
+ * SlaTypeRow is the one shape.
+ */
+function SLAMiniPanel({ categories }: { categories: SlaTypeRow[] }) {
   return (
     <div className="glass-sage rounded-panel p-5 lg:p-6">
       <div className="mb-4">
@@ -422,36 +422,15 @@ function SLAMiniPanel({ categories }: { categories: SlaCategory[] }) {
         </h2>
       </div>
       <p className="text-[12px] text-cream/55 -mt-2 mb-4">
-        Active rows per order type, and how many are past 24h (warn) or 48h (act).
+        Active orders by SLA status — the same table as the SLA page.
       </p>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {categories.map(c => (
-          <div key={c.key} className="flex flex-col gap-1.5">
-            <div className="text-[10px] uppercase tracking-[0.13em] text-cream/55">{c.label}</div>
-            <div className="flex items-baseline gap-2">
-              <div
-                className="font-display text-[26px] leading-none"
-                style={{ color: c.hard > 0 ? "#e89090" : c.total === 0 ? "#a0a09a" : "#e8e3da" }}
-              >
-                {c.total}
-              </div>
-              <div className="text-[11px] text-cream/55">active</div>
-            </div>
-            <div className="text-[10px] flex items-center gap-2 flex-wrap">
-              {c.hard > 0 && <span className="text-terracotta">{c.hard} over 48h</span>}
-              {c.soft > 0 && <span style={{ color: "#d4922a" }}>{c.soft} over 24h</span>}
-              {c.hard === 0 && c.soft === 0 && (
-                <span className="text-cream/40">{c.total === 0 ? "none active" : "on track"}</span>
-              )}
-            </div>
-            {c.oldestHours !== null && (
-              <div className="text-[10px] text-cream/45">
-                oldest {formatStageAge(c.oldestHours)} in {c.oldestStage}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
+      <SlaHealthByType rows={categories} />
+      <Link
+        href="/sla"
+        className="block w-full mt-3 py-2 text-center text-[11px] text-cream/55 hover:text-cream/85 transition-colors"
+      >
+        Open the SLA page →
+      </Link>
     </div>
   );
 }
