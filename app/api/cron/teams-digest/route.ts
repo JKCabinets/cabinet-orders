@@ -1,10 +1,78 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyCronAuth } from "@/lib/cronAuth";
 import { supabase } from "@/lib/supabase";
-import { SLA_TARGETS, daysInStage } from "@/lib/sla";
-import type { Order, OrderStage } from "@/lib/data";
+import { slaTier, slaRuleFor, slaAgeHours, formatStageAge } from "@/lib/sla";
+import type { Order } from "@/lib/data";
 
-const STAGES: OrderStage[] = ["New", "Entered", "In production", "At cross dock"];
+/**
+ * Weekday morning digest, posted to Teams.
+ *
+ * WHAT CHANGED, AND WHY IT HAD TO
+ *   This route was the LAST consumer of SLA_TARGETS and daysInStage, and it
+ *   carried three defects that were invisible only because TEAMS_WEBHOOK_URL
+ *   has been empty since the Kamal cutover:
+ *
+ *   1. It used the pre-Alternate-Orders SLA API against a hardcoded list of
+ *      four standard-flow stages.
+ *
+ *   2. Its SELECT omitted stage_entered_at, so daysInStage always fell through
+ *      to parsing the `date` display string -- every "overdue" figure it has
+ *      ever produced was ORDER AGE, not stage age. It also lacked the
+ *      production and delivery columns the clockRuns gates need, so it could
+ *      not have applied the real rules even if it had tried.
+ *
+ *   3. `neq("type", "warranty")` was written when that meant "standard orders
+ *      only". It now INCLUDES samples and customs, mixing them into per-stage
+ *      rollups keyed on standard-flow stage names.
+ *
+ *   It now uses the same slaTier / slaRuleFor / slaAgeHours the dashboard and
+ *   /sla use. One definition of overdue, everywhere.
+ *
+ * WHY BY TYPE AND NOT BY STAGE
+ *   Four flows have nineteen stages between them. A per-stage FactSet would be
+ *   a wall nobody reads -- and a digest people skim past is worse than none,
+ *   because its existence implies someone is watching.
+ *
+ *   One line per order type matches the SlaHealthByType table people already
+ *   see in the app, so there is nothing to translate between the two.
+ *
+ * IT SENDS EVEN WHEN THERE IS NOTHING WRONG
+ *   An all-clear line. A digest that only arrives with bad news is
+ *   indistinguishable from a digest that has silently stopped working.
+ */
+
+const CATEGORIES = [
+  { key: "order", label: "Standard orders" },
+  { key: "custom", label: "Custom orders" },
+  { key: "sample", label: "Sample orders" },
+  { key: "warranty", label: "Warranty claims" },
+] as const;
+
+/**
+ * Every column the SLA rules read. Getting this list wrong is how the old
+ * version silently reported order age: a missing column does not error, it
+ * just makes the rule fall through to a weaker fallback.
+ *
+ *   stage_entered_at                                    the stage clock
+ *   created_at / date                                   New measures from here
+ *   reported_at                                         warranty New claim
+ *   production_start_date, production_est_finish_date   In production clockRuns
+ *   delivery_date, scheduled_delivery_date              At cross dock clockRuns
+ */
+const SELECT_COLUMNS = [
+  "id", "name", "type", "stage", "date", "archived",
+  "created_at", "reported_at", "stage_entered_at",
+  "production_start_date", "production_est_finish_date",
+  "delivery_date", "scheduled_delivery_date",
+].join(", ");
+
+interface TypeSummary {
+  label: string;
+  active: number;
+  onTrack: number;
+  overSoft: number;
+  overHard: number;
+}
 
 export async function GET(req: NextRequest) {
   if (!verifyCronAuth(req)) {
@@ -13,127 +81,142 @@ export async function GET(req: NextRequest) {
 
   const webhookUrl = process.env.TEAMS_WEBHOOK_URL;
   if (!webhookUrl) {
-    // Not configured yet — return success so the cron doesn't keep
-    // retrying. Operator will set the env var once the Teams workflow
-    // is ready.
+    // Not configured. Return success so the cron does not retry, and so the
+    // healthchecks ping still fires -- a job that is deliberately idle is not
+    // a job that has failed.
     return NextResponse.json({ ok: true, skipped: "TEAMS_WEBHOOK_URL not set" });
   }
 
-  // ── Load active orders ────────────────────────────────────────────
+  // ── Load every active order, of every type ────────────────────────────
   const { data: rows, error } = await supabase
     .from("orders")
-    .select("id, name, stage, date, created_at, archived, type")
-    .eq("archived", false)
-    .neq("type", "warranty"); // digest covers production orders only
+    .select(SELECT_COLUMNS)
+    .eq("archived", false);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  const orders = (rows ?? []) as unknown as (Order & { created_at: string })[];
+  const orders = (rows ?? []) as unknown as Order[];
 
   const now = Date.now();
   const yesterday = now - 24 * 60 * 60 * 1000;
 
-  // ── Compute per-stage rollups ─────────────────────────────────────
-  const perStage = STAGES.map(stage => {
-    const inStage = orders.filter(o => o.stage === stage);
-    const target = SLA_TARGETS[stage];
-    const overdue = isFinite(target)
-      ? inStage.filter(o => {
-          const d = daysInStage(o, now);
-          return d !== null && d > target;
-        }).length
-      : 0;
-    return { stage, total: inStage.length, overdue, target };
+  // ── Per-type rollups ──────────────────────────────────────────────────
+  // Only rows whose clock is RUNNING are counted. A stage with no rule, or a
+  // stage whose clockRuns has stopped because the awaited dates exist, is
+  // neither on track nor overdue -- it is not being measured.
+  const summaries: TypeSummary[] = CATEGORIES.map(cat => {
+    const rowsOfType = orders.filter(o => (o.type ?? "order") === cat.key);
+    let onTrack = 0, overSoft = 0, overHard = 0;
+    for (const o of rowsOfType) {
+      const rule = slaRuleFor(o);
+      if (!rule) continue;
+      if (rule.clockRuns && !rule.clockRuns(o)) continue;
+      const tier = slaTier(o, now);
+      if (tier === "hard") overHard++;
+      else if (tier === "soft") overSoft++;
+      else onTrack++;
+    }
+    return { label: cat.label, active: rowsOfType.length, onTrack, overSoft, overHard };
   });
 
+  // ── The single worst offender, named ──────────────────────────────────
+  // One order somebody can act on beats a table of counts.
+  let worst: { order: Order; hours: number } | null = null;
+  for (const o of orders) {
+    if (slaTier(o, now) === "ok") continue;
+    const rule = slaRuleFor(o);
+    if (!rule) continue;
+    const h = slaAgeHours(o, rule, now);
+    if (h === null) continue;
+    if (!worst || h > worst.hours) worst = { order: o, hours: h };
+  }
+
   const totalActive = orders.length;
+  const totalPastSla = summaries.reduce((s, c) => s + c.overSoft + c.overHard, 0);
+  const totalHard = summaries.reduce((s, c) => s + c.overHard, 0);
   const newSinceYesterday = orders.filter(o => {
-    const t = new Date(o.created_at).getTime();
+    const t = new Date(String(o.created_at ?? "")).getTime();
     return isFinite(t) && t >= yesterday;
   }).length;
-  const totalOverdue = perStage.reduce((sum, s) => sum + s.overdue, 0);
 
-  // ── Build the Adaptive Card ───────────────────────────────────────
-  // Power Automate "When a Teams webhook request is received" expects
-  // an Adaptive Card payload wrapped in attachments. The schema below
-  // is the v1.5 Adaptive Card format Teams renders natively.
+  // ── Build the Adaptive Card ───────────────────────────────────────────
   const todayLabel = new Date().toLocaleDateString("en-US", {
     weekday: "long", month: "long", day: "numeric",
     timeZone: "America/Phoenix",
   });
 
-  const headlineColor = totalOverdue > 0 ? "Attention" : "Good";
-  const headlineText = totalOverdue > 0
-    ? `${totalOverdue} order${totalOverdue === 1 ? "" : "s"} overdue`
-    : "All stages on track";
+  const headlineText = totalPastSla > 0
+    ? `${totalPastSla} order${totalPastSla === 1 ? "" : "s"} past their SLA target`
+    : "Everything on track";
+
+  const base = (process.env.NEXTAUTH_URL ?? "https://www.ordersjkcabinets2you.com")
+    .replace(/\/+$/, "");
+
+  const body: Record<string, unknown>[] = [
+    {
+      type: "TextBlock", text: "JK Cabinets — Morning briefing",
+      weight: "Bolder", size: "Large", wrap: true,
+    },
+    { type: "TextBlock", text: todayLabel, isSubtle: true, spacing: "None", wrap: true },
+    {
+      type: "TextBlock", text: headlineText,
+      color: totalHard > 0 ? "Attention" : totalPastSla > 0 ? "Warning" : "Good",
+      weight: "Bolder", spacing: "Medium", wrap: true,
+    },
+  ];
+
+  if (worst) {
+    const rule = slaRuleFor(worst.order);
+    const suffix = rule?.measureFrom === "created" || rule?.measureFrom === "reported"
+      ? "old" : "in stage";
+    body.push({
+      type: "TextBlock",
+      text: `Oldest: **${worst.order.id}** — ${formatStageAge(worst.hours)} ${suffix}, in ${worst.order.stage}`,
+      wrap: true, spacing: "Small",
+    });
+  }
+
+  body.push({
+    type: "FactSet",
+    spacing: "Medium",
+    facts: [
+      { title: "Active orders", value: String(totalActive) },
+      { title: "New since yesterday", value: String(newSinceYesterday) },
+      { title: "Past SLA", value: String(totalPastSla) },
+    ],
+  });
+
+  body.push({
+    type: "TextBlock", text: "By order type",
+    weight: "Bolder", spacing: "Medium", wrap: true,
+  });
+
+  body.push({
+    type: "FactSet",
+    facts: summaries.map(s => ({
+      title: s.label,
+      value: s.active === 0
+        ? "none active"
+        : s.overHard + s.overSoft > 0
+          ? `${s.active} active · ${[
+              s.overHard > 0 ? `${s.overHard} past 48h` : null,
+              s.overSoft > 0 ? `${s.overSoft} past 24h` : null,
+            ].filter(Boolean).join(" · ")}`
+          : `${s.active} active · on track`,
+    })),
+  });
 
   const card = {
     type: "AdaptiveCard",
     $schema: "http://adaptivecards.io/schemas/adaptive-card.json",
     version: "1.5",
-    body: [
-      {
-        type: "TextBlock",
-        text: "JK Cabinets — Morning briefing",
-        weight: "Bolder",
-        size: "Large",
-        wrap: true,
-      },
-      {
-        type: "TextBlock",
-        text: todayLabel,
-        isSubtle: true,
-        spacing: "None",
-        wrap: true,
-      },
-      {
-        type: "TextBlock",
-        text: headlineText,
-        color: headlineColor,
-        weight: "Bolder",
-        spacing: "Medium",
-        wrap: true,
-      },
-      {
-        type: "FactSet",
-        facts: [
-          { title: "Active orders", value: String(totalActive) },
-          { title: "New since yesterday", value: String(newSinceYesterday) },
-          { title: "Total overdue", value: String(totalOverdue) },
-        ],
-      },
-      {
-        type: "TextBlock",
-        text: "By stage",
-        weight: "Bolder",
-        spacing: "Medium",
-        wrap: true,
-      },
-      {
-        type: "FactSet",
-        facts: perStage.map(s => ({
-          title: s.stage,
-          value: s.overdue > 0
-            ? `${s.total} active · ${s.overdue} overdue (target ${s.target}d)`
-            : `${s.total} active · on track`,
-        })),
-      },
-    ],
+    body,
     actions: [
-      {
-        type: "Action.OpenUrl",
-        title: "Open dashboard",
-        url: process.env.NEXTAUTH_URL
-          ? `${process.env.NEXTAUTH_URL}/dashboard`
-          : "https://www.ordersjkcabinets2you.com/dashboard",
-      },
+      // /sla, not /dashboard: the digest exists to pull people into the detail,
+      // and that is where the per-stage breakdown and the claimable list live.
+      { type: "Action.OpenUrl", title: "Open the SLA page", url: `${base}/sla` },
     ],
   };
 
-  // Power Automate's "Post adaptive card in a chat or channel" action
-  // accepts the card via the `attachments` array. Some flows use the
-  // top-level `attachments` shape; others want the raw card. The
-  // multi-attachment shape works for both Power Automate flows and
-  // legacy Office 365 webhook connectors.
   const payload = {
     type: "message",
     attachments: [
@@ -145,10 +228,10 @@ export async function GET(req: NextRequest) {
     ],
   };
 
-  // ── POST to the Teams webhook ─────────────────────────────────────
-  // SSRF guard: only accept Microsoft hosts for the webhook URL. This
-  // protects against the env var being misconfigured to point at an
-  // internal address.
+  // ── SSRF guard on the webhook host ────────────────────────────────────
+  // Only Microsoft hosts, so a misconfigured env var cannot make this POST at
+  // an internal address. Covers both the legacy O365 connector format and the
+  // current Power Automate one.
   let parsed: URL;
   try {
     parsed = new URL(webhookUrl);
@@ -156,17 +239,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Invalid TEAMS_WEBHOOK_URL" }, { status: 500 });
   }
   const allowedHostSuffixes = [
-    ".logic.azure.com",                         // Power Automate workflow URLs (older format)
-    ".webhook.office.com",                      // Legacy O365 connector webhooks
-    ".azure-apim.net",                          // Some Power Automate regional endpoints
-    ".api.powerplatform.com",                   // New Power Platform workflow URLs (current format)
+    ".logic.azure.com",
+    ".webhook.office.com",
+    ".azure-apim.net",
+    ".api.powerplatform.com",
   ];
-  const ok = allowedHostSuffixes.some(suffix => parsed.host.endsWith(suffix));
-  if (!ok) {
-    return NextResponse.json({
-      error: "TEAMS_WEBHOOK_URL host not allowed",
-      host: parsed.host,
-    }, { status: 500 });
+  if (!allowedHostSuffixes.some(suffix => parsed.host.endsWith(suffix))) {
+    return NextResponse.json(
+      { error: "TEAMS_WEBHOOK_URL host not allowed", host: parsed.host },
+      { status: 500 },
+    );
   }
 
   try {
@@ -176,11 +258,11 @@ export async function GET(req: NextRequest) {
       body: JSON.stringify(payload),
     });
     if (!res.ok) {
-      const body = await res.text().catch(() => "");
+      const text = await res.text().catch(() => "");
       return NextResponse.json({
         error: "Teams webhook rejected the payload",
         status: res.status,
-        body: body.slice(0, 500),
+        body: text.slice(0, 500),
       }, { status: 502 });
     }
   } catch (e) {
@@ -196,8 +278,9 @@ export async function GET(req: NextRequest) {
     summary: {
       totalActive,
       newSinceYesterday,
-      totalOverdue,
-      perStage,
+      totalPastSla,
+      worst: worst ? { id: worst.order.id, hours: Math.round(worst.hours) } : null,
+      byType: summaries,
     },
   });
 }
