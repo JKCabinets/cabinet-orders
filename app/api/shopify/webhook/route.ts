@@ -59,12 +59,17 @@ function shopifyInput(s: unknown): string {
  * accidental reason). We now compare HMAC bytes (decoded from base64) of
  * known length, which is both correct and constant-time.
  */
-function verifyShopifyHmac(body: string, hmacHeader: string): boolean {
-  if (!SHOPIFY_SECRET) return false;
-  if (!hmacHeader) return false;
-
+/**
+ * Compare one signature against one secret. Constant-time.
+ *
+ * Unchanged from the original single-secret version: decode base64 to raw
+ * bytes, check the length BEFORE comparing (timingSafeEqual throws on a
+ * length mismatch, and an attacker controlling the header could otherwise
+ * short-circuit the comparison through the thrown error), then compare.
+ */
+function hmacMatches(body: string, hmacHeader: string, secret: string): boolean {
   const expected = crypto
-    .createHmac("sha256", SHOPIFY_SECRET)
+    .createHmac("sha256", secret)
     .update(body, "utf8")
     .digest(); // raw Buffer
 
@@ -77,6 +82,38 @@ function verifyShopifyHmac(body: string, hmacHeader: string): boolean {
 
   if (provided.length !== expected.length) return false;
   return crypto.timingSafeEqual(expected, provided);
+}
+
+/**
+ * Which secret verified a delivery, or null if none did.
+ *
+ * TWO SECRETS, DURING A MIGRATION ONLY. Shopify signs app-created webhook
+ * subscriptions with the app's CLIENT secret and admin-created ones with the
+ * store's webhook secret. Moving from one to the other in a single step would
+ * break the working set the moment it deployed. Accepting both means no
+ * window where ingestion is down.
+ *
+ * FAILS CLOSED. The fallback counts only when it is a non-empty string after
+ * trimming, and with NEITHER secret configured every delivery is rejected.
+ * There is no path where an unconfigured secret means "accept". That is not
+ * theoretical: .kamal/secrets fails open, and a variable can be silently
+ * absent from the container if it is not declared in config/deploy.yml.
+ *
+ * The return value is logged so a fallback still in use after the migration
+ * is visible rather than forgotten.
+ */
+function verifyShopifyHmac(body: string, hmacHeader: string): "primary" | "fallback" | null {
+  if (!hmacHeader) return null;
+
+  const primary = (SHOPIFY_SECRET ?? "").trim();
+  const fallback = (process.env.SHOPIFY_WEBHOOK_SECRET_FALLBACK ?? "").trim();
+
+  // Neither configured: reject everything. Never "no secret means allow".
+  if (!primary && !fallback) return null;
+
+  if (primary && hmacMatches(body, hmacHeader, primary)) return "primary";
+  if (fallback && hmacMatches(body, hmacHeader, fallback)) return "fallback";
+  return null;
 }
 
 /**
@@ -356,11 +393,20 @@ export async function POST(req: NextRequest) {
   const hmacHeader = req.headers.get("x-shopify-hmac-sha256") ?? "";
   const topic = req.headers.get("x-shopify-topic") ?? "";
 
-  if (!verifyShopifyHmac(rawBody, hmacHeader)) {
+  // Returns WHICH secret matched, so a migration in progress is visible in
+  // the logs rather than inferred. Never logs the secret itself.
+  const verifiedBy = verifyShopifyHmac(rawBody, hmacHeader);
+  if (!verifiedBy) {
     // A rejected HMAC and a webhook that never arrived look identical
     // without this line.
     logWebhook("hmac_rejected", { topic, body_bytes: rawBody.length });
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (verifiedBy === "fallback") {
+    // Expected DURING the migration. If this is still appearing once the
+    // admin-created subscriptions are gone, the fallback has not been
+    // removed and step 4 is outstanding.
+    logWebhook("verified_by_fallback", { topic });
   }
 
   let payload: Record<string, unknown>;
