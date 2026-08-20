@@ -8,7 +8,7 @@ import { useSession } from "next-auth/react";
 import {
   Order, OrderType, Stage, TeamMember,
   Member, Source, ORDER_STAGES, WARRANTY_STAGES, AvatarColor, Role,
-  ID_PREFIX_BY_TYPE,
+  ID_PREFIX_BY_TYPE, shapeOrder,
 } from "./data";
 import { fieldsToClearOnBackwardMove } from "./stageLogic";
 import { useRealtimeOrders } from "./useRealtimeOrders";
@@ -99,46 +99,6 @@ async function apiCall(url: string, method = "GET", body?: unknown) {
   }
 }
 
-function shapeOrder(raw: Record<string, unknown>): Order {
-  return {
-    id: raw.id as string,
-    type: (raw.type as OrderType) ?? "order",
-    name: raw.name as string,
-    source: (raw.source as Source) ?? "Manual",
-    detail: (raw.detail as string) ?? "",
-    stage: (raw.stage as Stage) ?? "New",
-    member: (raw.member as Member) ?? "AX",
-    date: (raw.date as string) ?? "",
-    // /api/orders selects `*`, so this has always been on the wire -- it
-    // just was not mapped through. The SLA rules for New need it.
-    created_at: (raw.created_at as string | null) ?? null,
-    // Set on promotion from claim_submissions.received_at. Null on every
-    // other flow, and on every row until the intake work lands -- the SLA
-    // rules fall back to created_at when it is absent.
-    reported_at: (raw.reported_at as string | null) ?? null,
-    sku: (raw.sku as string) ?? "",
-    notes: (raw.notes as string) ?? "",
-    internal_notes: (raw.internal_notes as string) ?? "",
-    archived: (raw.archived as boolean) ?? false,
-    activity: (raw.activity as { text: string; time: string }[]) ?? [],
-    door_style: (raw.door_style as string) ?? "",
-    color: (raw.color as string) ?? "",
-    sku_items: (raw.sku_items as { sku: string; quantity: number; description?: string }[]) ?? [],
-    needs_review: (raw.needs_review as boolean) ?? false,
-    claimed_by: (raw.claimed_by as string | null) ?? null,
-    entered_by: (raw.entered_by as string | null) ?? null,
-    vendor: (raw.vendor as string) ?? "",
-    ship_to: (raw.ship_to as string) ?? "",
-    customer_phone: (raw.customer_phone as string) ?? "",
-    customer_email: (raw.customer_email as string) ?? "",
-    delivery_method: (raw.delivery_method as string) ?? "",
-    payment_status: (raw.payment_status as string | null) ?? null,
-    stage_entered_at: (raw.stage_entered_at as string | null) ?? null,
-    production_start_date: (raw.production_start_date as string | null) ?? null,
-    production_est_finish_date: (raw.production_est_finish_date as string | null) ?? null,
-    scheduled_delivery_date: (raw.scheduled_delivery_date as string | null) ?? null,
-  };
-}
 
 // ID_PREFIX_BY_TYPE now lives in lib/data.ts, shared with the API insert
 // in app/api/orders/route.ts so the two cannot drift apart.

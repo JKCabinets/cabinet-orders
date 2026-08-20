@@ -17,7 +17,7 @@ import { useEffect, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { RealtimeChannel } from "@supabase/supabase-js";
 import { getRealtimeClient } from "./realtimeClient";
-import { Order } from "./data";
+import { Order, shapeOrder } from "./data";
 
 interface RealtimeOrdersHandlers {
   /** Called when an order is INSERTed. Decide based on `type` whether
@@ -35,42 +35,6 @@ interface RealtimeOrdersHandlers {
   onReconnect?: () => void;
 }
 
-// We pass raw rows through this same shaper as the initial REST load.
-// Keeping the shape consistent everywhere means store reducers only see
-// one canonical Order shape regardless of source.
-function shapeOrderRow(raw: Record<string, unknown>): Order {
-  return {
-    id: raw.id as string,
-    type: (raw.type as "order" | "warranty") ?? "order",
-    name: raw.name as string,
-    source: (raw.source as Order["source"]) ?? "Manual",
-    detail: (raw.detail as string) ?? "",
-    stage: (raw.stage as Order["stage"]) ?? "New",
-    member: (raw.member as Order["member"]) ?? "AX",
-    date: (raw.date as string) ?? "",
-    sku: (raw.sku as string) ?? "",
-    notes: (raw.notes as string) ?? "",
-    internal_notes: (raw.internal_notes as string) ?? "",
-    archived: (raw.archived as boolean) ?? false,
-    activity: (raw.activity as { text: string; time: string }[]) ?? [],
-    door_style: (raw.door_style as string) ?? "",
-    color: (raw.color as string) ?? "",
-    sku_items: (raw.sku_items as { sku: string; quantity: number; description?: string }[]) ?? [],
-    needs_review: (raw.needs_review as boolean) ?? false,
-    claimed_by: (raw.claimed_by as string | null) ?? null,
-    entered_by: (raw.entered_by as string | null) ?? null,
-    vendor: (raw.vendor as string) ?? "",
-    ship_to: (raw.ship_to as string) ?? "",
-    customer_phone: (raw.customer_phone as string) ?? "",
-    customer_email: (raw.customer_email as string) ?? "",
-    delivery_method: (raw.delivery_method as string) ?? "",
-    payment_status: (raw.payment_status as string | null) ?? null,
-    stage_entered_at: (raw.stage_entered_at as string | null) ?? null,
-    production_start_date: (raw.production_start_date as string | null) ?? null,
-    production_est_finish_date: (raw.production_est_finish_date as string | null) ?? null,
-    scheduled_delivery_date: (raw.scheduled_delivery_date as string | null) ?? null,
-  };
-}
 
 export function useRealtimeOrders(handlers: RealtimeOrdersHandlers) {
   const { status } = useSession();
@@ -98,7 +62,7 @@ export function useRealtimeOrders(handlers: RealtimeOrdersHandlers) {
             { event: "INSERT", schema: "public", table: "orders" },
             (payload) => {
               try {
-                const shaped = shapeOrderRow(payload.new as Record<string, unknown>);
+                const shaped = shapeOrder(payload.new as Record<string, unknown>);
                 handlersRef.current.onInsert(shaped);
               } catch (err) {
                 console.warn("[realtime] insert handler failed", err);
@@ -110,7 +74,7 @@ export function useRealtimeOrders(handlers: RealtimeOrdersHandlers) {
             { event: "UPDATE", schema: "public", table: "orders" },
             (payload) => {
               try {
-                const shaped = shapeOrderRow(payload.new as Record<string, unknown>);
+                const shaped = shapeOrder(payload.new as Record<string, unknown>);
                 handlersRef.current.onUpdate(shaped);
               } catch (err) {
                 console.warn("[realtime] update handler failed", err);
