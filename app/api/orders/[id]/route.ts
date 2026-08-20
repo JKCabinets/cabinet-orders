@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { getShopifyToken } from "@/lib/shopify";
 import { mergeTags } from "@/lib/shopifyStageSync";
 import { ALLOWED_STAGES, isStageAllowedForType, isBackwardsMove, verifyAdminPin, fieldsToClearOnBackwardMove, describeFieldsCleared } from "@/lib/stageGuards";
+import { isPaymentHoldStatus, paymentHoldLabel } from "@/lib/data";
 import { orderAllVendorsGreen } from "@/lib/acknowledgments";
 
 /** Push order updates back to Shopify */
@@ -155,7 +156,7 @@ export async function PATCH(
   // values AFTER the update has been applied.)
   const { data: currentRow } = await supabase
     .from("orders")
-    .select("stage, type")
+    .select("stage, type, payment_status, payment_hold_cleared_for")
     .eq("id", id)
     .single();
   if (!currentRow) {
@@ -242,6 +243,48 @@ export async function PATCH(
   //
   // The override needs a REASON and is checked here, not just in the UI --
   // otherwise it is decoration, which is exactly what override_ack is.
+  // ── Payment hold ───────────────────────────────────────
+  // financial_status already reaches us on orders/updated, so a refund is
+  // known within seconds. Nothing acted on it until now: a refunded order
+  // could move through Entered, production and delivery unnoticed.
+  //
+  // FORWARD moves only. A backward move, an archive or a date edit stays
+  // open -- a refunded order usually needs walking BACK, and blocking that
+  // would strand it exactly when someone is undoing the damage.
+  //
+  // The acknowledgement records WHICH status was cleared, so clearing
+  // partially_refunded does not pre-clear a later full refund.
+  const holdStatus = String(currentRow.payment_status ?? "");
+  const holdCleared = String(currentRow.payment_hold_cleared_for ?? "");
+  const holdActive =
+    isPaymentHoldStatus(holdStatus)
+    && holdCleared.trim().toLowerCase() !== holdStatus.trim().toLowerCase();
+
+  let paymentHoldAck: string | null = null;
+  if (holdActive) {
+    const reason =
+      typeof body.acknowledge_payment_hold === "string"
+        ? cleanInput(body.acknowledge_payment_hold).trim().slice(0, 300)
+        : "";
+    if (reason) {
+      paymentHoldAck = reason;
+    } else if (
+      typeof body.stage === "string"
+      && body.stage !== currentStage
+      && !isBackwardsMove(currentStage, body.stage, currentType)
+    ) {
+      return NextResponse.json(
+        {
+          error: "payment_hold",
+          payment_status: holdStatus,
+          message: paymentHoldLabel(holdStatus)
+            + ". Acknowledge it with a reason before moving it forward.",
+        },
+        { status: 409 },
+      );
+    }
+  }
+
   let deliveryOverrideReason: string | null = null;
   if (body.stage === "Delivered" && currentStage === "At cross dock"
       && currentType !== "sample") {
@@ -404,6 +447,20 @@ export async function PATCH(
   // A separate row, not appended to the stage-change text: an override is
   // its own event, and each one should leave its own trace. The name comes
   // from the session, never from the request body.
+  // Its own write and its own activity row: acknowledging a refund is an
+  // event in itself, and may happen without any stage change at all.
+  if (paymentHoldAck) {
+    await supabase.from("orders").update({
+      payment_hold_cleared_for: holdStatus,
+      payment_hold_cleared_at: new Date().toISOString(),
+    }).eq("id", id);
+    await supabase.from("order_activity").insert({
+      order_id: id,
+      text: `Payment hold (${holdStatus}) acknowledged by ${auth.session.user.name ?? auth.session.user.username} — ${paymentHoldAck}`,
+      time: today,
+    });
+  }
+
   if (deliveryOverrideReason) {
     await supabase.from("order_activity").insert({
       order_id: id,

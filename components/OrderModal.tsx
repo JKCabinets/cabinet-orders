@@ -7,6 +7,7 @@ import { useSession } from "next-auth/react";
 import {
   Order, Stage, ORDER_STAGES, STAGE_LIST_BY_TYPE,
   AVATAR_COLOR_STYLES,
+  isPaymentHoldStatus, paymentHoldActive, paymentHoldLabel,
 } from "@/lib/data";
 import { useStore } from "@/lib/store";
 import { AvatarWithProfile } from "./AvatarWithProfile";
@@ -33,6 +34,122 @@ interface OrderModalProps {
    * auto-opens the file picker so the user can attach the required PDF.
    */
   initialReason?: "needs-attachment";
+}
+
+
+/**
+ * Refund / void banner, with the acknowledgement control.
+ *
+ * The server enforces this independently -- see the payment hold block in
+ * app/api/orders/[id]/route.ts. This exists so the reason someone cannot move
+ * the order is visible before they try, rather than as a 409 with no remedy.
+ *
+ * PATCHes directly rather than going through the store: the row change comes
+ * back over realtime, so there is nothing to reconcile locally.
+ */
+function PaymentHoldBanner({ order }: { order: Order }) {
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const { showToast } = useToast();
+
+  const status = order.payment_status ?? "";
+  if (!isPaymentHoldStatus(status)) return null;
+
+  const active = paymentHoldActive(order);
+
+  async function acknowledge() {
+    const text = reason.trim();
+    if (!text) return;
+    setBusy(true);
+    setError("");
+    try {
+      const res = await fetch("/api/orders/" + encodeURIComponent(order.id), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ acknowledge_payment_hold: text }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.message ?? data.error ?? "Could not acknowledge");
+        return;
+      }
+      setReason("");
+      showToast("Payment hold acknowledged", { kind: "success" });
+    } catch {
+      setError("Network error — not saved");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const accent = active ? "#e89090" : "rgba(232,227,218,0.45)";
+
+  return (
+    <div
+      className="m-5 mb-0 rounded-brand p-4 flex items-start gap-3"
+      style={{
+        background: active ? "rgba(232,144,144,0.14)" : "rgba(255,255,255,0.04)",
+        border: `0.5px solid ${active ? "rgba(232,144,144,0.50)" : "rgba(232,227,218,0.14)"}`,
+      }}
+    >
+      <div
+        className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5"
+        style={{ background: active ? "rgba(232,144,144,0.22)" : "rgba(255,255,255,0.06)" }}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={accent}
+             strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="10" />
+          <line x1="12" y1="8" x2="12" y2="12" />
+          <line x1="12" y1="16" x2="12.01" y2="16" />
+        </svg>
+      </div>
+
+      <div className="flex-1 min-w-0">
+        <p className="font-display text-[18px] text-cream leading-tight mb-1">
+          {paymentHoldLabel(status)}
+        </p>
+
+        {active ? (
+          <>
+            <p className="text-[12px] text-cream/65 leading-snug mb-3">
+              It cannot move forward until this is acknowledged. Check whether the
+              order can still be cancelled with the manufacturer, then record what
+              you found — it goes in the order&apos;s activity against your name.
+            </p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <input
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="What did you find?"
+                maxLength={300}
+                className="field-glass flex-1 min-w-[200px] px-3 py-1.5 rounded-full text-[12px]"
+                style={{ fontSize: "16px" }}
+              />
+              <button
+                onClick={acknowledge}
+                disabled={busy || reason.trim().length === 0}
+                className="px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{
+                  background: "rgba(232,144,144,0.20)",
+                  color: "#e89090",
+                  border: "0.5px solid rgba(232,144,144,0.50)",
+                }}
+              >
+                {busy ? "…" : "Acknowledge"}
+              </button>
+            </div>
+            {error && <p className="text-[11px] mt-2" style={{ color: "#e89090" }}>{error}</p>}
+          </>
+        ) : (
+          <p className="text-[12px] text-cream/55 leading-snug">
+            Acknowledged — this order can move forward. The refund still stands;
+            see the activity below for who cleared it and why.
+          </p>
+        )}
+      </div>
+    </div>
+  );
 }
 
 const STAGE_COLOR: Record<string, string> = {
@@ -426,6 +543,12 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
           {/* Gate banner — shown when the modal opens because of a missing
               attachment. Prominent, terracotta accent, with a CTA that
               re-triggers the file picker. */}
+          {/* Payment hold banner — a refunded, partially refunded or voided
+              order cannot move forward until somebody acknowledges it. The
+              banner stays after acknowledgement, because the refund is still
+              a fact; only the wording and the control change. */}
+          <PaymentHoldBanner order={liveOrder} />
+
           {showGateBanner && (
             <div
               className="m-5 mb-0 rounded-brand p-4 flex items-start gap-3 animate-slide-in"

@@ -271,6 +271,14 @@ export interface Order {
   // does NOT refer to type === "custom" -- a custom order may or may not
   // have a payment status depending on how it was raised.
   payment_status?: string | null;
+  /**
+   * Which payment_status value was acknowledged, letting this order move
+   * forward despite a refund. Compared against the CURRENT payment_status,
+   * so acknowledging partially_refunded does not pre-clear a later full
+   * refund. Null means nothing has been acknowledged.
+   */
+  payment_hold_cleared_for?: string | null;
+  payment_hold_cleared_at?: string | null;
   // ISO timestamp of when the order entered its current stage. Updated
   // automatically (DB trigger + app code) whenever `stage` changes. Used
   // by the SLA page to compute real per-stage age rather than total
@@ -349,6 +357,8 @@ export function shapeOrder(raw: Record<string, unknown>): Order {
     customer_email: (raw.customer_email as string) ?? "",
     delivery_method: (raw.delivery_method as string) ?? "",
     payment_status: (raw.payment_status as string | null) ?? null,
+    payment_hold_cleared_for: (raw.payment_hold_cleared_for as string | null) ?? null,
+    payment_hold_cleared_at: (raw.payment_hold_cleared_at as string | null) ?? null,
     stage_entered_at: (raw.stage_entered_at as string | null) ?? null,
     production_start_date: (raw.production_start_date as string | null) ?? null,
     production_est_finish_date: (raw.production_est_finish_date as string | null) ?? null,
@@ -364,6 +374,53 @@ export function shapeOrder(raw: Record<string, unknown>): Order {
     delivery_window: (raw.delivery_window as string) ?? "",
     delivery_notes: (raw.delivery_notes as string) ?? "",
   };
+}
+
+
+/**
+ * Shopify financial_status values that stop an order moving forward.
+ *
+ * ONE definition, used by the server block and the modal banner alike. Two
+ * copies of "is this order on hold" would drift the way four definitions of
+ * "overdue" did.
+ */
+export const PAYMENT_HOLD_STATUSES = ["refunded", "partially_refunded", "voided"] as const;
+
+export function isPaymentHoldStatus(status: string | null | undefined): boolean {
+  return PAYMENT_HOLD_STATUSES.includes(
+    String(status ?? "").trim().toLowerCase() as typeof PAYMENT_HOLD_STATUSES[number],
+  );
+}
+
+/**
+ * Is this order currently held?
+ *
+ * True when the payment is in a hold state AND that exact state has not been
+ * acknowledged. Acknowledging partially_refunded therefore leaves a later
+ * refunded still blocking.
+ */
+export function paymentHoldActive(order: {
+  payment_status?: string | null;
+  payment_hold_cleared_for?: string | null;
+}): boolean {
+  const status = String(order.payment_status ?? "").trim().toLowerCase();
+  if (!isPaymentHoldStatus(status)) return false;
+  return String(order.payment_hold_cleared_for ?? "").trim().toLowerCase() !== status;
+}
+
+/**
+ * Customer-facing-ish wording for a hold state.
+ *
+ * "voided" is NOT a refund -- it is an authorisation that never captured.
+ * Calling it a refund sends someone hunting for money that never moved.
+ */
+export function paymentHoldLabel(status: string | null | undefined): string {
+  switch (String(status ?? "").trim().toLowerCase()) {
+    case "refunded": return "This order has been refunded";
+    case "partially_refunded": return "This order has been partially refunded";
+    case "voided": return "This order's payment was voided before capture";
+    default: return "This order's payment needs attention";
+  }
 }
 
 export const ORDER_STAGES: OrderStage[] = [
