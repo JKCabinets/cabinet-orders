@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { useStore } from "@/lib/store";
 import {
@@ -58,7 +58,12 @@ export function SLAClient() {
     return CATEGORIES.map(({ key, label }) => {
       const rows = (lists[key] ?? []).filter(o => !o.archived);
       const rules = SLA_RULES[key] ?? {};
-      const stages = (STAGE_LIST_BY_TYPE[key] ?? []).filter(s => rules[s]);
+      // EVERY stage in the flow, not only those carrying an SLA rule. A
+      // stage with no rule -- Delivered, warranty's Parts ordered -- still
+      // holds orders, and a "Stage breakdown" that omits stages is
+      // misleading. Rule-less stages show their count and a dash in the SLA
+      // columns: they have orders, they just have no clock.
+      const stages = STAGE_LIST_BY_TYPE[key] ?? [];
 
       const overdueByStage: Record<string, Order[]> = {};
       for (const s of stages) overdueByStage[s] = [];
@@ -78,6 +83,7 @@ export function SLAClient() {
       const trends = stages.map(stage => {
         const inStage = rows.filter(o => o.stage === stage);
         const rule = rules[stage];
+        const hasRule = !!rule;
         const soft = rule?.softHours ?? 24;
         const hard = rule?.hardHours ?? 48;
 
@@ -85,7 +91,11 @@ export function SLAClient() {
         // At cross dock stop their clock once the awaited dates exist, so
         // bucketing everything would report "3 over 48h" beside "0 past
         // target". `count` stays the true population of the stage.
-        const measured = inStage.filter(o => !rule?.clockRuns || rule.clockRuns(o));
+        // No rule means no clock: bucketing those rows would invent an SLA
+        // judgement the system is not making.
+        const measured = hasRule
+          ? inStage.filter(o => !rule?.clockRuns || rule.clockRuns(o))
+          : [];
 
         // Aged on each row's OWN clock: New runs on the order date, so a
         // bounced order shows its real age rather than a reset stage clock.
@@ -103,6 +113,7 @@ export function SLAClient() {
 
         return {
           stage,
+          hasRule,
           count: inStage.length,
           measuredCount: measured.length,
           buckets,
@@ -246,6 +257,24 @@ export function SLAClient() {
     for (const c of categories) for (const s of STAGE_LIST_BY_TYPE[c.key] ?? []) set.add(s);
     return Array.from(set);
   }, [categories]);
+
+  // ─── Hydration ───────────────────────────────────────────────────
+  // The store is populated CLIENT-side, so the server renders an empty
+  // page and the client renders real data -- React #418. Ages compound it:
+  // they come from Date.now(), which differs between the two passes.
+  //
+  // Render only the header until mounted, so both passes agree. All hooks
+  // above run on every render, so this early return is safe.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+
+  if (!mounted) {
+    return (
+      <AppShell>
+        <PageHeader eyebrow="Service levels" title="SLA" accent="deep dive" />
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell>
@@ -392,7 +421,7 @@ export function SLAClient() {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search orders…"
-                  className="pl-7 pr-2.5 py-1 rounded-full text-[11px] bg-white/5 border border-cream/15 text-cream placeholder:text-cream/35 w-40"
+                  className="field-glass pl-7 pr-2.5 py-1 rounded-full text-[11px] w-40"
                   style={{ fontSize: "16px" }}
                 />
               </div>
@@ -491,7 +520,7 @@ function FilterSelect({ value, onChange, options }: {
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="px-2.5 py-1 rounded-full text-[11px] bg-white/5 border border-cream/15 text-cream/85"
+      className="field-glass px-2.5 py-1 rounded-full text-[11px]"
       style={{ fontSize: "16px" }}
     >
       {options.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
@@ -586,7 +615,7 @@ function NeedsAttentionRow({ entry, team, currentUserId, onOpen, onClaim }: {
  */
 function StageBreakdownTable({ trends }: {
   trends: Array<{
-    stage: string; count: number; measuredCount: number;
+    stage: string; hasRule: boolean; count: number; measuredCount: number;
     buckets: { fresh: number; warn: number; over: number };
     oldestHours: number | null; softHours: number; hardHours: number;
     waitingFor?: string; measuresFrom: string;
@@ -624,15 +653,26 @@ function StageBreakdownTable({ trends }: {
                   )}
                 </td>
                 <td className="py-3 px-2 text-center text-[12px] font-mono text-cream/85">{t.count}</td>
-                <td className="py-3 px-2 text-center text-[12px] font-mono"
-                  style={{ color: t.buckets.fresh > 0 ? "#a0cc7a" : "rgba(232,227,218,0.30)" }}>{t.buckets.fresh}</td>
-                <td className="py-3 px-2 text-center text-[12px] font-mono"
-                  style={{ color: t.buckets.warn > 0 ? "#d4922a" : "rgba(232,227,218,0.30)" }}>{t.buckets.warn}</td>
-                <td className="py-3 px-2 text-center text-[12px] font-mono"
-                  style={{ color: t.buckets.over > 0 ? "#e89090" : "rgba(232,227,218,0.30)" }}>{t.buckets.over}</td>
-                <td className="py-3 px-2 text-right text-[11px] font-mono text-cream/65 whitespace-nowrap">
-                  {t.oldestHours === null ? "—" : `${formatStageAge(t.oldestHours)}${ageWord}`}
-                </td>
+                {t.hasRule ? (
+                  <>
+                    <td className="py-3 px-2 text-center text-[12px] font-mono"
+                      style={{ color: t.buckets.fresh > 0 ? "#a0cc7a" : "rgba(232,227,218,0.30)" }}>{t.buckets.fresh}</td>
+                    <td className="py-3 px-2 text-center text-[12px] font-mono"
+                      style={{ color: t.buckets.warn > 0 ? "#d4922a" : "rgba(232,227,218,0.30)" }}>{t.buckets.warn}</td>
+                    <td className="py-3 px-2 text-center text-[12px] font-mono"
+                      style={{ color: t.buckets.over > 0 ? "#e89090" : "rgba(232,227,218,0.30)" }}>{t.buckets.over}</td>
+                    <td className="py-3 px-2 text-right text-[11px] font-mono text-cream/65 whitespace-nowrap">
+                      {t.oldestHours === null ? "—" : `${formatStageAge(t.oldestHours)}${ageWord}`}
+                    </td>
+                  </>
+                ) : (
+                  /* No SLA rule on this stage. Show the count, and dashes rather
+                     than zeroes -- a zero would claim nothing is overdue, when
+                     the truth is that nothing is being measured. */
+                  <td colSpan={4} className="py-3 px-2 text-center text-[10px] text-cream/30">
+                    no SLA on this stage
+                  </td>
+                )}
                 <td className="py-3 px-2">
                   {t.measuredCount === 0 ? (
                     <div className="h-1.5 rounded-full bg-white/6" />

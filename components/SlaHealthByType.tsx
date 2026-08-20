@@ -53,7 +53,10 @@ export function SlaHealthByType({
   /** Drops the header row and tightens spacing, for the dashboard. */
   compact?: boolean;
 }) {
-  const visible = rows.filter(r => r.active > 0);
+  // Every type is listed, including those with nothing active. "Warranty 0"
+  // is information; a row that silently vanishes reads as a missing
+  // feature, which is precisely how the absent warranty row was reported.
+  const visible = rows;
   if (visible.length === 0) {
     return (
       <p className="text-[12px] text-cream/45">No active orders of any type.</p>

@@ -115,6 +115,51 @@ input:focus, select:focus, textarea:focus, button:focus-visible {
 .field-input:focus      { outline: none; border-color: rgba(184,130,106,0.65); }
 .field-input::placeholder { color: rgba(240,236,228,0.45); }
 
+
+/* ── Form fields ─────────────────────────────────────────────────────── */
+
+/* Sage-glass field. Same material as .glass-sage so inputs and selects sit in
+   the surface around them rather than punching a hole in it. */
+.field-glass {
+  background: rgba(87, 98, 87, 0.28);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  border: 0.5px solid rgba(145, 165, 151, 0.30);
+  color: #f0ece4;
+}
+.field-glass::placeholder { color: rgba(240, 236, 228, 0.45); }
+
+/* Chrome paints an autofilled field with an internal !important background.
+   No utility class can override it -- fields carrying bg-white/6 still render
+   solid white, with cream text on white, unreadable. An inset box-shadow is
+   the only thing that wins, and the absurd transition delay stops Chrome
+   re-applying its own colour on blur. */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active,
+textarea:-webkit-autofill,
+select:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 1000px rgba(87, 98, 87, 0.60) inset;
+          box-shadow: 0 0 0 1000px rgba(87, 98, 87, 0.60) inset;
+  -webkit-text-fill-color: #f0ece4;
+  caret-color: #f0ece4;
+  transition: background-color 9999s ease-in-out 0s;
+}
+
+/* A native <select> popup is drawn by the operating system, not the page, so
+   it ignores every class on the element -- which is why dropdown lists render
+   white regardless of styling. color-scheme is what makes the OS draw it
+   dark. It also fixes date pickers and scrollbars inside form controls. */
+html { color-scheme: dark; }
+
+/* Firefox draws option rows from the page, so give them the colours too. */
+select option,
+select optgroup {
+  background-color: #1d2b26;
+  color: #f0ece4;
+}
+
 /* ── Animations ─────────────────────────────────────────────────────── */
 @keyframes slideIn { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 @keyframes fadeIn  { from { opacity: 0; }                             to { opacity: 1; }                            }
