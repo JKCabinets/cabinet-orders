@@ -4,55 +4,57 @@ import { supabase } from "@/lib/supabase";
 import { getShopifyToken, isValidShopifyDomain } from "@/lib/shopify";
 
 /**
- * Ingestion heartbeat — is Shopify still able to reach us?
+ * Ingestion health — does the OMS have the orders Shopify has?
  *
- * WHY THIS EXISTS
- *   On 2026-08-19 Shopify held ZERO webhook subscriptions for this app. No
- *   order could have reached the OMS, and nothing anywhere would have said so.
- *   It was found only because a test order was placed by hand.
+ * WHY THIS IS A RECONCILIATION AND NOT A HEARTBEAT
+ *   The first version of this check asked "do the webhook subscriptions
+ *   exist?" That was the wrong question, and it was wrong in both directions:
  *
- *   That is the same shape as the 64-day cron outage: a silent integration
- *   failure with nothing watching. The dead-man's switch covers the crons
- *   because a MISSING ping alarms. Nothing covered ingestion.
+ *     · On 2026-08-20 it reported GREEN while ingestion was completely dead.
+ *       The subscriptions it could see were app-created ones whose deliveries
+ *       were being rejected on HMAC; the subscription that actually worked was
+ *       admin-created and invisible to the GraphQL query.
  *
- * HOW IT ALARMS
- *   run-cron.sh pings healthchecks.io on success and <url>/fail on any
- *   non-2xx. So this route returns 500 when something is wrong, and the alarm
- *   is someone else's problem — including the case where the box is down and
- *   no ping arrives at all.
+ *     · Once those app-created subscriptions are removed it would report RED
+ *       forever, while ingestion was perfectly healthy.
  *
- * TWO INDEPENDENT QUESTIONS
- *   1. Do the subscriptions still exist, at the right callback URL? This is
- *      what actually broke.
- *   2. Has anything actually ARRIVED recently? A subscription can exist and
- *      still not deliver — a rotated secret, a Shopify incident, a callback
- *      that 500s every time.
+ *   Existence is a proxy for delivery, and it demonstrated that it can be
+ *   wrong either way. So this asks the only question that matters: Shopify is
+ *   the source of truth for what orders exist -- do we have them?
  *
- *   The second is OPT-IN via WEBHOOK_MAX_QUIET_HOURS, because before launch
- *   almost nothing arrives and a threshold would fire constantly. An alarm
- *   people have learned to ignore is worse than no alarm. Set it once the
- *   real order rhythm is known.
+ * WHAT IT CATCHES
+ *   A deleted or repointed webhook, a secret mismatch, a handler returning
+ *   500, a Shopify delivery outage. All of them end with an order in Shopify
+ *   and no row here, whatever the cause.
+ *
+ * WHY IT DOES NOT CRY WOLF BEFORE LAUNCH
+ *   It only alarms on orders Shopify SAYS exist. No orders means nothing to
+ *   miss and a quiet check -- unlike a "has anything arrived in N hours"
+ *   threshold, which would fire constantly on a store with no traffic.
+ *
+ * THE GRACE WINDOW
+ *   Orders newer than WEBHOOK_RECONCILE_GRACE_MINUTES (default 15) are
+ *   ignored: a delivery in flight, or a Shopify retry still pending, is not a
+ *   failure. Only an order old enough that it SHOULD have landed counts.
+ *
+ * SUBSCRIPTIONS ARE REPORTED, NOT JUDGED
+ *   The topic list is still included for diagnosis, because it is useful when
+ *   something IS wrong. It no longer decides the outcome.
  */
 
 const API_VERSION = "2026-04";
 
-/** The topic that matters. Without it, orders cannot reach the OMS at all. */
-const REQUIRED_TOPIC = "ORDERS_CREATE";
+/** How many recent Shopify orders to reconcile. */
+const SAMPLE_SIZE = 10;
 
-interface SubNode {
-  topic: string;
-  callbackUrl: string | null;
+interface ShopifyOrder {
+  gid: string;
+  numericId: string;
+  name: string;
+  createdAt: string;
 }
 
-async function listSubscriptions(domain: string, token: string): Promise<SubNode[]> {
-  const query = `query {
-    webhookSubscriptions(first: 100) {
-      edges { node {
-        topic
-        endpoint { __typename ... on WebhookHttpEndpoint { callbackUrl } }
-      } }
-    }
-  }`;
+async function graphql(domain: string, token: string, query: string): Promise<unknown> {
   const res = await fetch(`https://${domain}/admin/api/${API_VERSION}/graphql.json`, {
     method: "POST",
     headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" },
@@ -60,21 +62,41 @@ async function listSubscriptions(domain: string, token: string): Promise<SubNode
   });
   const text = await res.text();
   if (!res.ok) throw new Error(`Shopify GraphQL ${res.status}: ${text.slice(0, 200)}`);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const edges = (JSON.parse(text) as any)?.data?.webhookSubscriptions?.edges ?? [];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return edges.map((e: any) => ({
-    topic: String(e?.node?.topic ?? ""),
-    callbackUrl: e?.node?.endpoint?.callbackUrl ?? null,
-  }));
+  return JSON.parse(text);
 }
 
-/** Where deliveries SHOULD land. Mirrors the admin registration route. */
-function expectedCallbackUrl(): string | null {
-  const explicit = (process.env.SHOPIFY_WEBHOOK_CALLBACK_URL ?? "").trim();
-  if (explicit) return explicit;
-  const base = (process.env.NEXTAUTH_URL ?? "").trim().replace(/\/+$/, "");
-  return base ? `${base}/api/shopify/webhook` : null;
+async function recentShopifyOrders(domain: string, token: string): Promise<ShopifyOrder[]> {
+  const q = `query {
+    orders(first: ${SAMPLE_SIZE}, sortKey: CREATED_AT, reverse: true) {
+      edges { node { id name createdAt } }
+    }
+  }`;
+  const body = await graphql(domain, token, q);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const edges = (body as any)?.data?.orders?.edges ?? [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return edges.map((e: any) => {
+    const gid = String(e?.node?.id ?? "");
+    return {
+      gid,
+      // gid://shopify/Order/8541444178220 -> 8541444178220, which is what
+      // orders.shopify_id stores.
+      numericId: gid.split("/").pop() ?? "",
+      name: String(e?.node?.name ?? ""),
+      createdAt: String(e?.node?.createdAt ?? ""),
+    };
+  }).filter((o: ShopifyOrder) => o.numericId);
+}
+
+async function subscriptionTopics(domain: string, token: string): Promise<string[]> {
+  const q = `query {
+    webhookSubscriptions(first: 100) { edges { node { topic } } }
+  }`;
+  const body = await graphql(domain, token, q);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const edges = (body as any)?.data?.webhookSubscriptions?.edges ?? [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return edges.map((e: any) => String(e?.node?.topic ?? "")).sort();
 }
 
 export async function GET(req: NextRequest) {
@@ -85,74 +107,97 @@ export async function GET(req: NextRequest) {
   const problems: string[] = [];
   const detail: Record<string, unknown> = {};
 
-  // ── 1. Are the subscriptions still there? ────────────────────────────
   const domain = process.env.SHOPIFY_STORE_DOMAIN;
   if (!isValidShopifyDomain(domain)) {
-    problems.push("SHOPIFY_STORE_DOMAIN is unset or not a *.myshopify.com host");
-  } else {
-    try {
-      const token = await getShopifyToken();
-      const subs = await listSubscriptions(domain, token);
-      detail.subscription_count = subs.length;
-      detail.topics = subs.map(s => s.topic).sort();
-
-      const orderSub = subs.find(s => s.topic === REQUIRED_TOPIC);
-      if (!orderSub) {
-        problems.push(
-          `No ${REQUIRED_TOPIC} subscription — Shopify orders cannot reach the OMS. `
-          + `POST /api/shopify/webhooks to re-register.`
-        );
-      } else {
-        const expected = expectedCallbackUrl();
-        detail.orders_create_callback = orderSub.callbackUrl;
-        if (expected && orderSub.callbackUrl !== expected) {
-          problems.push(
-            `${REQUIRED_TOPIC} delivers to ${orderSub.callbackUrl}, expected ${expected}`
-          );
-        }
-      }
-    } catch (err) {
-      // A Shopify API failure is itself worth alarming on: we cannot confirm
-      // ingestion is working, which is not the same as confirming it is.
-      problems.push(`Could not read webhook subscriptions: ${String(err)}`);
-    }
+    return NextResponse.json(
+      { ok: false, problems: ["SHOPIFY_STORE_DOMAIN is unset or not a *.myshopify.com host"] },
+      { status: 500 },
+    );
   }
 
-  // ── 2. Has anything actually arrived? (opt-in) ───────────────────────
-  const raw = (process.env.WEBHOOK_MAX_QUIET_HOURS ?? "").trim();
-  const maxQuiet = raw ? Number(raw) : NaN;
-  if (Number.isFinite(maxQuiet) && maxQuiet > 0) {
-    const { data, error } = await supabase
-      .from("orders")
-      .select("id, created_at")
-      .eq("source", "Shopify")
-      .order("created_at", { ascending: false })
-      .limit(1);
+  let token: string;
+  try {
+    token = await getShopifyToken();
+  } catch (err) {
+    // Not being able to ASK is not the same as everything being fine.
+    return NextResponse.json(
+      { ok: false, problems: [`Could not authenticate with Shopify: ${String(err)}`] },
+      { status: 500 },
+    );
+  }
 
-    if (error) {
-      problems.push(`Could not read the newest Shopify order: ${error.message}`);
-    } else if (!data || data.length === 0) {
-      detail.newest_shopify_order = null;
-      problems.push(`No Shopify order has ever been ingested (threshold ${maxQuiet}h)`);
-    } else {
-      const hours = (Date.now() - Date.parse(String(data[0].created_at))) / (1000 * 60 * 60);
-      detail.newest_shopify_order = data[0].id;
-      detail.hours_since_last_order = Math.round(hours);
-      if (hours > maxQuiet) {
-        problems.push(
-          `No Shopify order in ${Math.round(hours)}h (threshold ${maxQuiet}h). `
-          + `The subscription exists, so check the webhook secret and the handler logs: `
-          + `docker logs <container> | grep shopify-webhook`
-        );
-      }
-    }
-  } else {
-    detail.staleness_check = "disabled — set WEBHOOK_MAX_QUIET_HOURS to enable";
+  // ── Informational: which subscriptions the APP owns ──────────────────
+  // Admin-created subscriptions do NOT appear here. That is exactly why this
+  // list no longer decides the outcome -- on 2026-08-20 the app owned five
+  // failing subscriptions while a sixth, invisible one did all the work.
+  try {
+    detail.app_owned_topics = await subscriptionTopics(domain, token);
+  } catch (err) {
+    detail.app_owned_topics = `unavailable: ${String(err)}`;
+  }
+
+  // ── The actual check ─────────────────────────────────────────────────
+  let orders: ShopifyOrder[];
+  try {
+    orders = await recentShopifyOrders(domain, token);
+  } catch (err) {
+    return NextResponse.json(
+      { ok: false, problems: [`Could not read recent orders from Shopify: ${String(err)}`], ...detail },
+      { status: 500 },
+    );
+  }
+
+  detail.shopify_orders_checked = orders.length;
+  if (orders.length === 0) {
+    // A store with no orders has nothing to miss. Quiet, correctly.
+    return NextResponse.json({ ok: true, note: "no orders in Shopify to reconcile", ...detail });
+  }
+
+  const graceMin = Number(process.env.WEBHOOK_RECONCILE_GRACE_MINUTES ?? "15");
+  const grace = Number.isFinite(graceMin) && graceMin > 0 ? graceMin : 15;
+  const cutoff = Date.now() - grace * 60 * 1000;
+  detail.grace_minutes = grace;
+
+  // An order still inside the grace window may simply be in flight, or
+  // awaiting a Shopify retry. Not a failure yet.
+  const settled = orders.filter(o => {
+    const t = Date.parse(o.createdAt);
+    return Number.isFinite(t) && t < cutoff;
+  });
+  detail.settled_orders_checked = settled.length;
+  if (settled.length === 0) {
+    return NextResponse.json({ ok: true, note: "all recent orders still inside the grace window", ...detail });
+  }
+
+  const { data: rows, error } = await supabase
+    .from("orders")
+    .select("shopify_id")
+    .in("shopify_id", settled.map(o => o.numericId));
+
+  if (error) {
+    return NextResponse.json(
+      { ok: false, problems: [`Could not read orders from the database: ${error.message}`], ...detail },
+      { status: 500 },
+    );
+  }
+
+  const have = new Set((rows ?? []).map(r => String(r.shopify_id)));
+  const missing = settled.filter(o => !have.has(o.numericId));
+
+  detail.newest_shopify_order = settled[0]?.name;
+  detail.missing_count = missing.length;
+
+  if (missing.length > 0) {
+    detail.missing = missing.map(o => ({ name: o.name, id: o.numericId, created_at: o.createdAt }));
+    problems.push(
+      `${missing.length} order(s) exist in Shopify but not in the OMS: `
+      + `${missing.map(o => o.name).join(", ")}. Ingestion is not working. `
+      + `Check: docker logs <container> | grep shopify-webhook`
+    );
   }
 
   if (problems.length > 0) {
-    // 500 on purpose: run-cron.sh's `curl -f` fails, and it pings <url>/fail
-    // so the alert fires immediately rather than after the grace period.
+    // 500 so run-cron.sh's `curl -f` fails and it pings <url>/fail.
     console.warn("[webhook-health]", JSON.stringify({ ok: false, problems, ...detail }));
     return NextResponse.json({ ok: false, problems, ...detail }, { status: 500 });
   }
