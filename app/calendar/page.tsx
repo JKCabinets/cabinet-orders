@@ -1,24 +1,35 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { ChevronLeft, ChevronRight, Package, Factory, CheckCircle2 } from "lucide-react";
 import clsx from "clsx";
 import { AppShell, PageHeader } from "@/components/AppShell";
+import { useStore } from "@/lib/store";
+import { Order, displayOrderNumber } from "@/lib/data";
 
-interface CalendarOrder {
-  id: string;
-  name: string;
-  detail: string;
-  stage: string;
-  member: string;
-  shopify_id?: string;
-  // Delivery
-  delivery_date: string;
-  delivery_window: string;
-  delivery_notes: string;
-  // Production
-  production_start_date: string | null;
-  production_est_finish_date: string | null;
+/**
+ * A store row, with delivery_date narrowed to a plain string.
+ *
+ * This was a private interface listing thirteen fields, which is how the
+ * page ended up reading columns the store did not map -- and how three
+ * delivery fields stayed broken for months while this page alone looked
+ * right. It now derives from Order, so a column added to shapeOrder
+ * arrives here automatically and one removed is a compile error.
+ */
+type CalendarOrder = Order & { delivery_date: string };
+
+/**
+ * Which rows write their dates back to Shopify.
+ *
+ * Standard and sample orders sync; custom orders deliberately do not.
+ * This replaced `!!order.shopify_id`, which cannot work against a store
+ * row -- Order carries no shopify_id and shapeOrder has never mapped it.
+ * It is also more correct under the project model, where only the FIRST
+ * group of a checkout is denormalised with a shopify_id: a sample group
+ * would have read as "does not sync" while syncing perfectly well.
+ */
+function syncsToShopify(o: CalendarOrder): boolean {
+  return o.type === "order" || o.type === "sample";
 }
 
 type CalendarView = "production" | "delivery";
@@ -41,7 +52,26 @@ export default function CalendarPage() {
   const [view, setView] = useState<CalendarView>("production");
   const [currentMonth, setCurrentMonth] = useState(today.getMonth());
   const [currentYear, setCurrentYear] = useState(today.getFullYear());
-  const [orders, setOrders] = useState<CalendarOrder[]>([]);
+  const { allOrders } = useStore();
+  /**
+   * EVERY type, from the one store array -- not a private ?type=order
+   * fetch. Custom orders and samples carry production and delivery dates
+   * and have never once appeared on this page.
+   *
+   * Hardware and warranty rows have no such dates, so they never match a
+   * day and need no filtering. Archived rows DO need it, and never had it.
+   */
+  const orders = useMemo<CalendarOrder[]>(
+    () => allOrders
+      .filter(o => !o.archived)
+      .map(o => ({
+        ...o,
+        // Merge scheduled_delivery_date into delivery_date so the calendar
+        // shows dates set from the order card's delivery scheduler.
+        delivery_date: o.delivery_date || o.scheduled_delivery_date || "",
+      })),
+    [allOrders],
+  );
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [editingOrder, setEditingOrder] = useState<string | null>(null);
 
@@ -56,9 +86,9 @@ export default function CalendarPage() {
 
   const [saving, setSaving] = useState(false);
   const [shopifyStatus, setShopifyStatus] = useState<Record<string, "syncing" | "synced" | "error">>({});
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => { fetchOrders(); }, []);
+  // No mount fetch: the store loads once for the whole app and keeps the
+  // rows current over Realtime. `loading` was tracked here and never
+  // rendered, so it goes with it.
 
   // Deep-link support: /calendar?view=production | ?view=delivery
   // Read from window.location rather than useSearchParams(): that hook forces
@@ -70,22 +100,9 @@ export default function CalendarPage() {
     if (v === "production" || v === "delivery") setView(v);
   }, []);
 
-  async function fetchOrders() {
-    setLoading(true);
-    try {
-      const res = await fetch("/api/orders?type=order");
-      const data = await res.json();
-      if (data.data) {
-        // Merge scheduled_delivery_date into delivery_date so the calendar
-        // shows dates set from the order card's delivery scheduler
-        setOrders(data.data.map((o: CalendarOrder & { scheduled_delivery_date?: string | null }) => ({
-          ...o,
-          delivery_date: o.delivery_date || o.scheduled_delivery_date || "",
-        })));
-      }
-    } catch {}
-    setLoading(false);
-  }
+  // fetchOrders is gone. It asked for ?type=order only, so custom and
+  // sample rows were invisible here; and it swallowed its own failure with
+  // `catch {}`, so a failed request rendered as "nothing scheduled".
 
   async function saveDelivery(orderId: string) {
     setSaving(true);
@@ -100,10 +117,8 @@ export default function CalendarPage() {
           delivery_notes: editNotes,
         }),
       });
-      setOrders(prev => prev.map(o => o.id === orderId
-        ? { ...o, delivery_date: editDeliveryDate, delivery_window: editWindow, delivery_notes: editNotes }
-        : o
-      ));
+      // The store owns the row; Realtime delivers the change. Mirroring it
+      // into local state is what made this page a second source of truth.
       setEditingOrder(null);
     } catch {}
     setSaving(false);
@@ -112,7 +127,7 @@ export default function CalendarPage() {
   async function saveProductionDates(orderId: string) {
     setSaving(true);
     const order = orders.find(o => o.id === orderId);
-    const isShopify = !!order?.shopify_id;
+    const isShopify = order ? syncsToShopify(order) : false;
     if (isShopify) setShopifyStatus(s => ({ ...s, [orderId]: "syncing" }));
     try {
       const res = await fetch(`/api/orders/${orderId}`, {
@@ -124,10 +139,7 @@ export default function CalendarPage() {
         }),
       });
       if (res.ok) {
-        setOrders(prev => prev.map(o => o.id === orderId
-          ? { ...o, production_start_date: editProdStart || null, production_est_finish_date: editProdFinish || null }
-          : o
-        ));
+        // Realtime carries this back through the store, same as above.
         if (isShopify) setShopifyStatus(s => ({ ...s, [orderId]: "synced" }));
       } else {
         if (isShopify) setShopifyStatus(s => ({ ...s, [orderId]: "error" }));
@@ -275,7 +287,7 @@ export default function CalendarPage() {
                       <>
                         {deliveryOrders.slice(0, 2).map(o => (
                           <div key={o.id} className="text-[9px] truncate bg-blue-900/40 text-blue-300 rounded px-1 py-0.5">
-                            {o.id} · {o.name.split(" ")[0]}{o.delivery_window && ` · ${o.delivery_window}`}
+                            {displayOrderNumber(o)} · {o.name.split(" ")[0]}{o.delivery_window && ` · ${o.delivery_window}`}
                           </div>
                         ))}
                         {deliveryOrders.length > 2 && (
@@ -286,12 +298,12 @@ export default function CalendarPage() {
                       <>
                         {startOrders.slice(0, 1).map(o => (
                           <div key={`s-${o.id}`} className="text-[9px] truncate bg-violet-900/40 text-violet-300 rounded px-1 py-0.5">
-                            {o.id} · {o.name.split(" ")[0]}
+                            {displayOrderNumber(o)} · {o.name.split(" ")[0]}
                           </div>
                         ))}
                         {finishOrders.slice(0, 1).map(o => (
                           <div key={`f-${o.id}`} className="text-[9px] truncate bg-emerald-900/40 text-emerald-300 rounded px-1 py-0.5">
-                            {o.id} · {o.name.split(" ")[0]}
+                            {displayOrderNumber(o)} · {o.name.split(" ")[0]}
                           </div>
                         ))}
                         {(startOrders.length + finishOrders.length) > 2 && (
@@ -389,7 +401,7 @@ export default function CalendarPage() {
                 {unscheduledProduction.map(o => (
                   <div key={o.id} className="px-4 py-3 flex items-center justify-between">
                     <div>
-                      <p className="text-xs text-[#e8e3da]"><span className="text-[rgba(232,227,218,0.40)]">{o.id}</span> · {o.name}</p>
+                      <p className="text-xs text-[#e8e3da]"><span className="text-[rgba(232,227,218,0.40)]">{displayOrderNumber(o)}</span> · {o.name}</p>
                       <p className="text-[10px] text-[rgba(232,227,218,0.50)]">{o.detail}</p>
                     </div>
                     <button onClick={() => { openEditProduction(o); setSelectedDay(null); }}
@@ -413,7 +425,7 @@ export default function CalendarPage() {
                 {unscheduledDelivery.map(o => (
                   <div key={o.id} className="px-4 py-3 flex items-center justify-between">
                     <div>
-                      <p className="text-xs text-[#e8e3da]"><span className="text-[rgba(232,227,218,0.40)]">{o.id}</span> · {o.name}</p>
+                      <p className="text-xs text-[#e8e3da]"><span className="text-[rgba(232,227,218,0.40)]">{displayOrderNumber(o)}</span> · {o.name}</p>
                     </div>
                     <button onClick={() => { openEditDelivery(o); setSelectedDay(null); }}
                       className="text-[10px] text-amber-400 hover:text-amber-300 transition-colors">
@@ -434,7 +446,7 @@ export default function CalendarPage() {
               return (
                 <div className="bg-[rgba(255,255,255,0.04)] border border-[rgba(86,100,72,0.55)] rounded-xl p-4">
                   <p className="text-xs font-medium text-[#e8e3da] mb-1">Set production dates — {o.name}</p>
-                  {o.shopify_id && (
+                  {syncsToShopify(o) && (
                     <p className="text-[10px] text-violet-400 mb-3">Shopify order · dates will sync automatically</p>
                   )}
                   <div className="flex flex-col gap-2">
@@ -526,8 +538,8 @@ function ProductionOrderCard({
     <div className="p-4">
       {editing ? (
         <div className="flex flex-col gap-2">
-          <p className="text-xs font-medium text-[#e8e3da]"><span className="text-[rgba(232,227,218,0.40)]">{order.id}</span> · {order.name}</p>
-          {order.shopify_id && (
+          <p className="text-xs font-medium text-[#e8e3da]"><span className="text-[rgba(232,227,218,0.40)]">{displayOrderNumber(order)}</span> · {order.name}</p>
+          {syncsToShopify(order) && (
             <p className="text-[10px] text-violet-400">Shopify order · dates will sync automatically</p>
           )}
           <div>
@@ -550,7 +562,7 @@ function ProductionOrderCard({
         <div>
           <div className="flex items-start justify-between">
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-[#e8e3da] truncate"><span className="text-[rgba(232,227,218,0.40)]">{order.id}</span> · {order.name}</p>
+              <p className="text-xs font-medium text-[#e8e3da] truncate"><span className="text-[rgba(232,227,218,0.40)]">{displayOrderNumber(order)}</span> · {order.name}</p>
               <p className="text-[10px] text-[rgba(232,227,218,0.50)] mt-0.5 truncate">{order.detail}</p>
               <div className="flex flex-col gap-0.5 mt-1.5">
                 {isStart && (
@@ -566,7 +578,7 @@ function ProductionOrderCard({
                   </div>
                 )}
               </div>
-              {order.shopify_id && (
+              {syncsToShopify(order) && (
                 <div className="mt-1.5">
                   {shopifyStatus === "syncing" && <span className="text-[9px] text-violet-400">Syncing to Shopify…</span>}
                   {shopifyStatus === "synced" && (
@@ -614,7 +626,7 @@ function DeliveryOrderCard({
     <div className="p-4">
       {editing ? (
         <div className="flex flex-col gap-2">
-          <p className="text-xs font-medium text-[#e8e3da]"><span className="text-[rgba(232,227,218,0.40)]">{order.id}</span> · {order.name}</p>
+          <p className="text-xs font-medium text-[#e8e3da]"><span className="text-[rgba(232,227,218,0.40)]">{displayOrderNumber(order)}</span> · {order.name}</p>
           <div>
             <label className="block text-[10px] uppercase tracking-widest text-[rgba(232,227,218,0.30)] mb-1">Delivery date</label>
             <input type="date" value={editDeliveryDate} onChange={e => setEditDeliveryDate(e.target.value)} className="w-full field-input text-xs py-1.5 px-2" />
@@ -648,7 +660,7 @@ function DeliveryOrderCard({
         <div>
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-xs font-medium text-[#e8e3da]"><span className="text-[rgba(232,227,218,0.40)]">{order.id}</span> · {order.name}</p>
+              <p className="text-xs font-medium text-[#e8e3da]"><span className="text-[rgba(232,227,218,0.40)]">{displayOrderNumber(order)}</span> · {order.name}</p>
               <p className="text-[10px] text-[rgba(232,227,218,0.50)] mt-0.5">{order.detail}</p>
               {order.delivery_window && <p className="text-[10px] text-amber-400 mt-1">{order.delivery_window}</p>}
               {order.delivery_notes && <p className="text-[10px] text-[rgba(232,227,218,0.30)] mt-1">{order.delivery_notes}</p>}
