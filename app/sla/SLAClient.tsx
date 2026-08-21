@@ -5,7 +5,7 @@ import { useSession } from "next-auth/react";
 import { useStore } from "@/lib/store";
 import {
   Order, OrderStage, OrderType, AVATAR_COLOR_STYLES, Stage,
-  STAGE_ACCENT, STAGE_LIST_BY_TYPE, nextStageFor,
+  STAGE_ACCENT, STAGE_LIST_BY_TYPE, TYPE_LIST_LABEL, nextStageFor,
 } from "@/lib/data";
 import {
   SLA_RULES, slaTier, slaRuleFor, hoursInStage, slaAgeHours, formatStageAge,
@@ -23,16 +23,17 @@ import clsx from "clsx";
 // Stage colours come from lib/data's STAGE_ACCENT rather than a private
 // copy, and the next stage from nextStageFor rather than a hardcoded map
 // that only knew the standard order flow.
-const CATEGORIES: { key: OrderType; label: string }[] = [
-  { key: "order",    label: "Standard orders" },
-  { key: "custom",   label: "Custom orders" },
-  { key: "sample",   label: "Sample orders" },
-  { key: "warranty", label: "Warranty claims" },
-];
+// Derived from TYPE_LIST_LABEL so the comment above is true of TYPES as well
+// as stages. This was four hardcoded entries, and a fifth type would have
+// rendered nothing at all here -- silently, since an absent category is not
+// a type error. Order follows the declaration order in lib/data.ts.
+const CATEGORIES: { key: OrderType; label: string }[] =
+  (Object.keys(TYPE_LIST_LABEL) as OrderType[])
+    .map(key => ({ key, label: TYPE_LIST_LABEL[key] }));
 
 export function SLAClient() {
   const {
-    orders, customs, samples, warranties,
+    orders, customs, samples, warranties, hardware,
     team, claimOrder, moveStage, archiveOrder,
   } = useStore();
   const { data: session } = useSession();
@@ -54,6 +55,11 @@ export function SLAClient() {
     const now = Date.now();
     const lists: Record<OrderType, Order[]> = {
       order: orders, custom: customs, sample: samples, warranty: warranties,
+      // Every hardware stage is rule-less by design (see HARDWARE_RULES).
+      // This page already renders rule-less stages with a count and a dash
+      // rather than inventing an SLA judgement, so hardware needs no
+      // special-casing beyond appearing at all.
+      hardware: hardware,
     };
     return CATEGORIES.map(({ key, label }) => {
       const rows = (lists[key] ?? []).filter(o => !o.archived);

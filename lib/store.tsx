@@ -8,7 +8,7 @@ import { useSession } from "next-auth/react";
 import {
   Order, OrderType, Stage, TeamMember,
   Member, Source, ORDER_STAGES, WARRANTY_STAGES, AvatarColor, Role,
-  ID_PREFIX_BY_TYPE, shapeOrder,
+  ID_PREFIX_BY_TYPE, ORDER_TYPES, shapeOrder,
 } from "./data";
 import { fieldsToClearOnBackwardMove } from "./stageLogic";
 import { useRealtimeOrders } from "./useRealtimeOrders";
@@ -27,6 +27,7 @@ interface StoreCtx {
   warranties: Order[];
   samples: Order[];
   customs: Order[];
+  hardware: Order[];
   team: TeamMember[];
   onlineUsers: string[];
   loading: boolean;
@@ -166,6 +167,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const warranties = useMemo(() => allOrders.filter(o => o.type === "warranty"), [allOrders]);
   const samples    = useMemo(() => allOrders.filter(o => o.type === "sample"),   [allOrders]);
   const customs    = useMemo(() => allOrders.filter(o => o.type === "custom"),   [allOrders]);
+  const hardware   = useMemo(() => allOrders.filter(o => o.type === "hardware"), [allOrders]);
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -179,19 +181,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     refetchInFlight.current = true;
     if (opts?.showLoading) setLoading(true);
     try {
-      const [ordersRes, warrantiesRes, samplesRes, customsRes, teamRes] = await Promise.all([
-        apiCall("/api/orders?type=order"),
-        apiCall("/api/orders?type=warranty"),
-        apiCall("/api/orders?type=sample"),
-        apiCall("/api/orders?type=custom"),
+      // Fan out over ORDER_TYPES rather than a hardcoded list. This was four
+      // literal calls plus a matching four-entry mergeFetched array, in two
+      // separate functions -- a copy that drifts the moment a type is added,
+      // which is the bug class behind the tag overwrite and the stale
+      // realtime shaper. Adding a type is now genuinely one line.
+      const [teamRes, ...typeRes] = await Promise.all([
         apiCall("/api/team"),
+        ...ORDER_TYPES.map(t => apiCall(`/api/orders?type=${t}`)),
       ]);
-      setAllOrders(prev => mergeFetched(prev, [
-        { type: "order",    res: ordersRes },
-        { type: "warranty", res: warrantiesRes },
-        { type: "sample",   res: samplesRes },
-        { type: "custom",   res: customsRes },
-      ]));
+      setAllOrders(prev => mergeFetched(prev,
+        ORDER_TYPES.map((type, i) => ({ type, res: typeRes[i] }))));
       if (teamRes?.data) setTeam(teamRes.data.map(shapeTeamMember));
     } finally {
       if (opts?.showLoading) setLoading(false);
@@ -458,18 +458,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
     // Always refresh from server so local state matches reality. This is
     // simpler and safer than trying to reconcile per-row optimistic updates.
-    const [ordersRes, warrantiesRes, samplesRes, customsRes] = await Promise.all([
-      apiCall("/api/orders?type=order"),
-      apiCall("/api/orders?type=warranty"),
-      apiCall("/api/orders?type=sample"),
-      apiCall("/api/orders?type=custom"),
-    ]);
-    setAllOrders(prev => mergeFetched(prev, [
-      { type: "order",    res: ordersRes },
-      { type: "warranty", res: warrantiesRes },
-      { type: "sample",   res: samplesRes },
-      { type: "custom",   res: customsRes },
-    ]));
+    // Same fan-out as refetchAll, derived for the same reason.
+    const typeRes = await Promise.all(
+      ORDER_TYPES.map(t => apiCall(`/api/orders?type=${t}`)));
+    setAllOrders(prev => mergeFetched(prev,
+      ORDER_TYPES.map((type, i) => ({ type, res: typeRes[i] }))));
 
     return {
       succeeded: data.succeeded ?? 0,
@@ -609,7 +602,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   return (
     <Store.Provider value={{
-      allOrders, orders, warranties, samples, customs, team, onlineUsers, loading,
+      allOrders, orders, warranties, samples, customs, hardware, team, onlineUsers, loading,
       addOrder, moveStage, updateNotes, updateInternalNotes, updateOrderDetails, archiveOrder, unarchiveOrder, deleteOrder, bulkAction,
       claimOrder, addTeamMember, updateTeamMember, deactivateTeamMember, deleteTeamMember,
       updateTeamMemberProfile, uploadAvatar,

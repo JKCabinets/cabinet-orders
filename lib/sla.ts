@@ -149,11 +149,26 @@ const WARRANTY_RULES: Partial<Record<string, SlaRule>> = {
  * The rules, per row type. One table, so tuning a type is a local edit and
  * adding a type is one entry.
  */
+/**
+ * Hardware: NO RULES, deliberately.
+ *
+ * There is no baseline for what "slow" looks like on a box of pulls, and a
+ * threshold guessed at now would either never fire or fire constantly.
+ * slaRuleFor returns undefined for every stage here, slaTier returns "ok",
+ * and /sla already renders stages that carry no rule.
+ *
+ * The natural rule when there is real throughput is "Ordered, while
+ * tracking_number is null" -- measuring MISSING DATA the way In production
+ * and At cross dock already do, rather than elapsed time.
+ */
+const HARDWARE_RULES: Partial<Record<string, SlaRule>> = {};
+
 export const SLA_RULES: Record<OrderType, Partial<Record<string, SlaRule>>> = {
   order: STANDARD_RULES,
   sample: STANDARD_RULES,
   warranty: WARRANTY_RULES,
   custom: CUSTOM_RULES,
+  hardware: HARDWARE_RULES,
 };
 
 /** The rule for this row's type and current stage, if any. */

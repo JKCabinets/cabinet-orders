@@ -1,0 +1,135 @@
+import { isSampleVendor } from "@/lib/data";
+
+/**
+ * Which product category a line belongs to, and therefore which group of a
+ * project it lands in.
+ *
+ * ONE IMPLEMENTATION. Sample classification, project grouping and (once it
+ * exists) the hardware page all read this. The recurring bug class in this
+ * codebase is copies that drift — the Shopify tag overwrite, four definitions
+ * of "overdue", seven stage-colour maps — so there is exactly one map and it
+ * lives here.
+ *
+ * A category is a subset of OrderType: warranty and custom rows are never
+ * produced by grouping a Shopify checkout.
+ */
+export type OrderCategory = "order" | "hardware" | "sample";
+
+/**
+ * ⚠ UNVERIFIED. There is no hardware product in Shopify yet, so these strings
+ * are taken from the approved Full Order mockup, not from a real payload.
+ *
+ * A vendor string that does not match here falls through to `order` (see
+ * categoryForVendor) and is logged — it is never silently reclassified. But a
+ * hardware product whose vendor differs by so much as a space will ingest as
+ * cabinets and inherit the acknowledgment gate, the production dates and the
+ * signed-receipt gate, none of which it can satisfy.
+ *
+ * BEFORE THE HARDWARE WORK IS CALLED DONE: create one test product in Shopify
+ * carrying the intended vendor string and ingest a real order through it.
+ * "It should work" is how sample classification shipped broken on 2026-08-19.
+ */
+export const HARDWARE_VENDORS: readonly string[] = [
+  "Top Knobs",
+  "Blum",
+];
+
+const normalise = (v: string | null | undefined): string =>
+  String(v ?? "").trim().toLowerCase();
+
+const HARDWARE_SET = new Set(HARDWARE_VENDORS.map(normalise));
+
+/**
+ * Resolve a line's category from its Shopify vendor.
+ *
+ * READ THE VENDOR FROM THE WEBHOOK PAYLOAD (`line_items[].vendor`), never
+ * through the SKU resolver. That resolver is keyed entirely on the SKU and the
+ * JK sample products carry empty SKUs, so routing classification through it
+ * returns an empty list and silently classifies every sample as a standard
+ * order. That is not hypothetical — it is the 2026-08-19 bug.
+ *
+ * An unknown or missing vendor returns "order" DELIBERATELY: the line lands in
+ * the queue a human actually works, rather than in a group nobody owns. The
+ * caller must log it. Silent classification is what this whole rule exists to
+ * prevent.
+ */
+export function categoryForVendor(vendor: string | null | undefined): OrderCategory {
+  if (isSampleVendor(vendor)) return "sample";
+  if (HARDWARE_SET.has(normalise(vendor))) return "hardware";
+  return "order";
+}
+
+/** True when a vendor string matched nothing and fell back to cabinets. */
+export function isUnknownVendor(vendor: string | null | undefined): boolean {
+  const v = normalise(vendor);
+  if (v === "") return true;
+  return !isSampleVendor(vendor) && !HARDWARE_SET.has(v);
+}
+
+/**
+ * Deterministic group order within a project.
+ *
+ * Cabinets first, and that matters beyond tidiness: during the transition the
+ * FIRST group carries the denormalised `shopify_id` so that exactly one
+ * `orders` row exists per Shopify order — which is the invariant the
+ * webhook-health reconciliation still depends on. Reorder this and that check
+ * starts seeing duplicates.
+ */
+export const GROUP_ORDER: readonly OrderCategory[] = ["order", "hardware", "sample"];
+
+/** Internal group handle suffix. Never shown to a customer. */
+export const GROUP_SUFFIX: Record<OrderCategory, string> = {
+  order: "-CAB",
+  hardware: "-HW",
+  sample: "-SMP",
+};
+
+/** The stage a freshly ingested group starts in, per category. */
+export const FIRST_STAGE_BY_CATEGORY: Record<OrderCategory, string> = {
+  order: "New",
+  hardware: "Ordered",
+  sample: "New",
+};
+
+/**
+ * Is a Shopify fulfilment authoritative for this category?
+ *
+ * Samples and hardware are shipped BY US, tracked in Shopify with a real
+ * carrier and tracking number — so a fulfilment is the real event, and pulling
+ * carrier and tracking straight off it means nobody types them in.
+ *
+ * Cabinets are DROP-SHIP. The manufacturer or their delivery partner handles
+ * the shipment and speaks to the customer directly; Shopify never sees it. Any
+ * cabinet fulfilment recorded there is bookkeeping or absent, and treating it
+ * as "delivered" is untrue either way. It is also exactly why the
+ * delivery-proof gate exists: we are not the ones delivering, so the signed
+ * receipt is the only proof we get.
+ *
+ * ⚠ NOT NOTHING, THOUGH — a cabinet fulfilment means the MANUFACTURER
+ * DISPATCHED. That is the real trigger behind the notification the order
+ * confirmation already promises ("we will notify you when your order has
+ * finished production and is on its way"), which is currently planned off the
+ * production-complete cron inferring dispatch from a date. A fulfilment event
+ * is better evidence than a date. Not built here; recorded so it is not
+ * rediscovered. See the notifications work in the session handoff.
+ */
+export function fulfilmentIsAuthoritative(category: OrderCategory): boolean {
+  return category === "sample" || category === "hardware";
+}
+
+/**
+ * The stage a fulfilment advances a group to.
+ *
+ * Hardware has a Shipped stage and a fulfilment means shipped, so it stops
+ * there — nothing in Shopify tells us the box arrived, and Delivered stays a
+ * human action. Samples have no Shipped stage (New -> Entered -> Delivered),
+ * so a fulfilment takes them to Delivered. That asymmetry is the stage list,
+ * not a judgement about samples.
+ *
+ * Returns null for categories a fulfilment must not move.
+ */
+export function fulfilmentTargetStage(category: OrderCategory): string | null {
+  if (category === "hardware") return "Shipped";
+  if (category === "sample") return "Delivered";
+  return null;
+}

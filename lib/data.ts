@@ -88,13 +88,29 @@ export type WarrantyStage =
   | "Resolved";
 
 /**
+ * Hardware groups: pulls, hinges and the like, shipped by us on a timeline
+ * of their own. No acknowledgment gate, no production dates, no cross dock,
+ * no signed receipt -- none of those have a hardware equivalent, and forcing
+ * them would make overriding gates routine.
+ *
+ * WARNING: every one of these three names already exists in another flow.
+ * "Ordered" is a CustomStage, "Shipped" is a WarrantyStage, "Delivered" is
+ * an OrderStage. stageIndex() without a `type` argument will mis-resolve all
+ * three. Always pass the row type.
+ */
+export type HardwareStage =
+  | "Ordered"
+  | "Shipped"
+  | "Delivered";
+
+/**
  * Row discriminator on the `orders` table.
  *
  * Warranty claims, sample orders, and custom (quote-form) orders all live in
  * the same table as standard orders, separated by this column. The list API
  * filters on it: /api/orders?type=order|warranty|sample|custom.
  */
-export type OrderType = "order" | "warranty" | "sample" | "custom";
+export type OrderType = "order" | "warranty" | "sample" | "custom" | "hardware";
 
 /**
  * Custom (quote-form) orders get their own flow: a quote is reviewed and
@@ -124,7 +140,7 @@ export type CustomStage =
  */
 export type SampleStage = OrderStage;
 
-export type Stage = OrderStage | WarrantyStage | CustomStage;
+export type Stage = OrderStage | WarrantyStage | CustomStage | HardwareStage;
 
 export interface ActivityEntry {
   text: string;
@@ -444,6 +460,10 @@ export const SAMPLE_STAGES: OrderStage[] = [
   "New", "Entered", "Delivered",
 ];
 
+export const HARDWARE_STAGES: HardwareStage[] = [
+  "Ordered", "Shipped", "Delivered",
+];
+
 /**
  * The vendor that marks a line as JK's own stock rather than a
  * manufacturer's. An order is a SAMPLE only when EVERY line is this vendor.
@@ -462,7 +482,7 @@ export function isSampleVendor(vendor: string | null | undefined): boolean {
  * Every valid value of the `type` discriminator, in one place, so reads
  * and writes whitelist against the same list.
  */
-export const ORDER_TYPES: OrderType[] = ["order", "warranty", "sample", "custom"];
+export const ORDER_TYPES: OrderType[] = ["order", "warranty", "sample", "custom", "hardware"];
 
 /**
  * Id prefix per row type. Shared by the API insert and the store's
@@ -473,6 +493,7 @@ export const ID_PREFIX_BY_TYPE: Record<OrderType, string> = {
   warranty: "WRN",
   sample: "SMP",
   custom: "CST",
+  hardware: "HW",
 };
 
 /**
@@ -501,6 +522,7 @@ export const STAGE_LIST_BY_TYPE: Record<OrderType, Stage[]> = {
   sample: SAMPLE_STAGES,
   warranty: WARRANTY_STAGES,
   custom: CUSTOM_STAGES,
+  hardware: HARDWARE_STAGES,
 };
 
 /**
@@ -552,6 +574,27 @@ export function nextStageFor(order: Pick<Order, "type" | "stage">): Stage | unde
  * Per-type wording for the create-order modal, in one place so a new type
  * cannot ship showing warranty labels on its form.
  */
+/**
+ * Plural label per row type, for pages that list every type side by side
+ * (/sla, the dashboard rollup).
+ *
+ * Record<OrderType, string> is load-bearing: adding a type to the union
+ * without adding a label here is a COMPILE ERROR, which is how the missing
+ * hardware category on /sla was caught rather than shipped as an empty
+ * column.
+ *
+ * Declaration order IS display order -- consumers map over Object.keys,
+ * and JS guarantees insertion order for non-integer string keys. Reorder
+ * these lines to reorder the page; do not sort them alphabetically.
+ */
+export const TYPE_LIST_LABEL: Record<OrderType, string> = {
+  order:    "Standard orders",
+  custom:   "Custom orders",
+  sample:   "Sample orders",
+  hardware: "Hardware",
+  warranty: "Warranty claims",
+};
+
 export const TYPE_UI: Record<OrderType, {
   createTitle: string;
   createCta: string;
@@ -581,6 +624,12 @@ export const TYPE_UI: Record<OrderType, {
     createCta: "Log claim",
     detailLabel: "Issue description",
     detailPlaceholder: "e.g. Door hinge alignment",
+  },
+  hardware: {
+    createTitle: "Add hardware",
+    createCta: "Create group",
+    detailLabel: "Description",
+    detailPlaceholder: "e.g. Bar pulls \u00b7 satin brass",
   },
 };
 

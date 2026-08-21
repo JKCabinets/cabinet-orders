@@ -21,13 +21,31 @@ export const CUSTOM_STAGE_ORDER = [
   "New", "In review", "Ordered", "In production", "At cross dock", "Delivered",
 ] as const;
 
+/**
+ * Hardware ships on its own timeline, so it gets its own ordering rather
+ * than a subset of another flow the way samples reuse ORDER_STAGE_ORDER.
+ *
+ * ⚠ All three names collide: "Ordered" is also a CUSTOM stage, "Shipped" a
+ * WARRANTY one, "Delivered" an ORDER one. stageIndex() falls back to a
+ * search across order -> warranty -> custom when no type is passed, so an
+ * untyped lookup of any hardware stage resolves to the WRONG flow. Every
+ * call site must pass the row type.
+ */
+export const HARDWARE_STAGE_ORDER = [
+  "Ordered", "Shipped", "Delivered",
+] as const;
+
 export const ALLOWED_STAGES: ReadonlySet<string> = new Set<string>([
   ...ORDER_STAGE_ORDER,
   ...WARRANTY_STAGE_ORDER,
   ...CUSTOM_STAGE_ORDER,
+  // Adds no new members -- every hardware stage name already appears in
+  // another flow. Listed anyway so the union stays honest about its
+  // sources, and so removing a flow cannot silently drop a name.
+  ...HARDWARE_STAGE_ORDER,
 ]);
 
-export type StageFlow = "order" | "warranty" | "custom" | "unknown";
+export type StageFlow = "order" | "warranty" | "custom" | "hardware" | "unknown";
 
 /**
  * Which stage ordering applies to a row, keyed by its `type` column.
@@ -41,6 +59,7 @@ export const STAGE_ORDER_BY_TYPE: Record<string, readonly string[]> = {
   sample: ORDER_STAGE_ORDER,
   warranty: WARRANTY_STAGE_ORDER,
   custom: CUSTOM_STAGE_ORDER,
+  hardware: HARDWARE_STAGE_ORDER,
 };
 
 /**
@@ -52,6 +71,11 @@ const FLOW_BY_TYPE: Record<string, StageFlow> = {
   sample: "order",
   warranty: "warranty",
   custom: "custom",
+  // Reports its own flow, NOT "order". That is what keeps
+  // fieldsToClearOnBackwardMove away from it -- hardware has no production
+  // or delivery dates to clear, and the ORDER_STAGE_ORDER indices the
+  // clearing rules are written against do not apply.
+  hardware: "hardware",
 };
 
 /**
