@@ -6,8 +6,15 @@ import { decodeHtmlEntities } from "@/lib/htmlEntities";
 import { decodeSku, buildSkuFromAvisNamesDetailed, ensureSkuMaps, skuMapsUnavailable, modificationMap } from "@/lib/skuDecoder";
 import { parseModifications } from "@/lib/modifications";
 import type { ReviewReason } from "@/lib/data";
-import { isSampleVendor } from "@/lib/data";
-import { lookupVendorsForSkus } from "@/lib/vendorLookup";
+// isSampleVendor and lookupVendorsForSkus are no longer imported here.
+// Classification moved into lib/categories (one implementation, shared with
+// grouping), and the per-line vendor now comes from the payload rather than
+// the SKU resolver -- which cannot see a SKU-less sample line at all.
+import {
+  categoryForVendor, isUnknownVendor, GROUP_ORDER, GROUP_SUFFIX,
+  FIRST_STAGE_BY_CATEGORY, fulfilmentIsAuthoritative, fulfilmentTargetStage,
+  type OrderCategory,
+} from "@/lib/categories";
 
 const SHOPIFY_SECRET = process.env.SHOPIFY_WEBHOOK_SECRET ?? "";
 
@@ -330,6 +337,13 @@ function buildOrder(payload: Record<string, unknown>) {
       // key for vendor resolution (shopify_products.id) — two vendors can share
       // a base SKU but never a variant_id.
       variant_id: variantIdStr,
+      // The Shopify vendor for THIS line, retained at ingest.
+      //
+      // Without it the input that decided a line's group is kept nowhere: a
+      // mis-grouped line could only be diagnosed by re-fetching the order
+      // from Shopify, and the Full Order table would have to resolve every
+      // row through shopify_products on each render.
+      vendor: shopifyInput(i.vendor),
       quantity: Number(i.quantity ?? 1),
       description: shopifyInput(desc),
       door_style,
@@ -374,6 +388,87 @@ function buildOrder(payload: Record<string, unknown>) {
     orderNumber: shopifyInput(orderNumber),
     decodedDoorStyle: shopifyInput(decodedDoorStyle),
     decodedColor: shopifyInput(decodedColor),
+  };
+}
+
+/**
+ * Numeric, or null when absent. null means UNKNOWN; 0 means actually zero.
+ * Free shipping is genuinely zero, so the two must stay distinguishable --
+ * that distinction is load-bearing for the metrics work.
+ */
+function numOrNull(v: unknown): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * The four money figures for a project, from a Shopify order payload.
+ *
+ * A checkout has ONE total, not one per group -- storing it per group would
+ * either double-count revenue on any sum or arbitrarily assign it to the
+ * cabinets, so it lives on `projects` alone.
+ *
+ * SHIPPING IS NOT TOP-LEVEL. subtotal_price, total_tax and total_price are,
+ * but shipping is only in total_shipping_price_set.shop_money.amount. Reading
+ * payload.total_shipping returns undefined, which writes null, which reads as
+ * "unknown" rather than "free shipping".
+ */
+function projectMoney(payload: Record<string, unknown>) {
+  const shipSet = payload.total_shipping_price_set as Record<string, unknown> | undefined;
+  const shopMoney = shipSet?.shop_money as Record<string, unknown> | undefined;
+  return {
+    subtotal_price: numOrNull(payload.subtotal_price),
+    total_tax: numOrNull(payload.total_tax),
+    total_shipping: numOrNull(shopMoney?.amount),
+    total_price: numOrNull(payload.total_price),
+  };
+}
+
+type BuiltItem = ReturnType<typeof buildOrder>["skuItems"][number];
+
+/**
+ * Split decoded lines into their category buckets, carrying each line's
+ * payload vendor alongside.
+ *
+ * `items` is lineItems.map(...) from buildOrder, so index i here IS index i of
+ * payloadLines. That alignment is the whole mechanism: it lets a payload
+ * vendor classify a line the SKU resolver cannot see.
+ */
+function groupLinesByCategory(
+  items: BuiltItem[],
+  payloadLines: Array<Record<string, unknown>>,
+): Map<OrderCategory, { items: BuiltItem[]; vendors: string[] }> {
+  const out = new Map<OrderCategory, { items: BuiltItem[]; vendors: string[] }>();
+  items.forEach((item, i) => {
+    const vendor = String(payloadLines[i]?.vendor ?? "").trim();
+    const cat = categoryForVendor(vendor);
+    const bucket = out.get(cat) ?? { items: [], vendors: [] };
+    bucket.items.push(item);
+    bucket.vendors.push(vendor);
+    out.set(cat, bucket);
+  });
+  return out;
+}
+
+/**
+ * Per-GROUP rollups.
+ *
+ * buildOrder computes detail / skus / door_style / color / needs_review across
+ * the whole order, which is the wrong scope once one checkout becomes several
+ * groups: a cabinet group would otherwise be labelled with a hardware line's
+ * description. Same derivations, narrowed to one group's items.
+ */
+function groupFields(items: BuiltItem[]) {
+  const names = items.map(i => String(i.description ?? "")).filter(Boolean);
+  return {
+    skus: items.map(i => i.sku).filter(Boolean).join(", "),
+    detail: names.length > 1
+      ? `${names.slice(0, 2).join(", ")}${names.length > 2 ? ` +${names.length - 2} more` : ""}`
+      : names[0] ?? "Shopify order",
+    doorStyle: items.find(i => i.door_style)?.door_style ?? "",
+    color: items.find(i => i.color)?.color ?? "",
+    needsReview: items.some(i => i.needs_review),
   };
 }
 
@@ -465,10 +560,15 @@ export async function POST(req: NextRequest) {
 
   // ─── New order ────────────────────────────────────────────────────────────
   if (topic === "orders/create") {
-    const { data: existing } = await supabase
-      .from("orders").select("id").eq("shopify_id", shopifyId).single();
-    if (existing) {
-      logWebhook("duplicate", { shopify_id: shopifyId, existing_id: existing.id });
+    // Duplicate check moved from orders.shopify_id to projects.shopify_id.
+    // Under grouping a project's groups all share one Shopify order, so
+    // `.eq("shopify_id", ...).single()` on `orders` ERRORS on multiple rows
+    // rather than picking one -- the first cabinets-plus-hardware checkout
+    // would have broken ingest, cancellation and deletion at once.
+    const { data: existingProject } = await supabase
+      .from("projects").select("id").eq("shopify_id", shopifyId).maybeSingle();
+    if (existingProject) {
+      logWebhook("duplicate", { shopify_id: shopifyId, existing_id: existingProject.id });
       return NextResponse.json({ received: true, skipped: "duplicate" });
     }
 
@@ -476,128 +576,166 @@ export async function POST(req: NextRequest) {
     // load leaves skuMapsUnavailable() true and every line is flagged
     // decoder_unavailable, so the order still ingests.
     try { await ensureSkuMaps(); } catch { /* degrade to decoder_unavailable */ }
-    const { customerName, customerEmail, customerPhone, shipTo, deliveryMethod, detail, skus, skuItems, skuAnomalies, reviewNotes, notes, today, orderNumber, decodedDoorStyle, decodedColor } = buildOrder(payload);
-    const orderId = orderNumber ? `SHO-${orderNumber}` : `SHO-${shopifyId.slice(-6)}`;
+    const { customerName, customerEmail, customerPhone, shipTo, deliveryMethod, skuItems, skuAnomalies, reviewNotes, notes, today, orderNumber } = buildOrder(payload);
+    const projectId = orderNumber ? `SHO-${orderNumber}` : `SHO-${shopifyId.slice(-6)}`;
+    // One timestamp for the project and every group, so the New SLA clock --
+    // which measures from the order date -- is identical across them.
+    const nowIso = new Date().toISOString();
 
-    // Resolve the order-level vendor through the SAME layered resolver used at
-    // read time (variant_id -> family -> base SKU), so the stamp is consistent
-    // with the per-line vendor shown in the order panel and PDFs.
+    // ── Group the lines by category ───────────────────────────────────────
     //
-    // EVERY line is resolved, not just the first. Two things depend on it:
-    // the order-level vendor stamp (still the first line's, for display
-    // consistency), and sample classification, which is a statement about
-    // ALL lines. lookupVendorsForSkus batches its queries, so resolving the
-    // whole order is the same number of round-trips as resolving one line.
-    let vendorName = "";
-    const resolvableItems = skuItems.filter(i => i.sku);
-    if (resolvableItems.length > 0) {
-      const { vendorBySku } = await lookupVendorsForSkus(resolvableItems);
-      vendorName = vendorBySku.get(resolvableItems[0].sku) ?? "";
-    }
-
-    // ── Sample classification ────────────────────────────────────────────
-    // Read line_items[].vendor from the PAYLOAD, not the SKU resolver.
+    // Read the vendor from the PAYLOAD, never through the SKU resolver. That
+    // resolver is keyed entirely on the SKU and JK's sample products carry an
+    // empty one, so routing classification through it returned an empty list
+    // and silently classified every sample as a standard order on 2026-08-19.
     //
-    // The resolver is keyed entirely on the SKU, and JK's sample products
-    // carry an empty sku in shopify_products -- so routing classification
-    // through it produced an empty item list and silently classified every
-    // sample as a standard order.
-    //
-    // The payload always carries the vendor per line, and this is the same
-    // field the storefront Liquid reads for its "What happens next" block, so
-    // the two systems cannot disagree about what a sample order is.
+    // skuItems is lineItems.map(...), so index i of one IS index i of the
+    // other. That alignment is what lets a payload vendor decide which group
+    // owns a line the resolver cannot see.
     const payloadLines = (payload.line_items as Array<Record<string, unknown>>) ?? [];
-    const lineVendors = payloadLines.map(l => String(l.vendor ?? "").trim());
+    const grouped = groupLinesByCategory(skuItems, payloadLines);
+    const categories = GROUP_ORDER.filter(c => grouped.has(c));
+    // An order with no line items still gets a cabinet group. A project with
+    // no groups is invisible work -- nothing lists it, nothing can claim it.
+    if (categories.length === 0) categories.push("order");
 
-    // Every line must be JK stock. A mixed order is STANDARD: if samples ever
-    // arrive alongside cabinetry, the cabinetry drives the pipeline. A line
-    // with no vendor is unknown, and unknown is never assumed to be JK -- so
-    // the order keeps the full pipeline and the ack gate.
-    const orderType: "order" | "sample" =
-      lineVendors.length > 0 && lineVendors.every(v => v !== "" && isSampleVendor(v))
-        ? "sample"
-        : "order";
-
-    // Fall back to the payload for the order-level vendor stamp when the
-    // resolver found nothing -- an unsynced or SKU-less product, exactly the
-    // case above, would otherwise leave this blank.
-    if (!vendorName && lineVendors.length > 0) {
-      vendorName = lineVendors[0];
+    const unknownVendors = Array.from(new Set(
+      payloadLines.map(l => String(l.vendor ?? "").trim()).filter(isUnknownVendor)));
+    if (unknownVendors.length > 0) {
+      // Unknown vendors fall through to the cabinet group ON PURPOSE: the line
+      // lands in a queue a human actually works rather than one nobody owns.
+      // This log line is what stops that being a silent reclassification, and
+      // it is not optional.
+      logWebhook("unknown_vendor", {
+        order_id: projectId, vendors: unknownVendors.map(v => v || "(blank)"),
+      });
     }
 
-    const { error } = await supabase.from("orders").insert({
-      id: orderId,
-      // Classified above from the resolved vendors of every line.
-      type: orderType,
+    // ── The project ───────────────────────────────────────────────────────
+    const { error: projectError } = await supabase.from("projects").insert({
+      id: projectId,
+      shopify_id: shopifyId,
       name: customerName,
       source: "Shopify",
-      detail,
-      stage: "New",
-      // No team member assigned at ingest — the order is "unclaimed" until
-      // someone clicks Claim. The avatar will populate from claimed_by /
-      // entered_by, not from this field.
-      member: "",
-      date: today,
-      sku: skus || "—",
-      notes,
-      archived: false,
-      shopify_id: shopifyId,
-      sku_items: skuItems,
-      needs_review: skuItems.some(i => i.needs_review),
-      door_style: decodedDoorStyle,
-      color: decodedColor,
-      delivery_window: "",
-      delivery_notes: "",
-      vendor: shopifyInput(vendorName),
       ship_to: shipTo,
       customer_phone: customerPhone,
       customer_email: customerEmail,
-      delivery_method: deliveryMethod,
-      // Shopify financial_status — drives the Payment column on order tables.
-      // Common values: paid, partially_paid, pending, refunded, voided.
       payment_status: payload.financial_status ?? null,
+      ...projectMoney(payload),
+      created_at: nowIso,
+      updated_at: nowIso,
     });
+
+    if (projectError) {
+      // 23505 is the unique index on projects.shopify_id: two concurrent
+      // deliveries of the same order both passed the check above and one lost.
+      // Treat the loser as a duplicate rather than a failure -- previously
+      // this race left one delivery hitting the primary key and returning 500.
+      if ((projectError as { code?: string }).code === "23505") {
+        logWebhook("duplicate", { shopify_id: shopifyId, existing_id: projectId });
+        return NextResponse.json({ received: true, skipped: "duplicate" });
+      }
+      logWebhook("insert_failed", {
+        order_id: projectId, shopify_id: shopifyId,
+        scope: "project", reason: projectError.message,
+      });
+      return NextResponse.json({ error: projectError.message }, { status: 500 });
+    }
+
+    // ── One group per category present ────────────────────────────────────
+    const groupRows = categories.map((cat, idx) => {
+      const bucket = grouped.get(cat) ?? { items: [], vendors: [] };
+      const f = groupFields(bucket.items);
+      return {
+        id: `${projectId}${GROUP_SUFFIX[cat]}`,
+        project_id: projectId,
+        type: cat,
+        name: customerName,
+        source: "Shopify",
+        detail: f.detail,
+        stage: FIRST_STAGE_BY_CATEGORY[cat],
+        // No team member at ingest -- the group is unclaimed until someone
+        // clicks Claim, and each group is claimed separately.
+        member: "",
+        date: today,
+        sku: f.skus || "\u2014",
+        notes,
+        archived: false,
+        // Exactly ONE group carries the denormalised shopify_id, so
+        // `orders.shopify_id` still identifies one row per Shopify order --
+        // the invariant the hourly webhook-health reconciliation reads. It
+        // stops being needed when that check is repointed at projects.
+        shopify_id: idx === 0 ? shopifyId : null,
+        sku_items: bucket.items,
+        needs_review: f.needsReview,
+        door_style: f.doorStyle,
+        color: f.color,
+        delivery_window: "",
+        delivery_notes: "",
+        vendor: shopifyInput(bucket.vendors.find(Boolean) ?? ""),
+        ship_to: shipTo,
+        customer_phone: customerPhone,
+        customer_email: customerEmail,
+        delivery_method: deliveryMethod,
+        payment_status: payload.financial_status ?? null,
+        created_at: nowIso,
+        stage_entered_at: nowIso,
+      };
+    });
+
+    const { error } = await supabase.from("orders").insert(groupRows);
 
     if (error) {
       // The type CHECK constraint rejected samples and custom orders for
       // three weeks without a single log line. Never again.
       logWebhook("insert_failed", {
-        order_id: orderId, shopify_id: shopifyId,
-        order_type: orderType, reason: error.message,
+        order_id: projectId, shopify_id: shopifyId,
+        groups: categories, reason: error.message,
       });
+      // Leave no orphan: a project with no groups is invisible work, and
+      // nothing would ever retry it.
+      await supabase.from("projects").delete().eq("id", projectId);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
     logWebhook("ingested", {
-      order_id: orderId, shopify_id: shopifyId,
-      order_type: orderType, lines: lineVendors.length,
-      vendors: Array.from(new Set(lineVendors)),
+      order_id: projectId, shopify_id: shopifyId,
+      groups: categories, lines: skuItems.length,
+      vendors: Array.from(new Set(payloadLines.map(l => String(l.vendor ?? "").trim()))),
     });
 
-    await supabase.from("order_activity").insert({
-      order_id: orderId,
-      // Say when an order was classified as a sample. A silent
-      // reclassification is the kind of thing nobody can reconstruct later.
-      text: `Order received from Shopify${orderNumber ? ` (#${orderNumber})` : ""}`
-        + (orderType === "sample"
-            ? " \u00b7 classified as a sample order (all lines JK stock)"
-            : ""),
-      time: today,
-    });
+    for (const cat of categories) {
+      await supabase.from("order_activity").insert({
+        order_id: `${projectId}${GROUP_SUFFIX[cat]}`,
+        // Name the grouping in the trail. A silent classification is the kind
+        // of thing nobody can reconstruct later.
+        text: `Order received from Shopify${orderNumber ? ` (#${orderNumber})` : ""}`
+          + (categories.length > 1
+              ? ` \u00b7 ${cat} group (${categories.length} groups in this order)`
+              : "")
+          + (cat === "sample" ? " \u00b7 JK stock" : ""),
+        time: today,
+      });
+    }
+
+    // SKU anomalies and review notes are cabinet concerns -- sample and
+    // hardware lines carry nothing decodable -- so they land on the cabinet
+    // group, falling back to the first group for an order that has none.
+    const noteTarget = `${projectId}${GROUP_SUFFIX[categories.includes("order") ? "order" : categories[0]]}`;
 
     // Surface any rejected _sku in the trail. The stored SKU is already the
-    // rebuilt, authoritative one — this makes the discrepancy visible rather
+    // rebuilt, authoritative one -- this makes the discrepancy visible rather
     // than silently corrected.
     for (const a of skuAnomalies) {
       await supabase.from("order_activity").insert({
-        order_id: orderId,
+        order_id: noteTarget,
         text: skuMismatchNote(a),
         time: today,
       });
     }
     for (const text of reviewNotes) {
       await supabase.from("order_activity").insert({
-        order_id: orderId,
+        order_id: noteTarget,
         text,
         time: today,
       });
@@ -608,102 +746,185 @@ export async function POST(req: NextRequest) {
   if (topic === "orders/updated") {
     if (payload.cancelled_at) return NextResponse.json({ received: true, skipped: "cancelled" });
 
-    const { data: existing } = await supabase
-      .from("orders").select("id, stage").eq("shopify_id", shopifyId).single();
+    const { data: project } = await supabase
+      .from("projects").select("id").eq("shopify_id", shopifyId).maybeSingle();
 
-    if (existing) {
+    if (project) {
       const today = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "America/Phoenix" });
       try { await ensureSkuMaps(); } catch { /* degrade to decoder_unavailable */ }
-      const { detail, skus, skuItems, skuAnomalies, reviewNotes, notes, shipTo, customerPhone, customerEmail, deliveryMethod } = buildOrder(payload);
+      const { skuItems, skuAnomalies, reviewNotes, notes, shipTo, customerPhone, customerEmail, deliveryMethod } = buildOrder(payload);
+      const payloadLines = (payload.line_items as Array<Record<string, unknown>>) ?? [];
+      const grouped = groupLinesByCategory(skuItems, payloadLines);
 
-      const fulfillmentStatus = String(payload.fulfillment_status ?? "");
-      const updates: Record<string, unknown> = {
-        detail,
-        sku: skus || "—",
-        notes,
-        sku_items: skuItems,
-        needs_review: skuItems.some(i => i.needs_review),
+      // Project-level: money and payment status. Refreshing these is what
+      // stops a later refund leaving a stale total inflating the month
+      // forever, and what lets the payment hold see the current status.
+      await supabase.from("projects").update({
         ship_to: shipTo,
         customer_phone: customerPhone,
         customer_email: customerEmail,
-        delivery_method: deliveryMethod,
-        // Refresh payment status on every update — covers the case where a
-        // pending order gets paid later.
         payment_status: payload.financial_status ?? null,
-      };
+        ...projectMoney(payload),
+        updated_at: new Date().toISOString(),
+      }).eq("id", project.id);
 
-      if (fulfillmentStatus === "fulfilled" && existing.stage !== "Delivered") {
-        updates.stage = "Delivered";
+      const { data: groups } = await supabase
+        .from("orders").select("id, type, stage").eq("project_id", project.id);
+      const groupRows = groups ?? [];
+
+      const fulfillmentStatus = String(payload.fulfillment_status ?? "");
+      const fulfillments = (payload.fulfillments as Array<Record<string, unknown>>) ?? [];
+      const firstFulfilment = fulfillments[0];
+
+      // GROUPS ARE NEVER CREATED OR DESTROYED HERE. A group may already be
+      // claimed, carry attachments and hold activity; deleting it because a
+      // line moved is destructive and unrecoverable. If the lines now imply a
+      // category with no group, say so and leave it for a human -- the
+      // tempting implementation is the symmetric one.
+      const present = new Set(groupRows.map(g => String(g.type)));
+      const implied = GROUP_ORDER.filter(c => grouped.has(c) && !present.has(c));
+      if (implied.length > 0) {
+        logWebhook("group_missing", { order_id: project.id, implied });
       }
 
-      await supabase.from("orders").update(updates).eq("id", existing.id);
-      await supabase.from("order_activity").insert({
-        order_id: existing.id,
-        text: "Order updated in Shopify",
-        time: today,
-      });
+      for (const g of groupRows) {
+        const cat = String(g.type) as OrderCategory;
+        const bucket = grouped.get(cat) ?? { items: [], vendors: [] };
+        const f = groupFields(bucket.items);
+        const updates: Record<string, unknown> = {
+          detail: f.detail,
+          sku: f.skus || "\u2014",
+          notes,
+          sku_items: bucket.items,
+          needs_review: f.needsReview,
+          ship_to: shipTo,
+          customer_phone: customerPhone,
+          customer_email: customerEmail,
+          delivery_method: deliveryMethod,
+          payment_status: payload.financial_status ?? null,
+        };
 
-      // orders/updated fires repeatedly (payment, fulfillment, edits), and a
-      // forged _sku persists across them — so dedupe against notes already on
-      // the trail instead of appending the same warning on every event.
-      if (skuAnomalies.length > 0) {
-        const { data: priorNotes } = await supabase
-          .from("order_activity")
-          .select("text")
-          .eq("order_id", existing.id)
-          .like("text", "SKU mismatch on %");
-        const seen = new Set((priorNotes ?? []).map((n: { text: string }) => n.text));
-        for (const a of skuAnomalies) {
-          const text = skuMismatchNote(a);
-          if (seen.has(text)) continue;
-          await supabase.from("order_activity").insert({
-            order_id: existing.id,
-            text,
-            time: today,
-          });
+        // A fulfilment is authoritative only for what WE ship. Samples and
+        // hardware are tracked in Shopify with a real carrier and number, so
+        // the event is the real thing and the tracking comes free. Cabinets
+        // are drop-ship: the manufacturer's partner delivers and Shopify never
+        // sees that shipment, so a fulfilment there is bookkeeping and calling
+        // it "Delivered" is untrue. It is also why the signed-receipt gate
+        // exists -- we are not the ones delivering.
+        if (fulfillmentStatus === "fulfilled" && fulfilmentIsAuthoritative(cat)) {
+          const target = fulfilmentTargetStage(cat);
+          if (target && g.stage !== target) updates.stage = target;
+          if (firstFulfilment) {
+            updates.carrier = shopifyInput(firstFulfilment.tracking_company);
+            updates.tracking_number = shopifyInput(firstFulfilment.tracking_number);
+          }
         }
+
+        await supabase.from("orders").update(updates).eq("id", g.id);
       }
 
-      // Needs-review notes — same dedupe discipline as the mismatch notes
-      // above, so repeat orders/updated events don't re-append the same flag.
-      if (reviewNotes.length > 0) {
-        const { data: priorReview } = await supabase
-          .from("order_activity")
-          .select("text")
-          .eq("order_id", existing.id)
-          .like("text", "Needs review on %");
-        const seenReview = new Set((priorReview ?? []).map((n: { text: string }) => n.text));
-        for (const text of reviewNotes) {
-          if (seenReview.has(text)) continue;
-          await supabase.from("order_activity").insert({
-            order_id: existing.id,
-            text,
-            time: today,
-          });
+      if (fulfillmentStatus === "fulfilled"
+          && groupRows.some(g => !fulfilmentIsAuthoritative(String(g.type) as OrderCategory))) {
+        // NOT nothing: a fulfilment on a drop-ship vendor means the
+        // MANUFACTURER DISPATCHED. That is the real trigger behind the
+        // notification the order confirmation already promises ("we will
+        // notify you when your order has finished production and is on its
+        // way"), which is currently planned off the production-complete cron
+        // inferring dispatch from a date. Logged rather than discarded, so the
+        // signal exists by the time that work lands.
+        logWebhook("fulfilment_not_applied", {
+          order_id: project.id, reason: "drop_ship_vendor",
+          carrier: firstFulfilment ? String(firstFulfilment.tracking_company ?? "") : "",
+        });
+      }
+
+      // Notes go on the cabinet group, or the first group without one. One
+      // note per EVENT, not per group: orders/updated fires repeatedly and
+      // multiplying that by the group count would bury the trail.
+      const noteTarget = groupRows.find(g => g.type === "order")?.id ?? groupRows[0]?.id;
+      if (noteTarget) {
+        await supabase.from("order_activity").insert({
+          order_id: noteTarget,
+          text: "Order updated in Shopify",
+          time: today,
+        });
+
+        // orders/updated fires repeatedly (payment, fulfillment, edits), and a
+        // forged _sku persists across them -- so dedupe against notes already
+        // on the trail instead of appending the same warning every time.
+        if (skuAnomalies.length > 0) {
+          const { data: priorNotes } = await supabase
+            .from("order_activity")
+            .select("text")
+            .eq("order_id", noteTarget)
+            .like("text", "SKU mismatch on %");
+          const seen = new Set((priorNotes ?? []).map((n: { text: string }) => n.text));
+          for (const a of skuAnomalies) {
+            const text = skuMismatchNote(a);
+            if (seen.has(text)) continue;
+            await supabase.from("order_activity").insert({
+              order_id: noteTarget,
+              text,
+              time: today,
+            });
+          }
+        }
+
+        // Needs-review notes -- same dedupe discipline as the mismatch notes
+        // above, so repeat orders/updated events don't re-append the same flag.
+        if (reviewNotes.length > 0) {
+          const { data: priorReview } = await supabase
+            .from("order_activity")
+            .select("text")
+            .eq("order_id", noteTarget)
+            .like("text", "Needs review on %");
+          const seenReview = new Set((priorReview ?? []).map((n: { text: string }) => n.text));
+          for (const text of reviewNotes) {
+            if (seenReview.has(text)) continue;
+            await supabase.from("order_activity").insert({
+              order_id: noteTarget,
+              text,
+              time: today,
+            });
+          }
         }
       }
     }
   }
 
   // ─── Order cancelled ──────────────────────────────────────────────────────
-  if (topic === "orders/cancelled") {
-    const { data: existing } = await supabase
-      .from("orders").select("id").eq("shopify_id", shopifyId).single();
+  if (topic === "orders/cancelled" || topic === "orders/delete" || topic === "orders/deleted") {
+    const { data: project } = await supabase
+      .from("projects").select("id").eq("shopify_id", shopifyId).maybeSingle();
 
-    if (existing) {
-      await supabase.from("order_activity").delete().eq("order_id", existing.id);
-      await supabase.from("orders").delete().eq("id", existing.id);
-    }
-  }
+    if (project) {
+      const { data: groups } = await supabase
+        .from("orders").select("id").eq("project_id", project.id);
+      const ids = (groups ?? []).map(g => g.id);
 
-  // ─── Order deleted ────────────────────────────────────────────────────────
-  if (topic === "orders/delete" || topic === "orders/deleted") {
-    const { data: existing } = await supabase
-      .from("orders").select("id").eq("shopify_id", shopifyId).single();
+      if (ids.length > 0) {
+        // EVERY foreign key on these tables is NO ACTION, so children must go
+        // first or the delete is REJECTED outright. The previous version
+        // cleared only order_activity -- which meant any order carrying a
+        // manufacturer acknowledgment, i.e. every order past Entered, would
+        // 500 here. Latent only because nothing had been cancelled since
+        // acknowledgments started existing.
+        //
+        // NOTE: deleting order_attachments rows leaves their storage objects
+        // behind, since file_path carries no foreign key. Deliberate for now --
+        // silently destroying a customer's uploaded files on a Shopify cancel
+        // is a decision, not an implementation detail.
+        await supabase.from("order_activity").delete().in("order_id", ids);
+        await supabase.from("order_acknowledgments").delete().in("order_id", ids);
+        await supabase.from("order_attachments").delete().in("order_id", ids);
+        await supabase.from("damage_reports").delete().in("order_id", ids);
+        await supabase.from("orders").delete().in("id", ids);
+      }
 
-    if (existing) {
-      await supabase.from("order_activity").delete().eq("order_id", existing.id);
-      await supabase.from("orders").delete().eq("id", existing.id);
+      await supabase.from("projects").delete().eq("id", project.id);
+      logWebhook("removed", {
+        order_id: project.id, shopify_id: shopifyId, topic, groups: ids.length,
+      });
     }
   }
 
