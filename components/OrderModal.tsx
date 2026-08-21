@@ -1091,6 +1091,15 @@ function DateEditor({
   const showProdDates = stage === "Entered" || stage === "In production" || stage === "At cross dock" || stage === "Delivered";
   const showDeliveryDate = stage === "At cross dock" || stage === "Delivered";
   const prodEditable = stage === "Entered" || stage === "In production";
+  // Whether saving a start date will MOVE the order.
+  //
+  // For standard and sample rows the server advances Entered -> In
+  // production on save, and the production-complete cron then owns In
+  // production -> At cross dock. Custom orders are hand-driven end to end
+  // and that cron is filtered to exclude them, so their dates are a record,
+  // not a trigger. The copy below has to say so rather than promise a move
+  // that will not happen.
+  const autoAdvances = order.type !== "custom";
   const deliveryEditable = stage === "At cross dock";
 
   const [editingProd, setEditingProd] = useState(false);
@@ -1144,7 +1153,7 @@ function DateEditor({
             <div className="rounded-brand p-3" style={{ background: "rgba(200,184,74,0.08)", border: "0.5px solid rgba(200,184,74,0.30)" }}>
               <div className="flex items-center gap-2 mb-2">
                 <p className="text-[10px] uppercase tracking-[0.13em] text-cream/55 font-medium">Production dates</p>
-                {stage === "Entered" && (
+                {stage === "Entered" && autoAdvances && (
                   <span className="text-[9px] text-cream/45 italic">
                     Setting start date auto-advances to <em className="italic-storm">In production</em>
                   </span>
@@ -1217,8 +1226,15 @@ function DateEditor({
               )}
             </div>
           ) : (
-            // No dates set yet — show a single CTA to enter them
-            stage === "Entered" && (
+            // No dates set yet — show a single CTA to enter them.
+            //
+            // Gated on prodEditable, NOT on stage === "Entered". A standard
+            // order never reaches In production without dates, because it
+            // gets there BY having a start date set -- but a custom order
+            // arrives by a manual advance, and any order moved backward or
+            // by admin PIN arrives the same way. All of them landed here
+            // with no way to enter dates at all.
+            prodEditable && (
               <button
                 onClick={() => setEditingProd(true)}
                 className="w-full rounded-brand px-4 py-3 text-left transition-all bg-terracotta/10 hover:bg-terracotta/15"
@@ -1228,7 +1244,11 @@ function DateEditor({
                   Set production <em className="italic-storm">start date</em>
                 </p>
                 <p className="text-[11px] text-cream/55">
-                  This will auto-advance the order to <em className="italic-storm">In production</em>.
+                  {stage === "Entered" && autoAdvances ? (
+                    <>This will auto-advance the order to <em className="italic-storm">In production</em>.</>
+                  ) : (
+                    <>Recorded for scheduling — this will not move the order.</>
+                  )}
                 </p>
               </button>
             )

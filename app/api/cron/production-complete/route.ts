@@ -15,6 +15,22 @@ export async function GET(req: NextRequest) {
     .select("id, name, shopify_id, production_est_finish_date")
     .eq("stage", "In production")
     .eq("archived", false)
+    // ALLOWLIST, deliberately -- not .neq("type", "custom").
+    //
+    // Custom orders are contract work: priced by hand, paid in person,
+    // scheduled by conversation. Their stages RECORD what happened rather
+    // than drive it, so a cron advancing one at 1am is asserting something
+    // it cannot know. This filter is what keeps date entry on a custom
+    // order inert.
+    //
+    // Samples are listed because they are Shopify orders with Shopify
+    // payment, same as standard -- though the entry is inert today, since
+    // their flow is New -> Entered -> Delivered and never reaches this
+    // stage at all.
+    //
+    // A denylist would automate the NEXT type added without anyone
+    // choosing to, which is exactly how custom orders ended up here.
+    .in("type", ["order", "sample"])
     .lte("production_est_finish_date", today)
     .not("production_est_finish_date", "is", null);
 
