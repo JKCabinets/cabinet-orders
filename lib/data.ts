@@ -295,6 +295,34 @@ export interface Order {
    */
   payment_hold_cleared_for?: string | null;
   payment_hold_cleared_at?: string | null;
+  /**
+   * The purchase this group belongs to. NULL only for warranty rows,
+   * which are ABOUT a purchase rather than part of one.
+   *
+   * ⚠ This is the customer-facing ORDER NUMBER. `id` is the internal
+   * group handle (SHO-1048-CAB). Never show `id` to a customer -- use
+   * displayOrderNumber().
+   */
+  project_id?: string | null;
+  /**
+   * Warranty only: the GROUP this claim is about. A distinct relationship
+   * from project_id -- one means "belongs to", this means "is about".
+   * Points at the group rather than the project because the 48-hour
+   * window in Terms 12.3 runs from a delivery, and deliveries are per
+   * group.
+   */
+  about_order_id?: string | null;
+  /**
+   * Warranty only: self-reported and unverified, whatever was typed into
+   * the claim form. The customer OF RECORD resolves through
+   * about_order_id once a claim is linked. A mismatch between the two is
+   * worth seeing rather than reconciling away.
+   */
+  claimant_name?: string | null;
+  claimant_email?: string | null;
+  /** Hardware groups: pulled off the Shopify fulfilment, not typed in. */
+  carrier?: string | null;
+  tracking_number?: string | null;
   // ISO timestamp of when the order entered its current stage. Updated
   // automatically (DB trigger + app code) whenever `stage` changes. Used
   // by the SLA page to compute real per-stage age rather than total
@@ -375,6 +403,18 @@ export function shapeOrder(raw: Record<string, unknown>): Order {
     payment_status: (raw.payment_status as string | null) ?? null,
     payment_hold_cleared_for: (raw.payment_hold_cleared_for as string | null) ?? null,
     payment_hold_cleared_at: (raw.payment_hold_cleared_at as string | null) ?? null,
+    // Added with the Project Orders migration. shapeOrder is the ONE row
+    // shaper -- both the REST load in store.tsx and the realtime events in
+    // useRealtimeOrders go through it -- so a column added here reaches
+    // every consumer, and a column added anywhere else reaches none.
+    // useRealtimeOrders carried its own copy until 2026-08-20 and shaped
+    // every realtime row with a stale version until the next full fetch.
+    project_id: (raw.project_id as string | null) ?? null,
+    about_order_id: (raw.about_order_id as string | null) ?? null,
+    claimant_name: (raw.claimant_name as string | null) ?? null,
+    claimant_email: (raw.claimant_email as string | null) ?? null,
+    carrier: (raw.carrier as string | null) ?? null,
+    tracking_number: (raw.tracking_number as string | null) ?? null,
     stage_entered_at: (raw.stage_entered_at as string | null) ?? null,
     production_start_date: (raw.production_start_date as string | null) ?? null,
     production_est_finish_date: (raw.production_est_finish_date as string | null) ?? null,
@@ -563,6 +603,55 @@ export const STAGE_ACCENT: Record<string, string> = {
  * the type's offered list (e.g. a sample sitting at "In production",
  * which is reachable but not offered).
  */
+/**
+ * Every group-handle suffix, in one place. Used to recover an order number
+ * from a handle when project_id is somehow absent, and to recognise a
+ * handle someone has pasted in.
+ */
+const GROUP_HANDLE_SUFFIXES = ["-CAB", "-HW", "-SMP", "-CST"] as const;
+
+/**
+ * The order number to SHOW a human. Never `order.id`.
+ *
+ * After the Project Orders migration `id` is an internal group handle
+ * (SHO-1048-CAB) and the customer-facing number lives on the project
+ * (SHO-1048). The customer sees "ORDER #1048", quotes it on the phone, and
+ * types it into lookup; the suffix means nothing to them.
+ *
+ * project_id is authoritative. Stripping the suffix is a FALLBACK for a row
+ * that has not been reshaped yet -- it should not normally fire, and if it
+ * is firing widely then shapeOrder or the API select is dropping the column.
+ *
+ * A warranty claim has no project: its own id (WRN-0007) IS its number.
+ */
+export function displayOrderNumber(order: Pick<Order, "id" | "project_id">): string {
+  if (order.project_id) return order.project_id;
+  for (const suffix of GROUP_HANDLE_SUFFIXES) {
+    if (order.id.endsWith(suffix)) return order.id.slice(0, -suffix.length);
+  }
+  return order.id;
+}
+
+/**
+ * Does a search term match this row's order number?
+ *
+ * Accepts BOTH forms deliberately. A customer says "1048" or "#1048"; a
+ * staff member pastes "SHO-1048-CAB" straight out of a log line or a
+ * webhook outcome. A search that rejects the handle it just displayed in
+ * the logs is a search people stop trusting.
+ *
+ * Normalisation matches OPERATIONS section 2: strip #, trim, uppercase.
+ */
+export function matchesOrderNumber(
+  order: Pick<Order, "id" | "project_id">,
+  term: string,
+): boolean {
+  const q = term.replace(/#/g, "").trim().toUpperCase();
+  if (!q) return false;
+  return order.id.toUpperCase().includes(q)
+    || displayOrderNumber(order).toUpperCase().includes(q);
+}
+
 export function nextStageFor(order: Pick<Order, "type" | "stage">): Stage | undefined {
   const list = STAGE_LIST_BY_TYPE[order.type] ?? STAGE_LIST_BY_TYPE.order;
   const i = list.indexOf(order.stage);
