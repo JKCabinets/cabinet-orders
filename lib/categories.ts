@@ -37,7 +37,30 @@ export const HARDWARE_VENDORS: readonly string[] = [
 const normalise = (v: string | null | undefined): string =>
   String(v ?? "").trim().toLowerCase();
 
+/**
+ * The manufacturers whose lines are cabinets. From OPERATIONS section 1:
+ * Waypoint (also sold as "Select Cabinetry"), HCI and J&K.
+ *
+ * Cabinets are the DEFAULT category, so this list changes no routing --
+ * categoryForVendor already returns "order" for anything unmatched. It
+ * exists so that "unknown" can mean genuinely unknown. Without it,
+ * isUnknownVendor fired on every cabinet order, which is how a signal
+ * becomes noise and then gets ignored.
+ *
+ * A NEW cabinet manufacturer will log as unknown until it is added here.
+ * That is the intended behaviour: its lines still land in the cabinet
+ * group and still get worked, and somebody gets told once.
+ */
+export const CABINET_VENDORS: readonly string[] = [
+  "Waypoint Cabinetry",
+  "Waypoint",
+  "Select Cabinetry",
+  "HCI",
+  "J&K",
+];
+
 const HARDWARE_SET = new Set(HARDWARE_VENDORS.map(normalise));
+const CABINET_SET = new Set(CABINET_VENDORS.map(normalise));
 
 /**
  * Resolve a line's category from its Shopify vendor.
@@ -59,11 +82,20 @@ export function categoryForVendor(vendor: string | null | undefined): OrderCateg
   return "order";
 }
 
-/** True when a vendor string matched nothing and fell back to cabinets. */
+/**
+ * True when a vendor string matched NONE of the three known lists, and so
+ * fell through to the cabinet group without anyone having decided it should.
+ *
+ * A blank vendor counts as unknown -- OPERATIONS is explicit that a line
+ * with no vendor is never assumed to be JK stock.
+ *
+ * This is a LOGGING predicate, not a routing one. The line lands in the
+ * cabinet queue either way; this only decides whether anyone is told.
+ */
 export function isUnknownVendor(vendor: string | null | undefined): boolean {
   const v = normalise(vendor);
   if (v === "") return true;
-  return !isSampleVendor(vendor) && !HARDWARE_SET.has(v);
+  return !isSampleVendor(vendor) && !HARDWARE_SET.has(v) && !CABINET_SET.has(v);
 }
 
 /**
