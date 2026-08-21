@@ -4,7 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { groupSkuItemsByStyle, decodeSku } from "@/lib/skuDecoder";
 import { lookupVendorsForSkus } from "@/lib/vendorLookup";
 import type { SkuItem } from "@/lib/skuDecoder";
-import { poReference } from "@/lib/data";
+import { poReference, displayOrderNumber } from "@/lib/data";
 
 // Short alias since this file does a lot of escaping
 const h = escapeHtml;
@@ -115,7 +115,16 @@ export async function GET(
   const specialInstructions = order.notes           || "";
   const internalNotes       = order.internal_notes  || "";
   const deliveryMethod      = order.delivery_method || "";
-  const shopifyId           = order.shopify_id      || order.id || "—";
+  // Battles-SHO-1049. Derived here rather than inline in the template so
+  // the header, the PO row and the filename cannot drift apart.
+  const poRef               = poReference(order);
+  const orderNumber         = displayOrderNumber(order);
+  // NO `|| order.id` FALLBACK. Ingest denormalises shopify_id onto the
+  // first group only, so a hardware or sample group would otherwise print
+  // its group handle in a field labelled "Shopify Id" -- a plausible-looking
+  // wrong number is worse than an em dash. Falls back to the project id,
+  // which at least identifies the right purchase.
+  const shopifyId           = order.shopify_id      || orderNumber || "—";
   const status              = order.stage           || "—";
   const orderedOn           = order.date            || "—";
 
@@ -288,7 +297,10 @@ export async function GET(
   // The PO reference, not the group handle. This PDF goes to the
   // manufacturer, and "SHO-1048-CAB" is a string they have never seen --
   // whereas Battles-SHO-1048 is the whole point of the format.
-  const poRef = poReference(order);
+  //
+  // poRef is declared with the other field mappings above, so the header,
+  // the PO row and this filename cannot drift apart. Declaring it a second
+  // time here is TS2451, cannot redeclare a block-scoped variable.
   const pageTitle = vendorFilter
     ? `Order ${poRef} — ${vendorFilter}`
     : `Order ${poRef}`;
@@ -483,7 +495,7 @@ export async function GET(
       <div class="logo-jk">JK</div>
       <div class="logo-cabinets">CABINETS</div>
     </div>
-    <div class="order-title"><span>Order#</span> ${h(order.id)}</div>
+    <div class="order-title"><span>Order#</span> ${h(orderNumber)}</div>
   </div>
 
   ${needsReviewBanner}
@@ -504,6 +516,10 @@ export async function GET(
       <tr>
         <td class="lbl">Vendor</td>
         <td class="val" colspan="3">${h(headerVendor || "—")}</td>
+      </tr>
+      <tr>
+        <td class="lbl">PO</td>
+        <td class="val" colspan="3">${h(poRef)}</td>
       </tr>
       <tr>
         <td class="lbl">Shopify Id</td>
