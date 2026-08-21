@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useRef, useEffect } from "react";
 import { Archive, ChevronDown, Loader2, X, AlertCircle } from "lucide-react";
-import { Order, ORDER_STAGES, STAGE_LIST_BY_TYPE, Stage } from "@/lib/data";
+import { Order, ORDER_STAGES, STAGE_LIST_BY_TYPE, Stage, displayOrderNumber } from "@/lib/data";
 import { useStore } from "@/lib/store";
 
 interface BulkActionBarProps {
@@ -329,7 +329,7 @@ export function BulkActionBar({ selectedOrders, onClear, onDone }: BulkActionBar
                     {willFailThis && <span style={{ color: "#e08030" }}>⊗</span>}
                     {check?.will_pass && confirming.kind === "move" && <span style={{ color: "#8fbe70" }}>→</span>}
                     <span style={{ color: willFailThis ? "rgba(255,170,80,0.85)" : "rgba(232,227,218,0.55)" }}>
-                      {o.id} — {o.name}
+                      {displayOrderNumber(o)} — {o.name}
                     </span>
                   </div>
                 );

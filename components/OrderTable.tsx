@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import clsx from "clsx";
-import { Order, Stage, AVATAR_COLOR_STYLES, getBackorderStatus, nextStageFor } from "@/lib/data";
+import { Order, Stage, AVATAR_COLOR_STYLES, getBackorderStatus, nextStageFor, displayOrderNumber } from "@/lib/data";
 import { STAGE_ORDER_BY_TYPE, ORDER_STAGE_ORDER } from "@/lib/stageLogic";
 import { useStore } from "@/lib/store";
 import { useSession } from "next-auth/react";
@@ -264,7 +264,7 @@ function OrderRow({
           </div>
         </td>
       )}
-      <td className="px-3 py-2.5 font-mono text-[10px] text-cream/65">{order.id}</td>
+      <td className="px-3 py-2.5 font-mono text-[10px] text-cream/65">{displayOrderNumber(order)}</td>
       <td className="px-3 py-2.5 text-cream/75 text-[11px]">{formatDateWithYear(order.date)}</td>
       <td className="px-3 py-2.5">
         <div className="font-display text-[15px] leading-tight text-cream truncate">{order.name}</div>
@@ -332,7 +332,7 @@ function MobileRow({
     >
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5 mb-0.5">
-          <span className="font-mono text-[9px] text-cream/45">{order.id}</span>
+          <span className="font-mono text-[9px] text-cream/45">{displayOrderNumber(order)}</span>
           <TypePill source={order.source} />
           <PaymentPill status={order.payment_status} />
         </div>

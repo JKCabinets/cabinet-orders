@@ -3,7 +3,7 @@
 import React, { useMemo, useState } from "react";
 import Link from "next/link";
 import { useStore } from "@/lib/store";
-import { Order, ORDER_STAGES, OrderStage, STAGE_ACCENT, getBackorderStatus } from "@/lib/data";
+import { Order, ORDER_STAGES, OrderStage, STAGE_ACCENT, getBackorderStatus, displayOrderNumber } from "@/lib/data";
 import { rollupBackorders, summarizeBackorders, type BackorderSummary } from "@/lib/backorders";
 import { parseOrderDate } from "@/lib/dateUtils";
 import {
@@ -354,7 +354,7 @@ function SearchOverlay({
             >
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-0.5">
-                  <span className="font-mono text-[10px] text-cream/45">{o.id}</span>
+                  <span className="font-mono text-[10px] text-cream/45">{displayOrderNumber(o)}</span>
                   <span className="text-[9px] uppercase tracking-wider text-cream/55">{o.stage}</span>
                   {o.archived && (
                     <span className="text-[9px] uppercase tracking-wider text-cream/45 px-1.5 py-px rounded-full border border-white/15">archived</span>
@@ -571,7 +571,7 @@ function NeedsAttention({
               }}
             >
               <div className="flex items-center gap-2">
-                <span className="font-mono text-[10px] text-cream/55">{order.id}</span>
+                <span className="font-mono text-[10px] text-cream/55">{displayOrderNumber(order)}</span>
                 <span
                   className="text-[9px] px-1.5 py-px rounded-full font-medium uppercase tracking-wider"
                   style={{

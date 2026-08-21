@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { groupSkuItemsByStyle, decodeSku } from "@/lib/skuDecoder";
 import { lookupVendorsForSkus } from "@/lib/vendorLookup";
 import type { SkuItem } from "@/lib/skuDecoder";
+import { poReference } from "@/lib/data";
 
 // Short alias since this file does a lot of escaping
 const h = escapeHtml;
@@ -284,9 +285,13 @@ export async function GET(
   ].join("; ");
 
   // ── Page title — vendor-aware for per-vendor PDFs ────────────────────────
+  // The PO reference, not the group handle. This PDF goes to the
+  // manufacturer, and "SHO-1048-CAB" is a string they have never seen --
+  // whereas Battles-SHO-1048 is the whole point of the format.
+  const poRef = poReference(order);
   const pageTitle = vendorFilter
-    ? `Order ${order.id} — ${vendorFilter}`
-    : `Order ${order.id}`;
+    ? `Order ${poRef} — ${vendorFilter}`
+    : `Order ${poRef}`;
 
   // Vendor sub-header — visible "VENDOR PDF" indicator (per #4c)
   const vendorSubHeader = vendorFilter

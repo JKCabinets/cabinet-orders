@@ -6,6 +6,7 @@ import { useStore } from "@/lib/store";
 import {
   Order, OrderStage, OrderType, AVATAR_COLOR_STYLES, Stage,
   STAGE_ACCENT, STAGE_LIST_BY_TYPE, TYPE_LIST_LABEL, nextStageFor,
+  displayOrderNumber,
 } from "@/lib/data";
 import {
   SLA_RULES, slaTier, slaRuleFor, hoursInStage, slaAgeHours, formatStageAge,
@@ -576,7 +577,7 @@ function NeedsAttentionRow({ entry, team, currentUserId, onOpen, onClaim }: {
 
       <div className="flex-1 min-w-0 py-2.5 grid grid-cols-1 sm:grid-cols-3 gap-1 sm:gap-3 items-center">
         <div className="min-w-0">
-          <div className="text-[11px] font-mono text-cream truncate">{order.id}</div>
+          <div className="text-[11px] font-mono text-cream truncate">{displayOrderNumber(order)}</div>
           <div className="text-[11px] text-cream/65 truncate">{order.name}</div>
         </div>
         <div className="min-w-0">
@@ -703,7 +704,7 @@ function AllOrdersRow({ entry, team, currentUserId, onOpen, onClaim }: {
       className="border-b cursor-pointer hover:bg-white/[0.03] transition-colors"
       style={{ borderColor: "rgba(232,227,218,0.06)" }}
     >
-      <td className="py-2.5 px-2 text-[11px] font-mono text-cream whitespace-nowrap">{order.id}</td>
+      <td className="py-2.5 px-2 text-[11px] font-mono text-cream whitespace-nowrap">{displayOrderNumber(order)}</td>
       <td className="py-2.5 px-2 text-[11px] text-cream/75 max-w-[160px] truncate">{order.name}</td>
       <td className="py-2.5 px-2 text-[11px] text-cream/55 whitespace-nowrap">{typeLabel}</td>
       <td className="py-2.5 px-2">
@@ -939,7 +940,7 @@ function OverdueRow({
         className="flex-1 min-w-0 text-left"
       >
         <div className="flex items-center gap-2 mb-0.5">
-          <span className="font-mono text-[10px] text-cream/45">{order.id}</span>
+          <span className="font-mono text-[10px] text-cream/45">{displayOrderNumber(order)}</span>
           {order.source === "Shopify" && (
             <span className="text-[8px] uppercase tracking-wider px-1.5 py-px rounded-full"
               style={{ background: "rgba(184,130,106,0.15)", color: "#d9a888", border: "0.5px solid rgba(184,130,106,0.40)" }}>

@@ -642,6 +642,53 @@ export function displayOrderNumber(order: Pick<Order, "id" | "project_id">): str
  *
  * Normalisation matches OPERATIONS section 2: strip #, trim, uppercase.
  */
+/**
+ * Trailing legal suffixes stripped before taking a company's last token.
+ * "Sunrise Builders LLC" must not become "LLC-SHO-1048", which identifies
+ * nothing and is identical for every company customer.
+ */
+const LEGAL_SUFFIXES = new Set([
+  "llc", "l.l.c.", "inc", "inc.", "incorporated",
+  "ltd", "ltd.", "limited", "co", "co.", "corp", "corp.",
+  "llp", "lp", "plc",
+]);
+
+/**
+ * The reference a MANUFACTURER sees: `Battles-SHO-1048`.
+ *
+ * Last name, hyphen, order number. Garrett's reason: it makes tracking an
+ * order through the manufacturer far easier than an opaque id. Internal --
+ * never shown to a customer, who knows only "ORDER #1048".
+ *
+ * Built on the ORDER NUMBER, not the group handle, so every group of a
+ * project quotes the same reference. Three edge cases, all deliberate:
+ *
+ *   "Cher"                  -> Cher-SHO-1048       (one token: use it)
+ *   "Sunrise Builders LLC"  -> Builders-SHO-1048   (suffix stripped)
+ *   ""                      -> SHO-1048            (no dangling hyphen)
+ *
+ * ⚠ Reads `name` off the ORDER row. The Project Orders migration COPIED
+ * that column to projects rather than moving it, so this works today; when
+ * the follow-up migration drops it, this must read through the project.
+ */
+export function poReference(
+  order: { id: string; project_id?: string | null; name?: string | null },
+): string {
+  const number = displayOrderNumber(order);
+  const tokens = String(order.name ?? "").trim().split(/\s+/).filter(Boolean);
+  const meaningful = tokens.filter(
+    t => !LEGAL_SUFFIXES.has(t.replace(/[.,]+$/, "").toLowerCase()));
+  const pick = meaningful.length > 0 ? meaningful : tokens;
+  // Strip trailing punctuation from the token we KEEP, not only from the
+  // one we test: "Acme Cabinets, Inc." drops "Inc." correctly and would
+  // otherwise yield "Cabinets,-SHO-1051", comma and all, in a document
+  // sent to a manufacturer.
+  const last = (pick[pick.length - 1] ?? "").replace(/[.,]+$/, "");
+  // No name is better than a leading hyphen: "-SHO-1048" reads as a typo
+  // to whoever receives the PDF.
+  return last ? `${last}-${number}` : number;
+}
+
 export function matchesOrderNumber(
   order: Pick<Order, "id" | "project_id">,
   term: string,

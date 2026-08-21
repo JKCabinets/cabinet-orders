@@ -8,6 +8,7 @@ import {
   Order, Stage, ORDER_STAGES, STAGE_LIST_BY_TYPE,
   AVATAR_COLOR_STYLES,
   isPaymentHoldStatus, paymentHoldActive, paymentHoldLabel,
+  displayOrderNumber,
 } from "@/lib/data";
 import { useStore } from "@/lib/store";
 import { AvatarWithProfile } from "./AvatarWithProfile";
@@ -467,7 +468,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
         {/* Header */}
         <div className="flex items-start justify-between px-6 py-5 flex-shrink-0" style={SECTION_BORDER}>
           <div>
-            <p className="text-[10px] uppercase tracking-[0.16em] text-cream/45 mb-1.5 font-mono">{liveOrder.id}</p>
+            <p className="text-[10px] uppercase tracking-[0.16em] text-cream/45 mb-1.5 font-mono">{displayOrderNumber(liveOrder)}</p>
             <h2 className="font-display text-[26px] text-cream leading-tight">{liveOrder.name}</h2>
             {/* Detail line (SKU description list) intentionally hidden — it's
                 noisy and the SKU table below is the source of truth. */}

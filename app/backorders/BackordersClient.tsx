@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useStore } from "@/lib/store";
-import { Order } from "@/lib/data";
+import { Order, displayOrderNumber } from "@/lib/data";
 import {
   rollupBackorders,
   summarizeBackorders,
@@ -265,7 +265,7 @@ function AffectedOrderLine({
       )}
     >
       <span className="font-mono text-[10px] text-cream/55 flex-shrink-0">
-        {order.id}
+        {displayOrderNumber(order)}
       </span>
       <span className="text-[12px] text-cream/85 flex-1 min-w-0 truncate">
         {order.name}
