@@ -859,13 +859,22 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
             }}
           />
 
-          {/* Details grid */}
+          {/* ORDER INFO -- a bordered grid with hairline dividers, per the
+              redesign mockup. This was a plain two-column list of label/value
+              pairs; adding cells to it was how ORDER TYPE and PO / REFERENCE
+              ended up as two more rows of the old layout rather than the grid. */}
           <div className="px-6 py-5 space-y-4" style={SECTION_BORDER}>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
+            <div className="flex items-center justify-between mb-2">
+              <p className={LABEL}>Order info</p>
+            </div>
+            <div
+              className="grid grid-cols-2 md:grid-cols-4 rounded-brand overflow-hidden"
+              style={{ border: "0.5px solid rgba(255,255,255,0.12)" }}
+            >
+              <div className="px-4 py-3" style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)", borderLeft: "0.5px solid rgba(255,255,255,0.08)" }}>
                 <p className={LABEL}>Source</p>
                 <span
-                  className="text-[10px] uppercase tracking-wider px-2 py-px rounded-full font-medium"
+                  className="text-[10px] uppercase tracking-wider px-2 py-px rounded-full font-medium inline-block mt-1"
                   style={
                     liveOrder.source === "Shopify"
                       ? { background: "rgba(184,130,106,0.15)", color: "#d9a888", border: "0.5px solid rgba(184,130,106,0.40)" }
@@ -877,11 +886,14 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                   {liveOrder.source === "Manual" ? "Custom" : liveOrder.source}
                 </span>
               </div>
-              <div>
-                <p className={LABEL}>SKU</p>
-                <p className="text-xs font-mono text-cream/65">{liveOrder.sku || "—"}</p>
+              <div className="px-4 py-3" style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)", borderLeft: "0.5px solid rgba(255,255,255,0.08)" }}>
+                <p className={LABEL}>Order date</p>
+                <p className="text-xs text-cream/65 mt-1">{liveOrder.date}</p>
               </div>
-              <div>
+              {/* The claim control, lifted verbatim -- it carries stage-aware
+                  ownership logic (mine / someone else's / unclaimed) that is not
+                  worth retyping into a new layout. */}
+              <div className="px-4 py-3" style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)", borderLeft: "0.5px solid rgba(255,255,255,0.08)" }}>
                 {(() => {
                   // Stage-aware ownership:
                   //   New / New claim: claimed_by is the source of truth.
@@ -949,27 +961,31 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                   );
                 })()}
               </div>
-              <div>
-                <p className={LABEL}>Date</p>
-                <p className="text-xs text-cream/65">{liveOrder.date}</p>
-              </div>
-              <div>
+              <div className="px-4 py-3" style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)", borderLeft: "0.5px solid rgba(255,255,255,0.08)" }}>
                 <p className={LABEL}>Order type</p>
-                <p className="text-xs text-cream/65">{GROUP_LABEL[liveOrder.type] ?? liveOrder.type}</p>
+                <p className="text-xs text-cream/65 mt-1">{GROUP_LABEL[liveOrder.type] ?? liveOrder.type}</p>
               </div>
-              <div>
+              <div className="px-4 py-3" style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)", borderLeft: "0.5px solid rgba(255,255,255,0.08)" }}>
+                <p className={LABEL}>SKU</p>
+                <p className="text-xs font-mono text-cream/65 mt-1 truncate">{liveOrder.sku || "\u2014"}</p>
+              </div>
+              <div className="px-4 py-3" style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)", borderLeft: "0.5px solid rgba(255,255,255,0.08)" }}>
                 {/* The reference a MANUFACTURER sees. Internal -- never shown to
                     a customer, who knows only the order number. */}
                 <p className={LABEL}>PO / Reference</p>
-                <p className="text-xs font-mono text-cream/65">{poReference(liveOrder)}</p>
+                <p className="text-xs font-mono text-cream/65 mt-1">{poReference(liveOrder)}</p>
               </div>
-              <div>
-                {/* Scheduled, not actual. A delivery date the customer has not
-                    been given is not a promise, and this is the internal view. */}
+              <div className="px-4 py-3" style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)", borderLeft: "0.5px solid rgba(255,255,255,0.08)" }}>
+                {/* Scheduled, not actual. A date the customer has not been given
+                    is not a promise, and this is the internal view. */}
                 <p className={LABEL}>Delivery target</p>
-                <p className="text-xs text-cream/65">
+                <p className="text-xs text-cream/65 mt-1">
                   {liveOrder.scheduled_delivery_date || liveOrder.delivery_date || "Not set"}
                 </p>
+              </div>
+              <div className="px-4 py-3" style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)", borderLeft: "0.5px solid rgba(255,255,255,0.08)" }}>
+                <p className={LABEL}>Stage age</p>
+                <p className="text-xs text-cream/65 mt-1">{formatStageAge(hoursInStage(liveOrder))}</p>
               </div>
             </div>
 
@@ -994,44 +1010,47 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
           {liveOrder.type !== "sample" && (
             <AcknowledgmentPanel ref={ackPanelRef} orderId={liveOrder.id} orderName={liveOrder.name} eligible={liveOrder.stage !== "New" || !!liveOrder.claimed_by} onAdvance={() => { if (liveOrder.stage === "New") moveStage(liveOrder.id, "Entered", currentUserId).then((r) => { if (!r.ok) showToast(r.error ?? "Could not move to Entered", { kind: "error" }); }); }} onAdvanceOverride={() => { if (liveOrder.stage === "New") moveStage(liveOrder.id, "Entered", currentUserId, undefined, true).then((r) => { if (!r.ok) showToast(r.error ?? "Could not move to Entered", { kind: "error" }); }); }} />
           )}
-          {/* Customer-facing notes — Quote orders get structured display, others get plain textarea */}
-            {liveOrder.source === "Manual" && liveOrder.notes?.includes("QUOTE REQUEST") ? (
-              <QuoteInfoPanel notes={liveOrder.notes} />
-            ) : (
-              <div>
-                <p className={LABEL}>Customer Notes</p>
-                <textarea
-                  value={notes}
-                  onChange={(e) => { setNotes(e.target.value); setNotesChanged(true); }}
-                  placeholder="Add notes visible to the customer / written into the Shopify order…"
-                  rows={6}
-                  className="w-full rounded-brand p-3 text-[12px] resize-none transition-colors placeholder:text-cream/25"
-                  style={{
-                    background: "rgba(255,255,255,0.04)",
-                    border: "0.5px solid rgba(255,255,255,0.15)",
-                    color: "rgba(240,236,228,0.85)",
-                    fontSize: "16px",
-                  }}
-                />
-                {notesChanged && (
-                  <button
-                    onClick={handleSaveNotes}
-                    className="mt-2 text-[11px] uppercase tracking-wider font-medium transition-colors text-terracotta hover:brightness-110"
-                  >
-                    Save notes →
-                  </button>
-                )}
-              </div>
-            )}
-
-            {/* Internal notes — staff-only, never sent to Shopify, shown in red on export PDF */}
-            <div className="mt-3">
-              <div className="flex items-center gap-2 mb-2">
-                <p className="text-[10px] uppercase tracking-[0.16em] font-medium" style={{ color: "rgba(232,144,144,0.75)" }}>
-                  Internal Notes
-                </p>
+          {/* Notes -- two cards side by side, per the mockup. These were two
+              always-open full-width textareas stacked vertically. */}
+          <div className="px-6 py-5 grid grid-cols-1 md:grid-cols-2 gap-3" style={SECTION_BORDER}>
+            <div className="rounded-brand p-3" style={{ border: "0.5px solid rgba(255,255,255,0.12)" }}>
+              <p className={LABEL}>Customer note</p>
+              {liveOrder.source === "Manual" && liveOrder.notes?.includes("QUOTE REQUEST") ? (
+                /* A quote request is structured text, not a note somebody
+                   typed -- it gets its own panel rather than a textarea. */
+                <QuoteInfoPanel notes={liveOrder.notes} />
+              ) : (<>
+              <p className="text-[10px] text-cream/35 mb-2">
+                Visible to the customer &middot; written to the Shopify order
+              </p>
+              <textarea
+                value={notes}
+                onChange={(e) => { setNotes(e.target.value); setNotesChanged(true); }}
+                placeholder="No customer note yet."
+                rows={4}
+                className="w-full rounded-brand p-2.5 text-[12px] resize-none transition-colors placeholder:text-cream/25"
+                style={{
+                  background: "rgba(255,255,255,0.04)",
+                  border: "0.5px solid rgba(255,255,255,0.12)",
+                  color: "rgba(240,236,228,0.90)",
+                  fontSize: "16px",
+                }}
+              />
+              {notesChanged && (
+                <button
+                  onClick={handleSaveNotes}
+                  className="mt-2 text-[11px] uppercase tracking-wider font-medium transition-colors text-terracotta hover:brightness-110"
+                >
+                  Save note
+                </button>
+              )}
+              </>)}
+            </div>
+            <div className="rounded-brand p-3" style={{ border: "0.5px solid rgba(232,144,144,0.28)" }}>
+              <div className="flex items-center gap-2">
+                <p className={LABEL}>Internal note</p>
                 <span
-                  className="text-[8px] uppercase tracking-wider px-1.5 py-px rounded-full font-medium"
+                  className="text-[9px] uppercase tracking-wider px-1.5 py-px rounded-full"
                   style={{
                     background: "rgba(232,144,144,0.12)",
                     color: "rgba(232,144,144,0.85)",
@@ -1041,15 +1060,18 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                   staff only
                 </span>
               </div>
+              <p className="text-[10px] text-cream/35 mb-2">
+                Visible to staff and on the export PDF. Never sent to Shopify.
+              </p>
               <textarea
                 value={internalNotes}
                 onChange={(e) => { setInternalNotes(e.target.value); setInternalNotesChanged(true); }}
-                placeholder="Visible to staff and on the export PDF. Never sent to Shopify or the customer."
+                placeholder="No internal note yet."
                 rows={4}
-                className="w-full rounded-brand p-3 text-[12px] resize-none transition-colors placeholder:text-cream/25"
+                className="w-full rounded-brand p-2.5 text-[12px] resize-none transition-colors placeholder:text-cream/25"
                 style={{
                   background: "rgba(232,144,144,0.04)",
-                  border: "0.5px dashed rgba(232,144,144,0.30)",
+                  border: "0.5px solid rgba(232,144,144,0.25)",
                   color: "rgba(240,236,228,0.90)",
                   fontSize: "16px",
                 }}
@@ -1059,10 +1081,11 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                   onClick={handleSaveInternalNotes}
                   className="mt-2 text-[11px] uppercase tracking-wider font-medium transition-colors text-terracotta hover:brightness-110"
                 >
-                  Save internal notes →
+                  Save internal note
                 </button>
               )}
             </div>
+          </div>
           </div>
 
           {/* Damage reports */}
