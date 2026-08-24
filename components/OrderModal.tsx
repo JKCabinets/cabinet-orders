@@ -289,6 +289,12 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
     return siblings.length > 0 ? siblings : [self];
   }, [allOrders, order]);
 
+  // Which tab. Resets when the modal is opened on a different order -- a stale
+  // tab across opens is how someone lands on Files wondering where the stage
+  // rail went.
+  const [tab, setTab] = useState<"project" | "files" | "activity">("project");
+  useEffect(() => { setTab("project"); }, [order.id]);
+
   // Which group the panels below operate on. Opens on the one you clicked
   // from, so arriving from /samples selects the sample group and
   // consumeAckPicker fires against a panel that is actually mounted.
@@ -581,6 +587,30 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
           team={team}
         />
 
+        {/* Tabs. The group strip above belongs to the PROJECT and stays put;
+            these switch what you see about it. */}
+        <div className="flex items-center gap-1 px-6 pt-1 pb-0 flex-shrink-0">
+          {([
+            ["project", "Project"],
+            ["files", "Files"],
+            ["activity", "Activity"],
+          ] as const).map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setTab(key)}
+              className="px-3 py-2 text-[11px] uppercase tracking-wider font-medium transition-all"
+              style={{
+                color: tab === key ? "#f0ece4" : "rgba(232,227,218,0.45)",
+                borderBottom: tab === key
+                  ? "1.5px solid rgba(184,130,106,0.85)"
+                  : "1.5px solid transparent",
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
         <div className="flex-1 overflow-y-auto">
           {/* Gate banner — shown when the modal opens because of a missing
               attachment. Prominent, terracotta accent, with a CTA that
@@ -589,6 +619,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
               order cannot move forward until somebody acknowledges it. The
               banner stays after acknowledgement, because the refund is still
               a fact; only the wording and the control change. */}
+          {tab === "project" && (<>
           <PaymentHoldBanner order={liveOrder} />
 
           {showGateBanner && (
@@ -1002,9 +1033,16 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
             <AttachmentsPanel ref={attachmentsRef} orderId={liveOrder.id} />
           </div>
 
-          {/* Activity */}
+          </>)}
+
+          {tab === "files" && <ProjectFiles groups={projectGroups} />}
+
+          {/* Activity — the SELECTED GROUP's trail, not the project's.
+              order_activity hangs off orders.order_id, and a merged
+              project timeline would need a project_id column that does not
+              exist. Per-group is also what you want while working a group. */}
+          {tab === "activity" && (
           <div className="px-6 py-5">
-            <p className={LABEL}>Activity</p>
             <div className="flex flex-col gap-3">
               {[...liveOrder.activity].reverse().map((a, i) => (
                 <div key={i} className="flex gap-3">
@@ -1022,6 +1060,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
               ))}
             </div>
           </div>
+          )}
         </div>
       </div>
     </div>
@@ -1433,3 +1472,82 @@ const GROUP_LABEL: Record<string, string> = {
   custom: "Custom job",
   warranty: "Warranty claim",
 };
+
+/**
+ * Every file on the project, across every group -- read-only.
+ *
+ * Uploading stays on the Project tab under the selected group, where
+ * AttachmentsPanel's imperative handle is always mounted and the
+ * needs-attachment flow can reach it. This view exists because when you are
+ * looking for a signed delivery receipt you do not know, and should not have to
+ * know, which group it hangs off.
+ *
+ * Fetches per group rather than by project: order_attachments has an order_id
+ * foreign key and no project column, so the group ids ARE the query.
+ */
+function ProjectFiles({ groups }: { groups: Order[] }) {
+  const [rows, setRows] = useState<
+    { order_id: string; file_name: string; kind: string | null; created_at: string }[]
+  >([]);
+  const [loading, setLoading] = useState(true);
+
+  const ids = groups.map((g) => g.id).join(",");
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    (async () => {
+      const all: { order_id: string; file_name: string; kind: string | null; created_at: string }[] = [];
+      for (const id of ids.split(",").filter(Boolean)) {
+        try {
+          const res = await fetch("/api/orders/attachments?orderId=" + encodeURIComponent(id));
+          if (!res.ok) continue;
+          const data = await res.json();
+          for (const a of (data.data ?? [])) {
+            all.push({
+              order_id: id,
+              file_name: String(a.file_name ?? a.file_path ?? ""),
+              kind: a.kind ?? null,
+              created_at: String(a.created_at ?? ""),
+            });
+          }
+        } catch { /* one group failing should not blank the rest */ }
+      }
+      if (!cancelled) { setRows(all); setLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [ids]);
+
+  if (loading) {
+    return <div className="px-6 py-5 text-[12px] text-cream/45">Loading files…</div>;
+  }
+  if (rows.length === 0) {
+    return (
+      <div className="px-6 py-8 text-center">
+        <p className="text-[12px] text-cream/45">No files on this project yet.</p>
+        <p className="text-[11px] text-cream/30 mt-1">
+          Upload from a group on the Project tab.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-6 py-5 flex flex-col gap-2">
+      {rows.map((r, i) => (
+        <div
+          key={i}
+          className="flex items-center gap-3 rounded-brand px-3 py-2"
+          style={{ background: "rgba(255,255,255,0.03)", border: "0.5px solid rgba(255,255,255,0.10)" }}
+        >
+          <div className="flex-1 min-w-0">
+            <p className="text-[12px] text-cream/85 truncate">{r.file_name}</p>
+            <p className="text-[10px] text-cream/40 mt-0.5">
+              {GROUP_LABEL[groups.find((g) => g.id === r.order_id)?.type ?? ""] ?? r.order_id}
+              {r.kind === "proof_of_delivery" && " · signed delivery receipt"}
+            </p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
