@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { X, Check, Clock, ChevronRight, Archive, RotateCcw, Trash2, Loader2, Download } from "lucide-react";
 import clsx from "clsx";
 import { useSession } from "next-auth/react";
@@ -19,6 +19,7 @@ import { OrderDetails } from "./OrderDetails";
 import { DamageReportPanel } from "./DamageReportPanel";
 import { AcknowledgmentPanel, type AcknowledgmentPanelHandle } from "./AcknowledgmentPanel";
 import { consumeAckPicker } from "@/lib/ackStatus";
+import { STAGE_ACCENT } from "@/lib/data";
 
 interface OrderModalProps {
   /**
@@ -271,11 +272,41 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
     });
   }, [initialReason]);
 
-  // Search EVERY type. This used to pick between `orders` and
+  // ── The project and its groups ──────────────────────────────────────
+  //
+  // A Shopify checkout is one PROJECT with one row per product category:
+  // cabinets, hardware, samples. They run on genuinely different
+  // timelines -- a box of pulls arrives in a week, cabinets take six --
+  // and each is claimed and worked separately. This modal is the join:
+  // open any group and you see the whole project.
+  //
+  // A custom job or a warranty claim has no project, so it is a project of
+  // ONE. Same shell, one row in it -- deliberately not a second code path.
+  const projectGroups = useMemo(() => {
+    const self = allOrders.find((o) => o.id === order.id) ?? order;
+    if (!self.project_id) return [self];
+    const siblings = allOrders.filter((o) => o.project_id === self.project_id);
+    return siblings.length > 0 ? siblings : [self];
+  }, [allOrders, order]);
+
+  // Which group the panels below operate on. Opens on the one you clicked
+  // from, so arriving from /samples selects the sample group and
+  // consumeAckPicker fires against a panel that is actually mounted.
+  const [selectedGroupId, setSelectedGroupId] = useState(order.id);
+  useEffect(() => { setSelectedGroupId(order.id); }, [order.id]);
+
+  // Every panel in this component reads `liveOrder`. Pointing it at the
+  // SELECTED GROUP rather than the passed order is what makes the whole
+  // modal group-aware without rewriting the panels.
+  //
+  // Searches EVERY type. This used to pick between `orders` and
   // `warranties` from the `tab` prop, so a sample or custom row -- in
   // neither list -- fell through to the static prop and rendered from a
   // frozen snapshot with no realtime updates.
-  const liveOrder = allOrders.find((o) => o.id === order.id) ?? order;
+  const liveOrder =
+    projectGroups.find((o) => o.id === selectedGroupId)
+    ?? projectGroups[0]
+    ?? order;
 
   // If the modal was opened via the row Submit/Resubmit, pop the .xlsx picker.
   useEffect(() => {
@@ -539,6 +570,16 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
             </button>
           </div>
         </div>
+
+        {/* The project's other groups. Renders nothing for a project
+            of one -- a custom job, a warranty claim, or a checkout with
+            a single category. Outside the scroll container on purpose. */}
+        <GroupStrip
+          groups={projectGroups}
+          selectedId={liveOrder.id}
+          onSelect={setSelectedGroupId}
+          team={team}
+        />
 
         <div className="flex-1 overflow-y-auto">
           {/* Gate banner — shown when the modal opens because of a missing
@@ -1325,3 +1366,70 @@ function DateEditor({
     </div>
   );
 }
+
+/**
+ * The project's groups, as a selectable strip.
+ *
+ * Renders nothing for a project of one -- a custom job, a warranty claim, or a
+ * Shopify order that happened to contain a single category. A strip with one
+ * item is noise.
+ *
+ * ⚠ A GROUP'S STATUS NEVER DRIVES ANOTHER'S. Cabinets in production alongside
+ * samples delivered is a normal state, not a conflict, and nothing here should
+ * suggest one group is holding another up. They are separate work with separate
+ * claims on genuinely different timelines -- that is the whole reason the
+ * project splits into groups at all.
+ */
+function GroupStrip({
+  groups, selectedId, onSelect, team,
+}: {
+  groups: Order[];
+  selectedId: string;
+  onSelect: (id: string) => void;
+  team: { id: string; name: string }[];
+}) {
+  if (groups.length < 2) return null;
+
+  return (
+    <div className="flex items-stretch gap-2 px-6 py-3 flex-shrink-0 overflow-x-auto" style={SECTION_BORDER}>
+      {groups.map((g) => {
+        const active = g.id === selectedId;
+        const accent = STAGE_ACCENT[g.stage] ?? "#8a8a8a";
+        const owner = g.claimed_by ? team.find((m) => m.id === g.claimed_by) : undefined;
+        return (
+          <button
+            key={g.id}
+            onClick={() => onSelect(g.id)}
+            className="flex-1 min-w-[150px] text-left rounded-brand px-3 py-2 transition-all"
+            style={{
+              background: active ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.03)",
+              border: active
+                ? "0.5px solid rgba(255,255,255,0.30)"
+                : "0.5px solid rgba(255,255,255,0.10)",
+            }}
+          >
+            <div className="flex items-center gap-1.5 mb-1">
+              <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: accent }} />
+              <span className="text-[10px] uppercase tracking-wider font-medium text-cream/85">
+                {GROUP_LABEL[g.type] ?? g.type}
+              </span>
+            </div>
+            <p className="text-[11px] font-medium" style={{ color: accent }}>{g.stage}</p>
+            <p className="text-[9px] text-cream/40 mt-0.5 truncate">
+              {owner ? owner.name : g.claimed_by ? "claimed" : "unclaimed"}
+            </p>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Plural, human label per group type. Exhaustive so a sixth type is a compile error. */
+const GROUP_LABEL: Record<string, string> = {
+  order: "Cabinets",
+  hardware: "Hardware",
+  sample: "Samples",
+  custom: "Custom job",
+  warranty: "Warranty claim",
+};
