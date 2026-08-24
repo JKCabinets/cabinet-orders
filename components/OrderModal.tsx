@@ -8,8 +8,9 @@ import {
   Order, Stage, ORDER_STAGES, STAGE_LIST_BY_TYPE,
   AVATAR_COLOR_STYLES,
   isPaymentHoldStatus, paymentHoldActive, paymentHoldLabel,
-  displayOrderNumber,
+  displayOrderNumber, nextStageFor, poReference,
 } from "@/lib/data";
+import { slaRuleFor, slaAgeHours, hoursInStage, slaTier, formatStageAge } from "@/lib/sla";
 import { useStore } from "@/lib/store";
 import { AvatarWithProfile } from "./AvatarWithProfile";
 import { useToast } from "./Toast";
@@ -843,6 +844,21 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
             )}
           </div>
 
+          {/* What to do next. Separate from the rail on purpose: the rail
+              is where the order is, this is what to do about it. */}
+          <NextActionCard
+            order={liveOrder}
+            busy={checkingAttachments}
+            onAdvance={() => {
+              const next = nextStageFor(liveOrder);
+              // Empty PIN on purpose. This button only ever offers the NEXT
+              // stage, so it is never a backward move; the server would
+              // reject one without a PIN, and the existing dialog stays
+              // the way to move an order backwards.
+              if (next) doMoveStage(next as Stage, "");
+            }}
+          />
+
           {/* Details grid */}
           <div className="px-6 py-5 space-y-4" style={SECTION_BORDER}>
             <div className="grid grid-cols-2 gap-4">
@@ -936,6 +952,24 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
               <div>
                 <p className={LABEL}>Date</p>
                 <p className="text-xs text-cream/65">{liveOrder.date}</p>
+              </div>
+              <div>
+                <p className={LABEL}>Order type</p>
+                <p className="text-xs text-cream/65">{GROUP_LABEL[liveOrder.type] ?? liveOrder.type}</p>
+              </div>
+              <div>
+                {/* The reference a MANUFACTURER sees. Internal -- never shown to
+                    a customer, who knows only the order number. */}
+                <p className={LABEL}>PO / Reference</p>
+                <p className="text-xs font-mono text-cream/65">{poReference(liveOrder)}</p>
+              </div>
+              <div>
+                {/* Scheduled, not actual. A delivery date the customer has not
+                    been given is not a promise, and this is the internal view. */}
+                <p className={LABEL}>Delivery target</p>
+                <p className="text-xs text-cream/65">
+                  {liveOrder.scheduled_delivery_date || liveOrder.delivery_date || "Not set"}
+                </p>
               </div>
             </div>
 
@@ -1532,6 +1566,79 @@ function DateEditor({
  * claims on genuinely different timelines -- that is the whole reason the
  * project splits into groups at all.
  */
+/**
+ * CURRENT STAGE / NEXT ACTION.
+ *
+ * The rail says where the order IS. This says what to do about it, which is
+ * the question somebody opening a modal is actually asking.
+ *
+ * Driven by nextStageFor() for the SELECTED GROUP's type, so a warranty claim
+ * reads "In review" and a hardware group reads "Shipped" rather than a
+ * cabinet-shaped next step. A terminal stage has no next action and says so
+ * rather than showing a dead button.
+ */
+function NextActionCard({
+  order, onAdvance, busy,
+}: {
+  order: Order;
+  onAdvance: () => void;
+  busy: boolean;
+}) {
+  const next = nextStageFor(order);
+  const accent = STAGE_ACCENT[order.stage] ?? "#8a8a8a";
+  const rule = slaRuleFor(order);
+  const hours = rule ? slaAgeHours(order, rule) : hoursInStage(order);
+  const tier = slaTier(order);
+
+  return (
+    <div
+      className="mx-6 mb-5 rounded-brand flex items-stretch"
+      style={{ background: "rgba(255,255,255,0.03)", border: "0.5px solid rgba(255,255,255,0.12)" }}
+    >
+      <div className="flex-1 px-4 py-3">
+        <p className="text-[9px] uppercase tracking-[0.16em] text-cream/40 mb-1.5">Current stage</p>
+        <div className="flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: accent }} />
+          <span className="text-[13px] font-medium" style={{ color: accent }}>{order.stage}</span>
+        </div>
+        <p className="text-[10px] text-cream/45 mt-1">
+          {formatStageAge(hours)} in stage
+          {rule && ` \u00b7 SLA target ${rule.hardHours}h`}
+          {tier === "hard" && <span style={{ color: "#e08585" }}> \u00b7 overdue</span>}
+          {tier === "soft" && <span style={{ color: "#e8b56a" }}> \u00b7 due</span>}
+        </p>
+      </div>
+      <div
+        className="flex-[1.4] px-4 py-3 flex items-center justify-between gap-3"
+        style={{ borderLeft: "0.5px solid rgba(255,255,255,0.10)" }}
+      >
+        <div className="min-w-0">
+          <p className="text-[9px] uppercase tracking-[0.16em] text-cream/40 mb-1.5">Next action</p>
+          <p className="text-[11px] text-cream/65 leading-snug">
+            {next
+              ? <>Move this to <span className="text-cream/85">{next}</span> when it is ready.</>
+              : "Nothing further \u2014 this is the last stage."}
+          </p>
+        </div>
+        {next && (
+          <button
+            onClick={onAdvance}
+            disabled={busy}
+            className="px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all flex-shrink-0 disabled:opacity-40"
+            style={{
+              background: "rgba(184,130,106,0.20)",
+              border: "0.5px solid rgba(184,130,106,0.55)",
+              color: "#d9a888",
+            }}
+          >
+            {busy ? "\u2026" : next}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function GroupStrip({
   groups, selectedId, onSelect, team,
 }: {
