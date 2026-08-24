@@ -1,42 +1,56 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, rateLimitOr429 } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
-import { syncStageToShopify } from "@/lib/shopifyStageSync";
-import {
-  ALLOWED_STAGES,
-  isStageAllowedForType,
-  stageIndex,
-  timingSafeStringEqual,
-  ADMIN_PIN,
-  fieldsToClearOnBackwardMove,
-  describeFieldsCleared,
-} from "@/lib/stageGuards";
 
-// Cap on bulk operations per request. Higher than this should be done in
-// batches client-side to keep request times reasonable.
+/**
+ * Bulk actions — a CLEANUP tool, deliberately.
+ *
+ * ⚠ THE `move` ACTION WAS REMOVED 2026-08-24, along with the GET preflight that
+ * only served it. Bulk stage moves do not fit how the business runs, and the
+ * implementation had drifted badly from the single-order PATCH:
+ *
+ *   - NO delivery-proof gate. At cross dock -> Delivered skipped the signed
+ *     receipt entirely -- no receipt, no reason, no activity row -- while the
+ *     single-order path demands all three. The gate is designed as
+ *     accountability rather than permission, and this route offered neither.
+ *   - NO payment hold. A refunded order could be moved forward with nothing
+ *     recorded, which is the one thing that control exists to prevent.
+ *   - HALF an attachment gate. It counted attachments but never checked
+ *     orderAllVendorsGreen, so it REFUSED orders the PATCH route allows.
+ *   - `claimed_by` wiped on every forward move, not just when leaving New.
+ *   - `entered_by` written as a display name where PATCH writes a
+ *     team_members.id.
+ *
+ * Five defects, removed by deleting the feature rather than by writing five
+ * patches to keep a feature nobody wanted correct. Stage moves happen one order
+ * at a time, through PATCH /api/orders/[id], which has all of the above.
+ *
+ * What remains:
+ *   archive  — reversible, permission-checked, any type.
+ *   delete   — DESTRUCTIVE, admin only, CUSTOM ROWS ONLY.
+ *
+ * Custom jobs are contract work tracked here for organisation; they carry no
+ * Shopify products at all. Every other type is Shopify-owned, and an order
+ * deleted in Shopify already reaches the OMS through the webhook. Deleting one
+ * of those by hand is how the two systems drift apart, so this route refuses.
+ */
+
 const MAX_BULK_IDS = 50;
 
 interface BulkResult {
   id: string;
   ok: boolean;
   error?: string;
-  shopify_synced?: boolean;
 }
-
-/**
- * Push a single order's stage change back to Shopify. Mirrors syncToShopify in
- * /api/orders/[id]/route.ts but minimized for the bulk path (only stage + tags).
- */
 
 export async function POST(req: NextRequest) {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
 
-  // Lower rate limit for bulk — each request can fan out to dozens of DB writes
   const limited = await rateLimitOr429(req, 10, 60_000, "orders:bulk");
   if (limited) return limited;
 
-  let body: { ids?: unknown; action?: unknown; stage?: unknown; archived?: unknown; admin_pin?: unknown };
+  let body: { ids?: unknown; action?: unknown; archived?: unknown };
   try { body = await req.json(); } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
@@ -51,22 +65,26 @@ export async function POST(req: NextRequest) {
       { status: 422 }
     );
   }
-  const ids = body.ids.filter((id): id is string => typeof id === "string" && id.length > 0 && id.length < 100);
+  const ids = body.ids.filter(
+    (id): id is string => typeof id === "string" && id.length > 0 && id.length < 100);
   if (ids.length === 0) {
     return NextResponse.json({ error: "no valid ids" }, { status: 422 });
   }
 
   const action = body.action;
-  if (action !== "move" && action !== "archive") {
-    return NextResponse.json({ error: "action must be 'move' or 'archive'" }, { status: 422 });
-  }
-
-  let targetStage: string | null = null;
-  if (action === "move") {
-    if (typeof body.stage !== "string" || !ALLOWED_STAGES.has(body.stage)) {
-      return NextResponse.json({ error: "valid stage required for move" }, { status: 422 });
-    }
-    targetStage = body.stage;
+  if (action !== "archive" && action !== "delete") {
+    // "move" lands here on purpose. If a stale client still sends it, this is
+    // the message that explains why rather than a bare 422.
+    return NextResponse.json(
+      {
+        error: "action must be 'archive' or 'delete'",
+        message: action === "move"
+          ? "Bulk stage moves were removed. Move orders individually so the "
+            + "delivery-proof and payment-hold gates apply."
+          : undefined,
+      },
+      { status: 422 }
+    );
   }
 
   let targetArchived: boolean | null = null;
@@ -77,10 +95,21 @@ export async function POST(req: NextRequest) {
     targetArchived = body.archived;
   }
 
-  // ── Load all affected orders in one round-trip so we can do per-row checks ──
+  const isAdmin = auth.session.user.role === "admin";
+
+  // Delete is admin-only, checked BEFORE any row is loaded. A destructive
+  // cleanup tool should refuse early and whole, not per row.
+  if (action === "delete" && !isAdmin) {
+    return NextResponse.json(
+      { error: "forbidden", message: "Bulk delete is admin only" },
+      { status: 403 }
+    );
+  }
+
+  // ── Load all affected orders in one round-trip ────────────────────────────
   const { data: orders, error: fetchError } = await supabase
     .from("orders")
-    .select("id, source, created_by, stage, shopify_id, archived, type")
+    .select("id, source, created_by, stage, archived, type, project_id")
     .in("id", ids);
 
   if (fetchError) {
@@ -88,48 +117,20 @@ export async function POST(req: NextRequest) {
   }
 
   const orderMap = new Map((orders ?? []).map(o => [o.id, o]));
-  const isAdmin = auth.session.user.role === "admin";
   const username = auth.session.user.username;
   const displayName = auth.session.user.name ?? username;
-  const today = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  // America/Phoenix, matching the webhook and the production cron. Without it
+  // this ran on server-local time, so after 5pm Phoenix every activity row was
+  // dated tomorrow.
+  const today = new Date().toLocaleDateString("en-US", {
+    month: "short", day: "numeric", timeZone: "America/Phoenix",
+  });
 
-  // ── PRE-FLIGHT: if move involves any backwards transitions, require PIN ───
-  // We check this ONCE for the whole batch so the user enters their PIN once.
-  // The PIN is constant-time compared. We don't enumerate which orders would
-  // require it — the batch is admin-gated or not.
-  let backwardsMoveDetected = false;
-  if (action === "move" && targetStage) {
-    for (const id of ids) {
-      const order = orderMap.get(id);
-      if (!order) continue;
-      // Resolve BOTH stages against THIS row's type. A batch can mix
-      // types, and stage names are shared across flows, so one target
-      // index computed for the whole batch is wrong for some rows.
-      const rowType = (order.type as string) ?? "order";
-      const currentInfo = stageIndex(order.stage, rowType);
-      const targetInfo = stageIndex(targetStage, rowType);
-      // idx < 0 means the stage is not in this row's flow at all -- that
-      // is an invalid move, not a backwards one.
-      if (currentInfo.idx >= 0 && targetInfo.idx >= 0 && targetInfo.idx < currentInfo.idx) {
-        backwardsMoveDetected = true;
-        break;
-      }
-    }
-  }
-
-  if (backwardsMoveDetected) {
-    const providedPin = typeof body.admin_pin === "string" ? body.admin_pin : "";
-    if (!timingSafeStringEqual(providedPin, ADMIN_PIN)) {
-      return NextResponse.json(
-        { error: "admin_pin_required", message: "Backwards moves require admin PIN" },
-        { status: 403 }
-      );
-    }
-  }
-
-  // ── Process each id, collecting per-row results ───────────────────────────
   const results: BulkResult[] = [];
   const activityInserts: { order_id: string; text: string; time: string }[] = [];
+  // Projects whose last group may have just been deleted. Checked after the
+  // loop, because two groups of one project can be in the same batch.
+  const touchedProjects = new Set<string>();
 
   for (const id of ids) {
     const order = orderMap.get(id);
@@ -138,111 +139,19 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
-    // Permission check — only restrictive for archive. Stage moves match the
-    // single-order PATCH (any authenticated user).
-    if (action === "archive" && !isAdmin) {
-      if (order.source !== "Manual") {
-        results.push({ id, ok: false, error: "forbidden: only admins can archive non-manual orders" });
-        continue;
-      }
-      if (!order.created_by || order.created_by !== username) {
-        results.push({ id, ok: false, error: "forbidden: you can only archive orders you created" });
-        continue;
-      }
-    }
-
-    if (action === "move" && targetStage) {
-      // Skip no-op moves
-      if (order.stage === targetStage) {
-        results.push({ id, ok: true, shopify_synced: false });
-        continue;
-      }
-
-      // ── GATE: the target must belong to THIS row's flow ────────────
-      // The upfront ALLOWED_STAGES check is the UNION of every flow and
-      // runs before the rows are loaded, so it cannot know any row's type
-      // -- and a batch can mix types, so no single upfront check could.
-      //
-      // Without this a bulk move strands rows outside their own flow,
-      // exactly as the single PATCH did to QUO-1787174567522, but fifty at
-      // a time. Per-row failure like the attachment gate below: report it,
-      // carry on with the rest.
-      const rowType = (order.type as string) ?? "order";
-      if (!isStageAllowedForType(targetStage, rowType)) {
-        results.push({
-          id, ok: false,
-          error: `stage_not_in_flow: "${targetStage}" is not a stage in the ${rowType} flow`,
-        });
-        continue;
-      }
-
-      // ── GATE: moving New → Entered requires at least one attachment ───────
-      // Mirrors the gate in OrderModal.tsx (doMoveStage). Per-row failure
-      // mode: report it, continue with the rest.
-      // Samples are exempt: no manufacturer ack exists to attach.
-      if (targetStage === "Entered" && order.stage === "New"
-          && ((order.type as string) ?? "order") !== "sample") {
-        const { count, error: countError } = await supabase
-          .from("order_attachments")
-          .select("id", { count: "exact", head: true })
-          .eq("order_id", id);
-
-        if (countError) {
-          results.push({ id, ok: false, error: `failed to verify attachments: ${countError.message}` });
-          continue;
-        }
-        if (!count || count === 0) {
-          results.push({
-            id,
-            ok: false,
-            error: "needs_attachment: New → Entered requires at least one attachment (e.g. the manufacturer's acknowledgment PDF)",
-          });
-          continue;
-        }
-      }
-
-      const updates: Record<string, unknown> = {
-        stage: targetStage,
-        // Bump stage_entered_at so the SLA page reads real per-stage age.
-        // DB trigger also does this; setting it here is explicit.
-        stage_entered_at: new Date().toISOString(),
-      };
-      // Clear claim when leaving New; record entered_by when moving to Entered
-      if (targetStage !== "New") updates.claimed_by = null;
-      if (targetStage === "Entered") updates.entered_by = displayName;
-
-      // ── Backward moves: clear stale forward-progress dates ────────────
-      // E.g. moving At cross dock → In production clears the delivery date,
-      // since the order won't actually be delivered on the date that was
-      // booked while it was still cross-docked.
-      const cleared = fieldsToClearOnBackwardMove(
-        order.stage, targetStage, (order.type as string) ?? "order");
-      if (cleared) Object.assign(updates, cleared);
-
-      const { error: updateError } = await supabase
-        .from("orders").update(updates).eq("id", id);
-      if (updateError) {
-        results.push({ id, ok: false, error: updateError.message });
-        continue;
-      }
-
-      const clearedNote = cleared ? ` — cleared ${describeFieldsCleared(cleared)}` : "";
-      activityInserts.push({
-        order_id: id,
-        text: `Moved to "${targetStage}" by ${displayName} (bulk action)${clearedNote}`,
-        time: today,
-      });
-
-      // Shopify writeback (failure is non-fatal — we surface it in the result)
-      let shopify_synced = false;
-      if (order.shopify_id) {
-        shopify_synced = await syncStageToShopify(order.shopify_id, targetStage);
-      }
-
-      results.push({ id, ok: true, shopify_synced });
-    }
-
+    // ── Archive ─────────────────────────────────────────────────────────────
     if (action === "archive" && targetArchived !== null) {
+      if (!isAdmin) {
+        if (order.source !== "Manual") {
+          results.push({ id, ok: false, error: "forbidden: only admins can archive non-manual orders" });
+          continue;
+        }
+        if (!order.created_by || order.created_by !== username) {
+          results.push({ id, ok: false, error: "forbidden: you can only archive orders you created" });
+          continue;
+        }
+      }
+
       if (order.archived === targetArchived) {
         results.push({ id, ok: true });
         continue;
@@ -260,29 +169,122 @@ export async function POST(req: NextRequest) {
         text: `${targetArchived ? "Archived" : "Restored from archive"} by ${displayName} (bulk action)`,
         time: today,
       });
+      results.push({ id, ok: true });
+      continue;
+    }
 
+    // ── Delete ──────────────────────────────────────────────────────────────
+    if (action === "delete") {
+      // CUSTOM ROWS ONLY. Not a permission — a statement about where the row's
+      // truth lives. Shopify owns every other type, and deleting one here
+      // without deleting it there is how the two drift apart.
+      if (order.type !== "custom") {
+        results.push({
+          id, ok: false,
+          error: `shopify_owned: ${order.type} orders are deleted in Shopify, not here`,
+        });
+        continue;
+      }
+
+      // ── Storage FIRST, then rows ──────────────────────────────────────────
+      //
+      // The order is deliberate and it is the opposite of what looks natural.
+      // `order_attachments.file_path` carries NO foreign key, so nothing links
+      // a storage object to its row except that string.
+      //
+      //   Rows first:    a storage failure leaves files nobody has a record of.
+      //                  Unrecoverable garbage, invisible, growing.
+      //   Storage first: a row failure leaves a row whose files are gone --
+      //                  visible as "no attachments", and retryable.
+      //
+      // Files go when the job goes.
+      const { data: attachments, error: attErr } = await supabase
+        .from("order_attachments")
+        .select("file_path")
+        .eq("order_id", id);
+      if (attErr) {
+        results.push({ id, ok: false, error: `failed to list attachments: ${attErr.message}` });
+        continue;
+      }
+      const paths = (attachments ?? [])
+        .map(a => a.file_path as string)
+        .filter(Boolean);
+      if (paths.length > 0) {
+        const { error: storageErr } = await supabase
+          .storage.from("order-attachments").remove(paths);
+        if (storageErr) {
+          results.push({ id, ok: false, error: `failed to delete files: ${storageErr.message}` });
+          continue;
+        }
+      }
+
+      // Children in FK order. Every one of these constraints is NO ACTION
+      // (verified 2026-08-20), so the parent delete is REJECTED outright while
+      // any child still points at it -- order_acknowledgments in particular,
+      // which an earlier version of the webhook cancel path forgot.
+      let childFailed = false;
+      for (const table of ["order_activity", "order_acknowledgments",
+                           "order_attachments", "damage_reports"]) {
+        const { error: childErr } = await supabase.from(table).delete().eq("order_id", id);
+        if (childErr) {
+          results.push({ id, ok: false, error: `failed to clear ${table}: ${childErr.message}` });
+          childFailed = true;
+          break;
+        }
+      }
+      if (childFailed) continue;
+
+      const { error: delErr } = await supabase.from("orders").delete().eq("id", id);
+      if (delErr) {
+        results.push({ id, ok: false, error: delErr.message });
+        continue;
+      }
+
+      if (order.project_id) touchedProjects.add(order.project_id as string);
       results.push({ id, ok: true });
     }
   }
 
-  // Batch-insert activity entries (1 round-trip instead of N)
+  // ── Clean up projects left with no groups ─────────────────────────────────
+  // A project is the purchase; a group is the work. A project with no groups
+  // left is invisible work -- nothing lists it and nothing can claim it.
+  //
+  // Checked AFTER the loop and re-queried per project, because two groups of
+  // the same project can appear in one batch, and because a project may still
+  // hold groups that were not selected.
+  const deletedProjects: string[] = [];
+  for (const projectId of touchedProjects) {
+    const { count, error: countErr } = await supabase
+      .from("orders")
+      .select("id", { count: "exact", head: true })
+      .eq("project_id", projectId);
+    if (countErr) continue;
+    if (!count || count === 0) {
+      const { error: projErr } = await supabase.from("projects").delete().eq("id", projectId);
+      if (!projErr) deletedProjects.push(projectId);
+    }
+  }
+
   if (activityInserts.length > 0) {
     await supabase.from("order_activity").insert(activityInserts);
   }
 
-  // Audit-log the bulk action so admins can see it in the audit panel
+  // Audit-log the bulk action. Deletions especially: this is the only record
+  // that survives, since the order's own activity rows went with it.
   try {
     await supabase.from("audit_log").insert({
-      event: "bulk_action",
+      event: action === "delete" ? "bulk_delete" : "bulk_action",
       username,
       details: {
         action,
-        ...(targetStage ? { stage: targetStage } : {}),
         ...(targetArchived !== null ? { archived: targetArchived } : {}),
         requested: ids.length,
         succeeded: results.filter(r => r.ok).length,
         failed: results.filter(r => !r.ok).length,
-        backwards_move: backwardsMoveDetected,
+        ...(action === "delete" ? {
+          deleted_ids: results.filter(r => r.ok).map(r => r.id),
+          deleted_projects: deletedProjects,
+        } : {}),
       },
     });
   } catch { /* non-critical */ }
@@ -291,110 +293,7 @@ export async function POST(req: NextRequest) {
     ok: true,
     succeeded: results.filter(r => r.ok).length,
     failed: results.filter(r => !r.ok).length,
+    ...(deletedProjects.length > 0 ? { deleted_projects: deletedProjects.length } : {}),
     results,
-  });
-}
-
-/**
- * GET /api/orders/bulk?ids=a,b,c&stage=Entered
- *
- * Pre-flight check — returns whether each provided id would pass the stage
- * gates for the given target stage. The UI uses this to show a preview
- * before the user clicks "Move N orders" in the confirm dialog, so they
- * know up front which ones will succeed and which won't.
- *
- * This does NOT do any writes. PIN-gated backwards moves return
- * `{ requires_pin: true }` at the top level.
- */
-export async function GET(req: NextRequest) {
-  const auth = await requireAuth();
-  if (auth instanceof NextResponse) return auth;
-  const limited = await rateLimitOr429(req, 30, 60_000, "orders:bulk-preflight");
-  if (limited) return limited;
-
-  const url = new URL(req.url);
-  const idsParam = url.searchParams.get("ids") ?? "";
-  const targetStage = url.searchParams.get("stage") ?? "";
-  const ids = idsParam.split(",").map(s => s.trim()).filter(s => s.length > 0 && s.length < 100);
-
-  if (ids.length === 0 || ids.length > MAX_BULK_IDS) {
-    return NextResponse.json({ error: "1 to 50 ids required" }, { status: 422 });
-  }
-  if (!ALLOWED_STAGES.has(targetStage)) {
-    return NextResponse.json({ error: "valid stage required" }, { status: 422 });
-  }
-
-  const { data: orders, error } = await supabase
-    .from("orders")
-    .select("id, stage, type")
-    .in("id", ids);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-  // Target index is resolved PER ROW below, not once for the batch --
-  // stage names are shared across flows, so one index cannot be right
-  // for a mixed-type set of ids.
-  let requiresPin = false;
-  const checks: { id: string; will_pass: boolean; reason?: string }[] = [];
-
-  // Pre-load attachment counts in one round-trip for orders moving to Entered
-  let attachmentMap = new Map<string, number>();
-  if (targetStage === "Entered") {
-    const newOrderIds = (orders ?? []).filter(o => o.stage === "New").map(o => o.id);
-    if (newOrderIds.length > 0) {
-      const { data: atts } = await supabase
-        .from("order_attachments")
-        .select("order_id")
-        .in("order_id", newOrderIds);
-      attachmentMap = new Map();
-      for (const a of (atts ?? [])) {
-        attachmentMap.set(a.order_id as string, (attachmentMap.get(a.order_id as string) ?? 0) + 1);
-      }
-    }
-  }
-
-  for (const id of ids) {
-    const order = (orders ?? []).find(o => o.id === id);
-    if (!order) {
-      checks.push({ id, will_pass: false, reason: "not_found" });
-      continue;
-    }
-
-    if (order.stage === targetStage) {
-      checks.push({ id, will_pass: true, reason: "no_change" });
-      continue;
-    }
-
-    // Same per-row resolution as the POST path above.
-    const rowType = (order.type as string) ?? "order";
-
-    // Report an out-of-flow target BEFORE anything is written, so the
-    // confirm dialog shows it rather than the batch half-failing.
-    if (!isStageAllowedForType(targetStage, rowType)) {
-      checks.push({ id, will_pass: false, reason: "stage_not_in_flow" });
-      continue;
-    }
-
-    const currentInfo = stageIndex(order.stage, rowType);
-    const targetInfo = stageIndex(targetStage, rowType);
-    if (currentInfo.idx >= 0 && targetInfo.idx >= 0 && targetInfo.idx < currentInfo.idx) {
-      requiresPin = true;
-    }
-
-    // Samples are exempt from the attachment gate.
-    if (targetStage === "Entered" && order.stage === "New" && rowType !== "sample") {
-      const attCount = attachmentMap.get(id) ?? 0;
-      if (attCount === 0) {
-        checks.push({ id, will_pass: false, reason: "needs_attachment" });
-        continue;
-      }
-    }
-
-    checks.push({ id, will_pass: true });
-  }
-
-  return NextResponse.json({
-    ok: true,
-    requires_pin: requiresPin,
-    checks,
   });
 }

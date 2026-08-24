@@ -1,9 +1,24 @@
 "use client";
 
-import { useState, useMemo, useRef, useEffect } from "react";
-import { Archive, ChevronDown, Loader2, X, AlertCircle } from "lucide-react";
-import { Order, ORDER_STAGES, STAGE_LIST_BY_TYPE, Stage, displayOrderNumber } from "@/lib/data";
+import { useState, useRef, useEffect } from "react";
+import { Archive, Loader2, X, AlertCircle, Trash2 } from "lucide-react";
+import { Order, displayOrderNumber } from "@/lib/data";
 import { useStore } from "@/lib/store";
+import { useSession } from "next-auth/react";
+
+/**
+ * Bulk actions — a CLEANUP tool.
+ *
+ * ⚠ THE MOVE-TO DROPDOWN WAS REMOVED 2026-08-24, with the preflight call, the
+ * PIN dialog, the per-row checks breakdown and the MoveToDropdown component.
+ * Bulk stage moves did not fit how the business runs, and the server route had
+ * drifted from the single-order PATCH in five ways -- no delivery-proof gate,
+ * no payment hold, half an attachment gate, `claimed_by` wiped on every forward
+ * move, and `entered_by` written as the wrong kind of value. See the header of
+ * app/api/orders/bulk/route.ts.
+ *
+ * Stage moves happen one order at a time, where those gates apply.
+ */
 
 interface BulkActionBarProps {
   /** The rows carry their own `type`; no tab prop is needed or wanted. */
@@ -12,128 +27,52 @@ interface BulkActionBarProps {
   onDone: () => void;
 }
 
-const STAGE_COLOR: Record<string, string> = {
-  "New": "#c97070", "Entered": "#d4922a", "In production": "#c8b84a",
-  "At cross dock": "#5a8db8", "Delivered": "#8fbe70",
-  "New claim": "#c97070", "In review": "#d4922a", "Parts ordered": "#c8b84a",
-  "Shipped": "#5a8db8", "Resolved": "#8fbe70",
-};
-
-// Map a server-returned `reason` code to a user-friendly label.
-function reasonLabel(reason: string | undefined): string {
-  if (!reason) return "will move";
-  if (reason === "needs_attachment") return "needs attachment first";
-  if (reason === "no_change") return "already in target stage";
-  if (reason === "not_found") return "not found";
-  return reason;
-}
-
-interface PreflightCheck {
-  id: string;
-  will_pass: boolean;
-  reason?: string;
-}
-
 interface ConfirmState {
-  kind: "move" | "archive";
-  stage?: Stage;          // present when kind === "move"
-  checks?: PreflightCheck[];
-  requiresPin: boolean;
+  kind: "archive" | "delete";
 }
 
 export function BulkActionBar({ selectedOrders, onClear, onDone }: BulkActionBarProps) {
   const { bulkAction } = useStore();
+  const { data: session } = useSession();
   const [confirming, setConfirming] = useState<ConfirmState | null>(null);
-  const [adminPin, setAdminPin] = useState("");
-  const [pinError, setPinError] = useState(false);
   const [working, setWorking] = useState(false);
-  const [preflighting, setPreflighting] = useState(false);
   const [resultMsg, setResultMsg] = useState<string | null>(null);
-  const pinInputRef = useRef<HTMLInputElement>(null);
+  const [confirmWord, setConfirmWord] = useState("");
+  const confirmInputRef = useRef<HTMLInputElement>(null);
 
   const count = selectedOrders.length;
+  const isAdmin = (session?.user as { role?: string } | undefined)?.role === "admin";
 
-  // Auto-focus PIN field when the confirm dialog needs one
+  // Delete is CUSTOM ROWS ONLY, and the server refuses anything else. Checking
+  // here as well means the button is simply absent rather than offering an
+  // action that will fail per row -- but the server check is the real one.
+  const allCustom = count > 0 && selectedOrders.every(o => o.type === "custom");
+  const canDelete = isAdmin && allCustom;
+
   useEffect(() => {
-    if (confirming?.requiresPin) {
-      requestAnimationFrame(() => pinInputRef.current?.focus());
+    if (confirming?.kind === "delete") {
+      requestAnimationFrame(() => confirmInputRef.current?.focus());
     }
-  }, [confirming?.requiresPin]);
+  }, [confirming?.kind]);
 
-  // Determine the common stage — null if mixed
-  const commonStage = useMemo<Stage | null>(() => {
-    if (count === 0) return null;
-    const first = selectedOrders[0].stage;
-    return selectedOrders.every(o => o.stage === first) ? first : null;
-  }, [selectedOrders, count]);
-
-  // Every page selects within a single type, so the first row's type is
-  // the batch's type. `stages` is computed before the count===0 early
-  // return below, hence the fallback.
-  const batchType = selectedOrders[0]?.type;
-  const stages = batchType ? STAGE_LIST_BY_TYPE[batchType] : ORDER_STAGES;
-
-  // Hide entirely when nothing selected
   if (count === 0) return null;
 
-  // ── Pre-flight: ask the server which orders would pass the gates ─────────
-  async function preflightMove(stage: Stage) {
-    setPreflighting(true);
-    setResultMsg(null);
-    try {
-      const idsParam = selectedOrders.map(o => o.id).join(",");
-      const res = await fetch(`/api/orders/bulk?ids=${encodeURIComponent(idsParam)}&stage=${encodeURIComponent(stage)}`);
-      if (!res.ok) {
-        setResultMsg("⚠ Couldn't preview — try again");
-        return;
-      }
-      const data = await res.json() as { checks?: PreflightCheck[]; requires_pin?: boolean };
-      setConfirming({
-        kind: "move",
-        stage,
-        checks: data.checks ?? [],
-        requiresPin: data.requires_pin ?? false,
-      });
-      setAdminPin("");
-      setPinError(false);
-    } catch {
-      setResultMsg("⚠ Network error");
-    } finally {
-      setPreflighting(false);
-    }
-  }
-
-  function openArchiveConfirm() {
-    setConfirming({ kind: "archive", requiresPin: false });
-    setAdminPin("");
-    setPinError(false);
-  }
-
-  // ── Execute the action after confirm ─────────────────────────────────────
   async function execute() {
     if (!confirming) return;
-
-    if (confirming.requiresPin && !adminPin) {
-      setPinError(true);
-      return;
-    }
+    // Deleting is irreversible and takes the files with it, so it asks for the
+    // word rather than a click. The archive path has no such friction because
+    // it is reversible.
+    if (confirming.kind === "delete" && confirmWord.trim().toUpperCase() !== "DELETE") return;
 
     setWorking(true);
     setResultMsg(null);
 
-    let res;
-    if (confirming.kind === "move" && confirming.stage) {
-      res = await bulkAction(selectedOrders.map(o => o.id), {
-        type: "move",
-        stage: confirming.stage,
-        adminPin: confirming.requiresPin ? adminPin : undefined,
-      });
-    } else {
-      res = await bulkAction(selectedOrders.map(o => o.id), {
-        type: "archive",
-        archived: true,
-      });
-    }
+    const res = await bulkAction(
+      selectedOrders.map(o => o.id),
+      confirming.kind === "delete"
+        ? { type: "delete" }
+        : { type: "archive", archived: true },
+    );
 
     setWorking(false);
 
@@ -143,15 +82,10 @@ export function BulkActionBar({ selectedOrders, onClear, onDone }: BulkActionBar
       return;
     }
 
-    // Defensive: server says PIN is needed (e.g. user wiped it mid-flight)
-    if (res.pinRequired) {
-      setPinError(true);
-      return;
-    }
-
+    const verb = confirming.kind === "delete" ? "Deleted" : "Archived";
     setConfirming(null);
+    setConfirmWord("");
 
-    const verb = confirming.kind === "move" ? "Moved" : "Archived";
     if (res.failed > 0) {
       setResultMsg(`${verb} ${res.succeeded} · ${res.failed} skipped (see card details)`);
     } else if (res.succeeded === 0) {
@@ -162,14 +96,7 @@ export function BulkActionBar({ selectedOrders, onClear, onDone }: BulkActionBar
     }
   }
 
-  // Pre-flight breakdown counts
-  const willPass = confirming?.checks?.filter(c => c.will_pass).length ?? count;
-  const willFail = confirming?.checks?.filter(c => !c.will_pass) ?? [];
-  const reasonCounts: Record<string, number> = {};
-  for (const c of willFail) {
-    const label = reasonLabel(c.reason);
-    reasonCounts[label] = (reasonCounts[label] ?? 0) + 1;
-  }
+  const isDelete = confirming?.kind === "delete";
 
   return (
     <>
@@ -196,45 +123,9 @@ export function BulkActionBar({ selectedOrders, onClear, onDone }: BulkActionBar
           </span>
         </div>
 
-        {/* Stage indicator */}
-        {commonStage ? (
-          <span
-            className="text-[9px] font-medium tracking-wider uppercase px-2 py-px rounded-full"
-            style={{
-              color: STAGE_COLOR[commonStage] ?? "#a0a09a",
-              background: `${STAGE_COLOR[commonStage] ?? "#a0a09a"}20`,
-              border: `0.5px solid ${STAGE_COLOR[commonStage] ?? "#a0a09a"}55`,
-            }}
-            title={`All ${count} selected orders are in "${commonStage}"`}
-          >
-            {commonStage}
-          </span>
-        ) : (
-          <span
-            className="text-[10px] px-2 py-px rounded-full uppercase tracking-wider"
-            style={{
-              color: "#e8b56a",
-              background: "rgba(232,181,106,0.12)",
-              border: "0.5px solid rgba(232,181,106,0.40)",
-            }}
-            title="Selected orders are in different stages — clear selection to pick one stage"
-          >
-            mixed stages
-          </span>
-        )}
-
-        {/* Move-to dropdown */}
-        <MoveToDropdown
-          stages={stages}
-          currentStage={commonStage}
-          disabled={!commonStage || working || preflighting}
-          loading={preflighting}
-          onPick={preflightMove}
-        />
-
-        {/* Archive button */}
+        {/* Archive */}
         <button
-          onClick={openArchiveConfirm}
+          onClick={() => setConfirming({ kind: "archive" })}
           disabled={working}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all disabled:opacity-50 bg-white/6 border border-cream/15 text-cream/85 hover:bg-white/10"
           title="Archive all selected orders"
@@ -242,6 +133,24 @@ export function BulkActionBar({ selectedOrders, onClear, onDone }: BulkActionBar
           <Archive className="w-3 h-3" />
           Archive
         </button>
+
+        {/* Delete — admin only, custom rows only */}
+        {canDelete && (
+          <button
+            onClick={() => { setConfirmWord(""); setConfirming({ kind: "delete" }); }}
+            disabled={working}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all disabled:opacity-50"
+            style={{
+              background: "rgba(224,85,85,0.15)",
+              border: "0.5px solid rgba(224,85,85,0.45)",
+              color: "#e08585",
+            }}
+            title="Permanently delete the selected custom jobs and their files"
+          >
+            <Trash2 className="w-3 h-3" />
+            Delete
+          </button>
+        )}
 
         {/* Clear */}
         <button
@@ -278,37 +187,33 @@ export function BulkActionBar({ selectedOrders, onClear, onDone }: BulkActionBar
             onClick={(e) => e.stopPropagation()}
           >
             <h2 className="text-sm font-semibold mb-2" style={{ color: "#f0ece4" }}>
-              {confirming.kind === "move"
-                ? `Move orders to "${confirming.stage}"?`
+              {isDelete
+                ? `Delete ${count} custom job${count === 1 ? "" : "s"}?`
                 : `Archive ${count} order${count === 1 ? "" : "s"}?`}
             </h2>
 
-            {/* Description */}
             <p className="text-xs mb-3" style={{ color: "rgba(232,227,218,0.65)" }}>
-              {confirming.kind === "move" ? (
-                <>From <strong>{commonStage}</strong> to <strong>{confirming.stage}</strong>. Stage changes sync to Shopify.</>
+              {isDelete ? (
+                <>This cannot be undone. The jobs, their activity history and
+                  their uploaded files are removed permanently.</>
               ) : (
                 <>Selected orders will be moved to the archive. You can restore them later.</>
               )}
             </p>
 
-            {/* Pre-flight breakdown for moves */}
-            {confirming.kind === "move" && confirming.checks && (
-              <div className="mb-3 space-y-1.5">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full" style={{ background: "#8fbe70" }} />
-                  <span className="text-xs" style={{ color: "rgba(232,227,218,0.85)" }}>
-                    <strong>{willPass}</strong> will move
-                  </span>
-                </div>
-                {Object.entries(reasonCounts).map(([reason, n]) => (
-                  <div key={reason} className="flex items-start gap-2">
-                    <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" style={{ color: "#e08030" }} />
-                    <span className="text-xs" style={{ color: "rgba(255,170,80,0.95)" }}>
-                      <strong>{n}</strong> will be skipped — {reason}
-                    </span>
-                  </div>
-                ))}
+            {isDelete && (
+              <div
+                className="rounded-lg p-2.5 mb-3 flex items-start gap-2"
+                style={{
+                  background: "rgba(224,85,85,0.10)",
+                  border: "0.5px solid rgba(224,85,85,0.35)",
+                }}
+              >
+                <AlertCircle className="w-3.5 h-3.5 mt-px flex-shrink-0" style={{ color: "#e08585" }} />
+                <span className="text-[11px]" style={{ color: "rgba(232,170,170,0.95)" }}>
+                  Files are deleted from storage as well as the record. A job whose
+                  project has no other work left removes that project too.
+                </span>
               </div>
             )}
 
@@ -321,69 +226,43 @@ export function BulkActionBar({ selectedOrders, onClear, onDone }: BulkActionBar
                 color: "rgba(232,227,218,0.55)",
               }}
             >
-              {selectedOrders.slice(0, 8).map(o => {
-                const check = confirming.checks?.find(c => c.id === o.id);
-                const willFailThis = check && !check.will_pass;
-                return (
-                  <div key={o.id} className="truncate flex items-center gap-1.5">
-                    {willFailThis && <span style={{ color: "#e08030" }}>⊗</span>}
-                    {check?.will_pass && confirming.kind === "move" && <span style={{ color: "#8fbe70" }}>→</span>}
-                    <span style={{ color: willFailThis ? "rgba(255,170,80,0.85)" : "rgba(232,227,218,0.55)" }}>
-                      {displayOrderNumber(o)} — {o.name}
-                    </span>
-                  </div>
-                );
-              })}
+              {selectedOrders.slice(0, 8).map(o => (
+                <div key={o.id} className="truncate flex items-center gap-1.5">
+                  <span style={{ color: "rgba(232,227,218,0.55)" }}>
+                    {displayOrderNumber(o)} — {o.name}
+                  </span>
+                </div>
+              ))}
               {selectedOrders.length > 8 && (
                 <div className="italic">…and {selectedOrders.length - 8} more</div>
               )}
             </div>
 
-            {/* PIN input for backwards moves */}
-            {confirming.requiresPin && (
+            {isDelete && (
               <div className="mb-4">
                 <p className="text-[11px] mb-1.5 uppercase tracking-widest" style={{ color: "rgba(224,85,85,0.85)" }}>
-                  ⚠ Backwards move — Admin PIN required
+                  Type DELETE to confirm
                 </p>
                 <input
-                  ref={pinInputRef}
+                  ref={confirmInputRef}
                   type="text"
                   autoComplete="off"
-                  autoCorrect="off"
-                  autoCapitalize="off"
                   spellCheck={false}
-                  name="bulk-action-pin-no-autofill"
-                  data-1p-ignore="true"
-                  data-lpignore="true"
-                  data-form-type="other"
-                  maxLength={6}
-                  value={adminPin}
-                  onChange={(e) => {
-                    // Accept alphanumeric only — matches OrderModal's PIN input.
-                    // Server compares as-is (case sensitive) against ADMIN_BACKWARD_PIN.
-                    setAdminPin(e.target.value.replace(/[^A-Za-z0-9]/g, "").slice(0, 6));
-                    setPinError(false);
+                  value={confirmWord}
+                  onChange={(e) => setConfirmWord(e.target.value)}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.key === "Enter" && confirmWord.trim().toUpperCase() === "DELETE") execute();
                   }}
-                  onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Enter" && adminPin) execute(); }}
-                  placeholder="Enter admin PIN"
+                  placeholder="DELETE"
                   className="w-full px-3 py-2 rounded-lg text-sm transition-colors"
                   style={{
-                    background: pinError ? "rgba(224,85,85,0.18)" : "rgba(255,255,255,0.08)",
-                    border: pinError ? "0.5px solid rgba(224,85,85,0.60)" : "0.5px solid rgba(255,255,255,0.18)",
+                    background: "rgba(255,255,255,0.08)",
+                    border: "0.5px solid rgba(255,255,255,0.18)",
                     color: "#f0ece4",
                     fontSize: "16px",
-                    // CSS dot masking — visually masked without `type="password"`
-                    // which triggers Chrome's autofill heuristics on the rest of
-                    // the page.
-                    WebkitTextSecurity: "disc",
-                    textSecurity: "disc",
-                  } as React.CSSProperties}
+                  }}
                 />
-                {pinError && (
-                  <p className="text-[10px] mt-1" style={{ color: "rgba(224,85,85,0.85)" }}>
-                    Incorrect PIN
-                  </p>
-                )}
               </div>
             )}
 
@@ -402,85 +281,25 @@ export function BulkActionBar({ selectedOrders, onClear, onDone }: BulkActionBar
               </button>
               <button
                 onClick={execute}
-                disabled={working || willPass === 0}
+                disabled={working || (isDelete && confirmWord.trim().toUpperCase() !== "DELETE")}
                 className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 disabled:opacity-50"
-                style={{
+                style={isDelete ? {
+                  background: "rgba(224,85,85,0.20)",
+                  border: "0.5px solid rgba(224,85,85,0.75)",
+                  color: "#e89090",
+                } : {
                   background: "rgba(86,100,72,0.30)",
                   border: "0.5px solid rgba(86,100,72,0.85)",
                   color: "#a8dd80",
                 }}
               >
                 {working && <Loader2 className="w-3 h-3 animate-spin" />}
-                {confirming.kind === "move"
-                  ? (willPass === count ? `Move ${count}` : `Move ${willPass} of ${count}`)
-                  : `Archive ${count}`}
+                {isDelete ? `Delete ${count}` : `Archive ${count}`}
               </button>
             </div>
           </div>
         </div>
       )}
     </>
-  );
-}
-
-function MoveToDropdown({ stages, currentStage, disabled, loading, onPick }: {
-  stages: readonly string[];
-  currentStage: Stage | null;
-  disabled: boolean;
-  loading: boolean;
-  onPick: (stage: Stage) => void;
-}) {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <div className="relative">
-      <button
-        onClick={() => !disabled && setOpen(v => !v)}
-        disabled={disabled}
-        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed"
-        style={{
-          background: disabled ? "rgba(255,255,255,0.04)" : "rgba(86,100,72,0.22)",
-          border: `0.5px solid ${disabled ? "rgba(255,255,255,0.15)" : "rgba(86,100,72,0.75)"}`,
-          color: disabled ? "rgba(232,227,218,0.40)" : "#a8dd80",
-        }}
-        title={disabled ? "Selected orders must all be in the same stage" : "Move to…"}
-      >
-        {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : "Move to…"}
-        {!loading && <ChevronDown className="w-3 h-3" />}
-      </button>
-      {open && !disabled && (
-        <div
-          className="absolute bottom-[calc(100%+4px)] left-0 z-50 rounded-xl overflow-hidden min-w-[140px]"
-          style={{
-            background: "rgba(22,36,50,0.99)",
-            backdropFilter: "blur(28px) saturate(160%)",
-            WebkitBackdropFilter: "blur(28px) saturate(160%)",
-            border: "0.5px solid rgba(255,255,255,0.18)",
-            boxShadow: "0 16px 48px rgba(0,0,0,0.65)",
-          }}
-        >
-          {stages.map(s => {
-            const isCurrent = s === currentStage;
-            return (
-              <button
-                key={s}
-                disabled={isCurrent}
-                onClick={() => { onPick(s as Stage); setOpen(false); }}
-                className="w-full text-left px-3 py-2 text-[11px] transition-colors hover:bg-[rgba(255,255,255,0.10)] disabled:opacity-40 disabled:cursor-not-allowed"
-                style={{
-                  color: isCurrent ? "rgba(232,227,218,0.40)" : "rgba(232,227,218,0.85)",
-                  borderBottom: "0.5px solid rgba(255,255,255,0.10)",
-                }}
-              >
-                <span className="w-1.5 h-1.5 rounded-full inline-block mr-2" style={{
-                  background: STAGE_COLOR[s] ?? "#888",
-                }} />
-                {s}{isCurrent && " (current)"}
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
   );
 }

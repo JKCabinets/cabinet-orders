@@ -40,8 +40,8 @@ interface StoreCtx {
   deleteOrder: (id: string) => Promise<void>;
   bulkAction: (
     ids: string[],
-    action: { type: "move"; stage: Stage; adminPin?: string } | { type: "archive"; archived: boolean }
-  ) => Promise<{ succeeded: number; failed: number; results: { id: string; ok: boolean; error?: string }[]; pinRequired?: boolean } | null>;
+    action: { type: "archive"; archived: boolean } | { type: "delete" }
+  ) => Promise<{ succeeded: number; failed: number; results: { id: string; ok: boolean; error?: string }[] } | null>;
   updateOrderDetails: (id: string, details: { door_style?: string; color?: string; sku_items?: { sku: string; quantity: number; description?: string }[]; production_start_date?: string | null; production_est_finish_date?: string | null; scheduled_delivery_date?: string | null }) => Promise<void>;
   /**
    * Claim or release the order. When `claimedBy` is non-null, attempts
@@ -417,13 +417,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const bulkAction = useCallback(async (
     ids: string[],
-    action: { type: "move"; stage: Stage; adminPin?: string } | { type: "archive"; archived: boolean }
+    action: { type: "archive"; archived: boolean } | { type: "delete" }
   ) => {
-    // No optimistic update for bulk moves — gate failures (missing
-    // attachments, etc.) are common enough that flicker would be worse than
-    // a small delay. We refresh from the server after the response.
-    const payload = action.type === "move"
-      ? { ids, action: "move", stage: action.stage, admin_pin: action.adminPin }
+    // ⚠ `move` was removed 2026-08-24. Bulk is a CLEANUP tool: archive and
+    // delete only. The route had drifted from the single-order PATCH in five
+    // ways -- no delivery-proof gate, no payment hold, half an attachment
+    // gate, claimed_by wiped on every forward move, entered_by written as a
+    // display name rather than a team_members.id. See the header of
+    // app/api/orders/bulk/route.ts.
+    //
+    // No optimistic update: a delete that fails per row (a non-custom id,
+    // say) would otherwise vanish a row that is still there. We refresh from
+    // the server after the response.
+    const payload = action.type === "delete"
+      ? { ids, action: "delete" }
       : { ids, action: "archive", archived: action.archived };
 
     // Direct fetch instead of apiCall — we need to inspect the response on
@@ -442,15 +449,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     let data: { ok?: boolean; succeeded?: number; failed?: number; results?: { id: string; ok: boolean; error?: string }[]; error?: string } = {};
     try { data = await res.json(); } catch { /* leave as empty */ }
 
-    // 403 with admin_pin_required → tell caller to prompt for PIN
-    if (res.status === 403 && data.error === "admin_pin_required") {
-      return {
-        succeeded: 0,
-        failed: ids.length,
-        results: [],
-        pinRequired: true,
-      };
-    }
+    // No PIN branch: the admin PIN gated BACKWARD STAGE MOVES, and bulk no
+    // longer moves stages at all. Bulk delete is gated on admin ROLE, checked
+    // server-side before any row is read, and returns a plain 403.
 
     if (!res.ok) {
       return null;
