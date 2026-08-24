@@ -164,6 +164,20 @@ export interface SkuItem {
   sku: string;
   /** Shopify variant id, captured at ingest. Authoritative key for vendor resolution. */
   variant_id?: string;
+  /**
+   * The Shopify vendor for THIS line, captured at ingest from
+   * line_items[].vendor -- the same field that decides which group of a
+   * project the line lands in.
+   *
+   * Retained so a mis-grouped line can be diagnosed without re-fetching
+   * the order from Shopify, and so the Full Order table can name a
+   * vendor without resolving every row through shopify_products.
+   *
+   * ⚠ OPTIONAL. Lines ingested before 2026-08-24 do not have it and there
+   * is no backfill, so every reader must fall back -- to the order-level
+   * `orders.vendor`, or to the variant_id resolver.
+   */
+  vendor?: string;
   quantity: number;
   description?: string;
   /**

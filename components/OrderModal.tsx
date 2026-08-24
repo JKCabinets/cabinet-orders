@@ -292,6 +292,9 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
   // Counts for the tab labels. Across the PROJECT, not the selected group --
   // the tabs describe the whole order, and a count that changed when you
   // clicked between groups would read as files or lines disappearing.
+  // Which group's lines are open on Full Order. null = the summary table.
+  // Reset with the tab so reopening the modal never lands mid-drill.
+  const [itemsGroupId, setItemsGroupId] = useState<string | null>(null);
   const itemCount = useMemo(
     () => projectGroups.reduce((n, g) => n + (g.sku_items?.length ?? 0), 0),
     [projectGroups],
@@ -306,7 +309,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
   // tab across opens is how someone lands on Files wondering where the stage
   // rail went.
   const [tab, setTab] = useState<"project" | "items" | "files" | "activity">("project");
-  useEffect(() => { setTab("project"); }, [order.id]);
+  useEffect(() => { setTab("project"); setItemsGroupId(null); }, [order.id]);
 
   // Which group the panels below operate on. Opens on the one you clicked
   // from, so arriving from /samples selects the sample group and
@@ -1046,56 +1049,104 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
 
           </>)}
 
-          {tab === "items" && (
-            <div className="flex flex-col">
-              {projectGroups
-                .filter((g) => g.type !== "warranty")
-                .map((g) => (
-                  <div key={g.id}>
-                    {/* Section header per group. Renders even for a project of
-                        one so the stage is always stated -- a table of lines
-                        with no indication of where those lines have got to is
-                        the thing this tab exists to fix. */}
-                    <div
-                      className="flex items-center gap-2 px-6 pt-5 pb-1"
-                    >
-                      <span
-                        className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                        style={{ background: STAGE_ACCENT[g.stage] ?? "#8a8a8a" }}
-                      />
-                      <span className="text-[10px] uppercase tracking-wider font-medium text-cream/85">
-                        {GROUP_LABEL[g.type] ?? g.type}
-                      </span>
-                      <span className="text-[10px] text-cream/40">·</span>
-                      <span
-                        className="text-[10px] uppercase tracking-wider"
-                        style={{ color: STAGE_ACCENT[g.stage] ?? "#8a8a8a" }}
-                      >
-                        {g.stage}
-                      </span>
-                      <span className="text-[10px] text-cream/30 font-mono ml-auto">{g.id}</span>
-                    </div>
-                    <OrderDetails
-                      orderId={g.id}
-                      doorStyle={g.door_style ?? ""}
-                      color={g.color ?? ""}
-                      skuItems={g.sku_items ?? []}
-                      productionStartDate={g.production_start_date}
-                      productionEstFinishDate={g.production_est_finish_date}
-                      scheduledDeliveryDate={g.scheduled_delivery_date}
-                      readOnly={g.source === "Shopify"}
-                    />
-                  </div>
-                ))}
-              {projectGroups.every((g) => g.type === "warranty") && (
+          {tab === "items" && (() => {
+            const workGroups = projectGroups.filter((g) => g.type !== "warranty");
+            if (workGroups.length === 0) {
+              return (
                 <div className="px-6 py-8 text-center">
                   <p className="text-[12px] text-cream/45">
                     A warranty claim carries damage reports, not SKU lines.
                   </p>
                 </div>
-              )}
-            </div>
-          )}
+              );
+            }
+            // A project of one IS its own detail. Making somebody click a
+            // single-row table to reach the only thing in it is ceremony.
+            const openId = workGroups.length === 1 ? workGroups[0].id : itemsGroupId;
+            const open = openId ? workGroups.find((g) => g.id === openId) : undefined;
+
+            if (open) {
+              return (
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-2 px-6 pt-5 pb-1">
+                    {workGroups.length > 1 && (
+                      <button
+                        onClick={() => setItemsGroupId(null)}
+                        className="text-[10px] uppercase tracking-wider text-cream/45 hover:text-cream/85 transition-colors mr-1"
+                      >
+                        &larr; All
+                      </button>
+                    )}
+                    <span className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                      style={{ background: STAGE_ACCENT[open.stage] ?? "#8a8a8a" }} />
+                    <span className="text-[10px] uppercase tracking-wider font-medium text-cream/85">
+                      {GROUP_LABEL[open.type] ?? open.type}
+                    </span>
+                    <span className="text-[10px] text-cream/40">&middot;</span>
+                    {/* Stage lives on the HEADER, not as a column repeated down
+                        every row. Every line in a group shares its group stage,
+                        so a column would be the same value 54 times. */}
+                    <span className="text-[10px] uppercase tracking-wider"
+                      style={{ color: STAGE_ACCENT[open.stage] ?? "#8a8a8a" }}>
+                      {open.stage}
+                    </span>
+                    <span className="text-[10px] text-cream/30 font-mono ml-auto">{open.id}</span>
+                  </div>
+                  {/* OrderDetails already groups by vendor, door style and colour
+                      with a header per group -- reused, not reimplemented. It is
+                      571 lines and it EDITS: adds and removes lines, saves them
+                      back, resolves vendors, renders review flags. */}
+                  <OrderDetails
+                    orderId={open.id}
+                    doorStyle={open.door_style ?? ""}
+                    color={open.color ?? ""}
+                    skuItems={open.sku_items ?? []}
+                    productionStartDate={open.production_start_date}
+                    productionEstFinishDate={open.production_est_finish_date}
+                    scheduledDeliveryDate={open.scheduled_delivery_date}
+                    readOnly={open.source === "Shopify"}
+                  />
+                </div>
+              );
+            }
+
+            return (
+              <div className="px-6 py-5">
+                <div className="rounded-brand overflow-hidden" style={{ border: "0.5px solid rgba(255,255,255,0.12)" }}>
+                  <div className="grid grid-cols-[1.4fr_1.6fr_auto_auto] gap-3 px-4 py-2.5 text-[9px] uppercase tracking-wider text-cream/40"
+                    style={{ background: "rgba(255,255,255,0.03)" }}>
+                    <span>Description</span>
+                    <span>Vendors</span>
+                    <span className="text-right">Parts</span>
+                    <span className="text-right">Stage</span>
+                  </div>
+                  {workGroups.map((g) => {
+                    const items = g.sku_items ?? [];
+                    const vendors = Array.from(new Set(
+                      items.map((i) => String(i.vendor ?? "").trim()).filter(Boolean)));
+                    // Total QUANTITY -- "parts" is the number of physical things.
+                    // The tab badge counts LINES, the mockup\'s "54 items".
+                    // Different questions, both labelled.
+                    const parts = items.reduce((n, i) => n + (Number(i.quantity) || 0), 0);
+                    const accent = STAGE_ACCENT[g.stage] ?? "#8a8a8a";
+                    return (
+                      <button key={g.id} onClick={() => setItemsGroupId(g.id)}
+                        className="w-full grid grid-cols-[1.4fr_1.6fr_auto_auto] gap-3 px-4 py-3 text-left transition-colors hover:bg-white/4"
+                        style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)" }}>
+                        <span className="text-[12px] text-cream/85">{GROUP_LABEL[g.type] ?? g.type}</span>
+                        <span className="text-[11px] text-cream/55 truncate">
+                          {vendors.length > 0 ? vendors.join(", ") : (g.vendor || "\u2014")}
+                        </span>
+                        <span className="text-[11px] text-cream/70 text-right tabular-nums">{parts || "\u2014"}</span>
+                        <span className="text-[10px] uppercase tracking-wider text-right whitespace-nowrap"
+                          style={{ color: accent }}>{g.stage}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
 
           {tab === "files" && <ProjectFiles groups={projectGroups} />}
 
