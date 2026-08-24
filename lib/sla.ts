@@ -110,12 +110,42 @@ const STANDARD_RULES: Partial<Record<string, SlaRule>> = {
 };
 
 /** Custom orders: quote-specific early stages, then the shared gated ones. */
+/**
+ * Custom orders: the front half is ours, the back half is a conversation.
+ *
+ * New and In review measure OUR responsiveness. A quote request sitting
+ * unanswered is ours whether or not the job is hand-driven, so they keep
+ * the standard 24h/48h.
+ *
+ * In production and At cross dock have NO RULE, deliberately. They used to
+ * inherit the standard ones, which measure MISSING DATA rather than elapsed
+ * time -- an order in production with no dates is stalled, because the
+ * production-complete cron needs a finish date to act on.
+ *
+ * That premise does not hold here. Custom orders are contract work: priced
+ * by hand, paid in person, scheduled by conversation, and hand-driven end to
+ * end -- the cron is filtered to exclude them. Nothing was ever going to
+ * advance the order, so a missing date is not a stalled pipeline, it is a
+ * date that lives somewhere other than this system. Flagging it at 24h and
+ * forever after is noise in the one place that has to stay trustworthy.
+ *
+ * Removing them also removes a shared-reference trap: those two entries were
+ * the same rule OBJECTS as STANDARD_RULES', not copies, so tuning a standard
+ * rule silently retuned custom as well.
+ *
+ * "Ordered" still carries a rule. Arguably it should not -- it means the job
+ * is placed and we are waiting on a manufacturer, which is the same reason
+ * warranty's "Parts ordered" has none. Left alone rather than changed
+ * unasked; worth a decision.
+ *
+ * /sla renders every stage in a type's flow, including rule-less ones, with
+ * a count and a dash. So these two stages still show their orders -- they
+ * simply stop claiming an SLA judgement the system is not making.
+ */
 const CUSTOM_RULES: Partial<Record<string, SlaRule>> = {
   "New":       { softHours: SOFT_HOURS, hardHours: HARD_HOURS, measureFrom: "created" },
   "In review": { softHours: SOFT_HOURS, hardHours: HARD_HOURS },
   "Ordered":   { softHours: SOFT_HOURS, hardHours: HARD_HOURS },
-  "In production": STANDARD_RULES["In production"],
-  "At cross dock": STANDARD_RULES["At cross dock"],
 };
 
 /**
