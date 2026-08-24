@@ -1,6 +1,10 @@
 # JK Cabinets OMS — Build Handoff
 
 **As of 2026-08-20 · supersedes HANDOFF-2026-08-18-BUILD.md**
+**AMENDED 2026-08-24 — Project Orders.** One Shopify checkout is now one
+PROJECT with one `orders` row per product category. Sections marked ⚠ AMENDED
+below were true before that migration and are not now. `git log docs/` shows
+what changed and when.
 
 For whoever picks up the codebase next, including a fresh assistant chat with
 no memory of prior sessions.
@@ -100,7 +104,39 @@ These are not style preferences. Each one caused a real failure.
 
 # 3. The data model
 
-**One `orders` table, four flows, separated by the `type` column.**
+⚠ **AMENDED 2026-08-24: FIVE types, and a `projects` table above `orders`.**
+
+```
+projects  SHO-1050              one Shopify checkout. Customer, address,
+                                and THE FOUR MONEY COLUMNS -- one total per
+                                purchase, so a sum over `orders` would
+                                double-count a multi-group order.
+
+orders    SHO-1050-CAB   type = "order"     cabinets, 5-stage pipeline
+          SHO-1050-HW    type = "hardware"  status + carrier + tracking
+          SHO-1050-SMP   type = "sample"    JK stock, 3-stage flow
+          QUO-…-CST      type = "custom"    quote form or manual entry
+          WRN-0007       type = "warranty"  project_id NULL -- see below
+```
+
+A group is an `orders` row with a `project_id`. **A warranty claim is the only
+row type with `project_id` NULL** — it is ABOUT a purchase rather than part of
+one, and it may be denied, in which case it was never that purchase's work.
+So every query joining `projects` must LEFT join, or warranty rows vanish
+silently.
+
+**Category comes from the Shopify VENDOR** (`line_items[].vendor` in the
+webhook payload), mapped in `lib/categories.ts`. NOT from the SKU resolver:
+it is keyed entirely on the SKU and the JK sample products carry empty ones,
+which is exactly how sample classification failed silently on 2026-08-19. An
+unrecognised vendor falls to the cabinet group and logs `unknown_vendor` — it
+is never silently reclassified.
+
+⚠ **No hardware product exists in Shopify yet**, so the hardware vendor
+strings in `lib/categories.ts` are unverified. Create a test product with the
+intended vendor before calling that work done.
+
+The pre-migration text follows, for the flows it still describes correctly:
 
 ```
 type = "order"     Standard cabinet orders. Shopify only.
@@ -109,13 +145,33 @@ type = "custom"    Quote form OR manual entry. The same thing, two doors.
 type = "warranty"  Raised in-app from a delivered order.
 ```
 
+⚠ The sample rule above is SUPERSEDED. "ALL line items" was an order-level
+test; grouping is per line, so a mixed checkout now yields a cabinet group
+AND a sample group rather than being classified standard.
+
 ⚠ **`orders_type_check` constrains this column.** It accepted only
 `order`/`warranty` until 2026-08-19 — widened by
-`migrations/2026-08-19-orders-type-check.sql`. **Adding a type means changing
-three places: the CHECK constraint, `OrderType`/`ORDER_TYPES` in `lib/data.ts`,
-and the whitelist on `POST /api/orders`.** A widened TypeScript union is not a
-widened column, and the test that catches it is inserting a row — not
-compiling.
+`migrations/2026-08-19-orders-type-check.sql`, and again for `hardware` by
+`migrations/2026-08-20-project-orders.sql`.
+
+⚠ **AMENDED 2026-08-24: FIVE places, not three.**
+
+1. The CHECK constraint. Verified present 2026-08-20 and now
+   `(order, warranty, sample, custom, hardware)`.
+2. `OrderType` / `ORDER_TYPES` in `lib/data.ts`.
+3. The whitelist on `POST /api/orders`.
+4. **BOTH stage maps** — `STAGE_ORDER_BY_TYPE` and `STAGE_LIST_BY_TYPE`. A
+   type whose stages are not a subset of another flow needs its own array,
+   and `stageIndex` without a `type` argument will mis-resolve it: all three
+   hardware stage names already exist in other flows.
+5. **`TYPE_LIST_LABEL` and every other `Record<OrderType, …>`.** These are
+   deliberately exhaustive so the compiler names them — that is how the
+   missing hardware category on `/sla` was caught rather than shipped as a
+   silently absent column.
+
+A widened TypeScript union is not a widened column, and the test that catches
+it is inserting a row — not compiling. **There is no CHECK constraint on
+`orders.stage`** (verified 2026-08-20), so adding a STAGE is code-only.
 
 ## Pipelines
 
@@ -168,9 +224,25 @@ orderNumber = payload.order_number ?? payload.name
 orderId     = `SHO-${orderNumber}`  or  `SHO-${shopifyId.slice(-6)}` fallback
 ```
 
-`orders.id` is **text** and IS the order number. `orders.name` is the CUSTOMER
-name. Quote-form rows keep the `QUO-` prefix, which encodes ORIGIN rather than
-type.
+⚠ **AMENDED 2026-08-24: `orders.id` is NOT the order number.** It is an
+internal group handle — `SHO-1050-CAB`. **`projects.id` is the order number**,
+the value the customer quotes on the phone and types into lookup.
+
+| | |
+|---|---|
+| `displayOrderNumber(order)` | What to SHOW a human. Never `order.id`. |
+| `matchesOrderNumber(order, term)` | Search. Accepts both forms — somebody will paste a handle out of a log. |
+| `poReference(order)` | `Battles-SHO-1050`, for manufacturers. Internal; never shown to a customer. |
+
+`order.id` remains correct for IDENTITY — `moveStage`, `claimOrder`, `.eq("id",
+…)`, React keys, attachment paths. A group is what gets claimed and moved. Of
+roughly 68 `order.id` sites in the app, only ~19 were display.
+
+`orders.name` is the CUSTOMER name and still present, but the migration COPIED
+it to `projects` rather than moving it; the follow-up migration drops it, and
+anything reading it must resolve through the project by then. Quote-form rows
+keep the `QUO-` prefix, which encodes ORIGIN rather than type — note those ids
+are epoch-ms, so a PO reference reads `Battles-QUO-1787174567522`.
 
 Two unhandled edge cases: the `slice(-6)` fallback produces an id matching
 nothing the customer has seen, and `payload.name` is `"#1035"` WITH the hash,
@@ -481,8 +553,13 @@ catching `23505`.
 # 12. Open backlog
 
 **Order modal redesign.** The largest remaining piece, fully specified in
-**SESSION-HANDOFF-OMS-2026-08-20.md** — a whole-file rewrite of a 1,183-line
+**SESSION-HANDOFF-OMS-2026-08-20.md** — a whole-file rewrite of a large
 component, with a behaviour inventory that must be diffed before shipping.
+
+⚠ **That document says 1,183 lines. It is 1,327 lines as of 2026-08-24.**
+Section 1.5 there tells the next session to stop if `wc -l` does not match —
+correct instinct, stale number. Confirm the count and re-cut the chunk
+boundaries; the drift is age, not tampering.
 
 **⚠ Admin metrics — BLOCKED.** `orders` has **no money column of any kind**,
 verified against `information_schema` on 2026-08-20. Sell totals are impossible
@@ -521,3 +598,83 @@ replacement: if the box is down, so is the OMS.
 - **Dependency dispositions** in `docs/dependency-advisories.md`. The `xlsx`
   scanner flag is a **FALSE POSITIVE** — do not act on it.
 - **Timezone:** `America/Phoenix` for display dates.
+
+
+---
+
+# Appendix — 2026-08-24 session
+
+Added by the Project Orders session. Everything above marked ⚠ AMENDED is
+corrected in place; this is what is NEW.
+
+## What shipped
+
+| | |
+|---|---|
+| `migrations/2026-08-20-project-orders.sql` | `projects` table, group rebuild, `hardware` in the type CHECK, RLS + Realtime on `projects` |
+| `lib/categories.ts` | Vendor → category, the one implementation |
+| Webhook | Ingests project + one group per category; money on the project |
+| `lib/data.ts` | `displayOrderNumber`, `matchesOrderNumber`, `poReference`, project fields in `shapeOrder` |
+| Calendar | Reads the store instead of its own fetch |
+| `production-complete` cron | Type allowlist |
+
+## Business rules recorded here because the code cannot explain them
+
+**Custom orders are hand-driven.** Contract work: priced by hand, paid in
+person, larger and fully bespoke, scheduled by conversation. The OMS RECORDS
+what happened rather than driving it.
+
+- `production-complete` filters `.in("type", ["order", "sample"])` — an
+  ALLOWLIST, so the next type added is not automated by omission, which is
+  exactly how custom orders acquired that cron in the first place.
+- `CUSTOM_RULES` carries no SLA at In production or At cross dock. Those rules
+  measure MISSING DATA, which means "stalled" only when something was going to
+  advance the order. Nothing was.
+- Their front half keeps its rules: New and In review measure OUR
+  responsiveness to a quote request, hand-driven or not.
+- ⚠ Open: `Ordered` still carries a rule. It means the job is placed and we are
+  waiting on a manufacturer — the same reason warranty's `Parts ordered` has
+  none.
+
+**A Shopify fulfilment is authoritative only for what WE ship.** Samples and
+hardware are tracked in Shopify with a real carrier and number, so a fulfilment
+IS the event and the tracking comes free. Cabinets are DROP-SHIP: the
+manufacturer's partner delivers and Shopify never sees that shipment, so a
+fulfilment there is bookkeeping, and calling it "Delivered" is untrue. It is
+also why the signed-receipt gate exists — we are not the ones delivering.
+
+⚠ **A cabinet fulfilment is not nothing**: it means the MANUFACTURER
+DISPATCHED. That is the trigger behind the notification the order confirmation
+already promises, currently planned off the production-complete cron inferring
+dispatch from a date. Logged as `fulfilment_not_applied` rather than discarded.
+
+## Still outstanding
+
+- **`webhook-health` matches `orders.shopify_id`.** Works only because ingest
+  denormalises it onto the FIRST group. Repoint it at `projects.shopify_id`
+  BEFORE the follow-up migration drops the column, or it emails hourly that
+  every project is missing.
+- **Realtime on `projects` is not subscribed.** The publication and policies
+  exist; `useRealtimeOrders` does not listen. A refund will not reach an open
+  browser until a full refetch — which defeats the payment hold, whose entire
+  purpose is stopping an order moving after a refund.
+- **The follow-up migration** dropping the columns copied to `projects`
+  (`name`, customer fields, `shopify_id`). Additive-only was deliberate: there
+  is no staging environment, so between migration and app deploy the running
+  app must still find every column it reads.
+- **See `docs/KNOWN-WRONG-ADDITIONS-2026-08-20.md`** for the bulk-route
+  delivery gate, the duplicated attachment gate, and custom orders' missing
+  backward-move clearing.
+
+## Verified against the live database, 2026-08-20
+
+Recorded so the next session does not re-derive them:
+
+- Every FK on `order_activity`, `order_acknowledgments`, `order_attachments`
+  and `damage_reports` is **NO ACTION** — a primary-key rename must rebuild,
+  not `UPDATE`.
+- **`sku_items` is a JSONB column on `orders`, not a table.**
+- `order_attachments.file_path` embeds the order id as its leading folder, with
+  **no foreign key** — renaming a row orphans its storage objects silently.
+- No CHECK constraint on `orders.stage`. `orders_source_check` allows only
+  `Shopify` / `Manual`, and will need widening when public claims intake lands.
