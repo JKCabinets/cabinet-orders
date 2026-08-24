@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, cleanInput, rateLimitOr429 } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
-import { ORDER_TYPES, ID_PREFIX_BY_TYPE, type OrderType } from "@/lib/data";
+import { ORDER_TYPES, ID_PREFIX_BY_TYPE, parseMoney, type OrderType } from "@/lib/data";
 
 export async function GET(req: NextRequest) {
   const auth = await requireAuth();
@@ -72,6 +72,16 @@ export async function POST(req: NextRequest) {
   }
   const type = rawType as OrderType;
 
+  // Reject an unparseable price rather than coercing it. A job silently
+  // recorded as 0 is worse than one refused at the door: it looks priced.
+  const totalPrice = parseMoney(body.total_price);
+  if (totalPrice === "invalid") {
+    return NextResponse.json(
+      { error: "total_price must be a non-negative number" },
+      { status: 422 },
+    );
+  }
+
   const today = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "America/Phoenix" });
   const isWarranty = type === "warranty";
   // Warranty ids keep their existing 4-digit short form.
@@ -108,6 +118,10 @@ export async function POST(req: NextRequest) {
     // Track who created the order — useful for audit and for the authorization
     // checks in /api/orders/[id] DELETE.
     created_by:      auth.session.user.username,
+    // Hand-entered job total, for custom work. Every row this route creates
+    // is standalone -- projects come from Shopify ingest -- so the
+    // orders_total_price_standalone_only CHECK is satisfied by construction.
+    total_price:     totalPrice,
   };
 
   const { data: inserted, error } = await supabase

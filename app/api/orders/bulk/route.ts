@@ -128,9 +128,13 @@ export async function POST(req: NextRequest) {
 
   const results: BulkResult[] = [];
   const activityInserts: { order_id: string; text: string; time: string }[] = [];
-  // Projects whose last group may have just been deleted. Checked after the
-  // loop, because two groups of one project can be in the same batch.
-  const touchedProjects = new Set<string>();
+  // No project bookkeeping: delete accepts CUSTOM rows only, and custom
+  // orders left the project model in
+  // 2026-08-24-custom-orders-standalone.sql -- they are standalone with a
+  // NULL project_id. Everything that tracked and cleaned up projects here
+  // could no longer run under any input. Dead code describing a
+  // relationship the schema does not have is worse than no code: the next
+  // reader believes it.
 
   for (const id of ids) {
     const order = orderMap.get(id);
@@ -240,28 +244,7 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      if (order.project_id) touchedProjects.add(order.project_id as string);
       results.push({ id, ok: true });
-    }
-  }
-
-  // ── Clean up projects left with no groups ─────────────────────────────────
-  // A project is the purchase; a group is the work. A project with no groups
-  // left is invisible work -- nothing lists it and nothing can claim it.
-  //
-  // Checked AFTER the loop and re-queried per project, because two groups of
-  // the same project can appear in one batch, and because a project may still
-  // hold groups that were not selected.
-  const deletedProjects: string[] = [];
-  for (const projectId of touchedProjects) {
-    const { count, error: countErr } = await supabase
-      .from("orders")
-      .select("id", { count: "exact", head: true })
-      .eq("project_id", projectId);
-    if (countErr) continue;
-    if (!count || count === 0) {
-      const { error: projErr } = await supabase.from("projects").delete().eq("id", projectId);
-      if (!projErr) deletedProjects.push(projectId);
     }
   }
 
@@ -283,7 +266,6 @@ export async function POST(req: NextRequest) {
         failed: results.filter(r => !r.ok).length,
         ...(action === "delete" ? {
           deleted_ids: results.filter(r => r.ok).map(r => r.id),
-          deleted_projects: deletedProjects,
         } : {}),
       },
     });
@@ -293,7 +275,6 @@ export async function POST(req: NextRequest) {
     ok: true,
     succeeded: results.filter(r => r.ok).length,
     failed: results.filter(r => !r.ok).length,
-    ...(deletedProjects.length > 0 ? { deleted_projects: deletedProjects.length } : {}),
     results,
   });
 }

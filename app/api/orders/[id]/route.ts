@@ -4,7 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { getShopifyToken } from "@/lib/shopify";
 import { mergeTags } from "@/lib/shopifyStageSync";
 import { ALLOWED_STAGES, isStageAllowedForType, isBackwardsMove, verifyAdminPin, fieldsToClearOnBackwardMove, describeFieldsCleared } from "@/lib/stageGuards";
-import { isPaymentHoldStatus, paymentHoldLabel } from "@/lib/data";
+import { isPaymentHoldStatus, paymentHoldLabel, parseMoney } from "@/lib/data";
 import { orderAllVendorsGreen } from "@/lib/acknowledgments";
 
 /** Push order updates back to Shopify */
@@ -156,7 +156,7 @@ export async function PATCH(
   // values AFTER the update has been applied.)
   const { data: currentRow } = await supabase
     .from("orders")
-    .select("stage, type, payment_status, payment_hold_cleared_for")
+    .select("stage, type, payment_status, payment_hold_cleared_for, project_id")
     .eq("id", id)
     .single();
   if (!currentRow) {
@@ -353,6 +353,34 @@ export async function PATCH(
   if (body.customer_email !== undefined)  updates.customer_email  = cleanInput(body.customer_email as string);
   if (body.delivery_method !== undefined) updates.delivery_method = cleanInput(body.delivery_method as string);
 
+  // ── Job total ────────────────────────────────────────────────────────
+  //
+  // total_price is only valid on a standalone row. A Shopify checkout has
+  // ONE total and it lives on `projects`; putting a second copy on a group
+  // would double-count any multi-group order the moment somebody sums the
+  // column. orders_total_price_standalone_only enforces that in the
+  // database -- this check exists so the caller gets a 422 that explains
+  // itself rather than a 500 from a constraint name.
+  if (body.total_price !== undefined) {
+    if (currentRow.project_id) {
+      return NextResponse.json(
+        {
+          error: "total_price_not_allowed",
+          message: "This order belongs to a Shopify project; its total lives on the project.",
+        },
+        { status: 422 },
+      );
+    }
+    const parsed = parseMoney(body.total_price);
+    if (parsed === "invalid") {
+      return NextResponse.json(
+        { error: "total_price must be a non-negative number" },
+        { status: 422 },
+      );
+    }
+    updates.total_price = parsed;
+  }
+
   // ── Auto-advance: Entered → In production ──────────────────────────────
   // When a user sets a production_start_date on an order in "Entered" stage,
   // the order auto-advances to "In production". This matches the operational
@@ -422,6 +450,10 @@ export async function PATCH(
                                            activityText = `Production dates updated by ${auth.session.user.name}`;
   else if (body.delivery_date !== undefined || body.scheduled_delivery_date !== undefined)
                                            activityText = `Delivery scheduled by ${auth.session.user.name}`;
+  else if (body.total_price !== undefined)
+                                           activityText = updates.total_price === null
+                                             ? `Job total cleared by ${auth.session.user.name}`
+                                             : `Job total set to $${updates.total_price} by ${auth.session.user.name}`;
   else if ("claimed_by" in body) {
     // body.claimed_by is now a team_members.id. Resolve to display
     // name for the audit log; fall back to the raw id if the team

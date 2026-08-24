@@ -624,6 +624,24 @@ const GROUP_HANDLE_SUFFIXES = ["-CAB", "-HW", "-SMP", "-CST"] as const;
  *
  * A warranty claim has no project: its own id (WRN-0007) IS its number.
  */
+/**
+ * Parse a money value from a form field or an API body.
+ *
+ * Returns a rounded number, `null` for "explicitly cleared", or the string
+ * "invalid" for anything that is neither. Callers must distinguish those --
+ * silently coercing an unparseable price to 0 would record a job as free.
+ *
+ * Accepts what a person actually types: "$4,500.00" and 4500 both parse.
+ * Negatives are rejected rather than stored; a refund is not a negative
+ * job total, and nothing in the revenue query would know the difference.
+ */
+export function parseMoney(v: unknown): number | null | "invalid" {
+  if (v === null || v === undefined || v === "") return null;
+  const n = typeof v === "number" ? v : Number(String(v).replace(/[$,\s]/g, ""));
+  if (!Number.isFinite(n) || n < 0) return "invalid";
+  return Math.round(n * 100) / 100;
+}
+
 export function displayOrderNumber(order: Pick<Order, "id" | "project_id">): string {
   if (order.project_id) return order.project_id;
   for (const suffix of GROUP_HANDLE_SUFFIXES) {
