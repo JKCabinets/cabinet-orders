@@ -289,10 +289,23 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
     return siblings.length > 0 ? siblings : [self];
   }, [allOrders, order]);
 
+  // Counts for the tab labels. Across the PROJECT, not the selected group --
+  // the tabs describe the whole order, and a count that changed when you
+  // clicked between groups would read as files or lines disappearing.
+  const itemCount = useMemo(
+    () => projectGroups.reduce((n, g) => n + (g.sku_items?.length ?? 0), 0),
+    [projectGroups],
+  );
+  // No Files badge. ProjectFiles is what fetches the attachments, so a count
+  // shown before you open that tab would read 0 -- meaning "not looked yet"
+  // while looking exactly like "no files". A badge that is usually true is
+  // worse than no badge. itemCount is safe because sku_items is already in the
+  // store row.
+
   // Which tab. Resets when the modal is opened on a different order -- a stale
   // tab across opens is how someone lands on Files wondering where the stage
   // rail went.
-  const [tab, setTab] = useState<"project" | "files" | "activity">("project");
+  const [tab, setTab] = useState<"project" | "items" | "files" | "activity">("project");
   useEffect(() => { setTab("project"); }, [order.id]);
 
   // Which group the panels below operate on. Opens on the one you clicked
@@ -591,14 +604,15 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
             these switch what you see about it. */}
         <div className="flex items-center gap-1 px-6 pt-1 pb-0 flex-shrink-0">
           {([
-            ["project", "Project"],
-            ["files", "Files"],
-            ["activity", "Activity"],
-          ] as const).map(([key, label]) => (
+            ["project", "Overview", null],
+            ["items", "Full Order", itemCount],
+            ["files", "Files", null],
+            ["activity", "Activity", null],
+          ] as const).map(([key, label, count]) => (
             <button
               key={key}
               onClick={() => setTab(key)}
-              className="px-3 py-2 text-[11px] uppercase tracking-wider font-medium transition-all"
+              className="px-3 py-2 text-[11px] uppercase tracking-wider font-medium transition-all flex items-center gap-1.5"
               style={{
                 color: tab === key ? "#f0ece4" : "rgba(232,227,218,0.45)",
                 borderBottom: tab === key
@@ -607,6 +621,17 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
               }}
             >
               {label}
+              {count !== null && (
+                <span
+                  className="text-[9px] px-1.5 py-0.5 rounded-full"
+                  style={{
+                    background: "rgba(255,255,255,0.08)",
+                    color: "rgba(232,227,218,0.55)",
+                  }}
+                >
+                  {count}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -1003,20 +1028,6 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
             </div>
           </div>
 
-          {/* Order details -- every type except warranty carries SKU lines */}
-          {liveOrder.type !== "warranty" && (
-            <OrderDetails
-              orderId={liveOrder.id}
-              doorStyle={liveOrder.door_style ?? ""}
-              color={liveOrder.color ?? ""}
-              skuItems={liveOrder.sku_items ?? []}
-              productionStartDate={liveOrder.production_start_date}
-              productionEstFinishDate={liveOrder.production_est_finish_date}
-              scheduledDeliveryDate={liveOrder.scheduled_delivery_date}
-              readOnly={liveOrder.source === "Shopify"}
-            />
-          )}
-
           {/* Damage reports */}
           {liveOrder.type === "warranty" && (
             <DamageReportPanel
@@ -1034,6 +1045,57 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
           </div>
 
           </>)}
+
+          {tab === "items" && (
+            <div className="flex flex-col">
+              {projectGroups
+                .filter((g) => g.type !== "warranty")
+                .map((g) => (
+                  <div key={g.id}>
+                    {/* Section header per group. Renders even for a project of
+                        one so the stage is always stated -- a table of lines
+                        with no indication of where those lines have got to is
+                        the thing this tab exists to fix. */}
+                    <div
+                      className="flex items-center gap-2 px-6 pt-5 pb-1"
+                    >
+                      <span
+                        className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                        style={{ background: STAGE_ACCENT[g.stage] ?? "#8a8a8a" }}
+                      />
+                      <span className="text-[10px] uppercase tracking-wider font-medium text-cream/85">
+                        {GROUP_LABEL[g.type] ?? g.type}
+                      </span>
+                      <span className="text-[10px] text-cream/40">·</span>
+                      <span
+                        className="text-[10px] uppercase tracking-wider"
+                        style={{ color: STAGE_ACCENT[g.stage] ?? "#8a8a8a" }}
+                      >
+                        {g.stage}
+                      </span>
+                      <span className="text-[10px] text-cream/30 font-mono ml-auto">{g.id}</span>
+                    </div>
+                    <OrderDetails
+                      orderId={g.id}
+                      doorStyle={g.door_style ?? ""}
+                      color={g.color ?? ""}
+                      skuItems={g.sku_items ?? []}
+                      productionStartDate={g.production_start_date}
+                      productionEstFinishDate={g.production_est_finish_date}
+                      scheduledDeliveryDate={g.scheduled_delivery_date}
+                      readOnly={g.source === "Shopify"}
+                    />
+                  </div>
+                ))}
+              {projectGroups.every((g) => g.type === "warranty") && (
+                <div className="px-6 py-8 text-center">
+                  <p className="text-[12px] text-cream/45">
+                    A warranty claim carries damage reports, not SKU lines.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
           {tab === "files" && <ProjectFiles groups={projectGroups} />}
 
