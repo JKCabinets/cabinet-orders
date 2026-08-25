@@ -296,6 +296,9 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
   // Which group's lines are open on Full Order. null = the summary table.
   // Reset with the tab so reopening the modal never lands mid-drill.
   const [itemsGroupId, setItemsGroupId] = useState<string | null>(null);
+  // Which of the three bottom cards is expanded. One at a time -- three open
+  // at once is the height problem this was meant to solve.
+  const [openPane, setOpenPane] = useState<"customer" | "internal" | "files" | null>(null);
   const itemCount = useMemo(
     () => projectGroups.reduce((n, g) => n + (g.sku_items?.length ?? 0), 0),
     [projectGroups],
@@ -515,7 +518,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
       style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(8px)" }}
     >
       <div
-        className="w-full max-w-[1100px] h-full flex flex-col animate-slide-in overflow-hidden rounded-panel"
+        className="w-full max-w-[1200px] max-h-[92vh] flex flex-col animate-slide-in overflow-hidden rounded-panel"
         style={PANEL}
         onKeyDown={(e) => e.stopPropagation()}
       >
@@ -884,55 +887,15 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
             )}
           </div>
 
-          {/* What to do next. Separate from the rail on purpose: the rail
-              is where the order is, this is what to do about it. */}
           <NextActionCard
             order={liveOrder}
             busy={checkingAttachments}
-            onAdvance={() => {
-              const next = nextStageFor(liveOrder);
-              // Empty PIN on purpose. This button only ever offers the NEXT
-              // stage, so it is never a backward move; the server would
-              // reject one without a PIN, and the existing dialog stays
-              // the way to move an order backwards.
-              if (next) doMoveStage(next as Stage, "");
-            }}
-          />
-
-          {/* ORDER INFO -- a bordered grid with hairline dividers, per the
-              redesign mockup. This was a plain two-column list of label/value
-              pairs; adding cells to it was how ORDER TYPE and PO / REFERENCE
-              ended up as two more rows of the old layout rather than the grid. */}
-          <div className="px-6 py-5 space-y-4" style={SECTION_BORDER}>
-            <div className="flex items-center justify-between mb-2">
-              <p className={LABEL}>Order info</p>
-            </div>
-            <div
-              className="grid grid-cols-2 md:grid-cols-4 rounded-brand overflow-hidden"
-              style={{ border: "0.5px solid rgba(255,255,255,0.12)" }}
-            >
-              <div className="px-4 py-3" style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)", borderLeft: "0.5px solid rgba(255,255,255,0.08)" }}>
-                <p className={LABEL}>Source</p>
-                <span
-                  className="text-[10px] uppercase tracking-wider px-2 py-px rounded-full font-medium inline-block mt-1"
-                  style={
-                    liveOrder.source === "Shopify"
-                      ? { background: "rgba(184,130,106,0.15)", color: "#d9a888", border: "0.5px solid rgba(184,130,106,0.40)" }
-                      : liveOrder.source === "Manual"
-                      ? { background: "rgba(145,165,151,0.18)", color: "#b8d0bd", border: "0.5px solid rgba(145,165,151,0.45)" }
-                      : { background: "rgba(140,170,200,0.18)", color: "#a8c8e0", border: "0.5px solid rgba(140,170,200,0.40)" }
-                  }
-                >
-                  {liveOrder.source === "Manual" ? "Custom" : liveOrder.source}
-                </span>
-              </div>
-              <div className="px-4 py-3" style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)", borderLeft: "0.5px solid rgba(255,255,255,0.08)" }}>
-                <p className={LABEL}>Order date</p>
-                <p className="text-xs text-cream/65 mt-1">{liveOrder.date}</p>
-              </div>
-              {/* The claim control, lifted verbatim -- it carries stage-aware
-                  ownership logic (mine / someone else's / unclaimed) that is not
-                  worth retyping into a new layout. */}
+            claimSlot={
+              /* Claim, inside the pipeline card. It was a cell in ORDER INFO --
+                 two sections below the stage it governs. Passed as a slot so
+                 the card owns the border and there is no wrapper div spanning
+                 unrelated sections. */
+              <>
               <div className="px-4 py-3" style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)", borderLeft: "0.5px solid rgba(255,255,255,0.08)" }}>
                 {(() => {
                   // Stage-aware ownership:
@@ -1001,6 +964,47 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                   );
                 })()}
               </div>
+              </>
+            }
+            onAdvance={() => {
+              const next = nextStageFor(liveOrder);
+              // Empty PIN on purpose: this only ever offers the NEXT stage, so
+              // it is never a backward move.
+              if (next) doMoveStage(next as Stage, "");
+            }}
+          />
+
+          {/* ORDER INFO -- a bordered grid with hairline dividers, per the
+              redesign mockup. This was a plain two-column list of label/value
+              pairs; adding cells to it was how ORDER TYPE and PO / REFERENCE
+              ended up as two more rows of the old layout rather than the grid. */}
+          <div className="px-6 py-5 space-y-4" style={SECTION_BORDER}>
+            <div className="flex items-center justify-between mb-2">
+              <p className={LABEL}>Order info</p>
+            </div>
+            <div
+              className="grid grid-cols-2 md:grid-cols-4 rounded-brand overflow-hidden"
+              style={{ border: "0.5px solid rgba(255,255,255,0.12)" }}
+            >
+              <div className="px-4 py-3" style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)", borderLeft: "0.5px solid rgba(255,255,255,0.08)" }}>
+                <p className={LABEL}>Source</p>
+                <span
+                  className="text-[10px] uppercase tracking-wider px-2 py-px rounded-full font-medium inline-block mt-1"
+                  style={
+                    liveOrder.source === "Shopify"
+                      ? { background: "rgba(184,130,106,0.15)", color: "#d9a888", border: "0.5px solid rgba(184,130,106,0.40)" }
+                      : liveOrder.source === "Manual"
+                      ? { background: "rgba(145,165,151,0.18)", color: "#b8d0bd", border: "0.5px solid rgba(145,165,151,0.45)" }
+                      : { background: "rgba(140,170,200,0.18)", color: "#a8c8e0", border: "0.5px solid rgba(140,170,200,0.40)" }
+                  }
+                >
+                  {liveOrder.source === "Manual" ? "Custom" : liveOrder.source}
+                </span>
+              </div>
+              <div className="px-4 py-3" style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)", borderLeft: "0.5px solid rgba(255,255,255,0.08)" }}>
+                <p className={LABEL}>Order date</p>
+                <p className="text-xs text-cream/65 mt-1">{liveOrder.date}</p>
+              </div>
               <div className="px-4 py-3" style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)", borderLeft: "0.5px solid rgba(255,255,255,0.08)" }}>
                 <p className={LABEL}>Order type</p>
                 <p className="text-xs text-cream/65 mt-1">{GROUP_LABEL[liveOrder.type] ?? liveOrder.type}</p>
@@ -1039,6 +1043,8 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
               <DateEditor order={liveOrder} updateOrderDetails={updateOrderDetails} />
             )}
 
+          </div>
+
             {/* Acknowledgments: per-vendor .xlsx reconciliation.
 
                 NOT for samples. They ship from JK's own stock, so there is no
@@ -1052,56 +1058,93 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
           {liveOrder.type !== "sample" && (
             <AcknowledgmentPanel ref={ackPanelRef} orderId={liveOrder.id} orderName={liveOrder.name} eligible={liveOrder.stage !== "New" || !!liveOrder.claimed_by} onAdvance={() => { if (liveOrder.stage === "New") moveStage(liveOrder.id, "Entered", currentUserId).then((r) => { if (!r.ok) showToast(r.error ?? "Could not move to Entered", { kind: "error" }); }); }} onAdvanceOverride={() => { if (liveOrder.stage === "New") moveStage(liveOrder.id, "Entered", currentUserId, undefined, true).then((r) => { if (!r.ok) showToast(r.error ?? "Could not move to Entered", { kind: "error" }); }); }} />
           )}
-          {/* Notes -- two cards side by side, per the mockup. These were two
-              always-open full-width textareas stacked vertically. */}
-          <div className="px-6 py-5 grid grid-cols-1 md:grid-cols-2 gap-3" style={SECTION_BORDER}>
-            <div className="rounded-brand p-3" style={{ border: "0.5px solid rgba(255,255,255,0.12)" }}>
+          {/* Notes and attachments as three cards in one row, collapsed to a
+              summary line. This was two full-height textareas plus the
+              attachments panel -- roughly 380px of an Overview that has to fit
+              without scrolling.
+
+              ⚠ THE PANELS ARE HIDDEN WITH CSS, NOT UNMOUNTED. AttachmentsPanel
+              exposes openFilePicker() and openReceiptPicker() through an
+              imperative handle, and the modal calls them when it opens on a
+              missing-attachment or missing-receipt gate. Conditional rendering
+              would leave attachmentsRef.current null and those calls would do
+              nothing, silently. */}
+          <div className="px-6 py-4 grid grid-cols-1 md:grid-cols-3 gap-2.5" style={SECTION_BORDER}>
+            <button
+              onClick={() => setOpenPane(openPane === "customer" ? null : "customer")}
+              className="rounded-brand px-3 py-2.5 text-left transition-colors hover:bg-white/4"
+              style={{ border: "0.5px solid rgba(255,255,255,0.12)" }}
+            >
+              <p className={LABEL + " mb-0.5"}>Customer note</p>
+              <p className="text-[11px] text-cream/45 truncate">
+                {notes.trim() ? notes.trim().split("\n")[0] : "No customer note yet"}
+              </p>
+            </button>
+            <button
+              onClick={() => setOpenPane(openPane === "internal" ? null : "internal")}
+              className="rounded-brand px-3 py-2.5 text-left transition-colors hover:bg-white/4"
+              style={{ border: "0.5px solid rgba(232,144,144,0.28)" }}
+            >
+              <div className="flex items-center gap-1.5">
+                <p className={LABEL + " mb-0.5"}>Internal note</p>
+                <span className="text-[8px] uppercase tracking-wider px-1 rounded-full mb-1"
+                  style={{ background: "rgba(232,144,144,0.12)", color: "rgba(232,144,144,0.85)" }}>
+                  staff
+                </span>
+              </div>
+              <p className="text-[11px] text-cream/45 truncate">
+                {internalNotes.trim() ? internalNotes.trim().split("\n")[0] : "No internal note yet"}
+              </p>
+            </button>
+            <button
+              onClick={() => setOpenPane(openPane === "files" ? null : "files")}
+              className="rounded-brand px-3 py-2.5 text-left transition-colors hover:bg-white/4"
+              style={{ border: "0.5px solid rgba(255,255,255,0.12)" }}
+            >
+              <p className={LABEL + " mb-0.5"}>Attachments</p>
+              <p className="text-[11px] text-cream/45 truncate">
+                Drawings, receipts, measurements
+              </p>
+            </button>
+          </div>
+
+          {/* Expanded pane. One at a time -- three open at once is the height
+              problem this was meant to solve. */}
+          <div className={openPane === "customer" ? "" : "hidden"}>
+            <div className="px-6 py-4" style={SECTION_BORDER}>
               <p className={LABEL}>Customer note</p>
-              {liveOrder.source === "Manual" && liveOrder.notes?.includes("QUOTE REQUEST") ? (
-                /* A quote request is structured text, not a note somebody
-                   typed -- it gets its own panel rather than a textarea. */
-                <QuoteInfoPanel notes={liveOrder.notes} />
-              ) : (<>
               <p className="text-[10px] text-cream/35 mb-2">
                 Visible to the customer &middot; written to the Shopify order
               </p>
-              <textarea
-                value={notes}
-                onChange={(e) => { setNotes(e.target.value); setNotesChanged(true); }}
-                placeholder="No customer note yet."
-                rows={4}
-                className="w-full rounded-brand p-2.5 text-[12px] resize-none transition-colors placeholder:text-cream/25"
-                style={{
-                  background: "rgba(255,255,255,0.04)",
-                  border: "0.5px solid rgba(255,255,255,0.12)",
-                  color: "rgba(240,236,228,0.90)",
-                  fontSize: "16px",
-                }}
-              />
-              {notesChanged && (
-                <button
-                  onClick={handleSaveNotes}
-                  className="mt-2 text-[11px] uppercase tracking-wider font-medium transition-colors text-terracotta hover:brightness-110"
-                >
-                  Save note
-                </button>
-              )}
+              {liveOrder.source === "Manual" && liveOrder.notes?.includes("QUOTE REQUEST") ? (
+                <QuoteInfoPanel notes={liveOrder.notes} />
+              ) : (<>
+                <textarea
+                  value={notes}
+                  onChange={(e) => { setNotes(e.target.value); setNotesChanged(true); }}
+                  placeholder="No customer note yet."
+                  rows={3}
+                  className="w-full rounded-brand p-2.5 text-[12px] resize-none placeholder:text-cream/25"
+                  style={{
+                    background: "rgba(255,255,255,0.04)",
+                    border: "0.5px solid rgba(255,255,255,0.12)",
+                    color: "rgba(240,236,228,0.90)",
+                    fontSize: "16px",
+                  }}
+                />
+                {notesChanged && (
+                  <button onClick={handleSaveNotes}
+                    className="mt-2 text-[11px] uppercase tracking-wider font-medium text-terracotta hover:brightness-110">
+                    Save note
+                  </button>
+                )}
               </>)}
             </div>
-            <div className="rounded-brand p-3" style={{ border: "0.5px solid rgba(232,144,144,0.28)" }}>
-              <div className="flex items-center gap-2">
-                <p className={LABEL}>Internal note</p>
-                <span
-                  className="text-[9px] uppercase tracking-wider px-1.5 py-px rounded-full"
-                  style={{
-                    background: "rgba(232,144,144,0.12)",
-                    color: "rgba(232,144,144,0.85)",
-                    border: "0.5px solid rgba(232,144,144,0.30)",
-                  }}
-                >
-                  staff only
-                </span>
-              </div>
+          </div>
+
+          <div className={openPane === "internal" ? "" : "hidden"}>
+            <div className="px-6 py-4" style={SECTION_BORDER}>
+              <p className={LABEL}>Internal note</p>
               <p className="text-[10px] text-cream/35 mb-2">
                 Visible to staff and on the export PDF. Never sent to Shopify.
               </p>
@@ -1109,8 +1152,8 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                 value={internalNotes}
                 onChange={(e) => { setInternalNotes(e.target.value); setInternalNotesChanged(true); }}
                 placeholder="No internal note yet."
-                rows={4}
-                className="w-full rounded-brand p-2.5 text-[12px] resize-none transition-colors placeholder:text-cream/25"
+                rows={3}
+                className="w-full rounded-brand p-2.5 text-[12px] resize-none placeholder:text-cream/25"
                 style={{
                   background: "rgba(232,144,144,0.04)",
                   border: "0.5px solid rgba(232,144,144,0.25)",
@@ -1119,15 +1162,12 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                 }}
               />
               {internalNotesChanged && (
-                <button
-                  onClick={handleSaveInternalNotes}
-                  className="mt-2 text-[11px] uppercase tracking-wider font-medium transition-colors text-terracotta hover:brightness-110"
-                >
+                <button onClick={handleSaveInternalNotes}
+                  className="mt-2 text-[11px] uppercase tracking-wider font-medium text-terracotta hover:brightness-110">
                   Save internal note
                 </button>
               )}
             </div>
-          </div>
           </div>
 
           {/* Damage reports */}
@@ -1140,9 +1180,8 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
             />
           )}
 
-
-          {/* Attachments */}
-          <div ref={attachmentsAnchorRef}>
+          {/* Always mounted -- see the note above. Only its visibility changes. */}
+          <div ref={attachmentsAnchorRef} className={openPane === "files" ? "" : "hidden"}>
             <AttachmentsPanel ref={attachmentsRef} orderId={liveOrder.id} />
           </div>
 
@@ -1682,11 +1721,12 @@ function DateEditor({
  * rather than showing a dead button.
  */
 function NextActionCard({
-  order, onAdvance, busy,
+  order, onAdvance, busy, claimSlot,
 }: {
   order: Order;
   onAdvance: () => void;
   busy: boolean;
+  claimSlot?: React.ReactNode;
 }) {
   const next = nextStageFor(order);
   const accent = STAGE_ACCENT[order.stage] ?? "#8a8a8a";
@@ -1739,6 +1779,11 @@ function NextActionCard({
           </button>
         )}
       </div>
+      {claimSlot && (
+        <div className="px-4 py-3" style={{ borderTop: "0.5px solid rgba(255,255,255,0.10)" }}>
+          {claimSlot}
+        </div>
+      )}
     </div>
   );
 }
@@ -1754,36 +1799,86 @@ function GroupStrip({
   if (groups.length < 2) return null;
 
   return (
-    <div className="flex items-stretch gap-2 px-6 py-3 flex-shrink-0 overflow-x-auto" style={SECTION_BORDER}>
-      {groups.map((g) => {
-        const active = g.id === selectedId;
-        const accent = STAGE_ACCENT[g.stage] ?? "#8a8a8a";
-        const owner = g.claimed_by ? team.find((m) => m.id === g.claimed_by) : undefined;
-        return (
-          <button
-            key={g.id}
-            onClick={() => onSelect(g.id)}
-            className="flex-1 min-w-[150px] text-left rounded-brand px-3 py-2 transition-all"
-            style={{
-              background: active ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.03)",
-              border: active
-                ? "0.5px solid rgba(255,255,255,0.30)"
-                : "0.5px solid rgba(255,255,255,0.10)",
-            }}
-          >
-            <div className="flex items-center gap-1.5 mb-1">
-              <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: accent }} />
-              <span className="text-[10px] uppercase tracking-wider font-medium text-cream/85">
-                {GROUP_LABEL[g.type] ?? g.type}
-              </span>
-            </div>
-            <p className="text-[11px] font-medium" style={{ color: accent }}>{g.stage}</p>
-            <p className="text-[9px] text-cream/40 mt-0.5 truncate">
-              {owner ? owner.name : g.claimed_by ? "claimed" : "unclaimed"}
-            </p>
-          </button>
-        );
-      })}
+    <div className="px-6 py-3 flex-shrink-0" style={SECTION_BORDER}>
+      <div className="flex items-baseline gap-2 mb-2">
+        <p className={LABEL + " mb-0"}>Order-level overview</p>
+        <span className="text-[10px] text-cream/30">&middot;</span>
+        <span className="text-[10px] text-cream/40">
+          {groups.length} pipelines in this order
+        </span>
+      </div>
+      <div className="flex items-stretch gap-2 overflow-x-auto">
+        {groups.map((g) => {
+          const active = g.id === selectedId;
+          const accent = STAGE_ACCENT[g.stage] ?? "#8a8a8a";
+          const owner = g.claimed_by ? team.find((m) => m.id === g.claimed_by) : undefined;
+          const items = g.sku_items?.length ?? 0;
+          const rule = slaRuleFor(g);
+          const tier = slaTier(g);
+          const age = rule ? slaAgeHours(g, rule) : hoursInStage(g);
+          return (
+            <button
+              key={g.id}
+              onClick={() => onSelect(g.id)}
+              className="flex-1 min-w-[210px] text-left rounded-brand px-3.5 py-3 transition-all"
+              style={{
+                background: active ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.025)",
+                border: active
+                  ? "0.5px solid rgba(184,130,106,0.65)"
+                  : "0.5px solid rgba(255,255,255,0.10)",
+              }}
+            >
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <span className="text-[12px] font-medium text-cream/90">
+                  {GROUP_LABEL[g.type] ?? g.type}
+                </span>
+                {active && (
+                  <span className="text-[9px] uppercase tracking-wider px-1.5 py-px rounded-full flex-shrink-0"
+                    style={{ background: "rgba(255,255,255,0.08)", color: "rgba(232,227,218,0.55)" }}>
+                    Selected
+                  </span>
+                )}
+              </div>
+              {/* Counts and target ON THE FACE. The strip this replaced showed
+                  only category, stage and claim -- everything else appeared
+                  after you selected a group, which is a hub that hides the
+                  thing you opened it to compare. */}
+              <p className="text-[10px] text-cream/40 mb-2">
+                {items} item{items === 1 ? "" : "s"}
+                {rule
+                  ? <> &middot; SLA target {rule.hardHours}h</>
+                  : <> &middot; no SLA</>}
+              </p>
+              <div className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: accent }} />
+                <span className="text-[12px] font-medium" style={{ color: accent }}>{g.stage}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2 mt-1.5">
+                {tier !== "ok" ? (
+                  <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full"
+                    style={tier === "hard"
+                      ? { background: "rgba(224,85,85,0.16)", color: "#e08585", border: "0.5px solid rgba(224,85,85,0.45)" }
+                      : { background: "rgba(232,181,106,0.14)", color: "#e8b56a", border: "0.5px solid rgba(232,181,106,0.40)" }}>
+                    {formatStageAge(age)} {tier === "hard" ? "overdue" : "due"}
+                  </span>
+                ) : (
+                  <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full"
+                    style={{ background: "rgba(143,190,112,0.14)", color: "#a0cc7a", border: "0.5px solid rgba(143,190,112,0.35)" }}>
+                    On track
+                  </span>
+                )}
+                <span className="text-[9px] text-cream/35 truncate">
+                  {g.delivery_date
+                    ? `Delivered ${g.delivery_date}`
+                    : g.production_est_finish_date
+                    ? `ETA ${g.production_est_finish_date}`
+                    : owner ? owner.name : g.claimed_by ? "claimed" : "unclaimed"}
+                </span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
