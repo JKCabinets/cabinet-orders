@@ -521,11 +521,51 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
       >
         {/* Header */}
         <div className="flex items-start justify-between px-6 py-5 flex-shrink-0" style={SECTION_BORDER}>
-          <div>
-            <p className="text-[10px] uppercase tracking-[0.16em] text-cream/45 mb-1.5 font-mono">{displayOrderNumber(liveOrder)}</p>
+          <div className="min-w-0">
             <h2 className="font-display text-[26px] text-cream leading-tight">{liveOrder.name}</h2>
-            {/* Detail line (SKU description list) intentionally hidden — it's
-                noisy and the SKU table below is the source of truth. */}
+            {/* Meta line, per the redesign mockup: the ORDER NUMBER, where it
+                came from, and when. The number was an eyebrow above the name;
+                below it reads as one line of context instead of a label. */}
+            <p className="text-[11px] text-cream/45 mt-1">
+              <span className="font-mono">{displayOrderNumber(liveOrder)}</span>
+              <span className="mx-1.5">&middot;</span>
+              {liveOrder.source === "Manual" ? "Custom" : liveOrder.source}
+              <span className="mx-1.5">&middot;</span>
+              {liveOrder.date}
+            </p>
+            {/* Status pills. Read-only -- the actionable claim control lives in
+                ORDER INFO below, so there is one place that changes ownership
+                rather than two that can disagree about busy state. */}
+            <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+              {(() => {
+                const tier = slaTier(liveOrder);
+                if (tier === "ok") return null;
+                const rule = slaRuleFor(liveOrder);
+                const age = rule ? slaAgeHours(liveOrder, rule) : hoursInStage(liveOrder);
+                return (
+                  <span
+                    className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full font-medium"
+                    style={tier === "hard"
+                      ? { background: "rgba(224,85,85,0.16)", color: "#e08585", border: "0.5px solid rgba(224,85,85,0.45)" }
+                      : { background: "rgba(232,181,106,0.14)", color: "#e8b56a", border: "0.5px solid rgba(232,181,106,0.40)" }}
+                  >
+                    {tier === "hard" ? "Past SLA" : "Due"} {formatStageAge(age)}
+                  </span>
+                );
+              })()}
+              <span
+                className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full"
+                style={{
+                  background: "rgba(255,255,255,0.05)",
+                  color: "rgba(232,227,218,0.55)",
+                  border: "0.5px solid rgba(255,255,255,0.14)",
+                }}
+              >
+                {liveOrder.claimed_by
+                  ? (team.find((m) => m.id === liveOrder.claimed_by)?.name ?? "Claimed")
+                  : "Unclaimed"}
+              </span>
+            </div>
           </div>
           <div className="flex items-center gap-1.5 flex-shrink-0 ml-3">
             {isCompleted && (
@@ -966,26 +1006,28 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                 <p className="text-xs text-cream/65 mt-1">{GROUP_LABEL[liveOrder.type] ?? liveOrder.type}</p>
               </div>
               <div className="px-4 py-3" style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)", borderLeft: "0.5px solid rgba(255,255,255,0.08)" }}>
-                <p className={LABEL}>SKU</p>
-                <p className="text-xs font-mono text-cream/65 mt-1 truncate">{liveOrder.sku || "\u2014"}</p>
-              </div>
-              <div className="px-4 py-3" style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)", borderLeft: "0.5px solid rgba(255,255,255,0.08)" }}>
                 {/* The reference a MANUFACTURER sees. Internal -- never shown to
                     a customer, who knows only the order number. */}
                 <p className={LABEL}>PO / Reference</p>
                 <p className="text-xs font-mono text-cream/65 mt-1">{poReference(liveOrder)}</p>
               </div>
               <div className="px-4 py-3" style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)", borderLeft: "0.5px solid rgba(255,255,255,0.08)" }}>
+                {/* Start and estimated finish together -- they are read as a
+                    span, not as two independent facts. */}
+                <p className={LABEL}>Production dates</p>
+                <p className="text-xs text-cream/65 mt-1">
+                  {liveOrder.production_start_date || liveOrder.production_est_finish_date
+                    ? `${liveOrder.production_start_date || "?"} \u2192 ${liveOrder.production_est_finish_date || "?"}`
+                    : "Not set"}
+                </p>
+              </div>
+              <div className="px-4 py-3 col-span-2" style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)", borderLeft: "0.5px solid rgba(255,255,255,0.08)" }}>
                 {/* Scheduled, not actual. A date the customer has not been given
                     is not a promise, and this is the internal view. */}
                 <p className={LABEL}>Delivery target</p>
                 <p className="text-xs text-cream/65 mt-1">
                   {liveOrder.scheduled_delivery_date || liveOrder.delivery_date || "Not set"}
                 </p>
-              </div>
-              <div className="px-4 py-3" style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)", borderLeft: "0.5px solid rgba(255,255,255,0.08)" }}>
-                <p className={LABEL}>Stage age</p>
-                <p className="text-xs text-cream/65 mt-1">{formatStageAge(hoursInStage(liveOrder))}</p>
               </div>
             </div>
 
@@ -1231,6 +1273,45 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
             </div>
           </div>
           )}
+        </div>
+
+        {/* Footer. Outside the scroll container so it is always reachable --
+            the modal previously just ended, so on a long Overview the only way
+            out was scrolling back up to the X.
+
+            No "Update order": every field here saves itself (notes have their
+            own save link, stage moves go through the rail, dates through the
+            editor). A button implying one atomic save would be lying about
+            what it does. It saves pending NOTE edits, and says so. */}
+        <div
+          className="flex items-center justify-between gap-2 px-6 py-3.5 flex-shrink-0"
+          style={{ borderTop: "0.5px solid rgba(255,255,255,0.10)" }}
+        >
+          <div className="text-[10px] text-cream/30 font-mono truncate">{liveOrder.id}</div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {(notesChanged || internalNotesChanged) && (
+              <button
+                onClick={() => {
+                  if (notesChanged) handleSaveNotes();
+                  if (internalNotesChanged) handleSaveInternalNotes();
+                }}
+                className="px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all"
+                style={{
+                  background: "rgba(184,130,106,0.20)",
+                  border: "0.5px solid rgba(184,130,106,0.55)",
+                  color: "#d9a888",
+                }}
+              >
+                Save notes
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-white/6 border border-cream/15 text-cream/75 hover:bg-white/10 hover:text-cream"
+            >
+              Close
+            </button>
+          </div>
         </div>
       </div>
     </div>
