@@ -716,6 +716,18 @@ export interface Project {
   total_price?: number | null;
   created_at: string;
   updated_at?: string | null;
+  /**
+   * Archived as a whole PURCHASE. Groups in `orders` are hidden by lookup on
+   * this, never by their own archived flag -- that column is for standalone
+   * rows (custom jobs) only.
+   *
+   * ⚠ The column shipped in 2026-08-25-project-archive.sql and this
+   * declaration did not: the field existed in the database and in the PATCH
+   * route while invisible to every typed caller. Fifth time this shape has
+   * bitten -- orders.shopify_id, SkuItem.vendor, Order.total_price, the
+   * addOrder payload whitelist, and now this.
+   */
+  archived?: boolean;
 }
 
 /**

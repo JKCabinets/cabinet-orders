@@ -39,6 +39,9 @@ interface StoreCtx {
   moveStage: (id: string, stage: Stage, enteredByName?: string, adminPin?: string, overrideAck?: boolean, overrideDeliveryProof?: string) => Promise<{ ok: boolean; pinRequired?: boolean; error?: string }>;
   updateNotes: (id: string, notes: string) => Promise<void>;
   updateInternalNotes: (id: string, internal_notes: string) => Promise<void>;
+  /** Groups whose PROJECT is archived are NOT in `allOrders`. This is. */
+  allOrdersIncludingArchived: Order[];
+  archiveProject: (id: string, archived: boolean) => Promise<{ ok: boolean; message?: string }>;
   archiveOrder: (id: string) => Promise<void>;
   unarchiveOrder: (id: string) => Promise<void>;
   deleteOrder: (id: string) => Promise<void>;
@@ -166,17 +169,45 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // and `warranties` were separate useState arrays, so every mutation had
   // to write to both -- twenty paired setter calls, each a place a new
   // type could be forgotten. Adding a type is now one useMemo line.
-  const [allOrders, setAllOrders] = useState<Order[]>([]);
-  const orders     = useMemo(() => allOrders.filter(o => o.type === "order"),    [allOrders]);
-  const warranties = useMemo(() => allOrders.filter(o => o.type === "warranty"), [allOrders]);
-  const samples    = useMemo(() => allOrders.filter(o => o.type === "sample"),   [allOrders]);
-  const customs    = useMemo(() => allOrders.filter(o => o.type === "custom"),   [allOrders]);
-  const hardware   = useMemo(() => allOrders.filter(o => o.type === "hardware"), [allOrders]);
+  const [rawOrders, setRawOrders] = useState<Order[]>([]);
   // Projects, keyed by id. A Shopify checkout is one project with one
   // `orders` row per product category; the project owns the customer, the
   // address and the money. Custom jobs and warranty claims have no project
   // and simply are not in here.
   const [projects, setProjects] = useState<Record<string, Project>>({});
+
+  /**
+   * ⚠ `allOrders` EXCLUDES groups whose PROJECT is archived.
+   *
+   * Archiving moved up to the project: a Shopify checkout is archived as a
+   * whole purchase, and `orders.archived` is deliberately NOT set on its
+   * groups -- two columns carrying one fact is two that can disagree, and the
+   * second is the one that gets forgotten.
+   *
+   * The hiding is by LOOKUP, and it happens HERE rather than in each consumer.
+   * Every page derives from this array: the order hubs, the work queue, /sla,
+   * the dashboard, the calendar. Filtering per consumer is how one rule becomes
+   * six implementations, five of which are right -- the bug class this codebase
+   * produced four times in six days.
+   *
+   * Declared AFTER `projects` because it reads it. The first version of this
+   * patch put it above and tsc caught the use-before-declaration.
+   *
+   * `allOrdersIncludingArchived` is the escape hatch, named so that seeing
+   * archived work has to be asked for.
+   */
+  const allOrders = useMemo(() => {
+    const archivedProjects = new Set(
+      Object.values(projects).filter(p => p.archived).map(p => p.id));
+    if (archivedProjects.size === 0) return rawOrders;
+    return rawOrders.filter(o => !o.project_id || !archivedProjects.has(o.project_id));
+  }, [rawOrders, projects]);
+
+  const orders     = useMemo(() => allOrders.filter(o => o.type === "order"),    [allOrders]);
+  const warranties = useMemo(() => allOrders.filter(o => o.type === "warranty"), [allOrders]);
+  const samples    = useMemo(() => allOrders.filter(o => o.type === "sample"),   [allOrders]);
+  const customs    = useMemo(() => allOrders.filter(o => o.type === "custom"),   [allOrders]);
+  const hardware   = useMemo(() => allOrders.filter(o => o.type === "hardware"), [allOrders]);
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -204,7 +235,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setProjects(Object.fromEntries(
           (projectsRes.data as Project[]).map((p) => [p.id, p])));
       }
-      setAllOrders(prev => mergeFetched(prev,
+      setRawOrders(prev => mergeFetched(prev,
         ORDER_TYPES.map((type, i) => ({ type, res: typeRes[i] }))));
       if (teamRes?.data) setTeam(teamRes.data.map(shapeTeamMember));
     } finally {
@@ -227,15 +258,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // sample or custom row inserted by another tab lands correctly
     // without these handlers knowing those types exist.
     onInsert: (row) => {
-      setAllOrders((prev) =>
+      setRawOrders((prev) =>
         prev.some((o) => o.id === row.id) ? prev : [row, ...prev],
       );
     },
     onUpdate: (row) => {
-      setAllOrders((prev) => prev.map((o) => (o.id === row.id ? row : o)));
+      setRawOrders((prev) => prev.map((o) => (o.id === row.id ? row : o)));
     },
     onDelete: (id) => {
-      setAllOrders((prev) => prev.filter((o) => o.id !== id));
+      setRawOrders((prev) => prev.filter((o) => o.id !== id));
     },
     onReconnect: () => {
       // Catch up on anything missed while disconnected. Background refetch —
@@ -283,7 +314,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const res = await apiCall("/api/orders", "POST", { ...partial });
     if (res?.data) {
       const newItem = shapeOrder(res.data);
-      setAllOrders(prev => [newItem, ...prev]);
+      setRawOrders(prev => [newItem, ...prev]);
     } else {
       // NOTE: this fabricates a local row after a FAILED post, so it
       // disappears on the next refetch. Same anti-pattern addTeamMember
@@ -307,7 +338,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         date: t, sku: partial.sku || "—", notes: partial.notes || "",
         activity: [{ text: "Order logged", time: t }], archived: false,
       };
-      setAllOrders(prev => [newItem, ...prev]);
+      setRawOrders(prev => [newItem, ...prev]);
     }
   }, []);
 
@@ -329,7 +360,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // freshest state — older versions of this code lost concurrent
     // updates that landed between render and the click.
     let allBefore: Order[] = [];
-    setAllOrders(prev => { allBefore = prev; return prev; });
+    setRawOrders(prev => { allBefore = prev; return prev; });
 
     // Compute the local clear-fields mirror of what the server will do on
     // a backward move. Without this, the UI would briefly show stale dates
@@ -367,7 +398,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         activity: [...o.activity, { text: `Moved to "${stage}"`, time: t }]
       } : o
     );
-    setAllOrders(prev => update(prev));
+    setRawOrders(prev => update(prev));
 
     // Use fetch directly here (not the generic apiCall) so we can read the
     // 403 body and surface `admin_pin_required` to the caller — apiCall
@@ -387,7 +418,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     } catch {
       // Network error — revert the optimistic update so the UI doesn't lie
       // about state we never persisted.
-      setAllOrders(allBefore);
+      setRawOrders(allBefore);
       return { ok: false, error: "network_error" };
     }
 
@@ -396,7 +427,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // Server rejected — revert everything we did optimistically. Without
     // this, the order appears moved for a few seconds and then snaps back
     // when the next data refresh pulls the true state from the server.
-    setAllOrders(allBefore);
+    setRawOrders(allBefore);
 
     // Parse the error body so callers can branch on `admin_pin_required`.
     let payload: { error?: string; message?: string } = {};
@@ -411,14 +442,40 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const updateNotes = useCallback(async (id: string, notes: string) => {
     const update = (list: Order[]) => list.map(o => o.id === id ? { ...o, notes } : o);
-    setAllOrders(prev => update(prev));
+    setRawOrders(prev => update(prev));
     await apiCall(`/api/orders/${id}`, "PATCH", { notes });
   }, []);
 
   const updateInternalNotes = useCallback(async (id: string, internal_notes: string) => {
     const update = (list: Order[]) => list.map(o => o.id === id ? { ...o, internal_notes } : o);
-    setAllOrders(prev => update(prev));
+    setRawOrders(prev => update(prev));
     await apiCall(`/api/orders/${id}`, "PATCH", { internal_notes });
+  }, []);
+
+
+  /**
+   * Archive or restore a whole purchase.
+   *
+   * ⚠ NO OPTIMISTIC UPDATE. The server refuses unless every group is at the
+   * last stage of its own flow, or the project is refunded -- so the call can
+   * legitimately fail, and a row that vanished then came back would read as a
+   * glitch rather than a refusal. The message is returned for the caller.
+   *
+   * Nothing is written to the group rows: they are hidden because their project
+   * is archived, resolved by lookup in `allOrders` above.
+   */
+  const archiveProject = useCallback(async (
+    id: string,
+    archived: boolean,
+  ): Promise<{ ok: boolean; message?: string }> => {
+    const res = await apiCall(`/api/projects/${id}`, "PATCH", { archived });
+    if (res?.data) {
+      const p = res.data as Project;
+      setProjects(prev => ({ ...prev, [p.id]: p }));
+      return { ok: true };
+    }
+    const err = res as { message?: string; error?: string } | null;
+    return { ok: false, message: err?.message ?? err?.error ?? "Could not archive this project." };
   }, []);
 
   const archiveOrder = useCallback(async (id: string) => {
@@ -426,7 +483,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const update = (list: Order[]) => list.map(o =>
       o.id === id ? { ...o, archived: true, activity: [...o.activity, { text: "Moved to archive", time: t }] } : o
     );
-    setAllOrders(prev => update(prev));
+    setRawOrders(prev => update(prev));
     await apiCall(`/api/orders/${id}`, "PATCH", { archived: true });
   }, []);
 
@@ -435,18 +492,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const update = (list: Order[]) => list.map(o =>
       o.id === id ? { ...o, archived: false, activity: [...o.activity, { text: "Restored from archive", time: t }] } : o
     );
-    setAllOrders(prev => update(prev));
+    setRawOrders(prev => update(prev));
     await apiCall(`/api/orders/${id}`, "PATCH", { archived: false });
   }, []);
 
   const updateOrderDetails = useCallback(async (id: string, details: { door_style?: string; color?: string; sku_items?: { sku: string; quantity: number; description?: string }[]; production_start_date?: string | null; production_est_finish_date?: string | null; scheduled_delivery_date?: string | null }) => {
     const update = (list: Order[]) => list.map(o => o.id === id ? { ...o, ...details } : o);
-    setAllOrders(prev => update(prev));
+    setRawOrders(prev => update(prev));
     await apiCall(`/api/orders/${id}`, "PATCH", details);
   }, []);
 
   const deleteOrder = useCallback(async (id: string) => {
-    setAllOrders(prev => prev.filter(o => o.id !== id));
+    setRawOrders(prev => prev.filter(o => o.id !== id));
     await apiCall(`/api/orders/${id}`, "DELETE");
   }, []);
 
@@ -497,7 +554,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // Same fan-out as refetchAll, derived for the same reason.
     const typeRes = await Promise.all(
       ORDER_TYPES.map(t => apiCall(`/api/orders?type=${t}`)));
-    setAllOrders(prev => mergeFetched(prev,
+    setRawOrders(prev => mergeFetched(prev,
       ORDER_TYPES.map((type, i) => ({ type, res: typeRes[i] }))));
 
     return {
@@ -516,7 +573,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
     const optimistic = (list: Order[]) =>
       list.map(o => (o.id === id ? { ...o, claimed_by: claimedBy } : o));
-    setAllOrders(prev2 => optimistic(prev2));
+    setRawOrders(prev2 => optimistic(prev2));
 
     try {
       const res = await fetch(`/api/orders/${id}/claim`, {
@@ -529,7 +586,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const serverClaimedBy = (body?.claimed_by ?? null) as string | null;
       const reconcile = (list: Order[]) =>
         list.map(o => (o.id === id ? { ...o, claimed_by: serverClaimedBy } : o));
-      setAllOrders(prev2 => reconcile(prev2));
+      setRawOrders(prev2 => reconcile(prev2));
 
       if (!res.ok || body?.ok === false) {
         return {
@@ -543,7 +600,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       // Network failure — revert to whatever was there before
       const revert = (list: Order[]) =>
         list.map(o => (o.id === id ? { ...o, claimed_by: prev } : o));
-      setAllOrders(prev2 => revert(prev2));
+      setRawOrders(prev2 => revert(prev2));
       return { ok: false, claimedBy: prev, reason: "network_error" };
     }
   }, [allOrders]);
@@ -638,8 +695,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   return (
     <Store.Provider value={{
-      allOrders, orders, warranties, samples, customs, hardware, projects, team, onlineUsers, loading,
-      addOrder, moveStage, updateNotes, updateInternalNotes, updateOrderDetails, archiveOrder, unarchiveOrder, deleteOrder, bulkAction,
+      allOrders, allOrdersIncludingArchived: rawOrders,
+      orders, warranties, samples, customs, hardware, projects, team, onlineUsers, loading,
+      addOrder, moveStage, updateNotes, updateInternalNotes, updateOrderDetails, archiveProject, archiveOrder, unarchiveOrder, deleteOrder, bulkAction,
       claimOrder, addTeamMember, updateTeamMember, deactivateTeamMember, deleteTeamMember,
       updateTeamMemberProfile, uploadAvatar,
     }}>
