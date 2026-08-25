@@ -4,6 +4,7 @@ import { useState, useMemo } from "react";
 import clsx from "clsx";
 import { Order, Stage, AVATAR_COLOR_STYLES, getBackorderStatus, nextStageFor, displayOrderNumber } from "@/lib/data";
 import { STAGE_ORDER_BY_TYPE, ORDER_STAGE_ORDER } from "@/lib/stageLogic";
+import type { Project } from "@/lib/data";
 import { useStore } from "@/lib/store";
 import { useSession } from "next-auth/react";
 import { formatDateWithYear, parseOrderDate } from "@/lib/dateUtils";
@@ -222,7 +223,7 @@ function OrderRow({
   selectMode: boolean; selected: boolean; onToggleSelect?: (id: string) => void;
   rowIdx: number;
 }) {
-  const { team } = useStore();
+  const { team, projects } = useStore();
 
   // The team avatar is driven by stage:
   //   - New: show whoever has claimed the order; if unclaimed → "unclaimed"
@@ -232,9 +233,10 @@ function OrderRow({
   //   - Entered & beyond: show whoever entered it (entered_by); claimed_by
   //     is cleared on stage advance so it shouldn't apply here.
   const isNewStage = stage === "New";
+  const rowOwner = ownerOf(order, projects);
   const ownerName = isNewStage
-    ? order.claimed_by ?? null
-    : order.entered_by ?? order.claimed_by ?? null;
+    ? rowOwner
+    : order.entered_by ?? rowOwner;
   // ownerName is now a team_members.id (post-v18 migration). Look up
   // by id; m.name is shown to the user.
   const ownerMember = ownerName ? team.find(m => m.id === ownerName) : null;
@@ -539,9 +541,30 @@ function ConfirmDeliveryActions({ order, mobile, onOpenModal }: {
   );
 }
 
+
+/**
+ * Who owns this row, resolved through the PROJECT for a Shopify group.
+ *
+ * ⚠ The claim moved up on 2026-08-25: one owner per purchase, so a designer who
+ * has finished the cabinets is not blocked while somebody sits on the hardware.
+ * `orders.claimed_by` is null on every project-linked row now -- reading it
+ * directly showed the whole board as unclaimed.
+ *
+ * A free function rather than part of useRowActions because three different
+ * contexts need it and only one of them is a component with the hook:
+ * StatusLabel and the avatar block are plain renderers.
+ *
+ * Custom jobs and warranty claims have no project and still own themselves.
+ */
+function ownerOf(order: Order, projects: Record<string, Project>): string | null {
+  return order.project_id
+    ? (projects[order.project_id]?.claimed_by ?? null)
+    : (order.claimed_by ?? null);
+}
+
 function useRowActions(order: Order) {
   const { data: session } = useSession();
-  const { claimOrder: rawClaimOrder, moveStage, archiveOrder, unarchiveOrder, team } = useStore();
+  const { claimOrder: rawClaimOrder, moveStage, archiveOrder, unarchiveOrder, team, projects } = useStore();
   const { showToast } = useToast();
   // We use session.user.id (team_members.id, the IMMUTABLE surrogate key)
   // for ownership comparisons — it survives both display-name and
@@ -576,11 +599,36 @@ function useRowActions(order: Order) {
     }
     return result;
   }
-  return { session, currentUserId, claimOrder, moveStage, archiveOrder, unarchiveOrder, busy, withBusy, orderId: order.id };
+  const claimedBy = ownerOf(order, projects);
+
+  /**
+   * ⚠ CLAIMING IS NOT DONE FROM THESE TABLES.
+   *
+   * A purchase is claimed from /projects or the work queue. A Claim button on a
+   * cabinet row would quietly take the samples and hardware with it, which is a
+   * surprise however it is labelled.
+   *
+   * Refuses LOUDLY rather than silently: a call getting this far means a
+   * control was rendered that should not have been, and a silent no-op would
+   * hide that from whoever has to fix it.
+   */
+  async function claimIfStandalone(id: string, target: string | null) {
+    if (order.project_id) {
+      showToast("Claim this from the project — one owner covers every order in it.", { kind: "warn" });
+      return { ok: false, claimedBy, reason: "project_owned" as const };
+    }
+    return claimOrder(id, target);
+  }
+
+  return {
+    session, currentUserId, claimedBy,
+    claimOrder: claimIfStandalone,
+    moveStage, archiveOrder, unarchiveOrder, busy, withBusy, orderId: order.id,
+  };
 }
 
 function ClaimedByPill({ claimedBy }: { claimedBy: string }) {
-  const { team } = useStore();
+  const { team, projects } = useStore();
   // claimedBy is now a team_members.id. Defensive fallback also tries
   // matching by username in case any pre-migration string slipped through.
   const member = team.find((m) => m.id === claimedBy || m.username === claimedBy);
@@ -596,7 +644,11 @@ function ClaimedByPill({ claimedBy }: { claimedBy: string }) {
   return <span className="text-[10px] text-cream/55">Claimed by {claimedBy}</span>;
 }
 
-function StatusLabel({ order, stage }: { order: Order; stage: string | null }) {
+function StatusLabel({ order, stage, claimedBy }: {
+  order: Order; stage: string | null;
+  /** Resolved by the caller -- through the PROJECT for a Shopify group. */
+  claimedBy: string | null;
+}) {
   // On an all-stages table the page has no single stage, so the row speaks
   // for itself. UpdateStatusActions already guards this case by returning
   // null -- its comment notes that branching on the table's stage "broke
@@ -607,7 +659,6 @@ function StatusLabel({ order, stage }: { order: Order; stage: string | null }) {
   }
 
   if (stage === "New") {
-    const claimedBy = order.claimed_by ?? null;
     if (claimedBy) {
       return <ClaimedByPill claimedBy={claimedBy} />;
     }
@@ -652,7 +703,6 @@ function StatusLabel({ order, stage }: { order: Order; stage: string | null }) {
 
   // ── Warranty stages ────────────────────────────────────────────────
   if (stage === "New claim") {
-    const claimedBy = order.claimed_by ?? null;
     if (claimedBy) {
       return <ClaimedByPill claimedBy={claimedBy} />;
     }
@@ -683,9 +733,8 @@ function StatusLabel({ order, stage }: { order: Order; stage: string | null }) {
  * order ended up in the warranty pipeline.
  */
 function CustomFlowActions({ order, mobile = false }: { order: Order; mobile?: boolean }) {
-  const { currentUserId, claimOrder, moveStage, busy, withBusy } = useRowActions(order);
+  const { currentUserId, claimedBy, claimOrder, moveStage, busy, withBusy } = useRowActions(order);
   const next = nextStageFor(order);
-  const claimedBy = order.claimed_by ?? null;
   const isClaimedByMe = !!currentUserId && claimedBy === currentUserId;
   const isClaimedByOther = !!claimedBy && !isClaimedByMe;
 
@@ -737,7 +786,7 @@ function UpdateStatusActions({
   order: Order; stage: string | null; mobile?: boolean;
   onOpenModal?: (o: Order, reason?: "needs-attachment") => void;
 }) {
-  const { currentUserId, claimOrder, moveStage, archiveOrder, busy, withBusy } = useRowActions(order);
+  const { currentUserId, claimedBy, claimOrder, moveStage, archiveOrder, busy, withBusy } = useRowActions(order);
 
   // ── Flow guard ──────────────────────────────────────────────────────
   // `stage` describes the TABLE, not this row. Branching on it blindly
@@ -780,7 +829,6 @@ function UpdateStatusActions({
 
   // ── New ─────────────────────────────────────────────────────────────
   if (stage === "New") {
-    const claimedBy = order.claimed_by ?? null;
     const isClaimedByMe = !!currentUserId && claimedBy === currentUserId;
     const isClaimedByOther = !!claimedBy && !isClaimedByMe;
 
@@ -919,7 +967,6 @@ function UpdateStatusActions({
   // Warranty has its own pipeline: New claim → In review → Parts ordered
   // → Shipped → Resolved. No production/delivery date gates apply.
   if (stage === "New claim" && order.type === "warranty") {
-    const claimedBy = order.claimed_by ?? null;
     const isClaimedByMe = !!currentUserId && claimedBy === currentUserId;
     const isClaimedByOther = !!claimedBy && !isClaimedByMe;
     if (isClaimedByOther) {
@@ -1012,7 +1059,7 @@ function StatusCell({
   /** Called when a gate fails so the user can fix it in the modal. */
   onOpenModal?: (o: Order, reason?: "needs-attachment") => void;
 }) {
-  const { unarchiveOrder, busy, withBusy } = useRowActions(order);
+  const { unarchiveOrder, claimedBy, busy, withBusy } = useRowActions(order);
 
   // Archived still uses the combined renderer (the Restore button is
   // the entire "status" for that stage).
@@ -1039,7 +1086,7 @@ function StatusCell({
   if (mobile) {
     return (
       <div className="flex items-center gap-1.5 flex-wrap">
-        <StatusLabel order={order} stage={stage} />
+        <StatusLabel order={order} stage={stage} claimedBy={claimedBy} />
         <UpdateStatusActions order={order} stage={stage} mobile onOpenModal={onOpenModal} />
       </div>
     );
@@ -1047,5 +1094,5 @@ function StatusCell({
 
   // Desktop renders only the label here; the actions live in their own
   // column rendered by OrderRow.
-  return <StatusLabel order={order} stage={stage} />;
+  return <StatusLabel order={order} stage={stage} claimedBy={claimedBy} />;
 }
