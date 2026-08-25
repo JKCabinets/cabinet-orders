@@ -33,6 +33,23 @@ import clsx from "clsx";
  * needing an acknowledgment says nothing about SHO-1050-SMP.
  */
 
+/** Human label per row type, matching the modal and the projects page. */
+const GROUP_LABEL: Record<string, string> = {
+  order: "Cabinets",
+  hardware: "Hardware",
+  sample: "Samples",
+  custom: "Custom job",
+  warranty: "Warranty",
+};
+
+const GROUP_DOT: Record<string, string> = {
+  order: "#e08585",
+  hardware: "#e8b56a",
+  sample: "#5a8db8",
+  custom: "#b8a05a",
+  warranty: "#8fbe70",
+};
+
 type Scope = "mine" | "unclaimed" | "team" | "all";
 
 const SCOPES: { key: Scope; label: string }[] = [
@@ -177,7 +194,16 @@ export function WorkClient({ initialScope = "mine" }: { initialScope?: Scope }) 
             </div>
 
             {rows.map(({ order, reasons }) => {
-              const lead = reasons.find((r) => r.severity === "high") ?? reasons[0];
+              // An UNCLAIMED row leads with that, whatever else is wrong.
+              //
+              // "Past SLA · 5d in stage" on a row nobody owns tells you it is
+              // late; "Unclaimed · 5d" tells you why it is late and what to do.
+              // Severity alone put the breach first, which is true and less
+              // useful -- the breach is a consequence of the thing below it.
+              const unclaimedReason = reasons.find((r) => r.kind === "unclaimed");
+              const lead = (!order.claimed_by && unclaimedReason)
+                ? unclaimedReason
+                : reasons.find((r) => r.severity === "high") ?? reasons[0];
               const owner = order.claimed_by
                 ? team.find((m) => m.id === order.claimed_by)
                 : undefined;
@@ -214,8 +240,19 @@ export function WorkClient({ initialScope = "mine" }: { initialScope?: Scope }) 
                     {displayOrderNumber(order)}
                   </span>
 
-                  <span className="text-[11px] text-cream/55 truncate self-center">
-                    {order.name}
+                  {/* The TYPE, not the customer. This column was labelled Type
+                      and populated with order.name -- so the queue showed the
+                      customer under the wrong heading and the type nowhere,
+                      which is the exact hierarchy inversion this page exists to
+                      fix. The customer is one click away in the modal; which
+                      pipeline a row belongs to is what decides whether you can
+                      act on it. */}
+                  <span className="self-center flex items-center gap-1.5 min-w-0">
+                    <span className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                      style={{ background: GROUP_DOT[order.type] ?? "#8a8a8a" }} />
+                    <span className="text-[11px] text-cream/60 truncate">
+                      {GROUP_LABEL[order.type] ?? order.type}
+                    </span>
                   </span>
 
                   <span className="self-center">
