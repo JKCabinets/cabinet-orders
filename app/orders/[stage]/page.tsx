@@ -1,25 +1,27 @@
 import { notFound } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
-import { StagePageClient } from "./StagePageClient";
-import { VALID_STAGE_SLUGS, slugToStage } from "./stageSlugs";
+import { OrdersHubClient } from "@/components/OrdersHubClient";
+import { VALID_STAGE_SLUGS, resolveOrdersSlug } from "./stageSlugs";
 
-interface StagePageProps {
+interface OrdersPageProps {
   params: Promise<{ stage: string }>;
 }
 
-const VALID_SLUGS_RUNTIME: readonly string[] = VALID_STAGE_SLUGS;
-
-export default async function StagePage({ params }: StagePageProps) {
+export default async function OrdersPage({ params }: OrdersPageProps) {
   const { stage: slug } = await params;
-  if (!VALID_SLUGS_RUNTIME.includes(slug)) notFound();
-  const stage = slugToStage(slug);
+  const resolved = resolveOrdersSlug(slug);
+  if (!resolved) notFound();
   return (
     <AppShell>
-      <StagePageClient stage={stage} />
+      <OrdersHubClient
+        type={resolved.type}
+        initialStage={resolved.initialStage}
+        archive={resolved.archive}
+      />
     </AppShell>
   );
 }
 
 export async function generateStaticParams() {
-  return VALID_STAGE_SLUGS.map(slug => ({ stage: slug }));
+  return VALID_STAGE_SLUGS.map((slug) => ({ stage: slug }));
 }
