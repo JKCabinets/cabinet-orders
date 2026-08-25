@@ -334,6 +334,19 @@ export interface Order {
    */
   claimant_name?: string | null;
   claimant_email?: string | null;
+  /**
+   * Hand-entered job total for a STANDALONE row -- a custom job.
+   *
+   * NULL on every project-linked group: a Shopify checkout has one total
+   * and it lives on the project. Enforced by
+   * orders_total_price_standalone_only, not by convention.
+   *
+   * ⚠ The column shipped 2026-08-24 and this declaration did not, so the
+   * field existed in the database and in both API routes while being
+   * invisible to every typed caller. Same shape as SkuItem.vendor and
+   * orders.shopify_id: real data the type system did not know about.
+   */
+  total_price?: number | string | null;
   /** Hardware groups: pulled off the Shopify fulfilment, not typed in. */
   carrier?: string | null;
   tracking_number?: string | null;

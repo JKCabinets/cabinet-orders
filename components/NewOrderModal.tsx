@@ -67,6 +67,10 @@ export function NewOrderModal({ type: orderType, onClose }: NewOrderModalProps) 
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
   const [deliveryMethod, setDeliveryMethod] = useState("");
+  // Kept as a STRING, not a number. "$4,500.00" is what a person types,
+  // and parseMoney on the server accepts it; coercing here would fight the
+  // user mid-keystroke and turn an empty box into 0.
+  const [totalPrice, setTotalPrice] = useState("");
   const [skuSearch, setSkuSearch] = useState("");
   const [skuDropdownOpen, setSkuDropdownOpen] = useState(false);
   const [addingQty, setAddingQty] = useState("1");
@@ -158,6 +162,9 @@ export function NewOrderModal({ type: orderType, onClose }: NewOrderModalProps) 
       customer_phone: customerPhone,
       customer_email: customerEmail,
       delivery_method: deliveryMethod,
+      // Only ever set on a custom job -- the field is not rendered for
+      // anything else, and an empty string parses to null server-side.
+      total_price: orderType === "custom" ? totalPrice : undefined,
     });
     onClose();
   }
@@ -226,6 +233,26 @@ export function NewOrderModal({ type: orderType, onClose }: NewOrderModalProps) 
               />
             </Field>
           </div>
+
+          {/* Job total -- CUSTOM jobs only.
+              A Shopify checkout's total belongs to the PROJECT: one charge,
+              one total, and orders_total_price_standalone_only forbids a
+              project-linked row from carrying one at all. This route creates
+              standalone rows, so the constraint is satisfied by construction --
+              but showing the field on a manual cabinet order would invite
+              somebody to price something the OMS does not bill for. */}
+          {orderType === "custom" && (
+            <Field label="Job total">
+              <input
+                value={totalPrice}
+                onChange={(e) => setTotalPrice(e.target.value)}
+                placeholder="$0.00"
+                inputMode="decimal"
+                style={GLASS_INPUT}
+                className="placeholder:text-[rgba(232,227,218,0.20)]"
+              />
+            </Field>
+          )}
 
           <Field label="Ship to address">
             <input

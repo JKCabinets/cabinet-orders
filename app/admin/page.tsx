@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { Shield } from "lucide-react";
 import { AuditLog } from "@/components/AuditLog";
@@ -21,6 +22,97 @@ import { AppShell, PageHeader } from "@/components/AppShell";
  * The real gate is route-level - requireAdmin() on the /api/admin/* routes
  * and on the mutating /api/team routes.
  */
+
+/**
+ * Running revenue — month and year to date.
+ *
+ * ⚠ TWO SUMS, one from `projects` (Shopify checkouts) and one from `orders`
+ * (standalone custom jobs). No overlap is possible:
+ * orders_total_price_standalone_only forbids a project-linked row from
+ * carrying a total, so a row is in exactly one set.
+ *
+ * Dated by when the order was PLACED. A placed date never moves; a
+ * delivery-dated figure would change retroactively as old orders complete,
+ * which is a different question and a worse one to leave unlabelled.
+ */
+function RevenuePanel() {
+  const [data, setData] = useState<RevenueResponse | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/admin/revenue");
+        if (!res.ok) throw new Error(String(res.status));
+        const json = await res.json();
+        if (!cancelled) setData(json);
+      } catch {
+        if (!cancelled) setError("Could not load revenue");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const money = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+
+  return (
+    <div className="mt-6">
+      <div className="flex items-baseline gap-2 mb-2">
+        <p className="text-[10px] uppercase tracking-widest text-[rgba(232,227,218,0.35)]">Revenue</p>
+        <span className="text-[10px] text-[rgba(232,227,218,0.25)]">· by order date</span>
+      </div>
+
+      {error ? (
+        <div className="p-4 rounded-xl border border-[rgba(255,255,255,0.10)] bg-[rgba(255,255,255,0.04)]">
+          <p className="text-[11px] text-[rgba(232,227,218,0.40)]">{error}</p>
+        </div>
+      ) : !data ? (
+        <div className="p-4 rounded-xl border border-[rgba(255,255,255,0.10)] bg-[rgba(255,255,255,0.04)]">
+          <p className="text-[11px] text-[rgba(232,227,218,0.40)]">Loading…</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {([["This month", data.month, data.unpriced.month],
+             ["This year", data.year, data.unpriced.year]] as const).map(([label, d, unpriced]) => (
+            <div key={label}
+              className="p-4 rounded-xl border border-[rgba(255,255,255,0.10)] bg-[rgba(255,255,255,0.04)]">
+              <p className="text-[10px] uppercase tracking-widest text-[rgba(232,227,218,0.35)] mb-1.5">{label}</p>
+              <p className="font-display text-[26px] text-[#e8e3da] leading-none">{money(d.total)}</p>
+              <p className="text-[11px] text-[rgba(232,227,218,0.40)] mt-2">
+                {d.orders} order{d.orders === 1 ? "" : "s"}
+                {" · "}Shopify {money(d.shopify)}
+                {" · "}Custom {money(d.custom)}
+              </p>
+              {unpriced > 0 && (
+                /* A project ingested before the money columns existed sums as
+                   zero while being a real order. Saying how many are missing
+                   beats a total that quietly omits them. */
+                <p className="text-[10px] mt-1.5" style={{ color: "#e8b56a" }}>
+                  ⚠ {unpriced} order{unpriced === 1 ? "" : "s"} with no total recorded — backfill via Shopify sync
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface RevenueBucket {
+  shopify: number;
+  custom: number;
+  total: number;
+  orders: number;
+}
+interface RevenueResponse {
+  month: RevenueBucket;
+  year: RevenueBucket;
+  unpriced: { month: number; year: number };
+}
+
 export default function AdminPage() {
   const { data: session } = useSession();
 
@@ -78,14 +170,14 @@ export default function AdminPage() {
           </a>
         </div>
 
-        {/* ---------------------------------------------------------------
-            SALES METRICS PANEL GOES HERE - backlog OMS #3, second half.
-            Current year + current month: sell totals and job counts, for
-            standard and custom orders only. Blocked until the Alternate
-            Orders data model is settled (own tables vs. a type
-            discriminator on `orders`), because that decides whether this
-            is one query or a union.
-            --------------------------------------------------------------- */}
+        {/* The panel this slot was reserved for. It was blocked on whether
+            alternate orders would get their own tables or a type
+            discriminator, "because that decides whether this is one query or
+            a union". It settled as a union, for a reason the comment could
+            not have predicted: Shopify checkouts became PROJECTS, so their
+            total lives there, while custom jobs stayed standalone rows and
+            keep theirs on the order. */}
+        <RevenuePanel />
 
         <AuditLog />
       </div>

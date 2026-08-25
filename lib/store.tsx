@@ -278,6 +278,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       vendor: partial.vendor, ship_to: partial.ship_to,
       customer_phone: partial.customer_phone, customer_email: partial.customer_email,
       delivery_method: partial.delivery_method,
+      // ⚠ THIS PAYLOAD IS AN EXPLICIT WHITELIST, not a spread. A field
+      // missing from it is dropped silently -- no error, the value simply
+      // never reaches the server. total_price was exactly that until now.
+      total_price: partial.total_price,
     });
     if (res?.data) {
       const newItem = shapeOrder(res.data);
