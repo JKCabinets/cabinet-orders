@@ -253,6 +253,8 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
   const [internalNotes, setInternalNotes] = useState(order.internal_notes ?? "");
   const [internalNotesChanged, setInternalNotesChanged] = useState(false);
   const [enteredGateError, setEnteredGateError] = useState(false);
+  /** Set to the target stage when the server refuses for a missing receipt. */
+  const [deliveryGate, setDeliveryGate] = useState<Stage | null>(null);
   const [checkingAttachments, setCheckingAttachments] = useState(false);
   // Distinct vendors on this order, for per-manufacturer PDF export buttons.
   const [exportVendors, setExportVendors] = useState<string[]>([]);
@@ -405,6 +407,34 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
     }
   }, [pendingStage]);
 
+
+  /**
+   * Override the delivery gate with a reason.
+   *
+   * The reason is required and goes into an activity row naming the session
+   * user -- the gate is designed as ACCOUNTABILITY, not permission: anyone may
+   * override, everyone can see who did and why. That is why this asks rather
+   * than offering a plain confirm.
+   */
+  async function overrideDelivery(stage: Stage) {
+    const reason = window.prompt(
+      "No signed delivery receipt is attached.\n\n"
+      + "Mark this delivered anyway? Give a reason — it goes on the order's "
+      + "activity trail with your name.",
+    );
+    if (!reason || !reason.trim()) return;
+    setDeliveryGate(null);
+    const res = await moveStage(
+      liveOrder.id, stage, currentUserId, "", false, reason.trim(),
+    );
+    if (res.ok) {
+      showToast("Marked delivered — override recorded", { kind: "success" });
+      onStageChange(stage);
+    } else {
+      showToast("Could not move the order", { kind: "error" });
+    }
+  }
+
   async function handleMoveStage(stage: Stage) {
     const targetIdx = (stages as string[]).indexOf(stage);
     if (targetIdx === stageIdx) return; // No-op: already there
@@ -462,11 +492,36 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
       requestAnimationFrame(() => pinInputRef.current?.focus());
       return;
     }
+    // ── The delivery gate ────────────────────────────────────────────────
+    //
+    // At cross dock -> Delivered needs a signed proof_of_delivery. The server
+    // enforces it and returns `delivery_proof_required`; the plumbing to
+    // override it has existed end to end since August -- moveStage takes
+    // `overrideDeliveryProof`, sends it, and the route writes an activity row
+    // naming whoever overrode.
+    //
+    // ⚠ THE MODAL NEVER ASKED. It called moveStage, the server refused, the
+    // optimistic update reverted, and the row snapped back with no explanation
+    // at all -- the failure went to console.error, under a comment saying "we
+    // don't have a toast system". useToast is imported at the top of this file.
+    //
+    // Same shape as the acknowledgment gate above: refuse, say why, and offer
+    // the two ways forward.
+    if (!result.ok && result.error === "delivery_proof_required") {
+      setPendingStage(null);
+      setDeliveryGate(stage);
+      return;
+    }
     if (!result.ok) {
-      // Some other error (network, 422, 500). Close the PIN dialog and
-      // surface a generic error — the user can re-attempt from the picker.
-      // Logged to console for debugging since we don't have a toast system.
+      // Anything else (network, 422, 500). Say so rather than only logging:
+      // a silent bounce is indistinguishable from a broken button.
       console.error("Stage move failed:", result.error);
+      showToast(
+        result.error === "network_error"
+          ? "Network error — the order was not moved"
+          : `Could not move to "${stage}"`,
+        { kind: "error" },
+      );
       return;
     }
     onStageChange(stage);
@@ -874,6 +929,52 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                 <p className="text-[11px] text-cream/65">
                   Upload the manufacturer&apos;s acknowledgment PDF in the Attachments section below before moving to Entered.
                 </p>
+              </div>
+            )}
+            {/* The delivery gate refused.
+                Same shape and place as the acknowledgment banner above --
+                one gate, one look. The rule, the override and the activity
+                trail all existed already; the modal simply never said why the
+                row bounced back. */}
+            {deliveryGate && (
+              <div className="mt-4 rounded-brand px-4 py-3"
+                style={{ background: "rgba(184,130,106,0.14)", border: "0.5px solid rgba(184,130,106,0.45)" }}>
+                <p className="font-display text-[15px] mb-1" style={{ color: "#d9a888" }}>
+                  Signed receipt <em className="italic-storm">required</em>
+                </p>
+                <p className="text-[11px] text-cream/65 mb-2.5">
+                  Upload the signed proof of delivery before marking this Delivered.
+                  It is the record behind the 48-hour reporting window, and what a
+                  chargeback is answered with.
+                </p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={() => {
+                      setOpenPane("files");
+                      requestAnimationFrame(() => attachmentsRef.current?.openReceiptPicker());
+                    }}
+                    className="px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all"
+                    style={{
+                      background: "rgba(184,130,106,0.22)",
+                      border: "0.5px solid rgba(184,130,106,0.55)",
+                      color: "#d9a888",
+                    }}
+                  >
+                    Upload receipt
+                  </button>
+                  <button
+                    onClick={() => void overrideDelivery(deliveryGate)}
+                    className="px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-white/6 border border-cream/20 text-cream/75 hover:bg-white/10"
+                  >
+                    Mark delivered anyway
+                  </button>
+                  <button
+                    onClick={() => setDeliveryGate(null)}
+                    className="px-2 py-1.5 text-[10px] uppercase tracking-wider text-cream/40 hover:text-cream/70 transition-colors"
+                  >
+                    Dismiss
+                  </button>
+                </div>
               </div>
             )}
               </div>
