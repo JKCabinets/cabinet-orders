@@ -70,6 +70,54 @@ interface Entry {
   oldestHours: number | null;
 }
 
+
+/**
+ * Stages merged FOR DISPLAY ONLY on this snapshot.
+ *
+ * ⚠ THE FLOW IS UNCHANGED. CUSTOM_STAGES still has six entries and must: the
+ * stage rail, backward-move detection, fieldsToClearOnBackwardMove and the SLA
+ * rules all read STAGE_LIST_BY_TYPE / CUSTOM_STAGE_ORDER. Merging there would
+ * be a real change to how custom orders move, not a layout tweak.
+ *
+ * Custom's "In production" and "At cross dock" are one thing to a designer --
+ * the job is being built and delivered, both scheduled by conversation -- so on
+ * a five-across snapshot they read as one segment. It also keeps every row at
+ * five, which is what removes the horizontal scroll.
+ *
+ * The COUNT is the sum, so nothing disappears: an order at cross dock is still
+ * counted, just under a wider heading.
+ */
+const DISPLAY_MERGE: Record<string, { label: string; stages: readonly string[] }[]> = {
+  custom: [{ label: "Production & delivery", stages: ["In production", "At cross dock"] }],
+};
+
+function mergeForDisplay(
+  type: OrderType,
+  segments: { stage: string; count: number }[],
+): { stage: string; count: number }[] {
+  const merges = DISPLAY_MERGE[type];
+  if (!merges) return segments;
+
+  const out: { stage: string; count: number }[] = [];
+  const consumed = new Set<string>();
+
+  for (const seg of segments) {
+    if (consumed.has(seg.stage)) continue;
+    const m = merges.find((x) => x.stages[0] === seg.stage);
+    if (!m) { out.push(seg); continue; }
+    // Sum every stage in the group, and mark them consumed so the later ones
+    // are not also emitted on their own.
+    let total = 0;
+    for (const s of m.stages) {
+      total += segments.find((x) => x.stage === s)?.count ?? 0;
+      consumed.add(s);
+    }
+    out.push({ stage: m.label, count: total });
+  }
+  return out;
+}
+
+
 export function DashboardClient() {
   const { allOrders, projects, orders, customs, samples, warranties, hardware, team } = useStore();
   const { data: session } = useSession();
@@ -228,14 +276,15 @@ export function DashboardClient() {
     return groups.map(({ type, rows }) => {
       const live = rows.filter((o) => !o.archived);
       const stages = (STAGE_LIST_BY_TYPE[type] ?? []) as readonly string[];
+      const raw = stages.map((s) => ({ stage: s, count: live.filter((o) => o.stage === s).length }));
       return {
         type,
         label: TYPE_LABEL[type] ?? type,
         Icon: TYPE_ICON[type] ?? Boxes,
         // ⚠ EACH FLOW RENDERS ITS OWN STAGES. Cabinets run five, hardware and
-        // samples three, custom six, warranty five. A fixed grid would either
-        // invent stages or hide them.
-        segments: stages.map((s) => ({ stage: s, count: live.filter((o) => o.stage === s).length })),
+        // samples three, warranty five. A fixed grid would either invent stages
+        // or hide them.
+        segments: mergeForDisplay(type, raw),
       };
     });
   }, [orders, hardware, samples, customs, warranties]);
