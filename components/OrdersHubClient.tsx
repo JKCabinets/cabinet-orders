@@ -114,7 +114,9 @@ export function OrdersHubClient({
   // stages, so no single value describes it -- passing one would offer every
   // row the actions of a stage most of them are not in. "__none__" is the
   // sentinel SamplesClient already used for exactly this.
-  const tableStage = activeStage === ALL || archive ? "__none__" : activeStage;
+  // NULL, not a sentinel -- see the `stage` prop on OrderTable. "__none__"
+  // matched no branch and printed itself into the Status column.
+  const tableStage = activeStage === ALL ? null : archive ? "Archived" : activeStage;
   const calendarView = activeStage === ALL ? undefined : STAGE_CALENDAR_VIEW[activeStage];
   const copy = TYPE_COPY[type] ?? { eyebrow: "Orders", title: "Orders", accent: "" };
 

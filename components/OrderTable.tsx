@@ -32,7 +32,17 @@ type SortDir = "asc" | "desc";
 
 interface OrderTableProps {
   orders: Order[];
-  stage: string;
+  /**
+   * The stage this table represents, or NULL when it shows several -- an
+   * "All" tab, or the archive.
+   *
+   * ⚠ NULL, NOT A SENTINEL. OrdersHubClient and SamplesClient passed the
+   * string "__none__", which no branch in this file matches, so StatusLabel
+   * fell through every case and rendered `__none__` in the Status column of
+   * every row on every All view. A magic string that looks like data will be
+   * treated as data by something eventually; null cannot be.
+   */
+  stage: string | null;
   /**
    * Called when a row is clicked (opens the modal in the parent). The
    * optional `reason` is passed to the modal so it can render a
@@ -103,7 +113,7 @@ export function OrderTable({
     return arr;
   }, [orders, sortKey, sortDir]);
 
-  const accent = STAGE_COLOR[stage] ?? "#91a597";
+  const accent = (stage ? STAGE_COLOR[stage] : undefined) ?? "#91a597";
 
   return (
     <div className="glass rounded-brand overflow-hidden" style={{ borderTop: `2px solid ${accent}` }}>
@@ -207,7 +217,7 @@ function SortableHeader({
 function OrderRow({
   order, stage, onSelect, selectMode, selected, onToggleSelect, rowIdx,
 }: {
-  order: Order; stage: string;
+  order: Order; stage: string | null;
   onSelect: (o: Order, reason?: "needs-attachment") => void;
   selectMode: boolean; selected: boolean; onToggleSelect?: (id: string) => void;
   rowIdx: number;
@@ -316,7 +326,7 @@ function OrderRow({
 function MobileRow({
   order, stage, onSelect, selectMode, selected, onToggleSelect,
 }: {
-  order: Order; stage: string;
+  order: Order; stage: string | null;
   onSelect: (o: Order, reason?: "needs-attachment") => void;
   selectMode: boolean; selected: boolean; onToggleSelect?: (id: string) => void;
 }) {
@@ -586,7 +596,12 @@ function ClaimedByPill({ claimedBy }: { claimedBy: string }) {
   return <span className="text-[10px] text-cream/55">Claimed by {claimedBy}</span>;
 }
 
-function StatusLabel({ order, stage }: { order: Order; stage: string }) {
+function StatusLabel({ order, stage }: { order: Order; stage: string | null }) {
+  // On an all-stages table the page has no single stage, so the row speaks
+  // for itself. UpdateStatusActions already guards this case by returning
+  // null -- its comment notes that branching on the table's stage "broke
+  // twice" -- but this renderer never got the same treatment.
+  stage = stage ?? order.stage;
   if (stage === "Archived") {
     return <span className="text-[10px] text-cream/55 italic">archived</span>;
   }
@@ -719,7 +734,7 @@ function CustomFlowActions({ order, mobile = false }: { order: Order; mobile?: b
 function UpdateStatusActions({
   order, stage, mobile = false, onOpenModal,
 }: {
-  order: Order; stage: string; mobile?: boolean;
+  order: Order; stage: string | null; mobile?: boolean;
   onOpenModal?: (o: Order, reason?: "needs-attachment") => void;
 }) {
   const { currentUserId, claimOrder, moveStage, archiveOrder, busy, withBusy } = useRowActions(order);
@@ -735,7 +750,11 @@ function UpdateStatusActions({
   //
   // Only branch when the prop genuinely describes this row.
   const rowFlow = STAGE_ORDER_BY_TYPE[order.type] ?? ORDER_STAGE_ORDER;
-  if (order.stage !== stage || !rowFlow.includes(stage)) return null;
+  // A null stage means an all-stages table. The guard's own note says an
+  // "All" tab is one of the two cases that broke it, and returning null here
+  // keeps that behaviour: no actions offered when the column cannot know
+  // which action fits.
+  if (stage === null || order.stage !== stage || !rowFlow.includes(stage)) return null;
 
   // Custom orders share the TAIL of the standard flow (In production ->
   // At cross dock -> Delivered) and those branches below are correct for
@@ -989,7 +1008,7 @@ function UpdateStatusActions({
 function StatusCell({
   order, stage, mobile = false, onOpenModal,
 }: {
-  order: Order; stage: string; mobile?: boolean;
+  order: Order; stage: string | null; mobile?: boolean;
   /** Called when a gate fails so the user can fix it in the modal. */
   onOpenModal?: (o: Order, reason?: "needs-attachment") => void;
 }) {
