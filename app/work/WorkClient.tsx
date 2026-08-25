@@ -116,7 +116,17 @@ export function WorkClient({ initialScope = "mine" }: { initialScope?: Scope }) 
       const project = projects[projectId];
       if (!project || project.archived) continue;
       const reasons = attentionForProject(project, orders);
-      if (reasons.length === 0) continue;
+      // ⚠ NOT `if (reasons.length === 0) continue` any more.
+      //
+      // My Work is a hub for everything you own, not a list of what is on fire
+      // in it. An empty My Work used to mean "nothing you own needs anything",
+      // which reads as "you own nothing" -- the opposite of true, and the tab
+      // is named for ownership.
+      //
+      // The SCOPE filter below drops the ones that do not belong here:
+      // Unclaimed stays exceptions-only, because an unclaimed purchase ticking
+      // along fine needs nobody, and listing all seven would bury the four that
+      // do. The two tabs answer different questions on purpose.
       const rank: Record<string, number> = { order: 0, hardware: 1, sample: 2 };
       orders.sort((a, b) => (rank[a.type] ?? 9) - (rank[b.type] ?? 9));
       out.push({
@@ -131,8 +141,9 @@ export function WorkClient({ initialScope = "mine" }: { initialScope?: Scope }) 
     }
 
     for (const o of standalone) {
+      // Listed whether or not anything is wrong -- a custom job you own with
+      // nothing outstanding is still yours. The scope filter decides.
       const reasons = attentionFor(o);
-      if (reasons.length === 0) continue;
       out.push({
         key: o.id,
         orders: [o],
@@ -149,14 +160,27 @@ export function WorkClient({ initialScope = "mine" }: { initialScope?: Scope }) 
   const rows = useMemo(() => {
     return allEntries
       .filter((e) => {
-        if (scope === "mine" && e.claimedBy !== currentUserId) return false;
-        if (scope === "unclaimed" && e.claimedBy) return false;
+        if (scope === "mine") {
+          // Everything you own, whether or not anything is wrong with it.
+          if (e.claimedBy !== currentUserId) return false;
+        } else {
+          // Unclaimed: exceptions only. Something nobody owns AND nothing is
+          // wrong with is not work -- it is just an order.
+          if (e.claimedBy) return false;
+          if (e.reasons.length === 0) return false;
+        }
         if (reason && !e.reasons.some((r) => r.kind === reason)) return false;
         return true;
       })
       .sort((a, b) => {
-        const sev = (e: Entry) => (e.reasons.some((r) => r.severity === "high") ? 0 : 1);
-        if (sev(a) !== sev(b)) return sev(a) - sev(b);
+        // Trouble first, then anything else with a reason, then the calm ones.
+        // On My Work this is what keeps a hub from burying the one thing that
+        // actually needs you under nine that do not.
+        const rank = (e: Entry) =>
+          e.reasons.some((r) => r.severity === "high") ? 0
+          : e.reasons.length > 0 ? 1
+          : 2;
+        if (rank(a) !== rank(b)) return rank(a) - rank(b);
         return b.reasons.length - a.reasons.length;
       });
   }, [allEntries, scope, reason, currentUserId]);
@@ -164,8 +188,10 @@ export function WorkClient({ initialScope = "mine" }: { initialScope?: Scope }) 
   const scopeCounts = useMemo(() => {
     const c: Record<Scope, number> = { mine: 0, unclaimed: 0 };
     for (const e of allEntries) {
+      // Mirrors the filter above exactly. A tab whose count disagrees with what
+      // it shows is worse than no count.
       if (e.claimedBy === currentUserId && currentUserId) c.mine++;
-      else if (!e.claimedBy) c.unclaimed++;
+      else if (!e.claimedBy && e.reasons.length > 0) c.unclaimed++;
     }
     return c;
   }, [allEntries, currentUserId]);
@@ -287,9 +313,13 @@ export function WorkClient({ initialScope = "mine" }: { initialScope?: Scope }) 
               // An unowned entry leads with that: the breach beneath it is a
               // CONSEQUENCE of nobody having picked it up, and "Unclaimed 5d"
               // says what to do where "Past SLA" only says it is late.
+              // An entry you own with nothing wrong has no reason to lead
+               // with. It still belongs on the page -- it is yours -- so it
+               // says so plainly rather than borrowing an alarm colour.
               const lead = (!e.claimedBy && unclaimed)
                 ? unclaimed
-                : e.reasons.find((r) => r.severity === "high") ?? e.reasons[0];
+                : e.reasons.find((r) => r.severity === "high") ?? e.reasons[0]
+                  ?? { kind: "ok" as const, severity: "medium" as const, label: "On track", detail: undefined };
               const owner = e.claimedBy ? team.find((m) => m.id === e.claimedBy) : undefined;
               const mine = !!currentUserId && e.claimedBy === currentUserId;
 

@@ -375,7 +375,11 @@ export function ProjectsClient() {
                         <span className="text-[10px] text-cream/30 italic">no orders</span>
                       ) : groups.map((g) => {
                         const accent = STAGE_ACCENT[g.stage] ?? "#8a8a8a";
-                        const owner = g.claimed_by ? team.find((m) => m.id === g.claimed_by) : undefined;
+                        // ⚠ THE PROJECT'S owner, not the group's. The claim
+                        // moved up on 2026-08-25 and orders.claimed_by is null
+                        // on every group now, so reading it here printed
+                        // "Unclaimed" beside a purchase with a visible owner.
+                        const owner = p.claimed_by ? team.find((m) => m.id === p.claimed_by) : undefined;
                         return (
                           <span key={g.id} className="flex items-center gap-1.5 min-w-0">
                             <span className="w-1.5 h-1.5 rounded-full flex-shrink-0"
@@ -553,7 +557,9 @@ export function ProjectsClient() {
                         </div>
                         {groups.map((g) => {
                           const accent = STAGE_ACCENT[g.stage] ?? "#8a8a8a";
-                          const owner = g.claimed_by ? team.find((m) => m.id === g.claimed_by) : undefined;
+                          // Same owner for every order in the purchase --
+                          // that is what one claim per project MEANS.
+                          const owner = p.claimed_by ? team.find((m) => m.id === p.claimed_by) : undefined;
                           const gr = attentionFor(g);
                           const glead = gr.find((r) => r.severity === "high") ?? gr[0];
                           const ms = nextMilestone(g);
