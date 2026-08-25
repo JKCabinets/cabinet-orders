@@ -439,6 +439,24 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
     const targetIdx = (stages as string[]).indexOf(stage);
     if (targetIdx === stageIdx) return; // No-op: already there
 
+    // ⚠ THE RAIL IS ADMIN-ONLY. For everyone else it is a read-out.
+    //
+    // Clicking a dot jumps to ANY stage -- forward, backward, skipping stages
+    // entirely. That is the admin override this dialog was built for. Team
+    // members advance orders through the tools that enforce the gates: the
+    // date editors, the acknowledgment panel's Entry Complete, the row buttons
+    // on the stage pages, and the NEXT ACTION button below -- all of which move
+    // one step and are refused by the server if the step is not earned.
+    //
+    // Checked here rather than on each dot because there are TWO call sites
+    // (the dot and its label) and any third would be a place to forget. The
+    // server is the real gate regardless; this is about not offering an action
+    // that will be refused.
+    if (!isAdmin) {
+      showToast("Only an admin can move an order from the pipeline. Use the actions on this page.", { kind: "warn" });
+      return;
+    }
+
     // All manual stage changes from the modal require admin approval.
     // The normal forward flow is:
     //   - Set the date in the Production Dates / Delivery Date editor
@@ -813,8 +831,11 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                         <button
                           type="button"
                           onClick={() => handleMoveStage(s as Stage)}
-                          disabled={checkingAttachments}
-                          title={isEnteredGate ? "Requires a matching acknowledgment or attachment" : isPast ? "Move back (admin PIN)" : s}
+                          disabled={checkingAttachments || !isAdmin}
+                          title={!isAdmin
+                            ? s
+                            : isEnteredGate ? "Requires a matching acknowledgment or attachment"
+                            : isPast ? "Move back (admin PIN)" : s}
                           className="relative flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-all duration-300 ease-brand disabled:opacity-60"
                           style={
                             isActive
