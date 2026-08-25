@@ -157,10 +157,17 @@ export function attentionFor(
   }
 
   // ── Unclaimed ───────────────────────────────────────────────────────────
+  //
+  // ⚠ STANDALONE ROWS ONLY -- custom jobs and warranty claims, which have no
+  // project. A Shopify group's owner lives on its PROJECT since 2026-08-25, so
+  // `order.claimed_by` is always null on one and asking here would report every
+  // cabinet and sample row as unclaimed forever. attentionForProject() asks it
+  // once per purchase instead.
+  //
   // Only at the FIRST stage of the flow. Past that somebody has evidently
   // worked it, and an unclaimed row mid-pipeline is a claim that was released,
   // not work nobody has picked up.
-  if (!order.claimed_by && isFirstStage(order)) {
+  if (!order.project_id && !order.claimed_by && isFirstStage(order)) {
     const sinceCreated = hoursInStage(order, now);
     if (sinceCreated !== null && sinceCreated >= UNCLAIMED_AFTER_HOURS) {
       reasons.push({
@@ -172,6 +179,50 @@ export function attentionFor(
     }
   }
 
+  return reasons;
+}
+
+
+/**
+ * Why a PROJECT needs someone.
+ *
+ * ⚠ THE CLAIM LIVES ON THE PROJECT NOW, so "unclaimed" is asked once per
+ * purchase rather than once per group. Before this, a checkout nobody owned
+ * produced an unclaimed reason on its cabinet group AND its sample group --
+ * two queue entries for one problem, which is how a queue stops being trusted.
+ *
+ * Everything else rolls up: a project wants you if any of its groups does. The
+ * group reasons are returned as-is, because "Delivery date required" is still
+ * about a specific order even when the purchase is what you claim.
+ */
+export function attentionForProject(
+  project: { id: string; claimed_by?: string | null; archived?: boolean },
+  groups: Order[],
+  now: number = Date.now(),
+): AttentionReason[] {
+  if (project.archived) return [];
+
+  const reasons: AttentionReason[] = [];
+
+  // Unclaimed, asked ONCE. Measured from the oldest group still at its first
+  // stage: that is the thing that has been waiting for somebody.
+  if (!project.claimed_by) {
+    const waiting = groups
+      .filter((g) => !g.archived && isFirstStage(g))
+      .map((g) => hoursInStage(g, now))
+      .filter((h): h is number => h !== null);
+    const oldest = waiting.length > 0 ? Math.max(...waiting) : null;
+    if (oldest !== null && oldest >= UNCLAIMED_AFTER_HOURS) {
+      reasons.push({
+        kind: "unclaimed",
+        severity: "medium",
+        label: "Unclaimed",
+        detail: `${formatStageAge(oldest)} unclaimed`,
+      });
+    }
+  }
+
+  for (const g of groups) reasons.push(...attentionFor(g, undefined, now));
   return reasons;
 }
 

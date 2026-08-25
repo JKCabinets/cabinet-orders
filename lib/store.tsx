@@ -42,6 +42,8 @@ interface StoreCtx {
   /** Groups whose PROJECT is archived are NOT in `allOrders`. This is. */
   allOrdersIncludingArchived: Order[];
   archiveProject: (id: string, archived: boolean) => Promise<{ ok: boolean; message?: string }>;
+  /** Claim or release a whole purchase. Resolves with who holds it. */
+  claimProject: (id: string, claim: boolean) => Promise<{ ok: boolean; claimedBy: string | null; reason?: string }>;
   archiveOrder: (id: string) => Promise<void>;
   unarchiveOrder: (id: string) => Promise<void>;
   deleteOrder: (id: string) => Promise<void>;
@@ -464,6 +466,47 @@ export function StoreProvider({ children }: { children: ReactNode }) {
    * Nothing is written to the group rows: they are hidden because their project
    * is archived, resolved by lookup in `allOrders` above.
    */
+  /**
+   * Claim or release a project.
+   *
+   * ⚠ NO OPTIMISTIC UPDATE, unlike claimOrder. The server can refuse -- someone
+   * else may hold it, and a non-admin cannot release another person's claim --
+   * so a name that appeared and then reverted would read as a glitch rather
+   * than a refusal. The endpoint returns WHO holds it, which is the useful part
+   * of the failure.
+   */
+  const claimProject = useCallback(async (
+    id: string,
+    claim: boolean,
+  ): Promise<{ ok: boolean; claimedBy: string | null; reason?: string }> => {
+    try {
+      const res = await fetch(`/api/projects/${id}/claim`, {
+        method: claim ? "POST" : "DELETE",
+        headers: { "Content-Type": "application/json" },
+      });
+      const body = await res.json().catch(() => ({}));
+      const claimedBy = (body?.claimed_by ?? null) as string | null;
+      if (res.ok) {
+        setProjects(prev => {
+          const p = prev[id];
+          if (!p) return prev;
+          return { ...prev, [id]: { ...p, claimed_by: claimedBy } };
+        });
+        return { ok: true, claimedBy };
+      }
+      // Refused -- but the server told us the truth about who holds it, so
+      // record that rather than leaving the UI showing a stale owner.
+      setProjects(prev => {
+        const p = prev[id];
+        if (!p) return prev;
+        return { ...prev, [id]: { ...p, claimed_by: claimedBy } };
+      });
+      return { ok: false, claimedBy, reason: body?.reason };
+    } catch {
+      return { ok: false, claimedBy: null, reason: "network_error" };
+    }
+  }, []);
+
   const archiveProject = useCallback(async (
     id: string,
     archived: boolean,
@@ -697,7 +740,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     <Store.Provider value={{
       allOrders, allOrdersIncludingArchived: rawOrders,
       orders, warranties, samples, customs, hardware, projects, team, onlineUsers, loading,
-      addOrder, moveStage, updateNotes, updateInternalNotes, updateOrderDetails, archiveProject, archiveOrder, unarchiveOrder, deleteOrder, bulkAction,
+      addOrder, moveStage, updateNotes, updateInternalNotes, updateOrderDetails, archiveProject, claimProject, archiveOrder, unarchiveOrder, deleteOrder, bulkAction,
       claimOrder, addTeamMember, updateTeamMember, deactivateTeamMember, deleteTeamMember,
       updateTeamMemberProfile, uploadAvatar,
     }}>

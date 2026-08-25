@@ -728,6 +728,16 @@ export interface Project {
    * addOrder payload whitelist, and now this.
    */
   archived?: boolean;
+  /**
+   * ONE owner for the whole purchase.
+   *
+   * Groups used to be claimed separately, so a designer who had finished the
+   * cabinets could not close the purchase while somebody else sat on the
+   * hardware. `orders.claimed_by` is now for STANDALONE rows only -- custom
+   * jobs and warranty claims, which have no project.
+   */
+  claimed_by?: string | null;
+  claimed_at?: string | null;
 }
 
 /**
