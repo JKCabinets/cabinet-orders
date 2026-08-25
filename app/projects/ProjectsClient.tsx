@@ -12,6 +12,7 @@ import { OrderModal } from "@/components/OrderModal";
 import { AvatarWithProfile } from "@/components/AvatarWithProfile";
 import {
   Search, ChevronRight, ChevronDown, AlertTriangle, CheckCircle2, ArrowRight,
+  Archive, RotateCcw, Loader2,
 } from "lucide-react";
 import clsx from "clsx";
 
@@ -47,7 +48,7 @@ const GROUP_DOT: Record<string, string> = {
   sample: "#5a8db8",
 };
 
-type Filter = "all" | "active" | "attention" | "complete" | "refunded";
+type Filter = "all" | "active" | "attention" | "complete" | "refunded" | "archived";
 
 const FILTERS: { key: Filter; label: string; dot?: string }[] = [
   { key: "all", label: "All" },
@@ -55,6 +56,7 @@ const FILTERS: { key: Filter; label: string; dot?: string }[] = [
   { key: "attention", label: "Needs attention", dot: "#e8b56a" },
   { key: "complete", label: "Complete", dot: "#8fbe70" },
   { key: "refunded", label: "Refunded", dot: "#e08585" },
+  { key: "archived", label: "Archived" },
 ];
 
 /** Is this group at the last stage of its own flow? */
@@ -95,11 +97,14 @@ function nextMilestone(g: Order): { label: string; detail?: string } {
 }
 
 export function ProjectsClient() {
-  const { allOrders, projects, team } = useStore();
+  const { allOrders, projects, team, archiveProject } = useStore();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Order | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  /** Why the server refused, keyed by project. Shown inline on the row. */
+  const [refusal, setRefusal] = useState<Record<string, string>>({});
 
   const groupsByProject = useMemo(() => {
     const map = new Map<string, Order[]>();
@@ -127,22 +132,34 @@ export function ProjectsClient() {
       const refunded = isPaymentHoldStatus(p.payment_status);
       const complete = groups.length > 0 && delivered === groups.length;
       const started = groups.some((g) => !isUnstarted(g));
-      return { project: p, groups, reasons, delivered, refunded, complete, started };
+      return { project: p, groups, reasons, delivered, refunded, complete, started,
+               archived: !!p.archived };
     });
   }, [projects, groupsByProject]);
 
-  const counts = useMemo(() => ({
-    all: enriched.length,
-    active: enriched.filter((e) => !e.complete && !e.refunded).length,
-    attention: enriched.filter((e) => e.reasons.length > 0).length,
-    complete: enriched.filter((e) => e.complete).length,
-    refunded: enriched.filter((e) => e.refunded).length,
-  }), [enriched]);
+  // ⚠ ARCHIVED IS EXCLUDED FROM EVERY OTHER BUCKET, including All. Archiving
+  // means "this purchase is finished and off the board" -- a project that kept
+  // showing under All after being archived would make the action look broken,
+  // which is exactly what an archive is for avoiding.
+  const counts = useMemo(() => {
+    const live = enriched.filter((e) => !e.archived);
+    return {
+      all: live.length,
+      active: live.filter((e) => !e.complete && !e.refunded).length,
+      attention: live.filter((e) => e.reasons.length > 0).length,
+      complete: live.filter((e) => e.complete).length,
+      refunded: live.filter((e) => e.refunded).length,
+      archived: enriched.filter((e) => e.archived).length,
+    };
+  }, [enriched]);
 
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
     return enriched
       .filter((e) => {
+        // Archived rows appear ONLY under their own filter.
+        if (filter === "archived") { if (!e.archived) return false; }
+        else if (e.archived) return false;
         if (filter === "active" && (e.complete || e.refunded)) return false;
         if (filter === "attention" && e.reasons.length === 0) return false;
         if (filter === "complete" && !e.complete) return false;
@@ -159,6 +176,26 @@ export function ProjectsClient() {
       .sort((a, b) =>
         String(b.project.created_at).localeCompare(String(a.project.created_at)));
   }, [enriched, filter, search]);
+
+
+  /**
+   * Archive or restore, and surface a refusal rather than swallowing it.
+   *
+   * The server gate is the real one: every group at the last stage of its own
+   * flow, or the purchase refunded. When it says no it names the orders that
+   * are not finished, which is worth showing verbatim -- "2 orders in this
+   * project are not finished yet: SHO-1050-CAB (In production)" tells you what
+   * to do next, where "could not archive" does not.
+   */
+  async function doArchive(id: string, archived: boolean) {
+    setBusyId(id);
+    setRefusal((prev) => { const n = { ...prev }; delete n[id]; return n; });
+    const res = await archiveProject(id, archived);
+    setBusyId(null);
+    if (!res.ok && res.message) {
+      setRefusal((prev) => ({ ...prev, [id]: res.message! }));
+    }
+  }
 
   function toggle(id: string) {
     setExpanded((prev) => {
@@ -183,7 +220,7 @@ export function ProjectsClient() {
   const dateOf = (iso: string | null | undefined) =>
     iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—";
 
-  const GRID = "grid grid-cols-[24px_0.85fr_0.7fr_1fr_1.5fr_1.1fr_0.9fr_0.7fr_0.6fr] gap-3";
+  const GRID = "grid grid-cols-[24px_0.85fr_0.7fr_1fr_1.5fr_1.1fr_0.9fr_0.7fr_0.6fr_34px] gap-3";
 
   return (
     <>
@@ -267,9 +304,10 @@ export function ProjectsClient() {
               <span>Fulfillment</span>
               <span className="text-right">Total</span>
               <span className="text-right">Payment</span>
+              <span />
             </div>
 
-            {rows.map(({ project: p, groups, reasons, delivered, refunded }) => {
+            {rows.map(({ project: p, groups, reasons, delivered, refunded, complete, archived }) => {
               const open = expanded.has(p.id);
               const lead = reasons.find((r) => r.severity === "high") ?? reasons[0];
               const pct = groups.length > 0 ? (delivered / groups.length) * 100 : 0;
@@ -375,7 +413,51 @@ export function ProjectsClient() {
                         {p.payment_status ?? "—"}
                       </span>
                     </span>
+
+                    {/* Archive / restore.
+                        ⚠ A <div role="button">, not a <button> -- this sits
+                        inside the row's expand button, and a button inside a
+                        button is invalid HTML that React warns about and
+                        browsers nest unpredictably.
+
+                        Offered only when the project CAN be archived: every
+                        order delivered, or the purchase refunded. Hiding it
+                        otherwise is not the gate -- the server refuses too --
+                        but a control that is always visible and usually fails
+                        teaches people to ignore it. */}
+                    <span className="self-center flex justify-end">
+                      {(archived || complete || refunded) && (
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          onClick={(e) => { e.stopPropagation(); void doArchive(p.id, !archived); }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault(); e.stopPropagation();
+                              void doArchive(p.id, !archived);
+                            }
+                          }}
+                          className="p-1.5 rounded-full transition-colors hover:bg-white/10 cursor-pointer"
+                          title={archived ? "Restore to the board" : "Archive this purchase"}
+                        >
+                          {busyId === p.id
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin text-cream/50" />
+                            : archived
+                              ? <RotateCcw className="w-3.5 h-3.5 text-cream/45" />
+                              : <Archive className="w-3.5 h-3.5 text-cream/45" />}
+                        </div>
+                      )}
+                    </span>
                   </button>
+
+                  {/* Why the server said no. Inline on the row rather than a
+                      toast: the refusal names the orders that are not finished,
+                      and that is only useful next to them. */}
+                  {refusal[p.id] && (
+                    <div className="px-4 pb-2 -mt-1">
+                      <p className="text-[11px]" style={{ color: "#e8b56a" }}>{refusal[p.id]}</p>
+                    </div>
+                  )}
 
                   {/* Expansion: each order in the project, with what it is
                       waiting on. */}
