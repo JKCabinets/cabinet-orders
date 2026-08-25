@@ -4,81 +4,103 @@ import { useState, useMemo } from "react";
 import { useStore } from "@/lib/store";
 import {
   Order, Project, STAGE_ACCENT, STAGE_LIST_BY_TYPE, OrderType,
+  isPaymentHoldStatus,
 } from "@/lib/data";
-import { attentionFor } from "@/lib/attention";
+import { attentionFor, type AttentionReason } from "@/lib/attention";
 import { PageHeader } from "@/components/AppShell";
 import { OrderModal } from "@/components/OrderModal";
-import { Search } from "lucide-react";
+import { AvatarWithProfile } from "@/components/AvatarWithProfile";
+import {
+  Search, ChevronRight, ChevronDown, AlertTriangle, CheckCircle2, ArrowRight,
+} from "lucide-react";
+import clsx from "clsx";
 
 /**
- * /projects — the purchase, not the work.
+ * /projects — the hub for everything that came from Shopify.
  *
- * A Shopify checkout is ONE project with one `orders` row per product category
- * beneath it. Everywhere else in the OMS you look at groups: /orders/cabinets
- * lists cabinet groups, /samples lists sample groups, the work queue lists
- * whatever needs someone. This is the only place the project is visible as
- * itself — one customer, one order number, one charge, several timelines.
+ * A checkout is ONE project with one `orders` row per product category. Every
+ * other page looks at groups: /orders/cabinets lists cabinet groups, the work
+ * queue lists whatever needs someone. This is the only place the purchase is
+ * visible as itself — one customer, one charge, several timelines that do not
+ * wait on each other.
  *
- * Opening a project opens the order modal, which IS the project hub: it shows
- * every group with its own stage and claim. So a row here is a doorway, not a
- * detail page — building a second project view would duplicate the modal.
+ * ⚠ EXPANDING A ROW IS THE POINT. The collapsed row answers "is this fine?";
+ * the expansion answers "what is each part actually doing?". A project whose
+ * cabinets are in production while its hardware is delivered is NORMAL, and a
+ * summary that flattened those into one status would be hiding the thing the
+ * project model exists to show.
  *
- * Custom jobs and warranty claims are NOT here. They have no project: a custom
- * job is contract work carrying no Shopify products, and a claim is about a
- * purchase rather than part of one.
+ * Custom jobs and warranty claims are NOT here. A custom job carries no Shopify
+ * products; a claim is about a purchase rather than part of one. Both are
+ * standalone rows with a NULL project_id.
  */
 
-/** Group label per type, matching the modal's. */
 const GROUP_LABEL: Record<string, string> = {
   order: "Cabinets",
   hardware: "Hardware",
   sample: "Samples",
 };
 
-type RollupState = "new" | "in_progress" | "complete";
-
-const ROLLUP_COPY: Record<RollupState, { label: string; color: string }> = {
-  new: { label: "New", color: "#c97070" },
-  in_progress: { label: "In progress", color: "#d4922a" },
-  complete: { label: "Complete", color: "#8fbe70" },
+const GROUP_DOT: Record<string, string> = {
+  order: "#e08585",
+  hardware: "#e8b56a",
+  sample: "#5a8db8",
 };
 
+type Filter = "all" | "active" | "attention" | "complete" | "refunded";
+
+const FILTERS: { key: Filter; label: string; dot?: string }[] = [
+  { key: "all", label: "All" },
+  { key: "active", label: "Active", dot: "#8fbe70" },
+  { key: "attention", label: "Needs attention", dot: "#e8b56a" },
+  { key: "complete", label: "Complete", dot: "#8fbe70" },
+  { key: "refunded", label: "Refunded", dot: "#e08585" },
+];
+
+/** Is this group at the last stage of its own flow? */
+function isDelivered(g: Order): boolean {
+  const flow = (STAGE_LIST_BY_TYPE[g.type as OrderType] ?? []) as readonly string[];
+  return flow.length > 0 && g.stage === flow[flow.length - 1];
+}
+
+/** Is this group still at the first stage of its own flow? */
+function isUnstarted(g: Order): boolean {
+  const flow = (STAGE_LIST_BY_TYPE[g.type as OrderType] ?? []) as readonly string[];
+  return flow.length > 0 && g.stage === flow[0];
+}
+
 /**
- * The project's state, DERIVED from its groups and never stored.
+ * What happens next for this group, in words.
  *
- * ⚠ A SUMMARY, NOT A GATE. No group's status drives another's — cabinets in
- * production alongside samples delivered is a normal state, not a conflict.
- * This says where the purchase as a whole has got to; it does not stop
- * anything.
- *
- * Stored, it would be a fourth thing that can disagree with the three groups it
- * describes. Derived, it cannot.
- *
- * Archived groups still count. Archiving is filing, not finishing — a project
- * whose cabinets were archived early is still in progress while its samples are
- * open, and reporting it Complete would be a lie told to tidy a list.
+ * Reads the date that actually governs the next transition rather than
+ * inventing a milestone: production's finish date is what the
+ * production-complete cron acts on, and the delivery date is what the Confirm
+ * Delivery button needs. A group with neither has nothing scheduled, and says
+ * so instead of showing a blank.
  */
-function rollup(groups: Order[]): RollupState {
-  if (groups.length === 0) return "new";
-  let anyStarted = false;
-  let allTerminal = true;
-  for (const g of groups) {
-    const flow = (STAGE_LIST_BY_TYPE[g.type as OrderType] ?? []) as readonly string[];
-    const first = flow[0];
-    const last = flow[flow.length - 1];
-    if (first && g.stage !== first) anyStarted = true;
-    if (last && g.stage !== last) allTerminal = false;
+function nextMilestone(g: Order): { label: string; detail?: string } {
+  if (isDelivered(g)) {
+    return { label: "Delivered", detail: g.delivery_date ?? undefined };
   }
-  if (allTerminal) return "complete";
-  return anyStarted ? "in_progress" : "new";
+  if (g.stage === "In production" && g.production_est_finish_date) {
+    return { label: "Estimated production complete", detail: g.production_est_finish_date };
+  }
+  if (g.scheduled_delivery_date || g.delivery_date) {
+    return { label: "Scheduled delivery", detail: g.scheduled_delivery_date ?? g.delivery_date ?? undefined };
+  }
+  if (g.type === "hardware" && g.tracking_number) {
+    return { label: "In transit", detail: g.carrier ?? undefined };
+  }
+  return { label: "Nothing scheduled" };
 }
 
 export function ProjectsClient() {
-  const { allOrders, projects } = useStore();
+  const { allOrders, projects, team } = useStore();
   const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<Filter>("all");
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Order | null>(null);
 
-  // Group the rows by project once, rather than filtering allOrders per project.
   const groupsByProject = useMemo(() => {
     const map = new Map<string, Order[]>();
     for (const o of allOrders) {
@@ -87,41 +109,124 @@ export function ProjectsClient() {
       list.push(o);
       map.set(o.project_id, list);
     }
+    // Cabinets, hardware, samples — the order the modal uses, so a project
+    // reads the same everywhere.
+    const rank: Record<string, number> = { order: 0, hardware: 1, sample: 2 };
+    for (const list of map.values()) {
+      list.sort((a, b) => (rank[a.type] ?? 9) - (rank[b.type] ?? 9));
+    }
     return map;
   }, [allOrders]);
 
+  /** Everything a project row needs, computed once. */
+  const enriched = useMemo(() => {
+    return (Object.values(projects) as Project[]).map((p) => {
+      const groups = groupsByProject.get(p.id) ?? [];
+      const reasons: AttentionReason[] = groups.flatMap((g) => attentionFor(g));
+      const delivered = groups.filter(isDelivered).length;
+      const refunded = isPaymentHoldStatus(p.payment_status);
+      const complete = groups.length > 0 && delivered === groups.length;
+      const started = groups.some((g) => !isUnstarted(g));
+      return { project: p, groups, reasons, delivered, refunded, complete, started };
+    });
+  }, [projects, groupsByProject]);
+
+  const counts = useMemo(() => ({
+    all: enriched.length,
+    active: enriched.filter((e) => !e.complete && !e.refunded).length,
+    attention: enriched.filter((e) => e.reasons.length > 0).length,
+    complete: enriched.filter((e) => e.complete).length,
+    refunded: enriched.filter((e) => e.refunded).length,
+  }), [enriched]);
+
   const rows = useMemo(() => {
-    const list = Object.values(projects) as Project[];
     const q = search.trim().toLowerCase();
-    return list
-      .filter((p) => {
+    return enriched
+      .filter((e) => {
+        if (filter === "active" && (e.complete || e.refunded)) return false;
+        if (filter === "attention" && e.reasons.length === 0) return false;
+        if (filter === "complete" && !e.complete) return false;
+        if (filter === "refunded" && !e.refunded) return false;
         if (!q) return true;
         return (
-          p.id.toLowerCase().includes(q) ||
-          String(p.name ?? "").toLowerCase().includes(q) ||
-          String(p.customer_email ?? "").toLowerCase().includes(q)
+          e.project.id.toLowerCase().includes(q) ||
+          String(e.project.name ?? "").toLowerCase().includes(q) ||
+          String(e.project.customer_email ?? "").toLowerCase().includes(q) ||
+          String(e.project.ship_to ?? "").toLowerCase().includes(q) ||
+          e.groups.some((g) => g.id.toLowerCase().includes(q))
         );
       })
-      .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
-  }, [projects, search]);
+      .sort((a, b) =>
+        String(b.project.created_at).localeCompare(String(a.project.created_at)));
+  }, [enriched, filter, search]);
 
+  function toggle(id: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  /**
+   * ⚠ A MISSING TOTAL RENDERS AS $0.00, by decision.
+   *
+   * Nullable money means UNKNOWN in the database and that distinction is real —
+   * free shipping is genuinely zero. It is preserved where it changes an
+   * answer: /admin counts unpriced projects separately, so a revenue figure
+   * that is low because six projects predate the money columns says so there.
+   * On this page a dash read as a bug, so it shows a number.
+   */
   const money = (n: number | string | null | undefined) =>
-    n === null || n === undefined
-      ? null
-      : Number(n).toLocaleString("en-US", { style: "currency", currency: "USD" });
+    (Number(n) || 0).toLocaleString("en-US", { style: "currency", currency: "USD" });
+
+  const dateOf = (iso: string | null | undefined) =>
+    iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—";
+
+  const GRID = "grid grid-cols-[24px_0.85fr_0.7fr_1fr_1.5fr_1.1fr_0.9fr_0.7fr_0.6fr] gap-3";
 
   return (
     <>
-      <PageHeader eyebrow="Shopify purchases" title="Projects" accent="hub" />
+      <PageHeader
+        eyebrow="Shopify"
+        title="Projects"
+        accent="hub"
+      />
 
-      <div className="px-6 lg:px-8 pb-4">
-        <div className="relative max-w-md">
+      <div className="px-6 lg:px-8 pb-2">
+        <p className="text-[12px] text-cream/45 -mt-2 mb-4">
+          Customer purchases from Shopify and their associated orders.
+        </p>
+
+        {/* Filters */}
+        <div className="flex items-center gap-1.5 flex-wrap mb-3">
+          {FILTERS.map((f) => (
+            <button
+              key={f.key}
+              onClick={() => setFilter(f.key)}
+              className={clsx(
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] uppercase tracking-wider transition-all",
+                filter === f.key
+                  ? "bg-terracotta/20 border border-terracotta/55 text-terracotta"
+                  : "bg-white/4 border border-cream/15 text-cream/60 hover:bg-white/8",
+              )}
+            >
+              {f.dot && (
+                <span className="w-1.5 h-1.5 rounded-full" style={{ background: f.dot }} />
+              )}
+              {f.label}
+              <span className="opacity-65 tabular-nums">{counts[f.key]}</span>
+            </button>
+          ))}
+        </div>
+
+        <div className="relative max-w-lg mb-4">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-cream/40" />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by order number, customer or email…"
+            placeholder="Search project, customer, order #, address…"
             autoComplete="off"
             data-1p-ignore="true"
             data-lpignore="true"
@@ -137,122 +242,236 @@ export function ProjectsClient() {
         {rows.length === 0 ? (
           <div className="glass rounded-brand p-10 text-center">
             <div className="font-display text-[22px] text-cream/70 mb-1">
-              {search ? "No matches" : "No projects yet"}
+              {search || filter !== "all" ? "No matches" : "No projects yet"}
             </div>
             <div className="text-[12px] text-cream/45">
               {search
                 ? `Nothing matched "${search}".`
-                : "Projects arrive from Shopify checkouts."}
+                : filter !== "all"
+                  ? "No projects in this filter."
+                  : "Projects arrive from Shopify checkouts."}
             </div>
           </div>
         ) : (
-          <div
-            className="rounded-panel overflow-hidden"
-            style={{ border: "0.5px solid rgba(255,255,255,0.12)" }}
-          >
+          <div className="rounded-panel overflow-hidden" style={{ border: "0.5px solid rgba(255,255,255,0.12)" }}>
             <div
-              className="grid grid-cols-[0.9fr_1.1fr_1.7fr_0.7fr_0.7fr] gap-3 px-4 py-2.5 text-[9px] uppercase tracking-wider text-cream/40"
+              className={`${GRID} px-4 py-2.5 text-[9px] uppercase tracking-wider text-cream/40`}
               style={{ background: "rgba(255,255,255,0.03)" }}
             >
-              <span>Order</span>
+              <span />
+              <span>Project</span>
+              <span>Date</span>
               <span>Customer</span>
-              <span>Pipelines</span>
+              <span>Orders</span>
+              <span>Attention</span>
+              <span>Fulfillment</span>
               <span className="text-right">Total</span>
-              <span className="text-right">State</span>
+              <span className="text-right">Payment</span>
             </div>
 
-            {rows.map((p) => {
-              const groups = groupsByProject.get(p.id) ?? [];
-              const state = rollup(groups);
-              const copy = ROLLUP_COPY[state];
-              const total = money(p.total_price);
-              // Anything in this project wanting a person. Shown as a dot
-              // rather than a count: the work queue is where you act on it,
-              // this is only a reason to look.
-              const wants = groups.some((g) => attentionFor(g).length > 0);
+            {rows.map(({ project: p, groups, reasons, delivered, refunded }) => {
+              const open = expanded.has(p.id);
+              const lead = reasons.find((r) => r.severity === "high") ?? reasons[0];
+              const pct = groups.length > 0 ? (delivered / groups.length) * 100 : 0;
 
               return (
-                <button
-                  key={p.id}
-                  onClick={() => groups[0] && setSelected(groups[0])}
-                  disabled={groups.length === 0}
-                  className="w-full grid grid-cols-[0.9fr_1.1fr_1.7fr_0.7fr_0.7fr] gap-3 px-4 py-3 text-left transition-colors hover:bg-white/4 disabled:opacity-50"
-                  style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)" }}
-                >
-                  <span className="self-center flex items-center gap-1.5 min-w-0">
-                    {wants && (
-                      <span
-                        className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                        style={{ background: "#e08585" }}
-                        title="Something in this project needs attention"
-                      />
-                    )}
-                    <span className="text-[11px] font-mono text-cream/80 truncate">{p.id}</span>
-                  </span>
+                <div key={p.id} style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)" }}>
+                  <button
+                    onClick={() => toggle(p.id)}
+                    className={`${GRID} w-full px-4 py-3 text-left transition-colors hover:bg-white/4`}
+                  >
+                    <span className="self-center text-cream/40">
+                      {open ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                    </span>
 
-                  <span className="self-center min-w-0">
-                    <span className="block text-[12px] text-cream/85 truncate">{p.name ?? "—"}</span>
-                    {p.customer_email && (
-                      <span className="block text-[10px] text-cream/35 truncate">{p.customer_email}</span>
-                    )}
-                  </span>
+                    <span className="self-center min-w-0">
+                      <span className="block text-[13px] font-mono text-cream/90 truncate">{p.id}</span>
+                      <span className="block text-[10px] text-cream/35">
+                        {p.source === "Shopify" ? "Web order" : p.source ?? "—"}
+                      </span>
+                    </span>
 
-                  {/* One chip per group, each carrying its OWN stage. This is
-                      the whole point of the project view: two timelines under
-                      one order number, neither waiting on the other. */}
-                  <span className="self-center flex items-center gap-1.5 flex-wrap">
-                    {groups.length === 0 ? (
-                      <span className="text-[10px] text-cream/30 italic">no groups</span>
-                    ) : (
-                      groups.map((g) => {
+                    <span className="self-center text-[11px] text-cream/55">{dateOf(p.created_at)}</span>
+
+                    <span className="self-center min-w-0">
+                      <span className="block text-[12px] text-cream/85 truncate">{p.name ?? "—"}</span>
+                      {p.ship_to && (
+                        <span className="block text-[10px] text-cream/35 truncate">{p.ship_to}</span>
+                      )}
+                    </span>
+
+                    {/* One line per group: category, its OWN stage, its OWN
+                        owner. Three timelines under one order number, none
+                        waiting on another. */}
+                    <span className="self-center flex flex-col gap-1 min-w-0">
+                      {groups.length === 0 ? (
+                        <span className="text-[10px] text-cream/30 italic">no orders</span>
+                      ) : groups.map((g) => {
                         const accent = STAGE_ACCENT[g.stage] ?? "#8a8a8a";
+                        const owner = g.claimed_by ? team.find((m) => m.id === g.claimed_by) : undefined;
                         return (
-                          <span
-                            key={g.id}
-                            className="text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap"
-                            style={{
-                              background: "rgba(255,255,255,0.05)",
-                              border: `0.5px solid ${accent}44`,
-                              color: "rgba(232,227,218,0.75)",
-                            }}
-                          >
-                            {GROUP_LABEL[g.type] ?? g.type}
-                            <span className="mx-1 opacity-40">·</span>
-                            <span style={{ color: accent }}>{g.stage}</span>
+                          <span key={g.id} className="flex items-center gap-1.5 min-w-0">
+                            <span className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                              style={{ background: GROUP_DOT[g.type] ?? "#8a8a8a" }} />
+                            <span className="text-[11px] text-cream/70 w-[62px] flex-shrink-0">
+                              {GROUP_LABEL[g.type] ?? g.type}
+                            </span>
+                            <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full whitespace-nowrap"
+                              style={{ background: `${accent}1f`, border: `0.5px solid ${accent}55`, color: accent }}>
+                              {g.stage}
+                            </span>
+                            {owner
+                              ? <span className="flex items-center gap-1 min-w-0">
+                                  <AvatarWithProfile member={owner} size="sm" />
+                                  <span className="text-[10px] text-cream/45 truncate">{owner.name.split(" ")[0]}</span>
+                                </span>
+                              : <span className="text-[10px] text-cream/25 italic">Unclaimed</span>}
                           </span>
                         );
-                      })
-                    )}
-                  </span>
-
-                  <span className="self-center text-right text-[11px] tabular-nums">
-                    {total ? (
-                      <span className="text-cream/70">{total}</span>
-                    ) : (
-                      /* Nullable money means UNKNOWN, not zero. Rendering a
-                         dash rather than $0.00 keeps a project ingested before
-                         the money columns existed from reading as free. */
-                      <span className="text-cream/25" title="No total recorded">—</span>
-                    )}
-                  </span>
-
-                  <span className="self-center text-right">
-                    <span
-                      className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full whitespace-nowrap"
-                      style={{
-                        background: `${copy.color}1f`,
-                        border: `0.5px solid ${copy.color}55`,
-                        color: copy.color,
-                      }}
-                    >
-                      {copy.label}
+                      })}
                     </span>
-                  </span>
-                </button>
+
+                    <span className="self-center min-w-0">
+                      {reasons.length === 0 ? (
+                        <span className="flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5" style={{ color: "#8fbe70" }} />
+                          <span className="text-[11px]" style={{ color: "#8fbe70" }}>No issues</span>
+                        </span>
+                      ) : (
+                        <span className="flex items-start gap-1.5 min-w-0">
+                          <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-px"
+                            style={{ color: lead.severity === "high" ? "#e08585" : "#e8b56a" }} />
+                          <span className="min-w-0">
+                            <span className="block text-[11px] truncate"
+                              style={{ color: lead.severity === "high" ? "#e08585" : "#e8b56a" }}>
+                              {reasons.length} needs attention
+                            </span>
+                            <span className="block text-[10px] text-cream/40 truncate">{lead.label}</span>
+                          </span>
+                        </span>
+                      )}
+                    </span>
+
+                    <span className="self-center min-w-0">
+                      <span className="block text-[11px] text-cream/60 mb-1">
+                        {delivered} / {groups.length} delivered
+                      </span>
+                      <span className="block h-1 rounded-full overflow-hidden"
+                        style={{ background: "rgba(255,255,255,0.08)" }}>
+                        <span className="block h-full rounded-full"
+                          style={{ width: `${pct}%`, background: "#8fbe70" }} />
+                      </span>
+                    </span>
+
+                    <span className="self-center text-right text-[12px] tabular-nums text-cream/85">
+                      {money(p.total_price)}
+                    </span>
+
+                    <span className="self-center text-right">
+                      <span className="text-[9px] uppercase tracking-wider px-2 py-0.5 rounded-full whitespace-nowrap"
+                        style={refunded
+                          ? { background: "rgba(224,85,85,0.16)", border: "0.5px solid rgba(224,85,85,0.45)", color: "#e08585" }
+                          : { background: "rgba(143,190,112,0.14)", border: "0.5px solid rgba(143,190,112,0.35)", color: "#a0cc7a" }}>
+                        {p.payment_status ?? "—"}
+                      </span>
+                    </span>
+                  </button>
+
+                  {/* Expansion: each order in the project, with what it is
+                      waiting on. */}
+                  {open && groups.length > 0 && (
+                    <div className="px-4 pb-3">
+                      <div className="rounded-brand overflow-hidden"
+                        style={{ background: "rgba(255,255,255,0.02)", border: "0.5px solid rgba(255,255,255,0.10)" }}>
+                        <div className="grid grid-cols-[1fr_0.7fr_0.7fr_0.9fr_1.4fr_0.8fr_0.9fr_28px] gap-3 px-3 py-2 text-[9px] uppercase tracking-wider text-cream/35">
+                          <span>Order #</span>
+                          <span>Type</span>
+                          <span>Status</span>
+                          <span>Owner</span>
+                          <span>SLA / next milestone</span>
+                          <span>Est. / actual</span>
+                          <span>Attention</span>
+                          <span />
+                        </div>
+                        {groups.map((g) => {
+                          const accent = STAGE_ACCENT[g.stage] ?? "#8a8a8a";
+                          const owner = g.claimed_by ? team.find((m) => m.id === g.claimed_by) : undefined;
+                          const gr = attentionFor(g);
+                          const glead = gr.find((r) => r.severity === "high") ?? gr[0];
+                          const ms = nextMilestone(g);
+                          return (
+                            <button
+                              key={g.id}
+                              onClick={() => setSelected(g)}
+                              className="w-full grid grid-cols-[1fr_0.7fr_0.7fr_0.9fr_1.4fr_0.8fr_0.9fr_28px] gap-3 px-3 py-2.5 text-left transition-colors hover:bg-white/4"
+                              style={{ borderTop: "0.5px solid rgba(255,255,255,0.06)" }}
+                            >
+                              <span className="self-center text-[11px] font-mono text-cream/70 truncate">{g.id}</span>
+                              <span className="self-center flex items-center gap-1.5">
+                                <span className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                                  style={{ background: GROUP_DOT[g.type] ?? "#8a8a8a" }} />
+                                <span className="text-[11px] text-cream/65">{GROUP_LABEL[g.type] ?? g.type}</span>
+                              </span>
+                              <span className="self-center">
+                                <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full whitespace-nowrap"
+                                  style={{ background: `${accent}1f`, border: `0.5px solid ${accent}55`, color: accent }}>
+                                  {g.stage}
+                                </span>
+                              </span>
+                              <span className="self-center flex items-center gap-1.5 min-w-0">
+                                {owner
+                                  ? <>
+                                      <AvatarWithProfile member={owner} size="sm" />
+                                      <span className="text-[10px] text-cream/55 truncate">{owner.name}</span>
+                                    </>
+                                  : <span className="text-[10px] text-cream/25 italic">Unclaimed</span>}
+                              </span>
+                              <span className="self-center min-w-0">
+                                <span className="block text-[11px] text-cream/75 truncate">{ms.label}</span>
+                                {ms.detail && (
+                                  <span className="block text-[10px] text-cream/35 truncate">{ms.detail}</span>
+                                )}
+                              </span>
+                              <span className="self-center text-[11px] text-cream/55 truncate">
+                                {g.delivery_date ?? g.scheduled_delivery_date ?? g.production_est_finish_date ?? "—"}
+                              </span>
+                              <span className="self-center flex items-center gap-1.5 min-w-0">
+                                {gr.length === 0 ? (
+                                  <>
+                                    <CheckCircle2 className="w-3 h-3 flex-shrink-0" style={{ color: "#8fbe70" }} />
+                                    <span className="text-[10px] truncate" style={{ color: "#8fbe70" }}>
+                                      {isDelivered(g) ? "Complete" : "Healthy"}
+                                    </span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <AlertTriangle className="w-3 h-3 flex-shrink-0"
+                                      style={{ color: glead.severity === "high" ? "#e08585" : "#e8b56a" }} />
+                                    <span className="text-[10px] truncate"
+                                      style={{ color: glead.severity === "high" ? "#e08585" : "#e8b56a" }}>
+                                      {glead.label}
+                                    </span>
+                                  </>
+                                )}
+                              </span>
+                              <span className="self-center text-cream/25">
+                                <ArrowRight className="w-3.5 h-3.5" />
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
               );
             })}
           </div>
         )}
+
+        <p className="text-[11px] text-cream/35 mt-3">
+          Showing {rows.length} of {enriched.length} project{enriched.length === 1 ? "" : "s"}
+        </p>
       </div>
 
       {selected && (
