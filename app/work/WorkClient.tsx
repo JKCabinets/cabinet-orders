@@ -83,14 +83,21 @@ interface Entry {
   customer: string;
 }
 
-export function WorkClient({ initialScope = "mine" }: { initialScope?: Scope }) {
+export function WorkClient({
+  initialScope = "mine",
+  initialReason = null,
+}: {
+  initialScope?: Scope;
+  /** Preselected filter chip, from a dashboard tile. */
+  initialReason?: AttentionKind | null;
+}) {
   const { allOrders, projects, team, claimProject, claimOrder } = useStore();
   const { data: session } = useSession();
   const { showToast } = useToast();
   const currentUserId = (session?.user as { id?: string } | undefined)?.id ?? null;
 
   const [scope, setScope] = useState<Scope>(initialScope);
-  const [reason, setReason] = useState<AttentionKind | null>(null);
+  const [reason, setReason] = useState<AttentionKind | null>(initialReason);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [selected, setSelected] = useState<Order | null>(null);

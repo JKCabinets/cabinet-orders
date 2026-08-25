@@ -2,164 +2,261 @@
 
 import React, { useMemo, useState } from "react";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { useStore } from "@/lib/store";
-import { Order, ORDER_STAGES, OrderStage, STAGE_ACCENT, getBackorderStatus, displayOrderNumber } from "@/lib/data";
-import { rollupBackorders, summarizeBackorders, type BackorderSummary } from "@/lib/backorders";
-import { parseOrderDate } from "@/lib/dateUtils";
 import {
-  slaTier, slaRuleFor, hoursInStage, slaAgeHours, formatStageAge, type SlaTier,
-} from "@/lib/sla";
-import { SlaHealthByType, type SlaTypeRow } from "@/components/SlaHealthByType";
+  Order, Project, OrderType, STAGE_ACCENT, STAGE_LIST_BY_TYPE,
+  getBackorderStatus, displayOrderNumber,
+} from "@/lib/data";
+import { rollupBackorders, summarizeBackorders, type BackorderSummary } from "@/lib/backorders";
+import { attentionFor, attentionForProject, DUE_SOON_HOURS, type AttentionReason } from "@/lib/attention";
+import { slaRuleFor, slaAgeHours, hoursInStage, formatStageAge } from "@/lib/sla";
 import { PageHeader } from "@/components/AppShell";
 import { OrderModal } from "@/components/OrderModal";
 import { NewOrderModal } from "@/components/NewOrderModal";
-import { Plus, Search, ChevronRight, PackageX } from "lucide-react";
+import { AvatarWithProfile } from "@/components/AvatarWithProfile";
+import {
+  Plus, Search, ChevronRight, PackageX, AlertTriangle, UserX, Ban, Clock,
+  CheckCircle2,
+} from "lucide-react";
 
-// STAGE_ACCENT now comes from lib/data.ts, shared with the Custom and
-// Sample pages instead of being a sixth private copy.
+/**
+ * The dashboard — a launchpad, not a report.
+ *
+ * ⚠ THE HIERARCHY IS: why I care → what → where → who → next action.
+ *
+ * It used to lead with five stage counts and the customer name. Those answer
+ * "what does the board look like", which is a fine question and not the one
+ * somebody opens a dashboard to ask. The first row now answers "what requires
+ * a person to do something", and every number on it is a link into the work
+ * queue filtered by that question.
+ *
+ * ⚠ EVERY COUNT COMES FROM lib/attention.ts. Not one predicate lives here.
+ * The tiles, the needs-attention table and the queue must agree, and two
+ * filters that happen to agree today are the drift this codebase keeps
+ * producing -- four instances in six days of one rule enforced in two places
+ * with a clause missing from the second.
+ *
+ * ENTRIES ARE PURCHASES. The claim moved up to the project on 2026-08-25, so a
+ * row here is a thing somebody can own, matching /work.
+ */
 
-function stageToSlug(stage: OrderStage): string {
-  return stage.toLowerCase().replace(/\s+/g, "-");
+const TYPE_LABEL: Record<string, string> = {
+  order: "Cabinets",
+  hardware: "Hardware",
+  sample: "Samples",
+  custom: "Custom",
+  warranty: "Warranty",
+};
+
+interface Entry {
+  key: string;
+  project?: Project;
+  orders: Order[];
+  reasons: AttentionReason[];
+  claimedBy: string | null;
+  label: string;
+  customer: string;
+  /** Oldest hours any reason has been waiting, for the tile subtitles. */
+  oldestHours: number | null;
 }
 
 export function DashboardClient() {
-  const { orders, customs, samples, warranties } = useStore();
+  const { allOrders, projects, orders, customs, samples, warranties, hardware, team } = useStore();
+  const { data: session } = useSession();
+  const currentUserId = (session?.user as { id?: string } | undefined)?.id ?? null;
+
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [showNewForm, setShowNewForm] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const active = useMemo(() => orders.filter(o => !o.archived), [orders]);
-
-  // ── Backorder rollup (used by the dashboard panel + sidebar count) ──
+  const active = useMemo(() => orders.filter((o) => !o.archived), [orders]);
   const backorderRollups = useMemo(() => rollupBackorders(active), [active]);
   const backorderSummary = useMemo(() => summarizeBackorders(backorderRollups), [backorderRollups]);
 
-  // ── Stage statistics ────────────────────────────────────────────────
-  const byStage = useMemo(() => {
-    const map: Record<OrderStage, Order[]> = {} as Record<OrderStage, Order[]>;
-    for (const s of ORDER_STAGES) map[s] = [];
-    for (const o of active) {
-      if (map[o.stage as OrderStage]) map[o.stage as OrderStage].push(o);
-    }
-    return map;
-  }, [active]);
+  /** Every purchase or standalone row that wants somebody. */
+  const entries = useMemo(() => {
+    const out: Entry[] = [];
+    const byProject = new Map<string, Order[]>();
+    const standalone: Order[] = [];
 
-  // ── SLA per order type ──────────────────────────────────────────────
-  // One row per category, not per stage: four stages x four types is
-  // sixteen cells, which is not a glance. /sla carries the stage detail.
-  const slaCategories: SlaTypeRow[] = useMemo(() => {
-    const groups: { key: string; label: string; rows: Order[] }[] = [
-      { key: "order",    label: "Standard", rows: orders },
-      { key: "custom",   label: "Custom",   rows: customs },
-      { key: "sample",   label: "Samples",  rows: samples },
-      { key: "warranty", label: "Warranty", rows: warranties },
-    ];
-    const now = Date.now();
-    return groups.map(g => {
-      const rows = g.rows.filter(o => !o.archived);
-      // Identical to the computation on /sla, because both feed the same
-      // component. Only rows whose clock is RUNNING are counted: a stage with
-      // no rule, or one whose clockRuns has stopped because the awaited dates
-      // exist, is neither on track nor overdue -- it simply is not measured.
-      let onTrack = 0, overSoft = 0, overHard = 0;
-      let oldestHours: number | null = null;
-      let oldestFrom: "created" | "stage" = "stage";
-      for (const o of rows) {
+    for (const o of allOrders) {
+      if (o.archived) continue;
+      if (o.project_id) {
+        const l = byProject.get(o.project_id) ?? [];
+        l.push(o);
+        byProject.set(o.project_id, l);
+      } else {
+        standalone.push(o);
+      }
+    }
+
+    const ageOf = (os: Order[]) => {
+      const hs = os.map((o) => {
         const rule = slaRuleFor(o);
-        if (!rule) continue;
-        if (rule.clockRuns && !rule.clockRuns(o)) continue;
-        const tier: SlaTier = slaTier(o, now);
-        if (tier === "hard") overHard++;
-        else if (tier === "soft") overSoft++;
-        else onTrack++;
-        const h = slaAgeHours(o, rule, now);
-        if (h !== null && (oldestHours === null || h > oldestHours)) {
-          oldestHours = h;
-          // New measures from the ORDER DATE, so its age reads "28d old"
-          // rather than an elapsed stage time. The table decides the wording.
-          oldestFrom = rule.measureFrom === "created" ? "created" : "stage";
+        return rule ? slaAgeHours(o, rule) : hoursInStage(o);
+      }).filter((h): h is number => h !== null);
+      return hs.length > 0 ? Math.max(...hs) : null;
+    };
+
+    for (const [id, group] of byProject) {
+      const project = projects[id];
+      if (!project || project.archived) continue;
+      const reasons = attentionForProject(project, group);
+      if (reasons.length === 0) continue;
+      out.push({
+        key: id, project, orders: group, reasons,
+        claimedBy: project.claimed_by ?? null,
+        label: id, customer: project.name ?? "—",
+        oldestHours: ageOf(group),
+      });
+    }
+
+    for (const o of standalone) {
+      const reasons = attentionFor(o);
+      if (reasons.length === 0) continue;
+      out.push({
+        key: o.id, orders: [o], reasons,
+        claimedBy: o.claimed_by ?? null,
+        label: displayOrderNumber(o), customer: o.name,
+        oldestHours: ageOf([o]),
+      });
+    }
+    return out;
+  }, [allOrders, projects]);
+
+  /**
+   * The four tiles.
+   *
+   * ⚠ THE BUCKETS OVERLAP, deliberately. A purchase blocked on missing data for
+   * sixty hours is in Blocked AND Needs attention AND past SLA. They are four
+   * questions about the same rows, not a partition -- and each tile links to
+   * the queue filtered by ITS question. Making them exclusive would drop a row
+   * out of Blocked the moment it also breached, which is when you most want to
+   * see it there.
+   *
+   * The SUBTITLE is a second, genuinely different figure -- a subset or an age,
+   * never a restatement of the number above it.
+   */
+  const tiles = useMemo(() => {
+    const has = (e: Entry, k: string) => e.reasons.some((r) => r.kind === k);
+    const oldest = (list: Entry[]) => {
+      const hs = list.map((e) => e.oldestHours).filter((h): h is number => h !== null);
+      return hs.length > 0 ? formatStageAge(Math.max(...hs)) : null;
+    };
+
+    const needing = entries;
+    const breached = entries.filter((e) => has(e, "sla_breached"));
+    const unclaimed = entries.filter((e) => !e.claimedBy);
+    const blocked = entries.filter((e) => has(e, "blocked_missing_data"));
+    const dueSoon = entries.filter((e) => has(e, "sla_due_soon"));
+
+    return [
+      {
+        key: "attention",
+        label: "Needs attention",
+        count: needing.length,
+        sub: breached.length > 0
+          ? `${breached.length} past SLA`
+          : "none past SLA",
+        href: "/work?scope=unclaimed",
+        color: "#e08585",
+        Icon: AlertTriangle,
+      },
+      {
+        key: "unclaimed",
+        label: "Unclaimed",
+        count: unclaimed.length,
+        sub: oldest(unclaimed) ? `oldest ${oldest(unclaimed)}` : "none waiting",
+        href: "/work?scope=unclaimed&reason=unclaimed",
+        color: "#5a8db8",
+        Icon: UserX,
+      },
+      {
+        key: "blocked",
+        label: "Blocked",
+        count: blocked.length,
+        sub: blocked.length > 0 ? "missing data" : "nothing stalled",
+        href: "/work?scope=unclaimed&reason=blocked_missing_data",
+        color: "#e08585",
+        Icon: Ban,
+      },
+      {
+        key: "due",
+        label: "Due soon",
+        count: dueSoon.length,
+        // Names the WINDOW, so the number means something. "3" alone is not a
+        // fact about anything.
+        sub: `within ${DUE_SOON_HOURS}h`,
+        href: "/work?scope=unclaimed&reason=sla_due_soon",
+        color: "#e8b56a",
+        Icon: Clock,
+      },
+    ];
+  }, [entries]);
+
+  /** The needs-attention table: the worst first, capped so it stays a glance. */
+  const flagged = useMemo(() => {
+    return [...entries]
+      .sort((a, b) => {
+        const sev = (e: Entry) => (e.reasons.some((r) => r.severity === "high") ? 0 : 1);
+        if (sev(a) !== sev(b)) return sev(a) - sev(b);
+        return (b.oldestHours ?? 0) - (a.oldestHours ?? 0);
+      })
+      .slice(0, 6);
+  }, [entries]);
+
+  /** One row per type, its own stages as segments. */
+  const pipelines = useMemo(() => {
+    const groups: { type: OrderType; rows: Order[] }[] = [
+      { type: "order", rows: orders },
+      { type: "hardware", rows: hardware },
+      { type: "sample", rows: samples },
+      { type: "custom", rows: customs },
+      { type: "warranty", rows: warranties },
+    ];
+    return groups.map(({ type, rows }) => {
+      const live = rows.filter((o) => !o.archived);
+      const stages = (STAGE_LIST_BY_TYPE[type] ?? []) as readonly string[];
+      return {
+        type,
+        label: TYPE_LABEL[type] ?? type,
+        // ⚠ EACH FLOW RENDERS ITS OWN STAGES. Cabinets run five, hardware and
+        // samples three, custom six, warranty five. A fixed grid would either
+        // invent stages or hide them.
+        segments: stages.map((s) => ({ stage: s, count: live.filter((o) => o.stage === s).length })),
+      };
+    });
+  }, [orders, hardware, samples, customs, warranties]);
+
+  /** SLA / data health: one row per type, counted the way /sla counts. */
+  const health = useMemo(() => {
+    const groups: { type: OrderType; rows: Order[] }[] = [
+      { type: "order", rows: orders },
+      { type: "hardware", rows: hardware },
+      { type: "sample", rows: samples },
+      { type: "custom", rows: customs },
+      { type: "warranty", rows: warranties },
+    ];
+    return groups.map(({ type, rows }) => {
+      const live = rows.filter((o) => !o.archived);
+      let breached = 0, due = 0, blocked = 0;
+      for (const o of live) {
+        for (const r of attentionFor(o)) {
+          if (r.kind === "sla_breached") breached++;
+          else if (r.kind === "sla_due_soon") due++;
+          else if (r.kind === "blocked_missing_data") blocked++;
         }
       }
       return {
-        key: g.key, label: g.label, active: rows.length,
-        onTrack, overSoft, overHard, oldestHours, oldestFrom,
+        type, label: TYPE_LABEL[type] ?? type,
+        active: live.length,
+        healthy: live.filter((o) => attentionFor(o).length === 0).length,
+        due, breached, blocked,
       };
     });
-  }, [orders, customs, samples, warranties]);
-
-  // ── Needs Attention list ────────────────────────────────────────────
-  const needsAttention = useMemo(() => {
-    const now = Date.now();
-    type Flagged = { order: Order; reason: string; severity: "high" | "med" };
-    const items: Flagged[] = [];
-
-    for (const o of active) {
-      // One shared rule replaces a hardcoded "> 5 days in New" plus a
-      // separate ">= 1 day unclaimed" check. lib/sla covers every stage,
-      // measures from stage_entered_at rather than order age, and knows a
-      // production order with its dates set is fine at 42 days.
-      const tier = slaTier(o, now);
-      if (tier !== "ok") {
-        const rule = slaRuleFor(o);
-        const age = formatStageAge(hoursInStage(o, now));
-        const unclaimed = o.stage === "New" && !o.claimed_by;
-        const reason = unclaimed
-          ? `Unclaimed ${age}`
-          : rule?.waitingFor
-            ? `${age} awaiting ${rule.waitingFor}`
-            : `${age} in ${o.stage}`;
-        items.push({ order: o, reason, severity: tier === "hard" ? "high" : "med" });
-        continue;
-      }
-      // Has backorders pending
-      const bo = getBackorderStatus(o.sku_items);
-      if (bo.status === "pending") {
-        items.push({ order: o, reason: `${bo.count} backordered`, severity: "med" });
-        continue;
-      }
-    }
-
-    // Sort high severity first, then by oldest order date
-    items.sort((a, b) => {
-      if (a.severity !== b.severity) return a.severity === "high" ? -1 : 1;
-      const ta = parseOrderDate(a.order.date) ?? 0;
-      const tb = parseOrderDate(b.order.date) ?? 0;
-      return ta - tb;
-    });
-
-    return items.slice(0, 6);
-  }, [active]);
-
-  // Stage-specific sub-stat helpers
-  const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0,0,0,0);
-  const monthStartMs = monthStart.getTime();
-
-  const newFromShopify = byStage["New"].filter(o => o.source === "Shopify").length;
-  // "Entered today" — orders entered this month. We don't track a separate
-  // "entered_at" date, so we approximate by looking at orders whose date is
-  // recent enough. Falls back to 0 if dates can't be parsed.
-  const enteredThisMonth = byStage["Entered"].filter(o => {
-    const t = parseOrderDate(o.date);
-    return t !== null && t >= monthStartMs;
-  }).length;
-  const crossDockPending = byStage["At cross dock"].filter(o => !o.scheduled_delivery_date).length;
-  const deliveredThisMonth = orders.filter(o => {
-    if (o.stage !== "Delivered") return false;
-    const t = parseOrderDate(o.date);
-    return t !== null && t >= monthStartMs;
-  }).length;
-  // Average production age in days
-  const avgProductionDays = (() => {
-    const prod = byStage["In production"];
-    if (prod.length === 0) return null;
-    const totalDays = prod.reduce((sum, o) => {
-      const t = parseOrderDate(o.date);
-      if (t === null) return sum;
-      return sum + Math.floor((Date.now() - t) / (1000 * 60 * 60 * 24));
-    }, 0);
-    return Math.round(totalDays / prod.length);
-  })();
+  }, [orders, hardware, samples, customs, warranties]);
 
   return (
     <>
@@ -177,6 +274,12 @@ export function DashboardClient() {
               <Search className="w-3.5 h-3.5" />
               Search
             </button>
+            <Link
+              href="/warranty"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] uppercase tracking-wider border border-cream/18 bg-white/4 text-cream/85 hover:bg-white/8 transition-all"
+            >
+              Warranty claim
+            </Link>
             <button
               onClick={() => setShowNewForm(true)}
               className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[11px] uppercase tracking-wider bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30 transition-all"
@@ -190,82 +293,244 @@ export function DashboardClient() {
 
       <div className="px-6 lg:px-8 pb-12 flex flex-col gap-5">
 
-        {/* ── Stage stat cards ── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-          <StageCard
-            stage="New"
-            count={byStage["New"].length}
-            substat={`${newFromShopify} from Shopify`}
-            accent={STAGE_ACCENT["New"]}
-          />
-          <StageCard
-            stage="Entered"
-            count={byStage["Entered"].length}
-            substat={enteredThisMonth > 0 ? `${enteredThisMonth} this month` : "—"}
-            accent={STAGE_ACCENT["Entered"]}
-          />
-          <StageCard
-            stage="In production"
-            count={byStage["In production"].length}
-            substat={avgProductionDays !== null ? `Avg ${avgProductionDays} days` : "—"}
-            accent={STAGE_ACCENT["In production"]}
-          />
-          <StageCard
-            stage="At cross dock"
-            count={byStage["At cross dock"].length}
-            substat={crossDockPending > 0 ? `${crossDockPending} pending call` : "All scheduled"}
-            accent={STAGE_ACCENT["At cross dock"]}
-          />
-          <StageCard
-            stage="Delivered"
-            count={byStage["Delivered"].length}
-            substat={`${deliveredThisMonth} this month`}
-            accent={STAGE_ACCENT["Delivered"]}
-          />
+        {/* ── What requires somebody ──
+            Narrow segmented tiles rather than five large cards: more
+            information in less vertical space, and every one is a link. */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {tiles.map((t) => (
+            <Link
+              key={t.key}
+              href={t.href}
+              className="lift-card glass-sage rounded-panel px-4 py-3.5 flex items-center gap-3.5 group"
+            >
+              <span
+                className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
+                style={{ background: `${t.color}1f`, border: `0.5px solid ${t.color}55` }}
+              >
+                <t.Icon className="w-4 h-4" style={{ color: t.color }} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[11px] text-cream/55">{t.label}</span>
+                <span className="block font-display text-[30px] leading-none" style={{ color: t.color }}>
+                  {t.count}
+                </span>
+                <span className="block text-[10px] text-cream/35 mt-0.5 truncate">{t.sub}</span>
+              </span>
+              <ChevronRight className="w-4 h-4 text-cream/25 group-hover:text-cream/60 transition-colors flex-shrink-0" />
+            </Link>
+          ))}
         </div>
 
-        {/* ── SLA mini panel ── */}
-        <SLAMiniPanel categories={slaCategories} />
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
 
-        {/* ── Backorders — only shown when there's something to see ── */}
+          {/* ── Needs attention ── */}
+          <div className="glass-sage rounded-panel p-5">
+            <div className="flex items-baseline justify-between mb-3">
+              <h2 className="font-display text-[22px] text-cream">
+                Needs <em className="italic-storm">attention</em>
+              </h2>
+              <Link href="/work?scope=unclaimed" className="text-[11px] text-cream/45 hover:text-cream/80 transition-colors">
+                View all {entries.length} →
+              </Link>
+            </div>
+
+            {flagged.length === 0 ? (
+              <div className="py-8 text-center">
+                <CheckCircle2 className="w-5 h-5 mx-auto mb-2" style={{ color: "#8fbe70" }} />
+                <p className="text-[13px] text-cream/55">Nothing flagged.</p>
+              </div>
+            ) : (
+              <div className="flex flex-col">
+                <div className="grid grid-cols-[1.5fr_0.8fr_0.9fr_0.7fr] gap-3 pb-2 text-[9px] uppercase tracking-wider text-cream/35">
+                  <span>Issue</span>
+                  <span>Order</span>
+                  <span>Type</span>
+                  <span className="text-right">Owner</span>
+                </div>
+                {flagged.map((e) => {
+                  const unclaimed = e.reasons.find((r) => r.kind === "unclaimed");
+                  const lead = (!e.claimedBy && unclaimed)
+                    ? unclaimed
+                    : e.reasons.find((r) => r.severity === "high") ?? e.reasons[0];
+                  const owner = e.claimedBy ? team.find((m) => m.id === e.claimedBy) : undefined;
+                  return (
+                    <button
+                      key={e.key}
+                      onClick={() => setSelectedOrder(e.orders[0])}
+                      className="grid grid-cols-[1.5fr_0.8fr_0.9fr_0.7fr] gap-3 py-2.5 text-left transition-colors hover:bg-white/4"
+                      style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)" }}
+                    >
+                      <span className="flex items-start gap-2 min-w-0">
+                        <span
+                          className="w-1.5 h-1.5 rounded-full flex-shrink-0 mt-1.5"
+                          style={{ background: lead.severity === "high" ? "#e08585" : "#e8b56a" }}
+                        />
+                        <span className="min-w-0">
+                          <span className="block text-[12px] text-cream/85 truncate">{lead.label}</span>
+                          {lead.detail && (
+                            <span className="block text-[10px] text-cream/35 truncate">{lead.detail}</span>
+                          )}
+                        </span>
+                      </span>
+                      <span className="self-center text-[11px] font-mono text-cream/60 truncate">{e.label}</span>
+                      <span className="self-center flex items-center gap-1.5 flex-wrap min-w-0">
+                        {e.orders.slice(0, 2).map((o) => (
+                          <span key={o.id} className="text-[9px] px-1.5 py-0.5 rounded-full whitespace-nowrap"
+                            style={{ background: "rgba(255,255,255,0.05)", color: "rgba(232,227,218,0.55)" }}>
+                            {TYPE_LABEL[o.type] ?? o.type}
+                          </span>
+                        ))}
+                        {e.orders.length > 2 && (
+                          <span className="text-[9px] text-cream/25">+{e.orders.length - 2}</span>
+                        )}
+                      </span>
+                      <span className="self-center flex items-center justify-end gap-1.5 min-w-0">
+                        {owner
+                          ? <>
+                              <AvatarWithProfile member={owner} size="sm" />
+                              <span className="text-[10px] text-cream/45 truncate hidden lg:inline">
+                                {owner.name.split(" ")[0]}
+                              </span>
+                            </>
+                          : <span className="text-[10px] text-cream/25 italic">unclaimed</span>}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* ── Pipeline snapshot ── */}
+          <div className="glass-sage rounded-panel p-5">
+            <h2 className="font-display text-[22px] text-cream mb-3">
+              Pipeline <em className="italic-storm">snapshot</em>
+            </h2>
+            <div className="flex flex-col gap-2">
+              {pipelines.map((p) => (
+                <div key={p.type} className="flex items-center gap-2">
+                  <span className="text-[11px] text-cream/60 w-[70px] flex-shrink-0">{p.label}</span>
+                  <span className="flex-1 flex items-stretch gap-1 min-w-0">
+                    {p.segments.map((s, i) => {
+                      const accent = STAGE_ACCENT[s.stage] ?? "#8a8a8a";
+                      const terminal = i === p.segments.length - 1;
+                      return (
+                        <span
+                          key={s.stage}
+                          className="flex-1 rounded-brand px-2 py-1.5 flex items-center justify-between gap-1 min-w-0"
+                          style={{
+                            background: terminal ? "rgba(143,190,112,0.12)" : "rgba(255,255,255,0.04)",
+                            border: `0.5px solid ${terminal ? "rgba(143,190,112,0.35)" : "rgba(255,255,255,0.10)"}`,
+                          }}
+                          title={`${s.count} at ${s.stage}`}
+                        >
+                          <span className="text-[9px] uppercase tracking-wider truncate"
+                            style={{ color: terminal ? "#a0cc7a" : "rgba(232,227,218,0.5)" }}>
+                            {s.stage}
+                          </span>
+                          <span className="text-[11px] tabular-nums flex-shrink-0"
+                            style={{ color: s.count > 0 ? accent : "rgba(232,227,218,0.25)" }}>
+                            {s.count}
+                          </span>
+                        </span>
+                      );
+                    })}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+          {/* ── SLA / data health ── */}
+          <div className="glass-sage rounded-panel p-5">
+            <h2 className="font-display text-[22px] text-cream mb-3">
+              SLA / <em className="italic-storm">data health</em>
+            </h2>
+            <div className="grid grid-cols-[1.2fr_repeat(4,0.7fr)] gap-2 pb-2 text-[9px] uppercase tracking-wider text-cream/35">
+              <span>Order type</span>
+              <span className="text-right">Active</span>
+              <span className="text-right">Healthy</span>
+              <span className="text-right">Due soon</span>
+              <span className="text-right">Breached</span>
+            </div>
+            {health.map((h) => (
+              <div key={h.type}
+                className="grid grid-cols-[1.2fr_repeat(4,0.7fr)] gap-2 py-2 text-[12px]"
+                style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)" }}>
+                <span className="text-cream/70">{h.label}</span>
+                <span className="text-right tabular-nums text-cream/60">{h.active}</span>
+                <span className="text-right tabular-nums" style={{ color: h.healthy > 0 ? "#a0cc7a" : "rgba(232,227,218,0.25)" }}>{h.healthy}</span>
+                <span className="text-right tabular-nums" style={{ color: h.due > 0 ? "#e8b56a" : "rgba(232,227,218,0.25)" }}>{h.due}</span>
+                <span className="text-right tabular-nums" style={{ color: h.breached > 0 ? "#e08585" : "rgba(232,227,218,0.25)" }}>{h.breached}</span>
+              </div>
+            ))}
+            <Link href="/sla" className="block mt-3 text-[11px] text-cream/45 hover:text-cream/80 transition-colors">
+              Open the SLA page →
+            </Link>
+          </div>
+
+          {/* ── System health ──
+              ⚠ NOT WIRED UP. It reads healthchecks.io, and no API key exists in
+              .env.kamal yet. Shown as "not configured" rather than absent or
+              faked: a panel showing a green tick it did not check is worse than
+              no panel, and this is the one place that has to stay trustworthy. */}
+          <div className="glass-sage rounded-panel p-5">
+            <h2 className="font-display text-[22px] text-cream mb-3">
+              System <em className="italic-storm">health</em>
+            </h2>
+            <div className="flex flex-col">
+              {[
+                { label: "Shopify ingest", detail: "Orders, products, and webhooks" },
+                { label: "Reconciliation", detail: "Hourly order and payment check" },
+              ].map((row) => (
+                <div key={row.label}
+                  className="flex items-center justify-between gap-3 py-2.5"
+                  style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)" }}>
+                  <span className="min-w-0">
+                    <span className="block text-[12px] text-cream/75">{row.label}</span>
+                    <span className="block text-[10px] text-cream/35 truncate">{row.detail}</span>
+                  </span>
+                  <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full whitespace-nowrap flex-shrink-0"
+                    style={{ background: "rgba(255,255,255,0.05)", color: "rgba(232,227,218,0.4)", border: "0.5px solid rgba(255,255,255,0.12)" }}>
+                    Not configured
+                  </span>
+                </div>
+              ))}
+            </div>
+            <p className="text-[10px] text-cream/30 mt-3 leading-relaxed">
+              Reads healthchecks.io once an API key is set. Until then this panel
+              says so rather than showing a status nobody checked — the crons
+              still email on failure.
+            </p>
+          </div>
+        </div>
+
+        {/* Backorders — only when there is something to see. Not in the
+            redesign mockup, kept because it surfaces a supply problem nothing
+            else does. */}
         {backorderSummary.distinctSkus > 0 && (
           <BackorderPanel summary={backorderSummary} />
         )}
-
-        {/* ── Needs Attention ── */}
-        <NeedsAttention
-          items={needsAttention}
-          onSelect={setSelectedOrder}
-        />
-
       </div>
 
       {selectedOrder && (
         <OrderModal
           order={selectedOrder}
           onClose={() => setSelectedOrder(null)}
-          onStageChange={(stage) => setSelectedOrder(prev => prev ? { ...prev, stage } : null)}
+          onStageChange={(stage) => setSelectedOrder((prev) => (prev ? { ...prev, stage } : null))}
         />
       )}
-      {/* CUSTOM, not "order". A cabinet order is a group of a Shopify
-          project and cannot be made by hand; the only order anyone creates
-          here is a custom job.
-
-          The comment sits ABOVE the expression, not inside it: a
-          `{cond && (...)}` block takes ONE child, and a comment plus a
-          component is two. Valid inside a fragment, not inside &&. */}
       {showNewForm && (
         <NewOrderModal type="custom" onClose={() => setShowNewForm(false)} />
       )}
       {searchOpen && (
         <SearchOverlay
-          orders={orders}
+          orders={allOrders}
           query={searchQuery}
           onQueryChange={setSearchQuery}
-          onSelectOrder={(o) => {
-            setSelectedOrder(o);
-            setSearchOpen(false);
-          }}
+          onSelectOrder={(o) => { setSelectedOrder(o); setSearchOpen(false); }}
           onClose={() => { setSearchOpen(false); setSearchQuery(""); }}
         />
       )}
@@ -378,70 +643,6 @@ function SearchOverlay({
   );
 }
 
-/* ─── Stage stat card ──────────────────────────────────────────────── */
-
-function StageCard({
-  stage, count, substat, accent,
-}: {
-  stage: OrderStage; count: number; substat: string; accent: string;
-}) {
-  return (
-    <Link
-      href={`/orders/${stageToSlug(stage)}`}
-      className="lift-card glass rounded-brand p-4 flex flex-col gap-2 cursor-pointer"
-      style={{ borderTop: `2px solid ${accent}` }}
-    >
-      <div className="eyebrow text-cream/55">{stage}</div>
-      <div
-        className="font-display text-[44px] leading-none"
-        style={{ color: accent }}
-      >
-        {count}
-      </div>
-      <div className="text-[11px] text-cream/55">{substat}</div>
-    </Link>
-  );
-}
-
-/* ─── SLA mini panel ──────────────────────────────────────────────── */
-
-// SLA thresholds and the definition of "overdue" live in lib/sla.ts. This
-// file used to carry a private copy of SLA_TARGETS with identical values --
-// which was luck, not design, since nothing kept them in step.
-
-/**
- * SLA at a glance.
- *
- * The table itself is components/SlaHealthByType -- the SAME component /sla
- * renders. No onSelectType here, so the rows are read-only; the markup does
- * not fork between the two pages.
- *
- * The private SlaCategory interface this used to carry is gone; the shared
- * SlaTypeRow is the one shape.
- */
-function SLAMiniPanel({ categories }: { categories: SlaTypeRow[] }) {
-  return (
-    <div className="glass-sage rounded-panel p-5 lg:p-6">
-      <div className="mb-4">
-        <div className="eyebrow mb-1">Service levels</div>
-        <h2 className="font-display text-[22px] text-cream">
-          SLA at <em className="italic-storm">a glance</em>
-        </h2>
-      </div>
-      <p className="text-[12px] text-cream/55 -mt-2 mb-4">
-        Active orders by SLA status — the same table as the SLA page.
-      </p>
-      <SlaHealthByType rows={categories} />
-      <Link
-        href="/sla"
-        className="block w-full mt-3 py-2 text-center text-[11px] text-cream/55 hover:text-cream/85 transition-colors"
-      >
-        Open the SLA page →
-      </Link>
-    </div>
-  );
-}
-
 /* ─── Backorders ────────────────────────────────────────────────────── */
 
 /**
@@ -540,62 +741,5 @@ function BackorderPanel({
         </div>
       )}
     </Link>
-  );
-}
-
-/* ─── Needs Attention ──────────────────────────────────────────────── */
-
-function NeedsAttention({
-  items, onSelect,
-}: {
-  items: { order: Order; reason: string; severity: "high" | "med" }[];
-  onSelect: (o: Order) => void;
-}) {
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-baseline justify-between px-1">
-        <h2 className="font-display text-[22px] text-cream">
-          Needs <em className="italic-storm">attention</em>
-        </h2>
-        {items.length > 0 && (
-          <span className="text-[11px] text-cream/55">{items.length} flagged</span>
-        )}
-      </div>
-      {items.length === 0 ? (
-        <div className="glass rounded-brand p-6 text-center">
-          <div className="font-display text-[20px] text-cream/70 mb-1">All clear</div>
-          <div className="text-[12px] text-cream/45">No orders flagged right now.</div>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {items.map(({ order, reason, severity }) => (
-            <button
-              key={order.id}
-              onClick={() => onSelect(order)}
-              className="lift-card glass rounded-brand p-3 text-left flex flex-col gap-1.5"
-              style={{
-                borderLeft: `2px solid ${severity === "high" ? "#e89090" : "#d4922a"}`,
-              }}
-            >
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-[10px] text-cream/55">{displayOrderNumber(order)}</span>
-                <span
-                  className="text-[9px] px-1.5 py-px rounded-full font-medium uppercase tracking-wider"
-                  style={{
-                    background: severity === "high" ? "rgba(232,144,144,0.15)" : "rgba(212,146,42,0.15)",
-                    color: severity === "high" ? "#e89090" : "#e8b56a",
-                    border: `0.5px solid ${severity === "high" ? "rgba(232,144,144,0.45)" : "rgba(212,146,42,0.45)"}`,
-                  }}
-                >
-                  {reason}
-                </span>
-              </div>
-              <div className="text-[13px] font-medium text-cream truncate">{order.name}</div>
-              <div className="text-[10px] text-cream/55">{order.stage} · {order.date}</div>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
   );
 }
