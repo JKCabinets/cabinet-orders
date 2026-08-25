@@ -3,43 +3,46 @@
 import { useState, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { useStore } from "@/lib/store";
+import { Order, Project, STAGE_ACCENT, displayOrderNumber } from "@/lib/data";
 import {
-  Order, STAGE_ACCENT, displayOrderNumber, AVATAR_COLOR_STYLES,
-} from "@/lib/data";
-import { attentionFor, type AttentionKind, type AttentionReason } from "@/lib/attention";
+  attentionFor, attentionForProject,
+  type AttentionKind, type AttentionReason,
+} from "@/lib/attention";
 import { AppShell, PageHeader } from "@/components/AppShell";
 import { OrderModal } from "@/components/OrderModal";
 import { AvatarWithProfile } from "@/components/AvatarWithProfile";
+import { useToast } from "@/components/Toast";
+import { ChevronRight, ChevronDown, Loader2 } from "lucide-react";
 import clsx from "clsx";
 
 /**
- * The work queue — what needs someone, ordered by why.
+ * The work queue — what needs someone, grouped by what you'd claim.
  *
- * ⚠ THE HIERARCHY IS DELIBERATE AND IT IS REVERSED FROM THE OLD CARDS.
+ * ⚠ ROWS ARE PURCHASES, NOT ORDERS.
  *
- *     why I care → what order → where it is → who owns it → next action
+ * The claim moved up to the project on 2026-08-25: one owner per purchase, so
+ * a designer who has finished the cabinets is not blocked from closing it while
+ * somebody else sits on the hardware. The queue follows the claim — a row here
+ * is a thing you can take, and taking it takes all of it.
  *
- * The stage pages lead with the customer name, which is right when you are
- * looking up a specific order and wrong when you are working a queue. Here the
- * ISSUE leads: "Delivery date required" is the reason the row is in front of
- * you, and the order number is how you find it afterwards.
+ * Custom jobs and warranty claims have no project. They appear as single rows
+ * alongside, which is the same split the sidebar makes: Shopify above, offline
+ * and service below.
+ *
+ * ⚠ THE HIERARCHY IS DELIBERATE: why I care → what → where → who.
+ * The stage pages lead with the customer, which is right when you are looking
+ * up an order and wrong when you are working a queue.
  *
  * Every reason comes from `lib/attention.ts`. This page holds no predicates of
- * its own -- the dashboard counts and these rows must agree, and two filters
- * that happen to agree today are the drift this codebase keeps producing.
- *
- * GROUPS, NOT ORDERS. A cabinet group and a sample group of one checkout are
- * claimed and worked separately, so they queue separately. SHO-1050-CAB
- * needing an acknowledgment says nothing about SHO-1050-SMP.
+ * its own, so its rows and the dashboard's counts cannot disagree.
  */
 
-/** Human label per row type, matching the modal and the projects page. */
 const GROUP_LABEL: Record<string, string> = {
   order: "Cabinets",
   hardware: "Hardware",
   sample: "Samples",
   custom: "Custom job",
-  warranty: "Warranty",
+  warranty: "Warranty claim",
 };
 
 const GROUP_DOT: Record<string, string> = {
@@ -50,16 +53,13 @@ const GROUP_DOT: Record<string, string> = {
   warranty: "#8fbe70",
 };
 
-type Scope = "mine" | "unclaimed" | "team" | "all";
+type Scope = "mine" | "unclaimed";
 
 const SCOPES: { key: Scope; label: string }[] = [
   { key: "mine", label: "My work" },
   { key: "unclaimed", label: "Unclaimed" },
-  { key: "team", label: "Team" },
-  { key: "all", label: "All" },
 ];
 
-/** Which reasons a filter chip offers. `null` means every reason. */
 const REASON_FILTERS: { key: AttentionKind | null; label: string }[] = [
   { key: null, label: "Everything" },
   { key: "sla_breached", label: "Past SLA" },
@@ -69,63 +69,155 @@ const REASON_FILTERS: { key: AttentionKind | null; label: string }[] = [
   { key: "payment_hold", label: "Payment hold" },
 ];
 
+/** A queue entry: a purchase with its orders, or a standalone row. */
+interface Entry {
+  key: string;
+  /** Present for a Shopify purchase; absent for custom and warranty. */
+  project?: Project;
+  /** The orders beneath a project, or the single standalone row. */
+  orders: Order[];
+  reasons: AttentionReason[];
+  claimedBy: string | null;
+  /** What the row is called: the project number, or the order number. */
+  label: string;
+  customer: string;
+}
+
 export function WorkClient({ initialScope = "mine" }: { initialScope?: Scope }) {
-  const { allOrders, team } = useStore();
+  const { allOrders, projects, team, claimProject, claimOrder } = useStore();
   const { data: session } = useSession();
+  const { showToast } = useToast();
   const currentUserId = (session?.user as { id?: string } | undefined)?.id ?? null;
 
   const [scope, setScope] = useState<Scope>(initialScope);
   const [reason, setReason] = useState<AttentionKind | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [busyKey, setBusyKey] = useState<string | null>(null);
   const [selected, setSelected] = useState<Order | null>(null);
 
-  const rows = useMemo(() => {
-    const out: { order: Order; reasons: AttentionReason[] }[] = [];
+  /** Every entry that wants somebody, before scope and reason filtering. */
+  const allEntries = useMemo(() => {
+    const out: Entry[] = [];
+
+    const byProject = new Map<string, Order[]>();
+    const standalone: Order[] = [];
     for (const o of allOrders) {
       if (o.archived) continue;
+      if (o.project_id) {
+        const list = byProject.get(o.project_id) ?? [];
+        list.push(o);
+        byProject.set(o.project_id, list);
+      } else {
+        standalone.push(o);
+      }
+    }
 
-      // Scope first -- cheaper than deriving reasons for rows we will drop.
-      if (scope === "mine" && o.claimed_by !== currentUserId) continue;
-      if (scope === "unclaimed" && o.claimed_by) continue;
-      if (scope === "team" && (!o.claimed_by || o.claimed_by === currentUserId)) continue;
+    for (const [projectId, orders] of byProject) {
+      const project = projects[projectId];
+      if (!project || project.archived) continue;
+      const reasons = attentionForProject(project, orders);
+      if (reasons.length === 0) continue;
+      const rank: Record<string, number> = { order: 0, hardware: 1, sample: 2 };
+      orders.sort((a, b) => (rank[a.type] ?? 9) - (rank[b.type] ?? 9));
+      out.push({
+        key: projectId,
+        project,
+        orders,
+        reasons,
+        claimedBy: project.claimed_by ?? null,
+        label: projectId,
+        customer: project.name ?? "—",
+      });
+    }
 
+    for (const o of standalone) {
       const reasons = attentionFor(o);
       if (reasons.length === 0) continue;
-      if (reason && !reasons.some((r) => r.kind === reason)) continue;
-      out.push({ order: o, reasons });
+      out.push({
+        key: o.id,
+        orders: [o],
+        reasons,
+        claimedBy: o.claimed_by ?? null,
+        label: displayOrderNumber(o),
+        customer: o.name,
+      });
     }
-    // High severity first, then oldest. A breach outranks a warning, and among
-    // equals the one that has waited longest goes on top.
-    return out.sort((a, b) => {
-      const sev = (x: typeof a) => (x.reasons.some((r) => r.severity === "high") ? 0 : 1);
-      if (sev(a) !== sev(b)) return sev(a) - sev(b);
-      return String(a.order.stage_entered_at ?? "").localeCompare(
-        String(b.order.stage_entered_at ?? ""));
-    });
-  }, [allOrders, scope, reason, currentUserId]);
 
-  // Counts per scope, so the tabs say how much is behind them without a click.
+    return out;
+  }, [allOrders, projects]);
+
+  const rows = useMemo(() => {
+    return allEntries
+      .filter((e) => {
+        if (scope === "mine" && e.claimedBy !== currentUserId) return false;
+        if (scope === "unclaimed" && e.claimedBy) return false;
+        if (reason && !e.reasons.some((r) => r.kind === reason)) return false;
+        return true;
+      })
+      .sort((a, b) => {
+        const sev = (e: Entry) => (e.reasons.some((r) => r.severity === "high") ? 0 : 1);
+        if (sev(a) !== sev(b)) return sev(a) - sev(b);
+        return b.reasons.length - a.reasons.length;
+      });
+  }, [allEntries, scope, reason, currentUserId]);
+
   const scopeCounts = useMemo(() => {
-    const c: Record<Scope, number> = { mine: 0, unclaimed: 0, team: 0, all: 0 };
-    for (const o of allOrders) {
-      if (o.archived || attentionFor(o).length === 0) continue;
-      c.all++;
-      if (o.claimed_by === currentUserId && currentUserId) c.mine++;
-      else if (!o.claimed_by) c.unclaimed++;
-      else c.team++;
+    const c: Record<Scope, number> = { mine: 0, unclaimed: 0 };
+    for (const e of allEntries) {
+      if (e.claimedBy === currentUserId && currentUserId) c.mine++;
+      else if (!e.claimedBy) c.unclaimed++;
     }
     return c;
-  }, [allOrders, currentUserId]);
+  }, [allEntries, currentUserId]);
+
+  function toggle(key: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
+  /**
+   * Claim or release an entry.
+   *
+   * A purchase goes through claimProject; a standalone row through claimOrder.
+   * Two mechanisms because there are genuinely two things -- but the button is
+   * one, so nobody has to know which they are looking at.
+   */
+  async function toggleClaim(e: Entry) {
+    if (!currentUserId) return;
+    setBusyKey(e.key);
+    const wantsClaim = !e.claimedBy;
+    try {
+      if (e.project) {
+        const res = await claimProject(e.project.id, wantsClaim);
+        if (!res.ok) {
+          const holder = res.claimedBy ? team.find((m) => m.id === res.claimedBy) : undefined;
+          showToast(
+            res.reason === "already_claimed"
+              ? `Already claimed by ${holder?.name ?? "someone else"}`
+              : res.reason === "not_owner"
+                ? "You can't release someone else's claim"
+                : "Could not update the claim",
+            { kind: "warn" },
+          );
+        }
+      } else {
+        await claimOrder(e.orders[0].id, wantsClaim ? currentUserId : null);
+      }
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  const GRID = "grid grid-cols-[24px_1.5fr_0.9fr_1fr_1.3fr_0.8fr] gap-3";
 
   return (
     <AppShell>
-      <PageHeader
-        eyebrow="Needs someone"
-        title="Work"
-        accent="queue"
-      />
+      <PageHeader eyebrow="Needs someone" title="Work" accent="queue" />
 
       <div className="px-6 lg:px-8 pb-12">
-        {/* Scope */}
         <div className="flex items-center gap-1 mb-3 flex-wrap">
           {SCOPES.map((s) => (
             <button
@@ -144,7 +236,6 @@ export function WorkClient({ initialScope = "mine" }: { initialScope?: Scope }) 
           ))}
         </div>
 
-        {/* Reason */}
         <div className="flex items-center gap-1 mb-4 flex-wrap">
           {REASON_FILTERS.map((f) => (
             <button
@@ -173,112 +264,154 @@ export function WorkClient({ initialScope = "mine" }: { initialScope?: Scope }) 
             <p className="text-[11px] text-cream/30 mt-1">
               {scope === "mine"
                 ? "Work you have claimed is all on track."
-                : "No orders match this filter."}
+                : "Everything unclaimed is on track."}
             </p>
           </div>
         ) : (
-          <div
-            className="rounded-panel overflow-hidden"
-            style={{ border: "0.5px solid rgba(255,255,255,0.12)" }}
-          >
-            {/* Column order IS the hierarchy: why → what → where → who → next. */}
+          <div className="rounded-panel overflow-hidden" style={{ border: "0.5px solid rgba(255,255,255,0.12)" }}>
             <div
-              className="grid grid-cols-[1.6fr_0.9fr_0.7fr_0.8fr_0.7fr] gap-3 px-4 py-2.5 text-[9px] uppercase tracking-wider text-cream/40"
+              className={`${GRID} px-4 py-2.5 text-[9px] uppercase tracking-wider text-cream/40`}
               style={{ background: "rgba(255,255,255,0.03)" }}
             >
+              <span />
               <span>Issue</span>
               <span>Order</span>
-              <span>Type</span>
-              <span>Stage</span>
-              <span>Owner</span>
+              <span>Customer</span>
+              <span>Orders in it</span>
+              <span className="text-right">Owner</span>
             </div>
 
-            {rows.map(({ order, reasons }) => {
-              // An UNCLAIMED row leads with that, whatever else is wrong.
-              //
-              // "Past SLA · 5d in stage" on a row nobody owns tells you it is
-              // late; "Unclaimed · 5d" tells you why it is late and what to do.
-              // Severity alone put the breach first, which is true and less
-              // useful -- the breach is a consequence of the thing below it.
-              const unclaimedReason = reasons.find((r) => r.kind === "unclaimed");
-              const lead = (!order.claimed_by && unclaimedReason)
-                ? unclaimedReason
-                : reasons.find((r) => r.severity === "high") ?? reasons[0];
-              const owner = order.claimed_by
-                ? team.find((m) => m.id === order.claimed_by)
-                : undefined;
-              const accent = STAGE_ACCENT[order.stage] ?? "#8a8a8a";
+            {rows.map((e) => {
+              const open = expanded.has(e.key);
+              const unclaimed = e.reasons.find((r) => r.kind === "unclaimed");
+              // An unowned entry leads with that: the breach beneath it is a
+              // CONSEQUENCE of nobody having picked it up, and "Unclaimed 5d"
+              // says what to do where "Past SLA" only says it is late.
+              const lead = (!e.claimedBy && unclaimed)
+                ? unclaimed
+                : e.reasons.find((r) => r.severity === "high") ?? e.reasons[0];
+              const owner = e.claimedBy ? team.find((m) => m.id === e.claimedBy) : undefined;
+              const mine = !!currentUserId && e.claimedBy === currentUserId;
+
               return (
-                <button
-                  key={order.id}
-                  onClick={() => setSelected(order)}
-                  className="w-full grid grid-cols-[1.6fr_0.9fr_0.7fr_0.8fr_0.7fr] gap-3 px-4 py-3 text-left transition-colors hover:bg-white/4"
-                  style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)" }}
-                >
-                  <span className="flex items-center gap-2 min-w-0">
-                    <span
-                      className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                      style={{ background: lead.severity === "high" ? "#e08585" : "#e8b56a" }}
-                    />
-                    <span className="min-w-0">
-                      <span className="block text-[12px] text-cream/90 truncate">{lead.label}</span>
-                      {lead.detail && (
-                        <span className="block text-[10px] text-cream/40 truncate">{lead.detail}</span>
-                      )}
-                      {/* A row can want you for several reasons at once. The
-                          lead is the most urgent; the rest are worth knowing
-                          before you open it. */}
-                      {reasons.length > 1 && (
-                        <span className="block text-[9px] text-cream/30 truncate">
-                          +{reasons.length - 1} more
-                        </span>
-                      )}
-                    </span>
-                  </span>
-
-                  <span className="text-[11px] font-mono text-cream/65 truncate self-center">
-                    {displayOrderNumber(order)}
-                  </span>
-
-                  {/* The TYPE, not the customer. This column was labelled Type
-                      and populated with order.name -- so the queue showed the
-                      customer under the wrong heading and the type nowhere,
-                      which is the exact hierarchy inversion this page exists to
-                      fix. The customer is one click away in the modal; which
-                      pipeline a row belongs to is what decides whether you can
-                      act on it. */}
-                  <span className="self-center flex items-center gap-1.5 min-w-0">
-                    <span className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                      style={{ background: GROUP_DOT[order.type] ?? "#8a8a8a" }} />
-                    <span className="text-[11px] text-cream/60 truncate">
-                      {GROUP_LABEL[order.type] ?? order.type}
-                    </span>
-                  </span>
-
-                  <span className="self-center">
-                    <span
-                      className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full whitespace-nowrap"
-                      style={{
-                        background: "rgba(255,255,255,0.05)",
-                        color: accent,
-                        border: `0.5px solid ${accent}55`,
-                      }}
+                <div key={e.key} style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)" }}>
+                  <div className={`${GRID} px-4 py-3 transition-colors hover:bg-white/4`}>
+                    <button
+                      onClick={() => toggle(e.key)}
+                      className="self-center text-cream/40 hover:text-cream/70 transition-colors"
+                      aria-label={open ? "Collapse" : "Expand"}
                     >
-                      {order.stage}
-                    </span>
-                  </span>
+                      {open ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                    </button>
 
-                  <span className="self-center flex items-center gap-1.5 min-w-0">
-                    {owner ? (
-                      <>
-                        <AvatarWithProfile member={owner} size="sm" />
-                        <span className="text-[10px] text-cream/50 truncate">{owner.name}</span>
-                      </>
-                    ) : (
-                      <span className="text-[10px] text-cream/30 italic">unclaimed</span>
-                    )}
-                  </span>
-                </button>
+                    <button onClick={() => toggle(e.key)} className="text-left flex items-start gap-2 min-w-0">
+                      <span
+                        className="w-1.5 h-1.5 rounded-full flex-shrink-0 mt-1.5"
+                        style={{ background: lead.severity === "high" ? "#e08585" : "#e8b56a" }}
+                      />
+                      <span className="min-w-0">
+                        <span className="block text-[12px] text-cream/90 truncate">{lead.label}</span>
+                        {lead.detail && (
+                          <span className="block text-[10px] text-cream/40 truncate">{lead.detail}</span>
+                        )}
+                        {e.reasons.length > 1 && (
+                          <span className="block text-[9px] text-cream/30">
+                            +{e.reasons.length - 1} more
+                          </span>
+                        )}
+                      </span>
+                    </button>
+
+                    <button onClick={() => toggle(e.key)} className="text-left self-center min-w-0">
+                      <span className="text-[11px] font-mono text-cream/70 truncate">{e.label}</span>
+                    </button>
+
+                    <button onClick={() => toggle(e.key)} className="text-left self-center min-w-0">
+                      <span className="text-[11px] text-cream/60 truncate">{e.customer}</span>
+                    </button>
+
+                    <button onClick={() => toggle(e.key)} className="text-left self-center flex items-center gap-1.5 flex-wrap min-w-0">
+                      {e.orders.map((o) => {
+                        const accent = STAGE_ACCENT[o.stage] ?? "#8a8a8a";
+                        return (
+                          <span
+                            key={o.id}
+                            className="text-[9px] px-1.5 py-0.5 rounded-full whitespace-nowrap"
+                            style={{ background: "rgba(255,255,255,0.05)", border: `0.5px solid ${accent}44` }}
+                          >
+                            <span className="text-cream/60">{GROUP_LABEL[o.type] ?? o.type}</span>
+                            <span className="mx-1 opacity-30">·</span>
+                            <span style={{ color: accent }}>{o.stage}</span>
+                          </span>
+                        );
+                      })}
+                    </button>
+
+                    {/* Claim is the point of the row: one owner takes the whole
+                        purchase. Not inside the expand button -- a button
+                        inside a button is invalid HTML. */}
+                    <span className="self-center flex items-center justify-end gap-1.5 min-w-0">
+                      {owner && (
+                        <>
+                          <AvatarWithProfile member={owner} size="sm" />
+                          <span className="text-[10px] text-cream/45 truncate hidden lg:inline">
+                            {owner.name.split(" ")[0]}
+                          </span>
+                        </>
+                      )}
+                      {(!e.claimedBy || mine) && (
+                        <button
+                          onClick={() => void toggleClaim(e)}
+                          disabled={busyKey === e.key}
+                          className="px-2 py-1 rounded-full text-[9px] uppercase tracking-wider font-medium transition-all disabled:opacity-40 flex-shrink-0"
+                          style={
+                            mine
+                              ? { background: "rgba(255,255,255,0.06)", border: "0.5px solid rgba(255,255,255,0.18)", color: "rgba(232,227,218,0.65)" }
+                              : { background: "rgba(184,130,106,0.20)", border: "0.5px solid rgba(184,130,106,0.55)", color: "#d9a888" }
+                          }
+                        >
+                          {busyKey === e.key
+                            ? <Loader2 className="w-3 h-3 animate-spin" />
+                            : mine ? "Release" : "Claim"}
+                        </button>
+                      )}
+                    </span>
+                  </div>
+
+                  {open && (
+                    <div className="px-4 pb-3 pl-11 flex flex-col gap-1.5">
+                      {e.orders.map((o) => {
+                        const accent = STAGE_ACCENT[o.stage] ?? "#8a8a8a";
+                        const own = attentionFor(o);
+                        return (
+                          <button
+                            key={o.id}
+                            onClick={() => setSelected(o)}
+                            className="flex items-center gap-3 rounded-brand px-3 py-2 text-left transition-colors hover:bg-white/4"
+                            style={{ border: "0.5px solid rgba(255,255,255,0.10)" }}
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                              style={{ background: GROUP_DOT[o.type] ?? "#8a8a8a" }} />
+                            <span className="text-[11px] text-cream/70 w-[76px] flex-shrink-0">
+                              {GROUP_LABEL[o.type] ?? o.type}
+                            </span>
+                            <span className="text-[10px] font-mono text-cream/40 w-[120px] flex-shrink-0 truncate">
+                              {o.id}
+                            </span>
+                            <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full flex-shrink-0"
+                              style={{ background: `${accent}1f`, border: `0.5px solid ${accent}55`, color: accent }}>
+                              {o.stage}
+                            </span>
+                            <span className="text-[10px] truncate min-w-0"
+                              style={{ color: own.length > 0 ? "#e8b56a" : "rgba(232,227,218,0.30)" }}>
+                              {own.length > 0 ? own[0].label : "Nothing outstanding"}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               );
             })}
           </div>
@@ -289,11 +422,6 @@ export function WorkClient({ initialScope = "mine" }: { initialScope?: Scope }) 
         <OrderModal
           order={selected}
           onClose={() => setSelected(null)}
-          /* Close on a stage change. The row was in this queue for a reason,
-             and moving it forward usually resolves that reason -- leaving the
-             modal open over a queue the row has just left is confusing. The
-             store updates through Realtime either way, so the list behind is
-             already correct. */
           onStageChange={() => setSelected(null)}
         />
       )}

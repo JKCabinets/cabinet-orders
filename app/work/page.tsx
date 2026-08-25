@@ -1,13 +1,17 @@
 import { WorkClient } from "./WorkClient";
 
 /**
- * /work — the queue of everything that needs a person.
+ * /work — the queue of purchases that need somebody.
  *
- * Opens on MY WORK. The scope tabs (My work · Unclaimed · Team · All) are
- * client state rather than routes, so switching between them does not reload
- * the store or lose your reason filter.
+ * Opens on MY WORK. The two scopes (My work · Unclaimed) are client state
+ * rather than routes, so switching does not reload the store or lose the reason
+ * filter.
  *
- * Dashboard cards link here with `?scope=` to land on the right tab.
+ * ⚠ ONLY TWO SCOPES. "Team" and "All" were removed on 2026-08-25 -- Team
+ * answered a question this page is not for (who else is busy), and All
+ * duplicated the Projects page, which shows the same rows with more context.
+ * Anything still linking to ?scope=team or ?scope=all lands on My work rather
+ * than 404ing: an old bookmark should degrade, not break.
  */
 export default async function WorkPage({
   searchParams,
@@ -15,7 +19,6 @@ export default async function WorkPage({
   searchParams: Promise<{ scope?: string }>;
 }) {
   const { scope } = await searchParams;
-  const initial =
-    scope === "unclaimed" || scope === "team" || scope === "all" ? scope : "mine";
+  const initial = scope === "unclaimed" ? "unclaimed" : "mine";
   return <WorkClient initialScope={initial} />;
 }
