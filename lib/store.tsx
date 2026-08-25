@@ -270,19 +270,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const today = () => new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
   const addOrder = useCallback(async (partial: Partial<Order> & { type: OrderType }) => {
-    const res = await apiCall("/api/orders", "POST", {
-      type: partial.type, name: partial.name, detail: partial.detail,
-      sku: partial.sku, source: partial.source, member: partial.member, notes: partial.notes,
-      internal_notes: partial.internal_notes,
-      door_style: partial.door_style, color: partial.color, sku_items: partial.sku_items,
-      vendor: partial.vendor, ship_to: partial.ship_to,
-      customer_phone: partial.customer_phone, customer_email: partial.customer_email,
-      delivery_method: partial.delivery_method,
-      // ⚠ THIS PAYLOAD IS AN EXPLICIT WHITELIST, not a spread. A field
-      // missing from it is dropped silently -- no error, the value simply
-      // never reaches the server. total_price was exactly that until now.
-      total_price: partial.total_price,
-    });
+    // ⚠ SPREAD, NOT A WHITELIST -- and that is the fix, not laziness.
+    //
+    // This used to list every field by hand, so a field not named was
+    // dropped SILENTLY: no error, the value simply never left the browser.
+    // total_price was exactly that for a day, and tsc cannot catch it --
+    // the object is built by hand, so a missing key is not a type error.
+    //
+    // Safe because POST /api/orders builds its own explicit `newOrder`
+    // object from the body: keys it does not recognise are ignored, never
+    // written. The whitelist protected nothing and cost a field.
+    const res = await apiCall("/api/orders", "POST", { ...partial });
     if (res?.data) {
       const newItem = shapeOrder(res.data);
       setAllOrders(prev => [newItem, ...prev]);

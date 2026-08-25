@@ -704,6 +704,44 @@ export interface Project {
   updated_at?: string | null;
 }
 
+/**
+ * Is `stage` one this type's UI actually OFFERS?
+ *
+ * ⚠ THIS IS A DIFFERENT QUESTION FROM `isStageAllowedForType`, and the two have
+ * looked like one question for long enough to cause a bug.
+ *
+ *   isStageAllowedForType  reads STAGE_ORDER_BY_TYPE -- "does the index maths
+ *                          work for this stage". That map deliberately points
+ *                          `sample` at the full five-stage ORDER_STAGE_ORDER,
+ *                          because samples share it for backward-move detection
+ *                          and fieldsToClearOnBackwardMove. It cannot be
+ *                          narrowed without breaking both.
+ *
+ *   isStageOfferedForType  reads STAGE_LIST_BY_TYPE -- the flow a row can
+ *                          actually take. A sample runs New -> Entered ->
+ *                          Delivered. Three stages, not five.
+ *
+ * The gap between them was live: the server would have accepted
+ * `PATCH { stage: "In production" }` on a SAMPLE, landing it at a stage its own
+ * rail cannot draw and its own page does not list. `DateEditor` would have sent
+ * exactly that -- it offered production dates to a sample, and saving a start
+ * date auto-advances. That caller was fixed on 2026-08-25; this closes the hole
+ * in the guard itself, so the next caller cannot reopen it.
+ *
+ * An UNKNOWN type falls back to the union, matching isStageAllowedForType: a
+ * row with a corrupted `type` stays editable rather than becoming stuck.
+ */
+export function isStageOfferedForType(stage: string, type?: string | null): boolean {
+  // STAGE_LIST_BY_TYPE is Record<OrderType, Stage[]>, so a plain string
+  // cannot index it. Narrow through ORDER_TYPES rather than casting: an
+  // unrecognised type then takes the fallback below instead of reading
+  // undefined through a cast that hides the case.
+  const known = ORDER_TYPES.find((t) => t === type);
+  const offered = known ? STAGE_LIST_BY_TYPE[known] : undefined;
+  if (!offered) return true;
+  return (offered as readonly string[]).includes(stage);
+}
+
 export function displayOrderNumber(order: Pick<Order, "id" | "project_id">): string {
   if (order.project_id) return order.project_id;
   for (const suffix of GROUP_HANDLE_SUFFIXES) {

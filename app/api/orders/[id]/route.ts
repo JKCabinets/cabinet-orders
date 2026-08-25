@@ -4,7 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { getShopifyToken } from "@/lib/shopify";
 import { mergeTags } from "@/lib/shopifyStageSync";
 import { ALLOWED_STAGES, isStageAllowedForType, isBackwardsMove, verifyAdminPin, fieldsToClearOnBackwardMove, describeFieldsCleared } from "@/lib/stageGuards";
-import { isPaymentHoldStatus, paymentHoldLabel, parseMoney } from "@/lib/data";
+import { isPaymentHoldStatus, paymentHoldLabel, parseMoney, isStageOfferedForType } from "@/lib/data";
 import { orderAllVendorsGreen } from "@/lib/acknowledgments";
 
 /** Push order updates back to Shopify */
@@ -186,7 +186,14 @@ export async function PATCH(
     // currentType comes from the DATABASE row, never from the body. A
     // client that could name its own type could name one whose flow
     // contains the stage it wanted.
-    if (!isStageAllowedForType(body.stage, currentType)) {
+    // BOTH checks. isStageAllowedForType asks whether the index maths
+    // works; isStageOfferedForType asks whether the row's UI flow contains
+    // the stage at all. They differ for SAMPLES, whose index map points at
+    // the full five-stage order flow while their real flow is three.
+    // Without the second, this route would accept "In production" on a
+    // sample -- a stage its rail cannot draw and its page does not list.
+    if (!isStageAllowedForType(body.stage, currentType)
+        || !isStageOfferedForType(body.stage, currentType)) {
       return NextResponse.json(
         {
           error: "stage_not_in_flow",
