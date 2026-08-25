@@ -415,7 +415,18 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
 
   async function doMoveStage(stage: Stage, providedPin: string) {
     // Gate 2: moving to "Entered" requires at least one attachment
-    if (stage === "Entered" && liveOrder.stage === "New") {
+    // SAMPLES AND HARDWARE ARE EXEMPT, matching the server.
+    //
+    // PATCH /api/orders/[id] skips this gate when the row type is not a
+    // cabinet flow -- samples ship from JK's own stock, so there is no
+    // manufacturer acknowledgment to attach, and hardware has none either.
+    // This client gate checked the stage only, so it refused a sample before
+    // the request was ever made: the server would have allowed it.
+    //
+    // Same shape as the bulk route's half-implemented gate. One rule, two
+    // places, and only one of them had the clause.
+    const gateApplies = liveOrder.type !== "sample" && liveOrder.type !== "hardware";
+    if (gateApplies && stage === "Entered" && liveOrder.stage === "New") {
       setCheckingAttachments(true);
       setEnteredGateError(false);
       const result = await checkAttachmentGate(liveOrder.id);
