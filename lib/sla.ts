@@ -133,10 +133,9 @@ const STANDARD_RULES: Partial<Record<string, SlaRule>> = {
  * the same rule OBJECTS as STANDARD_RULES', not copies, so tuning a standard
  * rule silently retuned custom as well.
  *
- * "Ordered" still carries a rule. Arguably it should not -- it means the job
- * is placed and we are waiting on a manufacturer, which is the same reason
- * warranty's "Parts ordered" has none. Left alone rather than changed
- * unasked; worth a decision.
+ * "Ordered" has NO rule, decided 2026-08-25. It means the job is placed and
+ * we are waiting on a manufacturer -- the same reason warranty's "Parts
+ * ordered" has none.
  *
  * /sla renders every stage in a type's flow, including rule-less ones, with
  * a count and a dash. So these two stages still show their orders -- they
@@ -145,7 +144,11 @@ const STANDARD_RULES: Partial<Record<string, SlaRule>> = {
 const CUSTOM_RULES: Partial<Record<string, SlaRule>> = {
   "New":       { softHours: SOFT_HOURS, hardHours: HARD_HOURS, measureFrom: "created" },
   "In review": { softHours: SOFT_HOURS, hardHours: HARD_HOURS },
-  "Ordered":   { softHours: SOFT_HOURS, hardHours: HARD_HOURS },
+  // "Ordered": NO RULE. The job is placed and we are waiting on a
+  // manufacturer -- the same reason warranty's "Parts ordered" has none.
+  // There is no date field that would say when to stop worrying, and a
+  // clock that fires on every custom order in the pipeline is noise in the
+  // one place that has to stay trustworthy.
 };
 
 /**

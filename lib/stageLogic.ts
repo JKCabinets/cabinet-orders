@@ -162,11 +162,58 @@ export function isBackwardsMove(
  *                       scheduling intent, which is what we're trying to fix)
  *
  * Forward moves don't trigger any clearing.
- * Warranty stages have no date-driven transitions, so no fields to clear.
+ *
+ * ── WHICH FLOWS CLEAR, AND WHY ─────────────────────────────────────────────
+ *
+ * This is a DECISION, not a deferral. It carried a TODO saying clearing was
+ * "skipped for now rather than computed wrongly" — true about the arithmetic
+ * (fixed below), but it left the real question unanswered.
+ *
+ *   order, sample   CLEAR. These dates drive AUTOMATION: production-complete
+ *                   advances on `production_est_finish_date <= today`, and the
+ *                   calendar and SLA read the delivery fields. A stale date
+ *                   means a cron acts on something that is not happening.
+ *
+ *   custom          DOES NOT CLEAR. The custom flow is a designer's notebook:
+ *                   contract work priced by hand, scheduled by conversation,
+ *                   with the designer talking to the customer directly. Those
+ *                   dates were TYPED IN after a phone call. Nothing reads
+ *                   them — production-complete is filtered to
+ *                   ["order","sample"] — so clearing them prevents no wrong
+ *                   automation and destroys the only record of that call.
+ *                   Backward moves already cost an admin PIN; silently wiping
+ *                   four fields on top of that is not tidying, it is loss.
+ *
+ *   warranty        No production or delivery dates to clear. AND its rows
+ *                   carry two fields that must never be touched — see below.
+ *
+ *   hardware        No such dates either; it runs Ordered → Shipped →
+ *                   Delivered with a carrier and a tracking number.
  *
  * Returns a partial update object suitable for spreading into the DB UPDATE,
  * or null if nothing should change.
  */
+
+/** Flows whose date fields drive automation, and so go stale on a reversal. */
+const FLOWS_THAT_CLEAR: ReadonlySet<StageFlow> = new Set<StageFlow>(["order"]);
+
+/**
+ * ⚠ NEVER CLEARED, whatever the flow.
+ *
+ * Today these survive only because warranty returns early — protection by
+ * accident. Named here so that narrowing the guard above cannot silently take
+ * them with it.
+ *
+ *   reported_at      When the CUSTOMER reported the issue. The reporting
+ *                    windows in Terms §12.3 are conditions precedent to a
+ *                    claim, and the warranty SLA measures from this. Losing it
+ *                    loses the claim's standing.
+ *   about_order_id   Which order a claim is about. Clearing it strands the
+ *                    claim — a warranty row with no link cannot be traced to
+ *                    what was sold.
+ */
+const NEVER_CLEARED = ["reported_at", "about_order_id"] as const;
+
 export function fieldsToClearOnBackwardMove(
   currentStage: string,
   targetStage: string,
@@ -174,13 +221,25 @@ export function fieldsToClearOnBackwardMove(
 ): Record<string, string | null> | null {
   if (!isBackwardsMove(currentStage, targetStage, type)) return null;
   const target = stageIndex(targetStage, type);
-  // Warranty has no date-driven transitions. Custom orders DO have
-  // production and delivery stages, but their indices differ from
-  // ORDER_STAGE_ORDER (which the rules below are written against), so
-  // clearing is deliberately skipped for now rather than computed wrongly.
-  // TODO: revisit when the custom order modal + date fields are specified.
-  // Samples report flow "order" and so DO get the standard clearing.
-  if (target.flow !== "order") return null;
+  if (!FLOWS_THAT_CLEAR.has(target.flow)) return null;
+
+  // Positions are resolved against THIS ROW'S OWN FLOW, not against
+  // ORDER_STAGE_ORDER.
+  //
+  // The rules below used to compare `target.idx` -- an index within the row's
+  // flow -- against `ORDER_STAGE_ORDER.indexOf(...)`. Those agree only when
+  // the row IS an order flow. "At cross dock" is index 3 in ORDER_STAGE_ORDER
+  // and index 4 in CUSTOM_STAGE_ORDER, so a custom row would have been
+  // measured against the wrong ruler.
+  //
+  // Unreachable today, because only the order flow clears. Fixed anyway: a
+  // known-wrong calculation sitting behind a guard is inherited by whoever
+  // narrows that guard next, which is exactly how isStageAllowedForType became
+  // a hole. A stage absent from the flow gives -1 and simply never matches.
+  const flowOrder = (type ? STAGE_ORDER_BY_TYPE[type] : undefined) ?? ORDER_STAGE_ORDER;
+  const posOf = (stage: string) => (flowOrder as readonly string[]).indexOf(stage);
+  const crossDockPos = posOf("At cross dock");
+  const productionPos = posOf("In production");
 
   // Mixed value type:
   //   - `null` for date columns and nullable text (entered_by). These are
@@ -192,26 +251,26 @@ export function fieldsToClearOnBackwardMove(
   const clear: Record<string, string | null> = {};
 
   // Target is "At cross dock" or earlier → clear delivery date
-  if (target.idx <= ORDER_STAGE_ORDER.indexOf("At cross dock")) {
+  if (crossDockPos >= 0 && target.idx <= crossDockPos) {
     clear.delivery_date = null;
     clear.scheduled_delivery_date = null;
   }
   // When target is "At cross dock", keep window/notes (the user is fixing
   // a scheduled delivery — access notes are still relevant). When target
   // is earlier, drop them too — but to "" not null (NOT NULL columns).
-  if (target.idx < ORDER_STAGE_ORDER.indexOf("At cross dock")) {
+  if (crossDockPos >= 0 && target.idx < crossDockPos) {
     clear.delivery_window = "";
     clear.delivery_notes = "";
   }
 
   // Target is earlier than "In production" → clear production dates
-  if (target.idx < ORDER_STAGE_ORDER.indexOf("In production")) {
+  if (productionPos >= 0 && target.idx < productionPos) {
     clear.production_start_date = null;
     clear.production_est_finish_date = null;
   }
   // Target is exactly "In production" → clear only the finish estimate;
   // keep the start date so the order makes sense as "currently in production".
-  else if (target.idx === ORDER_STAGE_ORDER.indexOf("In production")) {
+  else if (productionPos >= 0 && target.idx === productionPos) {
     clear.production_est_finish_date = null;
   }
 
@@ -219,6 +278,10 @@ export function fieldsToClearOnBackwardMove(
   if (targetStage === "New") {
     clear.entered_by = null;
   }
+
+  // Belt and braces. Nothing above can add these today, but the guard is
+  // cheap and the cost of losing them is a claim that cannot be traced.
+  for (const field of NEVER_CLEARED) delete clear[field];
 
   return Object.keys(clear).length > 0 ? clear : null;
 }
