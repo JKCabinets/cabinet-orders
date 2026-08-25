@@ -17,7 +17,7 @@ import { NewOrderModal } from "@/components/NewOrderModal";
 import { AvatarWithProfile } from "@/components/AvatarWithProfile";
 import {
   Plus, Search, ChevronRight, PackageX, AlertTriangle, UserX, Ban, Clock,
-  CheckCircle2,
+  CheckCircle2, Boxes, Wrench, Package, FileText, ShieldCheck,
 } from "lucide-react";
 
 /**
@@ -40,6 +40,15 @@ import {
  * ENTRIES ARE PURCHASES. The claim moved up to the project on 2026-08-25, so a
  * row here is a thing somebody can own, matching /work.
  */
+
+/** One icon per flow, matching the sidebar's. */
+const TYPE_ICON: Record<string, typeof Boxes> = {
+  order: Boxes,
+  hardware: Wrench,
+  sample: Package,
+  custom: FileText,
+  warranty: ShieldCheck,
+};
 
 const TYPE_LABEL: Record<string, string> = {
   order: "Cabinets",
@@ -222,6 +231,7 @@ export function DashboardClient() {
       return {
         type,
         label: TYPE_LABEL[type] ?? type,
+        Icon: TYPE_ICON[type] ?? Boxes,
         // ⚠ EACH FLOW RENDERS ITS OWN STAGES. Cabinets run five, hardware and
         // samples three, custom six, warranty five. A fixed grid would either
         // invent stages or hide them.
@@ -229,6 +239,12 @@ export function DashboardClient() {
       };
     });
   }, [orders, hardware, samples, customs, warranties]);
+
+  /** The longest flow decides how many Stage N headers to draw. Custom, at six. */
+  const maxStages = useMemo(
+    () => pipelines.reduce((n, p) => Math.max(n, p.segments.length), 0),
+    [pipelines],
+  );
 
   /** SLA / data health: one row per type, counted the way /sla counts. */
   const health = useMemo(() => {
@@ -401,41 +417,78 @@ export function DashboardClient() {
             )}
           </div>
 
-          {/* ── Pipeline snapshot ── */}
-          <div className="glass-sage rounded-panel p-5">
+          {/* ── Pipeline snapshot ──
+              ⚠ CHEVRONS, NOT PILLS. Each stage points into the next: the row
+              reads as one chain a purchase moves along, which is the whole
+              point of showing five flows side by side.
+
+              FIXED-WIDTH COLUMNS, LEFT-ALIGNED. A three-stage flow ENDS EARLY
+              rather than stretching to fill the row -- flex-1 made hardware's
+              three stages span the same width as cabinets' five, which said
+              they were the same length. They are not. */}
+          <div className="glass-sage rounded-panel p-5 overflow-x-auto">
             <h2 className="font-display text-[22px] text-cream mb-3">
               Pipeline <em className="italic-storm">snapshot</em>
             </h2>
-            <div className="flex flex-col gap-2">
-              {pipelines.map((p) => (
-                <div key={p.type} className="flex items-center gap-2">
-                  <span className="text-[11px] text-cream/60 w-[70px] flex-shrink-0">{p.label}</span>
-                  <span className="flex-1 flex items-stretch gap-1 min-w-0">
-                    {p.segments.map((s, i) => {
-                      const accent = STAGE_ACCENT[s.stage] ?? "#8a8a8a";
-                      const terminal = i === p.segments.length - 1;
-                      return (
-                        <span
-                          key={s.stage}
-                          className="flex-1 rounded-brand px-2 py-1.5 flex items-center justify-between gap-1 min-w-0"
-                          style={{
-                            background: terminal ? "rgba(143,190,112,0.12)" : "rgba(255,255,255,0.04)",
-                            border: `0.5px solid ${terminal ? "rgba(143,190,112,0.35)" : "rgba(255,255,255,0.10)"}`,
-                          }}
-                          title={`${s.count} at ${s.stage}`}
-                        >
-                          <span className="text-[9px] uppercase tracking-wider truncate"
-                            style={{ color: terminal ? "#a0cc7a" : "rgba(232,227,218,0.5)" }}>
-                            {s.stage}
-                          </span>
-                          <span className="text-[11px] tabular-nums flex-shrink-0"
-                            style={{ color: s.count > 0 ? accent : "rgba(232,227,218,0.25)" }}>
-                            {s.count}
-                          </span>
-                        </span>
-                      );
-                    })}
+
+            <div className="min-w-[560px]">
+              {/* Stage 1..N header. N is the longest flow -- custom, at six. */}
+              <div className="flex items-center gap-0 mb-1.5">
+                <span className="w-[110px] flex-shrink-0 text-[9px] uppercase tracking-wider text-cream/35">
+                  Order type
+                </span>
+                {Array.from({ length: maxStages }, (_, i) => (
+                  <span key={i} className="w-[112px] flex-shrink-0 text-[9px] uppercase tracking-wider text-cream/35 pl-3">
+                    Stage {i + 1}
                   </span>
+                ))}
+              </div>
+
+              {pipelines.map((p) => (
+                <div key={p.type} className="flex items-center gap-0 py-1.5"
+                  style={{ borderTop: "0.5px solid rgba(255,255,255,0.07)" }}>
+                  <span className="w-[110px] flex-shrink-0 flex items-center gap-2">
+                    <p.Icon className="w-3.5 h-3.5 text-cream/40 flex-shrink-0" />
+                    <span className="text-[12px] text-cream/80 truncate">{p.label}</span>
+                  </span>
+
+                  {p.segments.map((s, i) => {
+                    const terminal = i === p.segments.length - 1;
+                    const has = s.count > 0;
+                    // Terminal green; anything holding work reads blue; empty
+                    // stages sit muted so the eye lands on where things ARE.
+                    const bg = terminal
+                      ? (has ? "rgba(143,190,112,0.20)" : "rgba(143,190,112,0.10)")
+                      : has ? "rgba(90,141,184,0.20)" : "rgba(255,255,255,0.04)";
+                    const border = terminal
+                      ? "rgba(143,190,112,0.45)"
+                      : has ? "rgba(90,141,184,0.50)" : "rgba(255,255,255,0.08)";
+                    const fg = terminal
+                      ? (has ? "#a0cc7a" : "rgba(160,204,122,0.45)")
+                      : has ? "#8fb8dd" : "rgba(232,227,218,0.35)";
+                    return (
+                      <span
+                        key={s.stage}
+                        className="w-[112px] flex-shrink-0 flex items-center justify-between gap-1 pl-3 pr-4 py-1.5 text-[11px]"
+                        style={{
+                          background: bg,
+                          borderTop: `0.5px solid ${border}`,
+                          borderBottom: `0.5px solid ${border}`,
+                          borderLeft: i === 0 ? `0.5px solid ${border}` : "none",
+                          // The chevron: point into the next segment, and notch
+                          // the left edge so the previous one nests into it.
+                          clipPath: terminal
+                            ? "polygon(0 0, 100% 0, 100% 100%, 0 100%, 8px 50%)"
+                            : "polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%, 8px 50%)",
+                          marginLeft: i === 0 ? 0 : -1,
+                        }}
+                        title={`${s.count} at ${s.stage}`}
+                      >
+                        <span className="truncate" style={{ color: fg }}>{s.stage}</span>
+                        <span className="tabular-nums flex-shrink-0" style={{ color: fg }}>{s.count}</span>
+                      </span>
+                    );
+                  })}
                 </div>
               ))}
             </div>
