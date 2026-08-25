@@ -9,6 +9,7 @@ import {
   AVATAR_COLOR_STYLES,
   isPaymentHoldStatus, paymentHoldActive, paymentHoldLabel,
   displayOrderNumber, nextStageFor, poReference,
+  type TeamMember,
 } from "@/lib/data";
 import { slaRuleFor, slaAgeHours, hoursInStage, slaTier, formatStageAge } from "@/lib/sla";
 import { useStore } from "@/lib/store";
@@ -185,6 +186,10 @@ const SECTION_BORDER: React.CSSProperties = {
   borderBottom: "0.5px solid rgba(255,255,255,0.10)",
 };
 
+const CELL: React.CSSProperties = {
+  borderTop: "0.5px solid rgba(255,255,255,0.08)",
+  borderLeft: "0.5px solid rgba(255,255,255,0.08)",
+};
 const LABEL = "text-[10px] uppercase tracking-[0.16em] text-cream/50 mb-1.5";
 
 // PIN validation lives server-side only. The modal sends whatever the user
@@ -536,41 +541,38 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
               <span className="mx-1.5">&middot;</span>
               {liveOrder.date}
             </p>
-            {/* Status pills. Read-only -- the actionable claim control lives in
-                ORDER INFO below, so there is one place that changes ownership
-                rather than two that can disagree about busy state. */}
-            <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-              {(() => {
-                const tier = slaTier(liveOrder);
-                if (tier === "ok") return null;
-                const rule = slaRuleFor(liveOrder);
-                const age = rule ? slaAgeHours(liveOrder, rule) : hoursInStage(liveOrder);
-                return (
-                  <span
-                    className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full font-medium"
-                    style={tier === "hard"
-                      ? { background: "rgba(224,85,85,0.16)", color: "#e08585", border: "0.5px solid rgba(224,85,85,0.45)" }
-                      : { background: "rgba(232,181,106,0.14)", color: "#e8b56a", border: "0.5px solid rgba(232,181,106,0.40)" }}
-                  >
-                    {tier === "hard" ? "Past SLA" : "Due"} {formatStageAge(age)}
-                  </span>
-                );
-              })()}
-              <span
-                className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full"
-                style={{
-                  background: "rgba(255,255,255,0.05)",
-                  color: "rgba(232,227,218,0.55)",
-                  border: "0.5px solid rgba(255,255,255,0.14)",
-                }}
-              >
-                {liveOrder.claimed_by
-                  ? (team.find((m) => m.id === liveOrder.claimed_by)?.name ?? "Claimed")
-                  : "Unclaimed"}
-              </span>
-            </div>
           </div>
           <div className="flex items-center gap-1.5 flex-shrink-0 ml-3">
+<div className="flex items-center gap-1.5">
+            {(() => {
+              const tier = slaTier(liveOrder);
+              if (tier === "ok") return null;
+              const rule = slaRuleFor(liveOrder);
+              const age = rule ? slaAgeHours(liveOrder, rule) : hoursInStage(liveOrder);
+              return (
+                <span
+                  className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full font-medium"
+                  style={tier === "hard"
+                    ? { background: "rgba(224,85,85,0.16)", color: "#e08585", border: "0.5px solid rgba(224,85,85,0.45)" }
+                    : { background: "rgba(232,181,106,0.14)", color: "#e8b56a", border: "0.5px solid rgba(232,181,106,0.40)" }}
+                >
+                  {tier === "hard" ? "Past SLA" : "Due"} {formatStageAge(age)}
+                </span>
+              );
+            })()}
+            <span
+              className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full"
+              style={{
+                background: "rgba(255,255,255,0.05)",
+                color: "rgba(232,227,218,0.55)",
+                border: "0.5px solid rgba(255,255,255,0.14)",
+              }}
+            >
+              {liveOrder.claimed_by
+                ? (team.find((m) => m.id === liveOrder.claimed_by)?.name ?? "Claimed")
+                : "Unclaimed"}
+            </span>
+            </div>
             {isCompleted && (
               <button
                 onClick={handleArchive}
@@ -694,60 +696,30 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
           {tab === "project" && (<>
           <PaymentHoldBanner order={liveOrder} />
 
-          {showGateBanner && (
-            <div
-              className="m-5 mb-0 rounded-brand p-4 flex items-start gap-3 animate-slide-in"
-              style={{
-                background: "rgba(184,130,106,0.16)",
-                border: "0.5px solid rgba(184,130,106,0.50)",
-                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.10)",
-              }}
-            >
-              <div
-                className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5"
-                style={{ background: "rgba(184,130,106,0.25)", border: "0.5px solid rgba(184,130,106,0.45)" }}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#d9a888" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-                </svg>
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-display text-[18px] text-cream leading-tight mb-1">
-                  Attach an <em className="italic-storm">acknowledgment</em> first
-                </p>
-                <p className="text-[12px] text-cream/65 leading-snug mb-3">
-                  Before this order can be marked Entered, upload the manufacturer&apos;s
-                  acknowledgment PDF (or any confirming document). The file picker
-                  should open automatically — if not, use the button below.
-                </p>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => attachmentsRef.current?.openFilePicker()}
-                    className="px-3 py-1.5 rounded-full text-[11px] uppercase tracking-wider font-medium transition-all bg-terracotta/25 border border-terracotta/55 text-terracotta hover:bg-terracotta/35"
-                  >
-                    Choose file…
-                  </button>
-                  <button
-                    onClick={() => setShowGateBanner(false)}
-                    className="px-3 py-1.5 rounded-full text-[11px] uppercase tracking-wider font-medium transition-all text-cream/55 hover:text-cream/85"
-                  >
-                    Dismiss
-                  </button>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowGateBanner(false)}
-                className="p-1 rounded-md hover:bg-white/8 transition-colors flex-shrink-0"
-                aria-label="Dismiss"
-              >
-                <X className="w-3.5 h-3.5 text-cream/55" />
-              </button>
+          {/* ── PIPELINE DETAILS ────────────────────────────────────────────
+              The rail, the current stage, the next action and the claim, as
+              ONE card. They were four separate blocks with four borders and
+              four gaps -- the rail in its own section, the next action in
+              another, the claim two sections further down in ORDER INFO. That
+              is why it read as stitched together rather than designed. */}
+          <div className="px-6 pt-4 pb-1">
+            <div className="flex items-baseline gap-2 mb-2">
+              <p className={LABEL + " mb-0"}>Pipeline details</p>
+              <span className="text-[10px] text-cream/30">&middot;</span>
+              <span className="text-[10px] text-cream/45">
+                {GROUP_LABEL[liveOrder.type] ?? liveOrder.type}
+              </span>
+              {slaRuleFor(liveOrder) && (
+                <span className="text-[10px] text-cream/35 ml-auto">
+                  SLA target {slaRuleFor(liveOrder)!.hardHours}h
+                </span>
+              )}
             </div>
-          )}
 
-          {/* Pipeline stage */}
-          <div className="px-6 py-5" style={SECTION_BORDER}>
-            <p className={LABEL}>Pipeline stage</p>
+            <div className="rounded-brand overflow-hidden"
+              style={{ border: "0.5px solid rgba(255,255,255,0.12)" }}>
+
+              <div className="px-4 pt-4 pb-3">
             <div className="glass-sage rounded-panel px-4 py-4 mt-1">
               <div className="flex items-start">
                 {stages.map((s, i) => {
@@ -801,8 +773,6 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                 })}
               </div>
             </div>
-
-
             {/* PIN prompt for backwards moves */}
             {pendingStage && (
               <div className="mt-4 rounded-brand px-4 py-3.5"
@@ -872,7 +842,6 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                 )}
               </div>
             )}
-
             {/* Attachment gate error */}
             {enteredGateError && (
               <div className="mt-4 rounded-brand px-4 py-3"
@@ -885,17 +854,64 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                 </p>
               </div>
             )}
-          </div>
+              </div>
 
-          <NextActionCard
-            order={liveOrder}
-            busy={checkingAttachments}
-            claimSlot={
-              /* Claim, inside the pipeline card. It was a cell in ORDER INFO --
-                 two sections below the stage it governs. Passed as a slot so
-                 the card owns the border and there is no wrapper div spanning
-                 unrelated sections. */
-              <>
+              {/* Current stage / next action / claim -- one strip, divided. */}
+              <div className="grid grid-cols-1 md:grid-cols-[1fr_1.5fr_auto] items-stretch"
+                style={{ borderTop: "0.5px solid rgba(255,255,255,0.10)" }}>
+                <div className="px-4 py-3">
+                  <p className={LABEL + " mb-1"}>Current stage</p>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                      style={{ background: STAGE_ACCENT[liveOrder.stage] ?? "#8a8a8a" }} />
+                    <span className="text-[13px] font-medium"
+                      style={{ color: STAGE_ACCENT[liveOrder.stage] ?? "#8a8a8a" }}>
+                      {liveOrder.stage}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-cream/45 mt-1">
+                    {formatStageAge(
+                      slaRuleFor(liveOrder)
+                        ? slaAgeHours(liveOrder, slaRuleFor(liveOrder)!)
+                        : hoursInStage(liveOrder))} in stage
+                    {slaTier(liveOrder) === "hard" && <span style={{ color: "#e08585" }}> &middot; overdue</span>}
+                    {slaTier(liveOrder) === "soft" && <span style={{ color: "#e8b56a" }}> &middot; due</span>}
+                  </p>
+                </div>
+
+                <div className="px-4 py-3 flex items-center justify-between gap-3"
+                  style={{ borderLeft: "0.5px solid rgba(255,255,255,0.10)" }}>
+                  <div className="min-w-0">
+                    <p className={LABEL + " mb-1"}>Next action</p>
+                    <p className="text-[11px] text-cream/65 leading-snug">
+                      {nextStageFor(liveOrder)
+                        ? <>Move this to <span className="text-cream/90">{nextStageFor(liveOrder)}</span> when it is ready.</>
+                        : "Nothing further \u2014 this is the last stage."}
+                    </p>
+                  </div>
+                  {nextStageFor(liveOrder) && (
+                    <button
+                      onClick={() => {
+                        const next = nextStageFor(liveOrder);
+                        // Empty PIN on purpose: this only ever offers the NEXT
+                        // stage, so it is never a backward move.
+                        if (next) doMoveStage(next as Stage, "");
+                      }}
+                      disabled={checkingAttachments}
+                      className="px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all flex-shrink-0 disabled:opacity-40"
+                      style={{
+                        background: "rgba(184,130,106,0.20)",
+                        border: "0.5px solid rgba(184,130,106,0.55)",
+                        color: "#d9a888",
+                      }}
+                    >
+                      {checkingAttachments ? "\u2026" : nextStageFor(liveOrder)}
+                    </button>
+                  )}
+                </div>
+
+                <div className="px-4 py-3 min-w-[190px]"
+                  style={{ borderLeft: "0.5px solid rgba(255,255,255,0.10)" }}>
               <div className="px-4 py-3" style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)", borderLeft: "0.5px solid rgba(255,255,255,0.08)" }}>
                 {(() => {
                   // Stage-aware ownership:
@@ -964,76 +980,64 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                   );
                 })()}
               </div>
-              </>
-            }
-            onAdvance={() => {
-              const next = nextStageFor(liveOrder);
-              // Empty PIN on purpose: this only ever offers the NEXT stage, so
-              // it is never a backward move.
-              if (next) doMoveStage(next as Stage, "");
-            }}
-          />
-
-          {/* ORDER INFO -- a bordered grid with hairline dividers, per the
-              redesign mockup. This was a plain two-column list of label/value
-              pairs; adding cells to it was how ORDER TYPE and PO / REFERENCE
-              ended up as two more rows of the old layout rather than the grid. */}
-          <div className="px-6 py-5 space-y-4" style={SECTION_BORDER}>
-            <div className="flex items-center justify-between mb-2">
-              <p className={LABEL}>Order info</p>
+              
+                </div>
+              </div>
             </div>
-            <div
-              className="grid grid-cols-2 md:grid-cols-4 rounded-brand overflow-hidden"
-              style={{ border: "0.5px solid rgba(255,255,255,0.12)" }}
-            >
-              <div className="px-4 py-3" style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)", borderLeft: "0.5px solid rgba(255,255,255,0.08)" }}>
-                <p className={LABEL}>Source</p>
-                <span
-                  className="text-[10px] uppercase tracking-wider px-2 py-px rounded-full font-medium inline-block mt-1"
+          </div>
+
+          {/* ── ORDER INFO ──────────────────────────────────────────────────
+              Six cells on a 3-column grid, so the second row fills. The
+              4-column version went ragged the moment the claim cell moved out
+              of it -- two cells on a row built for four. */}
+          <div className="px-6 py-4">
+            <p className={LABEL}>Order info</p>
+            <div className="grid grid-cols-2 md:grid-cols-3 rounded-brand overflow-hidden"
+              style={{ border: "0.5px solid rgba(255,255,255,0.12)" }}>
+              <div className="px-4 py-3" style={CELL}>
+                <p className={LABEL + " mb-1"}>Source</p>
+                <span className="text-[10px] uppercase tracking-wider px-2 py-px rounded-full font-medium inline-block"
                   style={
                     liveOrder.source === "Shopify"
                       ? { background: "rgba(184,130,106,0.15)", color: "#d9a888", border: "0.5px solid rgba(184,130,106,0.40)" }
-                      : liveOrder.source === "Manual"
-                      ? { background: "rgba(145,165,151,0.18)", color: "#b8d0bd", border: "0.5px solid rgba(145,165,151,0.45)" }
-                      : { background: "rgba(140,170,200,0.18)", color: "#a8c8e0", border: "0.5px solid rgba(140,170,200,0.40)" }
-                  }
-                >
+                      : { background: "rgba(145,165,151,0.18)", color: "#b8d0bd", border: "0.5px solid rgba(145,165,151,0.45)" }
+                  }>
                   {liveOrder.source === "Manual" ? "Custom" : liveOrder.source}
                 </span>
               </div>
-              <div className="px-4 py-3" style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)", borderLeft: "0.5px solid rgba(255,255,255,0.08)" }}>
-                <p className={LABEL}>Order date</p>
-                <p className="text-xs text-cream/65 mt-1">{liveOrder.date}</p>
+              <div className="px-4 py-3" style={CELL}>
+                <p className={LABEL + " mb-1"}>Order date</p>
+                <p className="text-xs text-cream/65">{liveOrder.date}</p>
               </div>
-              <div className="px-4 py-3" style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)", borderLeft: "0.5px solid rgba(255,255,255,0.08)" }}>
-                <p className={LABEL}>Order type</p>
-                <p className="text-xs text-cream/65 mt-1">{GROUP_LABEL[liveOrder.type] ?? liveOrder.type}</p>
+              <div className="px-4 py-3" style={CELL}>
+                <p className={LABEL + " mb-1"}>Order type</p>
+                <p className="text-xs text-cream/65">{GROUP_LABEL[liveOrder.type] ?? liveOrder.type}</p>
               </div>
-              <div className="px-4 py-3" style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)", borderLeft: "0.5px solid rgba(255,255,255,0.08)" }}>
-                {/* The reference a MANUFACTURER sees. Internal -- never shown to
-                    a customer, who knows only the order number. */}
-                <p className={LABEL}>PO / Reference</p>
-                <p className="text-xs font-mono text-cream/65 mt-1">{poReference(liveOrder)}</p>
+              <div className="px-4 py-3" style={CELL}>
+                {/* The reference a MANUFACTURER sees. Internal -- never shown
+                    to a customer, who knows only the order number. */}
+                <p className={LABEL + " mb-1"}>PO / Reference</p>
+                <p className="text-xs font-mono text-cream/65">{poReference(liveOrder)}</p>
               </div>
-              <div className="px-4 py-3" style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)", borderLeft: "0.5px solid rgba(255,255,255,0.08)" }}>
-                {/* Start and estimated finish together -- they are read as a
-                    span, not as two independent facts. */}
-                <p className={LABEL}>Production dates</p>
-                <p className="text-xs text-cream/65 mt-1">
+              <div className="px-4 py-3" style={CELL}>
+                {/* Start and estimated finish read as a span, not two facts. */}
+                <p className={LABEL + " mb-1"}>Production dates</p>
+                <p className="text-xs text-cream/65">
                   {liveOrder.production_start_date || liveOrder.production_est_finish_date
                     ? `${liveOrder.production_start_date || "?"} \u2192 ${liveOrder.production_est_finish_date || "?"}`
                     : "Not set"}
                 </p>
               </div>
-              <div className="px-4 py-3 col-span-2" style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)", borderLeft: "0.5px solid rgba(255,255,255,0.08)" }}>
-                {/* Scheduled, not actual. A date the customer has not been given
-                    is not a promise, and this is the internal view. */}
-                <p className={LABEL}>Delivery target</p>
-                <p className="text-xs text-cream/65 mt-1">
+              <div className="px-4 py-3" style={CELL}>
+                {/* Scheduled, not actual. A date the customer has not been
+                    given is not a promise, and this is the internal view. */}
+                <p className={LABEL + " mb-1"}>Delivery target</p>
+                <p className="text-xs text-cream/65">
                   {liveOrder.scheduled_delivery_date || liveOrder.delivery_date || "Not set"}
                 </p>
               </div>
             </div>
+          </div>
 
             {/* Production & Delivery Dates — editable from Entered stage forward */}
             {/* Warranty claims have no production or delivery dates.
@@ -1042,8 +1046,6 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
             {liveOrder.type !== "warranty" && liveOrder.stage !== "New" && (
               <DateEditor order={liveOrder} updateOrderDetails={updateOrderDetails} />
             )}
-
-          </div>
 
             {/* Acknowledgments: per-vendor .xlsx reconciliation.
 
@@ -1794,7 +1796,7 @@ function GroupStrip({
   groups: Order[];
   selectedId: string;
   onSelect: (id: string) => void;
-  team: { id: string; name: string }[];
+  team: TeamMember[];
 }) {
   if (groups.length < 2) return null;
 
@@ -1867,12 +1869,18 @@ function GroupStrip({
                     On track
                   </span>
                 )}
-                <span className="text-[9px] text-cream/35 truncate">
-                  {g.delivery_date
-                    ? `Delivered ${g.delivery_date}`
-                    : g.production_est_finish_date
-                    ? `ETA ${g.production_est_finish_date}`
-                    : owner ? owner.name : g.claimed_by ? "claimed" : "unclaimed"}
+                {/* Who owns this pipeline, with their avatar -- the strip
+                    this replaced showed a name only, and on a card carrying
+                    four other facts a name alone does not read as ownership. */}
+                <span className="flex items-center gap-1.5 min-w-0">
+                  {owner ? (
+                    <>
+                      <AvatarWithProfile member={owner} size="sm" />
+                      <span className="text-[9px] text-cream/45 truncate">{owner.name}</span>
+                    </>
+                  ) : (
+                    <span className="text-[9px] text-cream/30 italic truncate">unclaimed</span>
+                  )}
                 </span>
               </div>
             </button>
