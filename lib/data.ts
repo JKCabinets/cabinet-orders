@@ -552,6 +552,20 @@ export function isSampleVendor(vendor: string | null | undefined): boolean {
 export const ORDER_TYPES: OrderType[] = ["order", "warranty", "sample", "custom", "hardware"];
 
 /**
+ * The types a person can create BY HAND.
+ *
+ * Everything else arrives from Shopify: a cabinet order, a sample and a
+ * hardware group are all groups of a PROJECT, split from one checkout by
+ * vendor at ingest. A hand-made `order` row would have no project, no
+ * shopify_id and no line items, while sitting on the cabinet stage pages
+ * looking exactly like a real one.
+ *
+ * A custom job is contract work the OMS only records. A warranty claim is
+ * raised in-app against an existing order. Those are the two.
+ */
+export const MANUAL_CREATABLE_TYPES: OrderType[] = ["custom", "warranty"];
+
+/**
  * Id prefix per row type. Shared by the API insert and the store's
  * offline fallback so the two cannot drift.
  */

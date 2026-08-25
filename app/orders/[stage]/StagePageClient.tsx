@@ -6,7 +6,6 @@ import { Order, OrderStage } from "@/lib/data";
 import { PageHeader } from "@/components/AppShell";
 import { OrderTable } from "@/components/OrderTable";
 import { OrderModal } from "@/components/OrderModal";
-import { NewOrderModal } from "@/components/NewOrderModal";
 import { BulkActionBar } from "@/components/BulkActionBar";
 import Link from "next/link";
 import { Plus, Search, CheckSquare, X, CalendarDays } from "lucide-react";
@@ -39,7 +38,6 @@ export function StagePageClient({ stage }: Props) {
   const [search, setSearch] = useState("");
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [modalReason, setModalReason] = useState<"needs-attachment" | undefined>(undefined);
-  const [showNewForm, setShowNewForm] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -113,15 +111,12 @@ export function StagePageClient({ stage }: Props) {
               {selectMode ? <X className="w-3.5 h-3.5" /> : <CheckSquare className="w-3.5 h-3.5" />}
               {selectMode ? (selectedIds.size > 0 ? `${selectedIds.size} selected` : "Cancel") : "Select"}
             </button>
-            {!isArchive && (
-              <button
-                onClick={() => setShowNewForm(true)}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[11px] uppercase tracking-wider bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30 transition-all"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                New order
-              </button>
-            )}
+            {/* No create button. A cabinet order, a sample and a hardware
+                group are all groups of a Shopify PROJECT -- they arrive by
+                ingest, split from one checkout by vendor. A "New order"
+                button on a cabinet stage page offered to make one that could
+                not exist. Custom jobs are created on /custom, warranty claims
+                on /warranty. */}
           </>
         }
       />
@@ -179,9 +174,6 @@ export function StagePageClient({ stage }: Props) {
           onClose={() => { setSelectedOrder(null); setModalReason(undefined); }}
           onStageChange={(s) => setSelectedOrder(prev => prev ? { ...prev, stage: s } : null)}
         />
-      )}
-      {showNewForm && (
-        <NewOrderModal type="order" onClose={() => setShowNewForm(false)} />
       )}
 
       <BulkActionBar

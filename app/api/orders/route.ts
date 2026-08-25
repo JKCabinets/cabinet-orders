@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, cleanInput, rateLimitOr429 } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
-import { ORDER_TYPES, ID_PREFIX_BY_TYPE, parseMoney, type OrderType } from "@/lib/data";
+import { ORDER_TYPES, MANUAL_CREATABLE_TYPES, ID_PREFIX_BY_TYPE, parseMoney, type OrderType } from "@/lib/data";
 
 export async function GET(req: NextRequest) {
   const auth = await requireAuth();
@@ -66,9 +66,25 @@ export async function POST(req: NextRequest) {
   // stageIndex returns -1, no move ever registers as backwards so the
   // admin-PIN gate never fires, and it appears on no list page because
   // every page filters by a known type. Invisible and ungated.
-  const rawType = body.type === undefined ? "order" : body.type;
-  if (typeof rawType !== "string" || !ORDER_TYPES.includes(rawType as OrderType)) {
-    return NextResponse.json({ error: "Invalid type" }, { status: 422 });
+  // Only CUSTOM jobs and WARRANTY claims can be created by hand. Cabinet
+  // orders, samples and hardware are groups of a Shopify project, split from
+  // one checkout by vendor at ingest -- a hand-made one would have no
+  // project, no shopify_id and no line items while sitting on the stage
+  // pages looking real.
+  //
+  // The default is "custom", not "order": a request that omits the type is
+  // the quote form, and defaulting to a type this route now refuses would
+  // turn an omission into a 422.
+  const rawType = body.type === undefined ? "custom" : body.type;
+  if (typeof rawType !== "string" || !MANUAL_CREATABLE_TYPES.includes(rawType as OrderType)) {
+    return NextResponse.json(
+      {
+        error: "type_not_manually_creatable",
+        message: `"${String(rawType)}" orders come from Shopify ingest, not this route. `
+          + `Creatable by hand: ${MANUAL_CREATABLE_TYPES.join(", ")}.`,
+      },
+      { status: 422 },
+    );
   }
   const type = rawType as OrderType;
 

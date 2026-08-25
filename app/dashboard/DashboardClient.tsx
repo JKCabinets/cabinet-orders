@@ -182,7 +182,7 @@ export function DashboardClient() {
               className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[11px] uppercase tracking-wider bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30 transition-all"
             >
               <Plus className="w-3.5 h-3.5" />
-              New order
+              New custom job
             </button>
           </>
         }
@@ -247,8 +247,15 @@ export function DashboardClient() {
           onStageChange={(stage) => setSelectedOrder(prev => prev ? { ...prev, stage } : null)}
         />
       )}
+      {/* CUSTOM, not "order". A cabinet order is a group of a Shopify
+          project and cannot be made by hand; the only order anyone creates
+          here is a custom job.
+
+          The comment sits ABOVE the expression, not inside it: a
+          `{cond && (...)}` block takes ONE child, and a comment plus a
+          component is two. Valid inside a fragment, not inside &&. */}
       {showNewForm && (
-        <NewOrderModal type="order" onClose={() => setShowNewForm(false)} />
+        <NewOrderModal type="custom" onClose={() => setShowNewForm(false)} />
       )}
       {searchOpen && (
         <SearchOverlay
