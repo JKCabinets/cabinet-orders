@@ -716,11 +716,12 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
               )}
             </div>
 
-            <div className="rounded-brand overflow-hidden"
-              style={{ border: "0.5px solid rgba(255,255,255,0.12)" }}>
-
-              <div className="px-4 pt-4 pb-3">
-            <div className="glass-sage rounded-panel px-4 py-4 mt-1">
+            {/* No outer border. The rail and the strip below are each their
+                own frosted card; wrapping them in a bordered box as well is a
+                box inside a box, which is what "disorganised" looks like. */}
+            <div>
+              <div>
+            <div className="glass-sage rounded-panel px-4 py-4">
               <div className="flex items-start">
                 {stages.map((s, i) => {
                   const isActive = liveOrder.stage === s;
@@ -856,9 +857,10 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
             )}
               </div>
 
-              {/* Current stage / next action / claim -- one strip, divided. */}
-              <div className="grid grid-cols-1 md:grid-cols-[1fr_1.5fr_auto] items-stretch"
-                style={{ borderTop: "0.5px solid rgba(255,255,255,0.10)" }}>
+              {/* Same frosted treatment as the rail above it. They were a
+                  glass card and a flat outline sitting together, which is
+                  what made the pair look unrelated. */}
+              <div className="glass-sage rounded-panel overflow-hidden grid grid-cols-1 md:grid-cols-[1fr_1.5fr_auto] items-stretch mt-2.5">
                 <div className="px-4 py-3">
                   <p className={LABEL + " mb-1"}>Current stage</p>
                   <div className="flex items-center gap-1.5">
@@ -910,9 +912,12 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                   )}
                 </div>
 
-                <div className="px-4 py-3 min-w-[190px]"
+                {/* One container, not two. This cell came out of ORDER INFO
+                    still wearing that grid's borderTop/borderLeft, nested
+                    inside the slot's own div -- the inset box that made it
+                    read as a mistake. */}
+                <div className="px-4 py-3 min-w-[190px] flex flex-col justify-center"
                   style={{ borderLeft: "0.5px solid rgba(255,255,255,0.10)" }}>
-              <div className="px-4 py-3" style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)", borderLeft: "0.5px solid rgba(255,255,255,0.08)" }}>
                 {(() => {
                   // Stage-aware ownership:
                   //   New / New claim: claimed_by is the source of truth.
@@ -979,8 +984,6 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                     </>
                   );
                 })()}
-              </div>
-              
                 </div>
               </div>
             </div>
@@ -1074,8 +1077,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
           <div className="px-6 py-4 grid grid-cols-1 md:grid-cols-3 gap-2.5" style={SECTION_BORDER}>
             <button
               onClick={() => setOpenPane(openPane === "customer" ? null : "customer")}
-              className="rounded-brand px-3 py-2.5 text-left transition-colors hover:bg-white/4"
-              style={{ border: "0.5px solid rgba(255,255,255,0.12)" }}
+              className="glass-sage rounded-panel px-3.5 py-3 text-left transition-all hover:brightness-110"
             >
               <p className={LABEL + " mb-0.5"}>Customer note</p>
               <p className="text-[11px] text-cream/45 truncate">
@@ -1084,8 +1086,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
             </button>
             <button
               onClick={() => setOpenPane(openPane === "internal" ? null : "internal")}
-              className="rounded-brand px-3 py-2.5 text-left transition-colors hover:bg-white/4"
-              style={{ border: "0.5px solid rgba(232,144,144,0.28)" }}
+              className="glass-sage rounded-panel px-3.5 py-3 text-left transition-all hover:brightness-110"
             >
               <div className="flex items-center gap-1.5">
                 <p className={LABEL + " mb-0.5"}>Internal note</p>
@@ -1100,8 +1101,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
             </button>
             <button
               onClick={() => setOpenPane(openPane === "files" ? null : "files")}
-              className="rounded-brand px-3 py-2.5 text-left transition-colors hover:bg-white/4"
-              style={{ border: "0.5px solid rgba(255,255,255,0.12)" }}
+              className="glass-sage rounded-panel px-3.5 py-3 text-left transition-all hover:brightness-110"
             >
               <p className={LABEL + " mb-0.5"}>Attachments</p>
               <p className="text-[11px] text-cream/45 truncate">
