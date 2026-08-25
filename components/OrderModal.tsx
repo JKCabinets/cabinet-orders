@@ -1471,9 +1471,25 @@ function DateEditor({
   }) => Promise<void>;
 }) {
   const stage = order.stage;
-  const showProdDates = stage === "Entered" || stage === "In production" || stage === "At cross dock" || stage === "Delivered";
-  const showDeliveryDate = stage === "At cross dock" || stage === "Delivered";
-  const prodEditable = stage === "Entered" || stage === "In production";
+  // ⚠ GATE ON THE TYPE'S OWN FLOW, NOT ON THE STAGE NAME.
+  //
+  // A sample runs New -> Entered -> Delivered. It has no In production and no
+  // At cross dock. But these gates only asked "is the stage Entered", so a
+  // sample at Entered was offered production dates -- and saving a start date
+  // AUTO-ADVANCES to In production, a stage the sample rail cannot even draw.
+  //
+  // The server would have accepted it: isStageAllowedForType reads
+  // STAGE_ORDER_BY_TYPE, which maps samples onto all five standard stages for
+  // index arithmetic. STAGE_LIST_BY_TYPE is the flow a row can actually take.
+  // That distinction is exactly what the samples rail was corrected for
+  // earlier; the date editor still had the old assumption.
+  const flow: readonly string[] = STAGE_LIST_BY_TYPE[order.type] ?? [];
+  const hasProduction = flow.includes("In production");
+  const hasCrossDock = flow.includes("At cross dock");
+
+  const showProdDates = hasProduction && (stage === "Entered" || stage === "In production" || stage === "At cross dock" || stage === "Delivered");
+  const showDeliveryDate = hasCrossDock && (stage === "At cross dock" || stage === "Delivered");
+  const prodEditable = hasProduction && (stage === "Entered" || stage === "In production");
   // Whether saving a start date will MOVE the order.
   //
   // For standard and sample rows the server advances Entered -> In
@@ -1483,7 +1499,7 @@ function DateEditor({
   // not a trigger. The copy below has to say so rather than promise a move
   // that will not happen.
   const autoAdvances = order.type !== "custom";
-  const deliveryEditable = stage === "At cross dock";
+  const deliveryEditable = hasCrossDock && stage === "At cross dock";
 
   const [editingProd, setEditingProd] = useState(false);
   const [editingDelivery, setEditingDelivery] = useState(false);
