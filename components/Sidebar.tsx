@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { Order, OrderType, STAGE_LIST_BY_TYPE } from "@/lib/data";
-import { attentionFor } from "@/lib/attention";
+import { attentionFor, attentionForProject } from "@/lib/attention";
 import { rollupBackorders } from "@/lib/backorders";
 import clsx from "clsx";
 
@@ -65,8 +65,28 @@ export function Sidebar({ open, onClose }: SidebarProps) {
    * when you click it. Counting "claimed by me" alone would be a workload
    * figure, which is a different question and not one a badge should answer.
    */
-  const myWorkCount = allOrders.filter(
-    o => o.claimed_by === currentUserId && attentionFor(o).length > 0).length;
+  const myWorkCount = useMemo(() => {
+    if (!currentUserId) return 0;
+    const byProject = new Map<string, Order[]>();
+    let standalone = 0;
+    for (const o of allOrders) {
+      if (o.archived) continue;
+      if (o.project_id) {
+        const l = byProject.get(o.project_id) ?? [];
+        l.push(o);
+        byProject.set(o.project_id, l);
+      } else if (o.claimed_by === currentUserId && attentionFor(o).length > 0) {
+        standalone++;
+      }
+    }
+    let mine = 0;
+    for (const [id, group] of byProject) {
+      const p = projects[id];
+      if (!p || p.archived || p.claimed_by !== currentUserId) continue;
+      if (attentionForProject(p, group).length > 0) mine++;
+    }
+    return mine + standalone;
+  }, [allOrders, projects, currentUserId]);
 
   /** Anything breached or coming due, across every type. */
   const slaCount = allOrders.filter(o =>

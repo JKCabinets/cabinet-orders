@@ -209,7 +209,7 @@ const LABEL = "text-[10px] uppercase tracking-[0.16em] text-cream/50 mb-1.5";
 // var could drift out of sync, breaking every backward move silently.
 
 export function OrderModal({ order, onClose, onStageChange, initialReason }: OrderModalProps) {
-  const { moveStage, updateOrderDetails, updateNotes, updateInternalNotes, archiveOrder, unarchiveOrder, deleteOrder, allOrders, team, claimOrder: rawClaimOrder } = useStore();
+  const { moveStage, updateOrderDetails, updateNotes, updateInternalNotes, archiveOrder, unarchiveOrder, deleteOrder, allOrders, projects, team, claimProject, claimOrder: rawClaimOrder } = useStore();
   const { showToast } = useToast();
   const [claimBusy, setClaimBusy] = useState(false);
   const [reDecodeBusy, setReDecodeBusy] = useState(false);
@@ -217,13 +217,28 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
   // Wrap claimOrder with the same conflict-toast UX used in OrderTable.
   // Returns void; busy state is set/unset around the call so the button
   // can disable itself while in flight.
+  /**
+   * Claim or release.
+   *
+   * ⚠ A PROJECT-LINKED ROW CLAIMS ITS PROJECT, not itself.
+   *
+   * The claim moved up on 2026-08-25: one owner per purchase, so a designer who
+   * has finished the cabinets is not blocked from closing it while somebody
+   * else sits on the hardware. `orders.claimed_by` is null on every Shopify
+   * group now -- writing it here would set a column nothing reads.
+   *
+   * Custom jobs and warranty claims have no project, so they still claim
+   * themselves. Two mechanisms, one button: nobody has to know which they are
+   * looking at.
+   */
   async function handleClaim(target: string | null) {
     setClaimBusy(true);
     try {
-      const result = await rawClaimOrder(liveOrder.id, target);
+      const result = liveOrder.project_id
+        ? await claimProject(liveOrder.project_id, target !== null)
+        : await rawClaimOrder(liveOrder.id, target);
       if (!result.ok) {
         if (result.reason === "already_claimed" && result.claimedBy) {
-          // result.claimedBy is now a team_members.id
           const claimer = team.find((m) => m.id === result.claimedBy);
           showToast(`Already claimed by ${claimer?.name ?? result.claimedBy}`, { kind: "warn" });
         } else if (result.reason === "not_owner") {
@@ -1069,18 +1084,32 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                   //     in the DB for audit but hidden here.
                   //   Later stages: entered_by takes precedence.
                   const isNewStage = liveOrder.stage === "New" || liveOrder.stage === "New claim";
+                  // ⚠ THE CLAIM COMES FROM THE PROJECT for a Shopify group.
+                  // orders.claimed_by is null on those rows since the claim
+                  // moved up, so reading it here showed every purchase as
+                  // unclaimed however clearly it was owned.
+                  const claimedBy = liveOrder.project_id
+                    ? (projects[liveOrder.project_id]?.claimed_by ?? null)
+                    : (liveOrder.claimed_by ?? null);
                   const ownerName = isNewStage
-                    ? liveOrder.claimed_by ?? null
-                    : liveOrder.entered_by ?? liveOrder.claimed_by ?? null;
-                  // ownerName is now a team_members.id; look up by id, render m.name
+                    ? claimedBy
+                    : liveOrder.entered_by ?? claimedBy;
+                  // ownerName is a team_members.id; look up by id, render m.name
                   const ownerMember = ownerName ? team.find(m => m.id === ownerName) : null;
-                  const claimedBy = liveOrder.claimed_by ?? null;
                   const isClaimedByMe = !!currentUserId && claimedBy === currentUserId;
                   const isClaimedByOther = !!claimedBy && !isClaimedByMe;
-                  // Claim/release affordance only on New stages — once
-                  // entered, ownership is tracked by entered_by which the
-                  // PATCH endpoint maintains on stage transitions.
-                  const showClaimUi = isNewStage;
+                  // ⚠ A PURCHASE CAN BE CLAIMED AT ANY STAGE.
+                  //
+                  // This was New-only, because ownership after that was tracked
+                  // by entered_by. That reasoning belonged to per-group claims:
+                  // a group past New had been worked, so its claim was spent.
+                  // A PURCHASE is owned for its whole life -- somebody is the
+                  // contact until it ships -- so the control stays available.
+                  //
+                  // Standalone rows keep the old rule: a custom job or a
+                  // warranty claim past its first stage is being worked by
+                  // whoever moved it.
+                  const showClaimUi = liveOrder.project_id ? true : isNewStage;
                   return (
                     <>
                       <div className="flex items-center justify-between gap-2">

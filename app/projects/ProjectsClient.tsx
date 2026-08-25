@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { useSession } from "next-auth/react";
 import { useStore } from "@/lib/store";
 import {
   Order, Project, STAGE_ACCENT, STAGE_LIST_BY_TYPE, OrderType,
@@ -97,7 +98,8 @@ function nextMilestone(g: Order): { label: string; detail?: string } {
 }
 
 export function ProjectsClient() {
-  const { allOrders, projects, team, archiveProject } = useStore();
+  const { allOrders, projects, team, archiveProject, claimProject } = useStore();
+  const currentUserId = (useSession().data?.user as { id?: string } | undefined)?.id ?? null;
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -197,6 +199,32 @@ export function ProjectsClient() {
     }
   }
 
+  /**
+   * Claim or release a purchase from the hub.
+   *
+   * This page is where somebody browsing decides to take something on, so the
+   * control belongs here as much as in the queue. Refusals name the holder --
+   * the atomic function returns who has it, and "already claimed" without a
+   * name is a dead end.
+   */
+  async function doClaim(id: string, claim: boolean) {
+    setBusyId(id);
+    setRefusal((prev) => { const n = { ...prev }; delete n[id]; return n; });
+    const res = await claimProject(id, claim);
+    setBusyId(null);
+    if (!res.ok) {
+      const holder = res.claimedBy ? team.find((m) => m.id === res.claimedBy) : undefined;
+      setRefusal((prev) => ({
+        ...prev,
+        [id]: res.reason === "already_claimed"
+          ? `Already claimed by ${holder?.name ?? "someone else"}.`
+          : res.reason === "not_owner"
+            ? "You can't release someone else's claim."
+            : "Could not update the claim.",
+      }));
+    }
+  }
+
   function toggle(id: string) {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -220,7 +248,7 @@ export function ProjectsClient() {
   const dateOf = (iso: string | null | undefined) =>
     iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—";
 
-  const GRID = "grid grid-cols-[24px_0.85fr_0.7fr_1fr_1.5fr_1.1fr_0.9fr_0.7fr_0.6fr_34px] gap-3";
+  const GRID = "grid grid-cols-[24px_0.85fr_0.7fr_1fr_1.5fr_1.1fr_0.9fr_0.7fr_0.6fr_0.8fr_34px] gap-3";
 
   return (
     <>
@@ -304,6 +332,7 @@ export function ProjectsClient() {
               <span>Fulfillment</span>
               <span className="text-right">Total</span>
               <span className="text-right">Payment</span>
+              <span className="text-right">Owner</span>
               <span />
             </div>
 
@@ -412,6 +441,53 @@ export function ProjectsClient() {
                           : { background: "rgba(143,190,112,0.14)", border: "0.5px solid rgba(143,190,112,0.35)", color: "#a0cc7a" }}>
                         {p.payment_status ?? "—"}
                       </span>
+                    </span>
+
+                    {/* Who owns this purchase, and the control to take it.
+                        ONE owner for the whole project: the groups beneath are
+                        worked by that person, so a designer finishing the
+                        cabinets is not blocked by somebody sitting on the
+                        hardware.
+
+                        A div role="button", not a <button> -- this sits inside
+                        the row's expand button, and nesting buttons is invalid
+                        HTML. */}
+                    <span className="self-center flex items-center justify-end gap-1.5 min-w-0">
+                      {(() => {
+                        const owner = p.claimed_by ? team.find((m) => m.id === p.claimed_by) : undefined;
+                        const mine = !!currentUserId && p.claimed_by === currentUserId;
+                        return (
+                          <>
+                            {owner && (
+                              <>
+                                <AvatarWithProfile member={owner} size="sm" />
+                                <span className="text-[10px] text-cream/45 truncate hidden xl:inline">
+                                  {owner.name.split(" ")[0]}
+                                </span>
+                              </>
+                            )}
+                            {(!p.claimed_by || mine) && !archived && (
+                              <div
+                                role="button"
+                                tabIndex={0}
+                                onClick={(ev) => { ev.stopPropagation(); void doClaim(p.id, !p.claimed_by); }}
+                                onKeyDown={(ev) => {
+                                  if (ev.key === "Enter" || ev.key === " ") {
+                                    ev.preventDefault(); ev.stopPropagation();
+                                    void doClaim(p.id, !p.claimed_by);
+                                  }
+                                }}
+                                className="px-2 py-0.5 rounded-full text-[9px] uppercase tracking-wider cursor-pointer transition-all flex-shrink-0"
+                                style={mine
+                                  ? { background: "rgba(255,255,255,0.06)", border: "0.5px solid rgba(255,255,255,0.18)", color: "rgba(232,227,218,0.6)" }
+                                  : { background: "rgba(184,130,106,0.20)", border: "0.5px solid rgba(184,130,106,0.55)", color: "#d9a888" }}
+                              >
+                                {busyId === p.id ? "…" : mine ? "Release" : "Claim"}
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
                     </span>
 
                     {/* Archive / restore.
