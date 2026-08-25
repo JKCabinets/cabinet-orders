@@ -174,7 +174,17 @@ const PANEL: React.CSSProperties = {
   // exactly so the modal feels like the same material as the chrome.
   // Keeping a slightly heavier shadow than the sidebar since the modal is
   // a larger floating surface over a darkened overlay.
-  background: "rgba(87, 98, 87, 0.28)",
+  // ⚠ SAMPLED, NOT GUESSED. The sidebar renders at #3c484c and this modal
+  // rendered at #2c302f -- 25% darker, and green-dominant where the sidebar is
+  // blue-dominant. Both use glass-sage, so the class was never the problem.
+  //
+  // The cause is what each one is translucent OVER. The sidebar sits on the
+  // blue-grey page; the modal sits on a 55%-black overlay, so the sage tint had
+  // no blue beneath it to pick up and read green over near-black.
+  //
+  // Fixed by making the panel opaque enough to carry its own colour rather than
+  // borrowing the overlay's, and tinting it to the sampled sidebar blue.
+  background: "rgba(58, 71, 78, 0.92)",
   backdropFilter: "blur(20px) saturate(140%)",
   WebkitBackdropFilter: "blur(20px) saturate(140%)",
   border: "0.5px solid rgba(145, 165, 151, 0.30)",
@@ -531,7 +541,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
       ref={overlayRef}
       onClick={(e) => e.target === overlayRef.current && onClose()}
       className="fixed inset-0 z-50 flex items-stretch justify-center animate-fade-in p-4 md:p-8"
-      style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(8px)" }}
+      style={{ background: "rgba(16,22,26,0.62)", backdropFilter: "blur(8px)" }}
     >
       <div
         className="w-full max-w-[1200px] max-h-[92vh] flex flex-col animate-slide-in overflow-hidden rounded-panel"
