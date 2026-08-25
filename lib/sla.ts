@@ -180,18 +180,48 @@ const WARRANTY_RULES: Partial<Record<string, SlaRule>> = {
  * adding a type is one entry.
  */
 /**
- * Hardware: NO RULES, deliberately.
- *
- * There is no baseline for what "slow" looks like on a box of pulls, and a
- * threshold guessed at now would either never fire or fire constantly.
- * slaRuleFor returns undefined for every stage here, slaTier returns "ok",
- * and /sla already renders stages that carry no rule.
- *
- * The natural rule when there is real throughput is "Ordered, while
- * tracking_number is null" -- measuring MISSING DATA the way In production
- * and At cross dock already do, rather than elapsed time.
+ * A hardware group at Ordered with no tracking number is STRANDED in the same
+ * sense a cabinet order in production with no finish date is: nothing in the
+ * system can move it, and nobody has recorded the thing that would.
  */
-const HARDWARE_RULES: Partial<Record<string, SlaRule>> = {};
+const trackingMissing = (o: Order): boolean => !o.tracking_number;
+
+/**
+ * Hardware: Ordered carries the standard 24h/48h. Shipped and Delivered do not.
+ *
+ * Written empty in August on the grounds that there was no baseline for what
+ * "slow" looks like on a box of pulls. That was the right call with no
+ * throughput; the rule now is that hardware follows the same 24/48 as
+ * everything else.
+ *
+ * ⚠ IT MEASURES MISSING TRACKING, NOT ELAPSED TIME -- deliberately, and this is
+ * the difference worth understanding.
+ *
+ * A plain stage clock would say "this has been at Ordered too long", which is
+ * often just true and not actionable: a vendor takes as long as it takes. The
+ * clock that fires here says "nobody has recorded the shipment", which is a
+ * thing somebody can go and do. That is exactly how In production and At cross
+ * dock already work, and why they do not scream about orders legitimately
+ * sitting for six weeks.
+ *
+ * So a hardware group ordered a fortnight ago WITH tracking is quiet; one
+ * ordered yesterday WITHOUT it starts a clock.
+ *
+ * "Shipped" has no rule. It is waiting on a carrier, with no field that would
+ * say when to stop worrying -- the same reason warranty's "Shipped" has none.
+ * "Delivered" is terminal.
+ *
+ * ⚠ Expect hardware groups to start appearing in SLA counts once a hardware
+ * product exists in Shopify. None does yet, so this is inert today.
+ */
+const HARDWARE_RULES: Partial<Record<string, SlaRule>> = {
+  "Ordered": {
+    softHours: SOFT_HOURS,
+    hardHours: HARD_HOURS,
+    clockRuns: trackingMissing,
+    waitingFor: "a tracking number",
+  },
+};
 
 export const SLA_RULES: Record<OrderType, Partial<Record<string, SlaRule>>> = {
   order: STANDARD_RULES,
