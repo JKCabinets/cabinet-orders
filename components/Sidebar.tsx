@@ -7,31 +7,16 @@ import { useSession, signOut } from "next-auth/react";
 import {
   LayoutDashboard, LineChart, ShieldCheck, Archive, Settings, LogOut,
   Calendar, ChevronDown, Menu, X, PackageX, FileText, Package,
+  Inbox, Layers, Boxes, Wrench,
 } from "lucide-react";
 import { useStore } from "@/lib/store";
-import { ORDER_STAGES, OrderStage } from "@/lib/data";
+import { Order, OrderType, STAGE_LIST_BY_TYPE } from "@/lib/data";
+import { attentionFor } from "@/lib/attention";
 import { rollupBackorders } from "@/lib/backorders";
 import clsx from "clsx";
 
-/**
- * Map a stage label to the dot color shown next to it in the sidebar.
- * Mirrors STAGE_COLOR used on the cards / dashboard tiles.
- */
-const STAGE_DOT: Record<OrderStage, string> = {
-  "New":            "#c97070",
-  "Entered":        "#d4922a",
-  "In production":  "#c8b84a",
-  "At cross dock":  "#5a8db8",
-  "Delivered":      "#8fbe70",
-};
-
-/** Convert "In production" → "in-production" for the URL slug. */
 import { OnlineUsersInSidebar } from "./OnlineUsersInSidebar";
 import { AvatarWithProfile } from "./AvatarWithProfile";
-
-function stageToSlug(stage: OrderStage): string {
-  return stage.toLowerCase().replace(/\s+/g, "-");
-}
 
 interface SidebarProps {
   /** Mobile drawer open state */
@@ -42,29 +27,64 @@ interface SidebarProps {
 export function Sidebar({ open, onClose }: SidebarProps) {
   const pathname = usePathname();
   const { data: session } = useSession();
-  const { orders, customs, samples, warranties, team, onlineUsers } = useStore();
+  const { allOrders, orders, customs, samples, warranties, hardware, projects, team, onlineUsers } = useStore();
+  const currentUserId = (session?.user as { id?: string } | undefined)?.id ?? null;
   const user = session?.user as { name?: string; role?: string } | undefined;
   const isAdmin = user?.role === "admin";
 
-  // Active orders (not archived) grouped by stage for the inline counts
   const activeOrders = orders.filter(o => !o.archived);
-  const stageCounts: Record<string, number> = {};
-  for (const stage of ORDER_STAGES) {
-    stageCounts[stage] = activeOrders.filter(o => o.stage === stage).length;
-  }
-  // Distinct backordered SKUs across active orders. Shows as the count badge
-  // on the Backorders nav item, and the item itself only renders when > 0.
-  const backorderCount = rollupBackorders(activeOrders).length;
-  const archivedCount = orders.filter(o => o.archived).length;
 
-  // Alternate Orders badges. Active = not archived and not at the terminal
-  // stage. Custom counts from "New" onward, i.e. every open quote.
-  const customCount = customs.filter(
-    o => !o.archived && o.stage !== "Delivered").length;
-  const sampleCount = samples.filter(
-    o => !o.archived && o.stage !== "Delivered").length;
-  const warrantyCount = warranties.filter(
-    o => !o.archived && o.stage !== "Resolved").length;
+  /**
+   * Category badges count rows AT THE FIRST STAGE OF THEIR OWN FLOW.
+   *
+   * Not the total. A badge reading 40 on Cabinets tells you nothing you can
+   * act on -- most of those are moving along fine. A badge reading 6 means six
+   * orders are sitting unentered, which is a thing somebody does today.
+   *
+   * "First stage" rather than "New" as a string: hardware starts at Ordered
+   * and warranty at New claim. One rule, read from STAGE_LIST_BY_TYPE, so a
+   * sixth type gets a correct badge without anyone remembering to add it.
+   */
+  const atFirstStage = (list: Order[]) => list.filter(o => {
+    if (o.archived) return false;
+    const flow = STAGE_LIST_BY_TYPE[o.type as OrderType] as readonly string[] | undefined;
+    return !!flow && flow.length > 0 && o.stage === flow[0];
+  }).length;
+
+  const cabinetCount  = atFirstStage(orders);
+  const hardwareCount = atFirstStage(hardware);
+  const sampleCount   = atFirstStage(samples);
+  const customCount   = atFirstStage(customs);
+  const warrantyCount = atFirstStage(warranties);
+
+  /**
+   * My Work: rows I have claimed that need something doing.
+   *
+   * Straight from the attention engine, so this badge and the /work queue
+   * cannot disagree -- the number you see here is the number of rows you find
+   * when you click it. Counting "claimed by me" alone would be a workload
+   * figure, which is a different question and not one a badge should answer.
+   */
+  const myWorkCount = allOrders.filter(
+    o => o.claimed_by === currentUserId && attentionFor(o).length > 0).length;
+
+  /** Anything breached or coming due, across every type. */
+  const slaCount = allOrders.filter(o =>
+    attentionFor(o).some(r => r.kind === "sla_breached" || r.kind === "sla_due_soon")).length;
+
+  const backorderCount = rollupBackorders(activeOrders).length;
+
+  /**
+   * Archived PROJECTS, not archived orders.
+   *
+   * Archiving moved up to the project on 2026-08-25: a Shopify checkout is
+   * archived as a whole purchase and its groups are hidden by lookup, never by
+   * their own flag. Counting `orders.archived` here would read zero forever
+   * for Shopify work and only ever see standalone custom jobs.
+   */
+  const archivedCount =
+    Object.values(projects).filter(p => p.archived).length
+    + customs.filter(o => o.archived).length;
 
   const [ordersOpen, setOrdersOpen] = useState(true);
   const [overviewOpen, setOverviewOpen] = useState(true);
@@ -123,7 +143,12 @@ export function Sidebar({ open, onClose }: SidebarProps) {
               onToggle={() => setOverviewOpen(v => !v)}
             >
               <NavItem href="/dashboard" icon={<LayoutDashboard className="w-3.5 h-3.5" />} label="Dashboard" pathname={pathname} />
-              <NavItem href="/sla" icon={<LineChart className="w-3.5 h-3.5" />} label="SLA" pathname={pathname} />
+              {/* My Work above everything else that is not the dashboard.
+                  Groups are claimed independently -- a cabinet group and a
+                  sample group of one checkout belong to different people -- so
+                  "what have I got" is the question most often asked. */}
+              <NavItem href="/work" icon={<Inbox className="w-3.5 h-3.5" />} label="My Work" count={myWorkCount} pathname={pathname} />
+              <NavItem href="/work?scope=all" icon={<Inbox className="w-3.5 h-3.5" />} label="All Work" pathname={pathname} />
               {/* Backorders surfaces only when there's something to act on.
                   When the count drops to zero the link disappears — keeps
                   the sidebar quiet on calm days. */}
@@ -138,52 +163,62 @@ export function Sidebar({ open, onClose }: SidebarProps) {
               )}
             </SidebarSection>
 
-            {/* ── Orders by stage ── */}
+            {/* ── Shopify ──
+                Everything under here arrives by ingest. Projects first: a
+                checkout is the purchase, and the orders beneath it are how it
+                gets worked.
+
+                The five cabinet STAGES used to live in this sidebar. They moved
+                into the Cabinets hub as stage cards, so the pipeline is visible
+                where the orders are rather than in the navigation. */}
             <SidebarSection
-              label="Orders"
+              label="Shopify"
               open={ordersOpen}
               onToggle={() => setOrdersOpen(v => !v)}
             >
-              {ORDER_STAGES.map(stage => (
-                <NavItem
-                  key={stage}
-                  href={`/orders/${stageToSlug(stage)}`}
-                  dot={STAGE_DOT[stage]}
-                  label={stage}
-                  count={stageCounts[stage]}
-                  pathname={pathname}
-                />
-              ))}
+              <NavItem href="/projects" icon={<Layers className="w-3.5 h-3.5" />} label="Projects" pathname={pathname} />
+              <NavItem href="/orders/cabinets" icon={<Boxes className="w-3.5 h-3.5" />} label="Cabinets" count={cabinetCount} pathname={pathname} />
+              <NavItem href="/orders/hardware" icon={<Wrench className="w-3.5 h-3.5" />} label="Hardware" count={hardwareCount} pathname={pathname} />
+              <NavItem href="/samples" icon={<Package className="w-3.5 h-3.5" />} label="Samples" count={sampleCount} pathname={pathname} />
             </SidebarSection>
 
-            {/* ── Alternate Orders ── */}
-            {/* Warranty moved here out of "Other" and gained a count badge. */}
+            {/* ── Offline / service ──
+                Neither of these comes from Shopify. A custom job is contract
+                work carrying no Shopify products; a warranty claim is ABOUT a
+                purchase rather than part of one. Both are standalone rows with
+                no project, which is exactly why they are not above. */}
             <SidebarSection
-              label="Alternate Orders"
+              label="Offline / service"
               open={altOpen}
               onToggle={() => setAltOpen(v => !v)}
             >
-              <NavItem href="/custom" icon={<FileText className="w-3.5 h-3.5" />} label="Custom Orders" count={customCount} pathname={pathname} />
-              <NavItem href="/samples" icon={<Package className="w-3.5 h-3.5" />} label="Sample Orders" count={sampleCount} pathname={pathname} />
-              <NavItem href="/warranty" icon={<ShieldCheck className="w-3.5 h-3.5" />} label="Warranty" count={warrantyCount} pathname={pathname} />
+              <NavItem href="/custom" icon={<FileText className="w-3.5 h-3.5" />} label="Custom Jobs" count={customCount} pathname={pathname} />
+              <NavItem href="/warranty" icon={<ShieldCheck className="w-3.5 h-3.5" />} label="Warranty Claims" count={warrantyCount} pathname={pathname} />
             </SidebarSection>
 
             {/* ── Other ── */}
             <SidebarSection
-              label="Other"
+              label="Operations"
               open={otherOpen}
               onToggle={() => setOtherOpen(v => !v)}
             >
+              <NavItem href="/sla" icon={<LineChart className="w-3.5 h-3.5" />} label="SLA & Exceptions" count={slaCount} pathname={pathname} />
               <NavItem href="/calendar" icon={<Calendar className="w-3.5 h-3.5" />} label="Calendar" pathname={pathname} />
+              {/* Archived PROJECTS, not archived order rows -- archiving moved
+                  up to the purchase, so /orders/archived would show an empty
+                  list forever. */}
               <NavItem
-                href="/orders/archived"
+                href="/projects?filter=archived"
                 icon={<Archive className="w-3.5 h-3.5" />}
                 label="Archive"
                 count={archivedCount}
                 pathname={pathname}
               />
               {isAdmin && (
-                <NavItem href="/admin" icon={<Settings className="w-3.5 h-3.5" />} label="Admin" pathname={pathname} />
+                <>
+                  <NavItem href="/admin/team" icon={<ShieldCheck className="w-3.5 h-3.5" />} label="Team" pathname={pathname} />
+                  <NavItem href="/admin" icon={<Settings className="w-3.5 h-3.5" />} label="Admin" pathname={pathname} />
+                </>
               )}
             </SidebarSection>
           </nav>
