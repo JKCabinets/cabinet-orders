@@ -2,7 +2,9 @@
 
 **As of 2026-08-20 · supersedes HANDOFF-2026-08-18-BUILD.md**
 **AMENDED 2026-08-24 — Project Orders.** One Shopify checkout is now one
-PROJECT with one `orders` row per product category. Sections marked ⚠ AMENDED
+PROJECT with one `orders` row per product category.
+**AMENDED 2026-08-25 — custom orders are NOT in that model.** See the
+correction in the appendix before trusting anything below about them. Sections marked ⚠ AMENDED
 below were true before that migration and are not now. `git log docs/` shows
 what changed and when.
 
@@ -650,21 +652,91 @@ dispatch from a date. Logged as `fulfilment_not_applied` rather than discarded.
 
 ## Still outstanding
 
-- **`webhook-health` matches `orders.shopify_id`.** Works only because ingest
-  denormalises it onto the FIRST group. Repoint it at `projects.shopify_id`
-  BEFORE the follow-up migration drops the column, or it emails hourly that
-  every project is missing.
-- **Realtime on `projects` is not subscribed.** The publication and policies
-  exist; `useRealtimeOrders` does not listen. A refund will not reach an open
-  browser until a full refetch — which defeats the payment hold, whose entire
-  purpose is stopping an order moving after a refund.
-- **The follow-up migration** dropping the columns copied to `projects`
-  (`name`, customer fields, `shopify_id`). Additive-only was deliberate: there
-  is no staging environment, so between migration and app deploy the running
-  app must still find every column it reads.
+- ⚠ **THE COLUMN DROP — its own session.** The columns copied to `projects`
+  (`shopify_id`, `ship_to`, `customer_phone`, `customer_email`,
+  `payment_status`, `payment_hold_cleared_*`) are still on `orders`.
+  **109 references across 18 files** read them: `paymentHoldActive`, the hold
+  banner, the PATCH hold logic, the export PDF's customer block,
+  `syncToShopify`, the acknowledgment reconcile, the calendar. Each needs
+  rewiring to resolve through the project, and a missed one is a runtime
+  failure on a live page.
+
+  It is NOT urgent. Ingest writes both sides, so the copies do not drift — what
+  is left is duplication, not incorrectness. And the crutch that made it
+  pressing is gone: `webhook-health` no longer depends on `orders.shopify_id`.
+
+  Additive-only was deliberate. There is no staging environment, so between the
+  migration and the deploy the running app must still find every column it
+  reads. Code first, verified, THEN the drop.
+
+  ⚠ `orders.name` should stay for now regardless. Warranty rows have no
+  project, and `claimant_name` covers only UNLINKED claims — dropping `name`
+  means resolving every warranty customer through a nullable `about_order_id`.
+  Leave it until warranty linking is actually built.
+
+- **Hardware carries no SLA rule.** Decided in August on the grounds that there
+  was no baseline for what "slow" looks like on a box of pulls. Garrett has
+  since said it should follow the same 24/48h as everything else. Two lines in
+  `HARDWARE_RULES`; it will make hardware groups start appearing in SLA counts.
+
+- **`total_price` has no UI.** The column, the CHECK constraint and both routes
+  are done; nothing lets anyone type a number. `NewOrderModal` for create,
+  `OrderModal` for edit.
+
 - **See `docs/KNOWN-WRONG-ADDITIONS-2026-08-20.md`** for the bulk-route
   delivery gate, the duplicated attachment gate, and custom orders' missing
   backward-move clearing.
+
+## Done since this appendix was written (2026-08-24 evening / 08-25)
+
+- **`webhook-health` reconciles against `projects.shopify_id`.** Verified
+  live: 6 settled orders checked, 0 missing.
+- **Realtime on `projects` is subscribed.** `useRealtimeProjects` in
+  `lib/useRealtimeOrders.ts`, its own channel; the store holds a keyed
+  `Record<string, Project>` fed by `/api/projects`. ⚠ Nothing READS it yet —
+  `paymentHoldActive` still uses the copied column — so it starts mattering
+  with the drop above.
+- **Custom orders LEFT the project model.** See the correction below.
+- **The order modal** is now a project hub: group cards carrying items, SLA
+  target, stage and claim; tabs; master-detail Full Order; one pipeline card.
+
+
+## ⚠ CORRECTION — custom orders are NOT in the project model
+
+`migrations/2026-08-24-custom-orders-standalone.sql` reversed part of
+`2026-08-20-project-orders.sql`. Anything above implying a custom job has a
+project is now false.
+
+**Why it was reversed.** Custom orders were given a project because the money
+columns had moved to `projects`, and a custom job with nowhere to put its total
+would have been invisible to every revenue query. The alternative — the same
+columns on both tables, meaningless on project-linked rows by convention — was
+rejected as a decaying convention.
+
+What changed is the business, not the reasoning. Custom jobs are contract work
+carrying NO Shopify products at all, so there is no Shopify revenue on them to
+double-count. The project they were given had a null `shopify_id`, no money and
+exactly one group: a shape with nothing in it.
+
+**And the convention is now a CONSTRAINT.** `orders.total_price` may only be
+set on a row with a NULL `project_id`, enforced by
+`orders_total_price_standalone_only`. That is what makes this different from
+the option rejected in August — Postgres enforces it, not a comment somebody
+has to read. Revenue is:
+
+```sql
+select (select coalesce(sum(total_price),0) from projects)      -- Shopify
+     + (select coalesce(sum(total_price),0) from orders);        -- custom
+```
+
+No overlap is possible: the constraint forbids a row from being in both sets.
+
+**The cost this removed.** `create_project_with_group()` — a plpgsql function
+with dynamic SQL and a four-case self-test — existed solely so a custom job
+could be created atomically with a project that held nothing. The function
+remains (it is still the right way to retrofit the Shopify webhook, which does
+project-then-group with a compensating delete that can itself fail), but
+nothing forced it any more.
 
 ## Verified against the live database, 2026-08-20
 
@@ -678,3 +750,71 @@ Recorded so the next session does not re-derive them:
   **no foreign key** — renaming a row orphans its storage objects silently.
 - No CHECK constraint on `orders.stage`. `orders_source_check` allows only
   `Shopify` / `Manual`, and will need widening when public claims intake lands.
+
+---
+
+# Appendix — patching discipline
+
+Learned expensively on 2026-08-24. Both rules cost multiple failed attempts
+before being written down.
+
+## 1. A patch step is an ANCHOR and a REPLACEMENT. Nothing else.
+
+Steps used to carry a hand-written "marker" proving the step had applied.
+**Five collisions in one session**, every one the same root cause — a marker
+that was not unique to what the step writes:
+
+| | |
+|---|---|
+| `prodEditable && (` | matched an unrelated button 400 lines away |
+| closing JSX markup | matched incidental formatting elsewhere in the file |
+| a marker spanning a line break | never appears literally, so never matched |
+| an absent-marker | was absent BEFORE the step too, so it read as applied |
+| `  vendor?: string;` | matched `Order.vendor` while adding `SkuItem.vendor` |
+
+The marker was redundant. "Already applied" is derivable:
+
+```python
+def already_applied(anchor, replacement, text):
+    # Test the REPLACEMENT first. Every additive step's replacement CONTAINS
+    # its anchor, so checking the anchor first re-applies forever.
+    if replacement == "":
+        return anchor not in text      # a deletion is done when it is gone
+    return replacement in text
+```
+
+Then: applied → skip; anchor appears exactly once → plan it; anything else →
+abort. Refuse a replacement identical to its anchor (a no-op reporting success)
+and one that is a substring of its anchor (indistinguishable from un-applied).
+
+## 2. ⚠ PARSE THE RESULT. Counting braces cannot see JSX nesting.
+
+Three separate attempts at the modal layout shipped **balanced but
+unparseable** markup — a `<div>` opened and never closed while every brace
+matched. `tsc` caught them, but only after a failed run on the box.
+
+Install a parser in the authoring sandbox and run it before shipping:
+
+```bash
+npm install esbuild --prefix /tmp/tools
+/tmp/tools/node_modules/.bin/esbuild --jsx=automatic --outfile=/dev/null file.tsx
+```
+
+It named each failure precisely — file, line, and which opening tag was
+orphaned. Note esbuild strips TYPES without checking them: it happily parsed a
+file using `TeamMember` before it was imported. `tsc` is still the gate on the
+box.
+
+**esbuild is NOT in this repo's node_modules** — Next 15 uses SWC — so a patch
+script cannot run it there. Parse in the sandbox; `npx tsc --noEmit` on the box.
+
+## 3. Verify what the patch DID, not what it left alone
+
+Post-write checks that assert things about untouched code produced repeated
+false aborts: a sweep requiring `key={order.id}` in every `.tsx` fired on
+`OrderModal`, which renders a single order and has never had a list key. A
+guard looking for `allOrders.find(o => o.id === order.id)` fired on text the
+patch itself had just written.
+
+Count what changed and compare it to what the steps intended. Do not assert
+that unrelated code still looks a particular way.
