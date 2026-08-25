@@ -169,8 +169,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: true, note: "all recent orders still inside the grace window", ...detail });
   }
 
+  // Reconcile against PROJECTS, not orders.
+  //
+  // A Shopify checkout is one project with one `orders` row per product
+  // category. Matching on orders.shopify_id works only because ingest
+  // denormalises that value onto the FIRST group -- a crutch that exists to
+  // keep this check working, and that stops being true the moment the
+  // column is dropped from orders. The project is where the Shopify order
+  // actually lives.
   const { data: rows, error } = await supabase
-    .from("orders")
+    .from("projects")
     .select("shopify_id")
     .in("shopify_id", settled.map(o => o.numericId));
 
@@ -190,7 +198,7 @@ export async function GET(req: NextRequest) {
   if (missing.length > 0) {
     detail.missing = missing.map(o => ({ name: o.name, id: o.numericId, created_at: o.createdAt }));
     problems.push(
-      `${missing.length} order(s) exist in Shopify but not in the OMS: `
+      `${missing.length} order(s) exist in Shopify but have no project in the OMS: `
       + `${missing.map(o => o.name).join(", ")}. Ingestion is not working. `
       + `Check: docker logs <container> | grep shopify-webhook`
     );

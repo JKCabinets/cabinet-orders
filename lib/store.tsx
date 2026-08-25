@@ -9,9 +9,10 @@ import {
   Order, OrderType, Stage, TeamMember,
   Member, Source, ORDER_STAGES, WARRANTY_STAGES, AvatarColor, Role,
   ID_PREFIX_BY_TYPE, ORDER_TYPES, shapeOrder,
+  type Project,
 } from "./data";
 import { fieldsToClearOnBackwardMove } from "./stageLogic";
-import { useRealtimeOrders } from "./useRealtimeOrders";
+import { useRealtimeOrders, useRealtimeProjects } from "./useRealtimeOrders";
 import { usePresence } from "./usePresence";
 
 interface StoreCtx {
@@ -28,6 +29,9 @@ interface StoreCtx {
   samples: Order[];
   customs: Order[];
   hardware: Order[];
+  /** Keyed by id. Empty for standalone rows -- custom jobs and warranty
+   *  claims have no project. */
+  projects: Record<string, Project>;
   team: TeamMember[];
   onlineUsers: string[];
   loading: boolean;
@@ -168,6 +172,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const samples    = useMemo(() => allOrders.filter(o => o.type === "sample"),   [allOrders]);
   const customs    = useMemo(() => allOrders.filter(o => o.type === "custom"),   [allOrders]);
   const hardware   = useMemo(() => allOrders.filter(o => o.type === "hardware"), [allOrders]);
+  // Projects, keyed by id. A Shopify checkout is one project with one
+  // `orders` row per product category; the project owns the customer, the
+  // address and the money. Custom jobs and warranty claims have no project
+  // and simply are not in here.
+  const [projects, setProjects] = useState<Record<string, Project>>({});
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -186,10 +195,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       // separate functions -- a copy that drifts the moment a type is added,
       // which is the bug class behind the tag overwrite and the stale
       // realtime shaper. Adding a type is now genuinely one line.
-      const [teamRes, ...typeRes] = await Promise.all([
+      const [teamRes, projectsRes, ...typeRes] = await Promise.all([
         apiCall("/api/team"),
+        apiCall("/api/projects"),
         ...ORDER_TYPES.map(t => apiCall(`/api/orders?type=${t}`)),
       ]);
+      if (projectsRes?.data) {
+        setProjects(Object.fromEntries(
+          (projectsRes.data as Project[]).map((p) => [p.id, p])));
+      }
       setAllOrders(prev => mergeFetched(prev,
         ORDER_TYPES.map((type, i) => ({ type, res: typeRes[i] }))));
       if (teamRes?.data) setTeam(teamRes.data.map(shapeTeamMember));
@@ -227,6 +241,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       // Catch up on anything missed while disconnected. Background refetch —
       // no spinner, idempotent with the live merges above.
       void refetchAll();
+    },
+  });
+
+  // Realtime on projects. Merged into the keyed map rather than an array
+  // so an UPDATE is one assignment -- with the project embedded on every
+  // group instead, a refund would have to patch each copy.
+  useRealtimeProjects({
+    onUpsert: (row) => {
+      const p = row as unknown as Project;
+      if (!p?.id) return;
+      setProjects((prev) => ({ ...prev, [p.id]: p }));
+    },
+    onDelete: (id) => {
+      setProjects((prev) => {
+        if (!(id in prev)) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
     },
   });
 
@@ -603,7 +636,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   return (
     <Store.Provider value={{
-      allOrders, orders, warranties, samples, customs, hardware, team, onlineUsers, loading,
+      allOrders, orders, warranties, samples, customs, hardware, projects, team, onlineUsers, loading,
       addOrder, moveStage, updateNotes, updateInternalNotes, updateOrderDetails, archiveOrder, unarchiveOrder, deleteOrder, bulkAction,
       claimOrder, addTeamMember, updateTeamMember, deactivateTeamMember, deleteTeamMember,
       updateTeamMemberProfile, uploadAvatar,

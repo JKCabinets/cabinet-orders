@@ -656,6 +656,41 @@ export function parseMoney(v: unknown): number | null | "invalid" {
   return Math.round(n * 100) / 100;
 }
 
+/**
+ * A purchase. One Shopify checkout is one project, with one `orders` row per
+ * product category beneath it.
+ *
+ * The project owns what belongs to the WHOLE purchase -- the customer, the
+ * address, and the four money columns. A checkout has one total, so a sum over
+ * `orders` would double-count any order with more than one group. That is
+ * enforced, not conventional: orders_total_price_standalone_only forbids a
+ * project-linked row from carrying a total at all.
+ *
+ * Custom jobs and warranty claims have NO project. They are standalone rows
+ * with a NULL project_id.
+ */
+export interface Project {
+  id: string;
+  /** NULL for anything that did not come from a Shopify checkout. */
+  shopify_id?: string | null;
+  name?: string | null;
+  source?: string | null;
+  ship_to?: string | null;
+  customer_phone?: string | null;
+  customer_email?: string | null;
+  payment_status?: string | null;
+  payment_hold_cleared_for?: string | null;
+  payment_hold_cleared_at?: string | null;
+  /** Nullable means UNKNOWN. Zero means actually zero -- free shipping is a
+   *  real value, and the two must stay distinguishable. */
+  subtotal_price?: number | null;
+  total_tax?: number | null;
+  total_shipping?: number | null;
+  total_price?: number | null;
+  created_at: string;
+  updated_at?: string | null;
+}
+
 export function displayOrderNumber(order: Pick<Order, "id" | "project_id">): string {
   if (order.project_id) return order.project_id;
   for (const suffix of GROUP_HANDLE_SUFFIXES) {

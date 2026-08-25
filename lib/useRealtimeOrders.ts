@@ -35,6 +35,12 @@ interface RealtimeOrdersHandlers {
   onReconnect?: () => void;
 }
 
+interface RealtimeProjectsHandlers {
+  /** INSERT and UPDATE both land here -- the store keys projects by id, so
+   *  there is nothing for the two cases to do differently. */
+  onUpsert: (row: Record<string, unknown>) => void;
+  onDelete: (id: string) => void;
+}
 
 export function useRealtimeOrders(handlers: RealtimeOrdersHandlers) {
   const { status } = useSession();
@@ -114,6 +120,68 @@ export function useRealtimeOrders(handlers: RealtimeOrdersHandlers) {
       if (channel) {
         void channel.unsubscribe();
       }
+    };
+  }, [status]);
+}
+
+/**
+ * The same subscription, for the `projects` table.
+ *
+ * ⚠ WHY THIS EXISTS AT ALL. `payment_status` and the four money columns live
+ * on `projects`. Without this, a refund arriving from Shopify does not reach an
+ * open browser until the next full refetch -- and the payment hold exists
+ * precisely to stop an order moving forward after a refund. A control that
+ * arrives on reload is not the control that was designed.
+ *
+ * Its own channel rather than more `.on()` calls on the orders channel: the two
+ * tables have independent lifecycles, and one failing to subscribe should not
+ * take the other down with it.
+ */
+export function useRealtimeProjects(handlers: RealtimeProjectsHandlers) {
+  const { status } = useSession();
+  const handlersRef = useRef(handlers);
+  useEffect(() => { handlersRef.current = handlers; }, [handlers]);
+
+  useEffect(() => {
+    if (status !== "authenticated") return;
+
+    let cancelled = false;
+    let channel: RealtimeChannel | null = null;
+
+    (async () => {
+      try {
+        const client = await getRealtimeClient();
+        if (cancelled) return;
+
+        channel = client
+          .channel("projects-realtime")
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "projects" },
+            (payload) => {
+              try {
+                if (payload.eventType === "DELETE") {
+                  const id = (payload.old as { id?: string })?.id;
+                  if (id) handlersRef.current.onDelete(id);
+                  return;
+                }
+                handlersRef.current.onUpsert(payload.new as Record<string, unknown>);
+              } catch (err) {
+                console.warn("[realtime] project handler failed", err);
+              }
+            },
+          )
+          .subscribe();
+      } catch (err) {
+        // Best-effort, same as orders: initial load is REST and mutations are
+        // REST, so a failed subscription costs live updates, not function.
+        console.warn("[realtime] could not subscribe to projects", err);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (channel) void channel.unsubscribe();
     };
   }, [status]);
 }
