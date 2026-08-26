@@ -7,7 +7,7 @@ import { useSession, signOut } from "next-auth/react";
 import {
   LayoutDashboard, LineChart, ShieldCheck, Archive, Settings, LogOut,
   Calendar, ChevronDown, Menu, X, PackageX, FileText, Package,
-  Inbox, Layers, Boxes, Wrench,
+  Inbox, Layers, Boxes, Wrench, AlertTriangle,
 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { Order, OrderType, STAGE_LIST_BY_TYPE } from "@/lib/data";
@@ -72,9 +72,26 @@ export function Sidebar({ open, onClose }: SidebarProps) {
   const customCount   = liveCount(customs);
   const warrantyCount = liveCount(warranties);
 
-  const cabinetNew  = atFirstStage(orders);
-  const hardwareNew = atFirstStage(hardware);
-  const sampleNew   = atFirstStage(samples);
+  /**
+   * ⚠ THE BADGE COUNTS WHAT IS LATE. One meaning, everywhere in this sidebar.
+   *
+   * It was briefly a green "N new" -- how much had not been started. That is
+   * only sometimes interesting, and a second badge meaning made the sidebar
+   * two languages at once. Terracotta with a caution icon says the same thing
+   * beside every item: THIS MANY ARE PAST SLA. Zero means nothing is late,
+   * which is a fact worth being able to read at a glance.
+   *
+   * The bare number beside it stays "how much is live". Two numbers, two
+   * questions, neither standing in for the other.
+   */
+  const lateCount = (list: Order[]) => list.filter(
+    o => !o.archived && attentionFor(o).some(r => r.kind === "sla_breached")).length;
+
+  const cabinetLate  = lateCount(orders);
+  const hardwareLate = lateCount(hardware);
+  const sampleLate   = lateCount(samples);
+  const customLate   = lateCount(customs);
+  const warrantyLate = lateCount(warranties);
 
   /**
    * My Work: rows I have claimed that need something doing.
@@ -84,27 +101,38 @@ export function Sidebar({ open, onClose }: SidebarProps) {
    * when you click it. Counting "claimed by me" alone would be a workload
    * figure, which is a different question and not one a badge should answer.
    */
-  const myWorkCount = useMemo(() => {
-    if (!currentUserId) return 0;
+  /**
+   * What you own, and how much of it is late.
+   *
+   * ⚠ OWNERSHIP IS THE COUNT. This used to count only what NEEDED something,
+   * so it read 0 with two purchases claimed -- correct, and useless, because
+   * the tab is a hub for your work and a number that ignores most of your work
+   * is not a number about your work.
+   *
+   * Lateness went to the badge, which is what every other item's badge means.
+   */
+  const [myOwnedCount, myLateCount] = useMemo(() => {
+    if (!currentUserId) return [0, 0] as const;
     const byProject = new Map<string, Order[]>();
-    let standalone = 0;
+    let owned = 0, late = 0;
     for (const o of allOrders) {
       if (o.archived) continue;
       if (o.project_id) {
         const l = byProject.get(o.project_id) ?? [];
         l.push(o);
         byProject.set(o.project_id, l);
-      } else if (o.claimed_by === currentUserId && attentionFor(o).length > 0) {
-        standalone++;
+      } else if (o.claimed_by === currentUserId) {
+        owned++;
+        if (attentionFor(o).some(r => r.kind === "sla_breached")) late++;
       }
     }
-    let mine = 0;
     for (const [id, group] of byProject) {
       const p = projects[id];
       if (!p || p.archived || p.claimed_by !== currentUserId) continue;
-      if (attentionForProject(p, group).length > 0) mine++;
+      owned++;
+      if (attentionForProject(p, group).some(r => r.kind === "sla_breached")) late++;
     }
-    return mine + standalone;
+    return [owned, late] as const;
   }, [allOrders, projects, currentUserId]);
 
   /** Anything breached or coming due, across every type. */
@@ -186,7 +214,14 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                   Groups are claimed independently -- a cabinet group and a
                   sample group of one checkout belong to different people -- so
                   "what have I got" is the question most often asked. */}
-              <NavItem href="/work" icon={<Inbox className="w-3.5 h-3.5" />} label="My Work" count={myWorkCount} pathname={pathname} />
+              {/* ⚠ TWO NUMBERS, MATCHING EVERY OTHER ITEM: how much you own,
+                  and how much of it is late.
+
+                  The count used to be "purchases you own that need something",
+                  which read 0 while two purchases were claimed -- technically
+                  true and useless, because My Work is a HUB for what you own.
+                  Ownership is the count; lateness is the badge. */}
+              <NavItem href="/work" icon={<Inbox className="w-3.5 h-3.5" />} label="My Work" count={myOwnedCount} lateCount={myLateCount} pathname={pathname} />
               {/* No "All Work". Everything unclaimed is a tab inside My Work,
                   and everything else is the Projects page -- a third list of the
                   same rows is a third place for them to disagree. The ?scope=all
@@ -220,9 +255,9 @@ export function Sidebar({ open, onClose }: SidebarProps) {
               onToggle={() => setOrdersOpen(v => !v)}
             >
               <NavItem href="/projects" icon={<Layers className="w-3.5 h-3.5" />} label="Projects" pathname={pathname} />
-              <NavItem href="/orders/cabinets" icon={<Boxes className="w-3.5 h-3.5" />} label="Cabinets" count={cabinetCount} newCount={cabinetNew} pathname={pathname} />
-              <NavItem href="/orders/hardware" icon={<Wrench className="w-3.5 h-3.5" />} label="Hardware" count={hardwareCount} newCount={hardwareNew} pathname={pathname} />
-              <NavItem href="/samples" icon={<Package className="w-3.5 h-3.5" />} label="Samples" count={sampleCount} newCount={sampleNew} pathname={pathname} />
+              <NavItem href="/orders/cabinets" icon={<Boxes className="w-3.5 h-3.5" />} label="Cabinets" count={cabinetCount} lateCount={cabinetLate} pathname={pathname} />
+              <NavItem href="/orders/hardware" icon={<Wrench className="w-3.5 h-3.5" />} label="Hardware" count={hardwareCount} lateCount={hardwareLate} pathname={pathname} />
+              <NavItem href="/samples" icon={<Package className="w-3.5 h-3.5" />} label="Samples" count={sampleCount} lateCount={sampleLate} pathname={pathname} />
             </SidebarSection>
 
             {/* ── Offline / service ──
@@ -235,8 +270,8 @@ export function Sidebar({ open, onClose }: SidebarProps) {
               open={altOpen}
               onToggle={() => setAltOpen(v => !v)}
             >
-              <NavItem href="/custom" icon={<FileText className="w-3.5 h-3.5" />} label="Custom Jobs" count={customCount} pathname={pathname} />
-              <NavItem href="/warranty" icon={<ShieldCheck className="w-3.5 h-3.5" />} label="Warranty Claims" count={warrantyCount} pathname={pathname} />
+              <NavItem href="/custom" icon={<FileText className="w-3.5 h-3.5" />} label="Custom Jobs" count={customCount} lateCount={customLate} pathname={pathname} />
+              <NavItem href="/warranty" icon={<ShieldCheck className="w-3.5 h-3.5" />} label="Warranty Claims" count={warrantyCount} lateCount={warrantyLate} pathname={pathname} />
             </SidebarSection>
 
             {/* ── Other ── */}
@@ -347,7 +382,7 @@ function SidebarSection({
 }
 
 function NavItem({
-  href, label, icon, dot, count, newCount, pathname, comingSoon = false,
+  href, label, icon, dot, count, lateCount, pathname, comingSoon = false,
 }: {
   href: string;
   label: string;
@@ -355,12 +390,13 @@ function NavItem({
   dot?: string;
   count?: number;
   /**
-   * Rows sitting at the FIRST stage of their flow -- work nobody has started.
+   * How many are PAST SLA. Rendered as a terracotta caution badge.
    *
-   * A separate badge rather than folded into `count`, because they answer
-   * different questions and merging them made the headline number wrong.
+   * Separate from `count` because they answer different questions: one is how
+   * much is live, this is how much is late. Merging them made the headline
+   * number wrong when it was tried the other way round.
    */
-  newCount?: number;
+  lateCount?: number;
   pathname: string;
   comingSoon?: boolean;
 }) {
@@ -394,17 +430,18 @@ function NavItem({
       {icon}
       {dot && <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: dot }} />}
       <span className="flex-1 truncate">{label}</span>
-      {typeof newCount === "number" && newCount > 0 && (
+      {typeof lateCount === "number" && lateCount > 0 && (
         <span
-          className="text-[9px] tabular-nums px-1.5 py-px rounded-full flex-shrink-0"
+          className="flex items-center gap-0.5 text-[9px] tabular-nums px-1.5 py-px rounded-full flex-shrink-0"
           style={{
-            background: "rgba(143,190,112,0.18)",
-            border: "0.5px solid rgba(143,190,112,0.45)",
-            color: "#a0cc7a",
+            background: "rgba(184,130,106,0.22)",
+            border: "0.5px solid rgba(184,130,106,0.55)",
+            color: "#d9a888",
           }}
-          title={`${newCount} not started yet`}
+          title={`${lateCount} past SLA`}
         >
-          {newCount} new
+          <AlertTriangle className="w-2.5 h-2.5 flex-shrink-0" />
+          {lateCount}
         </span>
       )}
       {typeof count === "number" && (

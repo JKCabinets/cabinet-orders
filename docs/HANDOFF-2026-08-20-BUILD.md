@@ -1,5 +1,16 @@
 # JK Cabinets OMS — Build Handoff
 
+> ## \u26a0 SUPERSEDED IN PART \u2014 read `HANDOFF-2026-08-25-REWORK.md` first
+>
+> On 2026-08-25 a purchase became the unit of ownership: **archived as a whole,
+> claimed as a whole, shown as a whole**. Anything below about per-group
+> claiming or per-row archiving is false. A work queue, an orders hub, an
+> attention engine and a rebuilt dashboard also landed and are described only
+> there.
+>
+> Sections 1\u201313 remain accurate on ingestion, auth, gates and conventions.
+
+
 **As of 2026-08-20 · supersedes HANDOFF-2026-08-18-BUILD.md**
 **AMENDED 2026-08-24 — Project Orders.** One Shopify checkout is now one
 PROJECT with one `orders` row per product category.
@@ -674,18 +685,20 @@ dispatch from a date. Logged as `fulfilment_not_applied` rather than discarded.
   means resolving every warranty customer through a nullable `about_order_id`.
   Leave it until warranty linking is actually built.
 
-- **Hardware carries no SLA rule.** Decided in August on the grounds that there
-  was no baseline for what "slow" looks like on a box of pulls. Garrett has
-  since said it should follow the same 24/48h as everything else. Two lines in
-  `HARDWARE_RULES`; it will make hardware groups start appearing in SLA counts.
+- ~~**Hardware carries no SLA rule.**~~ **DONE 2026-08-25.** `Ordered` carries
+  24/48h, measured on MISSING TRACKING rather than elapsed time -- a vendor
+  takes as long as it takes, but "nobody has recorded the shipment" is
+  actionable. Matches how In-production and At-cross-dock already work. Inert
+  until a hardware product exists in Shopify.
 
-- **`total_price` has no UI.** The column, the CHECK constraint and both routes
-  are done; nothing lets anyone type a number. `NewOrderModal` for create,
-  `OrderModal` for edit.
+- ~~**`total_price` has no UI.**~~ **DONE 2026-08-25.** A Job total field on
+  custom jobs only, and a running revenue panel on `/admin` dated by when the
+  order was placed.
 
-- **See `docs/KNOWN-WRONG-ADDITIONS-2026-08-20.md`** for the bulk-route
-  delivery gate, the duplicated attachment gate, and custom orders' missing
-  backward-move clearing.
+- **See `docs/KNOWN-WRONG-ADDITIONS-2026-08-25.md`** -- which SUPERSEDES the
+  `-20` file. That one led with two bulk-route defects that no longer exist:
+  they were closed by DELETING the `move` action, not by fixing it, and a
+  known-wrong list naming absent code sends the next reader hunting for it.
 
 ## Done since this appendix was written (2026-08-24 evening / 08-25)
 
@@ -693,9 +706,11 @@ dispatch from a date. Logged as `fulfilment_not_applied` rather than discarded.
   live: 6 settled orders checked, 0 missing.
 - **Realtime on `projects` is subscribed.** `useRealtimeProjects` in
   `lib/useRealtimeOrders.ts`, its own channel; the store holds a keyed
-  `Record<string, Project>` fed by `/api/projects`. ⚠ Nothing READS it yet —
-  `paymentHoldActive` still uses the copied column — so it starts mattering
-  with the drop above.
+  `Record<string, Project>` fed by `/api/projects`. ⚠ AMENDED 2026-08-25: it
+  has real readers now — `/projects`, the work queue, the dashboard, the
+  sidebar and `ownerOf()` in `OrderTable` all resolve archive state and
+  ownership through it. `paymentHoldActive` still uses the copied column, which
+  is the one thing left waiting on the drop.
 - **Custom orders LEFT the project model.** See the correction below.
 - **The order modal** is now a project hub: group cards carrying items, SLA
   target, stage and claim; tabs; master-detail Full Order; one pipeline card.
