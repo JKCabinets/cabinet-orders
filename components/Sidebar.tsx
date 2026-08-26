@@ -87,6 +87,26 @@ export function Sidebar({ open, onClose }: SidebarProps) {
   const lateCount = (list: Order[]) => list.filter(
     o => !o.archived && attentionFor(o).some(r => r.kind === "sla_breached")).length;
 
+  /**
+   * New orders across every LIVE project -- the badge on Projects.
+   *
+   * ⚠ COUNTS ORDERS AT THEIR FIRST STAGE, claimed or not. Garrett's call: what
+   * matters on the page people open to pick work up is how much has not been
+   * started, and a purchase somebody already owns can still have an untouched
+   * order in it.
+   *
+   * Counts ORDERS, not projects, because that is the thing sitting undone. A
+   * project with one new order and two moving along is not "one new project"
+   * -- it is one new order inside a live purchase.
+   */
+  const projectNewCount = allOrders.filter(o => {
+    if (o.archived || !o.project_id) return false;
+    const p = projects[o.project_id];
+    if (!p || p.archived) return false;
+    const flow = STAGE_LIST_BY_TYPE[o.type as OrderType] as readonly string[] | undefined;
+    return !!flow && flow.length > 0 && o.stage === flow[0];
+  }).length;
+
   const cabinetLate  = lateCount(orders);
   const hardwareLate = lateCount(hardware);
   const sampleLate   = lateCount(samples);
@@ -254,7 +274,11 @@ export function Sidebar({ open, onClose }: SidebarProps) {
               open={ordersOpen}
               onToggle={() => setOrdersOpen(v => !v)}
             >
-              <NavItem href="/projects" icon={<Layers className="w-3.5 h-3.5" />} label="Projects" pathname={pathname} />
+              {/* ⚠ THE ONLY GREEN BADGE. Projects is where people go to grab
+                  and claim, so the number that matters here is what is
+                  AVAILABLE, not what is late -- and one meaning per row means
+                  nobody has to parse two signals to decide where to start. */}
+              <NavItem href="/projects" icon={<Layers className="w-3.5 h-3.5" />} label="Projects" newCount={projectNewCount} pathname={pathname} />
               <NavItem href="/orders/cabinets" icon={<Boxes className="w-3.5 h-3.5" />} label="Cabinets" count={cabinetCount} lateCount={cabinetLate} pathname={pathname} />
               <NavItem href="/orders/hardware" icon={<Wrench className="w-3.5 h-3.5" />} label="Hardware" count={hardwareCount} lateCount={hardwareLate} pathname={pathname} />
               <NavItem href="/samples" icon={<Package className="w-3.5 h-3.5" />} label="Samples" count={sampleCount} lateCount={sampleLate} pathname={pathname} />
@@ -382,7 +406,7 @@ function SidebarSection({
 }
 
 function NavItem({
-  href, label, icon, dot, count, lateCount, pathname, comingSoon = false,
+  href, label, icon, dot, count, lateCount, newCount, pathname, comingSoon = false,
 }: {
   href: string;
   label: string;
@@ -397,6 +421,17 @@ function NavItem({
    * number wrong when it was tried the other way round.
    */
   lateCount?: number;
+  /**
+   * How many are still at the FIRST stage of their flow -- work nobody has
+   * started. Rendered as a green badge.
+   *
+   * ⚠ ON PROJECTS ONLY, and that is what keeps the sidebar readable. Green and
+   * terracotta on the same row would be two competing signals at the moment
+   * somebody is deciding where to start. Projects is where people go to GRAB
+   * work, so there the useful number is what is available; everywhere else it
+   * is what is late.
+   */
+  newCount?: number;
   pathname: string;
   comingSoon?: boolean;
 }) {
@@ -430,6 +465,19 @@ function NavItem({
       {icon}
       {dot && <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: dot }} />}
       <span className="flex-1 truncate">{label}</span>
+      {typeof newCount === "number" && newCount > 0 && (
+        <span
+          className="text-[9px] tabular-nums px-1.5 py-px rounded-full flex-shrink-0"
+          style={{
+            background: "rgba(143,190,112,0.18)",
+            border: "0.5px solid rgba(143,190,112,0.45)",
+            color: "#a0cc7a",
+          }}
+          title={`${newCount} new order${newCount === 1 ? "" : "s"} waiting`}
+        >
+          {newCount} new
+        </span>
+      )}
       {typeof lateCount === "number" && lateCount > 0 && (
         <span
           className="flex items-center gap-0.5 text-[9px] tabular-nums px-1.5 py-px rounded-full flex-shrink-0"
