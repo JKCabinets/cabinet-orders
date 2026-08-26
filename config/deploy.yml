@@ -116,6 +116,9 @@ env:
     - NEXT_PUBLIC_SUPABASE_URL
     - NEXT_PUBLIC_SUPABASE_ANON_KEY
     - AVIS_API_TOKEN
+    # Read-only. The system-health panel on /dashboard lists every
+    # check on the account; it never pings, pauses or creates.
+    - HEALTHCHECKS_API_KEY
 
 # ─── Useful aliases ───────────────────────────────────────────────────
 # Run with: kamal <alias>

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useStore } from "@/lib/store";
@@ -623,39 +623,10 @@ export function DashboardClient() {
           </div>
 
           {/* ── System health ──
-              ⚠ NOT WIRED UP. It reads healthchecks.io, and no API key exists in
-              .env.kamal yet. Shown as "not configured" rather than absent or
-              faked: a panel showing a green tick it did not check is worse than
-              no panel, and this is the one place that has to stay trustworthy. */}
-          <div className="glass-sage rounded-panel p-5">
-            <h2 className="font-display text-[22px] text-cream mb-3">
-              System <em className="italic-storm">health</em>
-            </h2>
-            <div className="flex flex-col">
-              {[
-                { label: "Shopify ingest", detail: "Orders, products, and webhooks" },
-                { label: "Reconciliation", detail: "Hourly order and payment check" },
-              ].map((row) => (
-                <div key={row.label}
-                  className="flex items-center justify-between gap-3 py-2.5"
-                  style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)" }}>
-                  <span className="min-w-0">
-                    <span className="block text-[12px] text-cream/75">{row.label}</span>
-                    <span className="block text-[10px] text-cream/35 truncate">{row.detail}</span>
-                  </span>
-                  <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full whitespace-nowrap flex-shrink-0"
-                    style={{ background: "rgba(255,255,255,0.05)", color: "rgba(232,227,218,0.4)", border: "0.5px solid rgba(255,255,255,0.12)" }}>
-                    Not configured
-                  </span>
-                </div>
-              ))}
-            </div>
-            <p className="text-[10px] text-cream/30 mt-3 leading-relaxed">
-              Reads healthchecks.io once an API key is set. Until then this panel
-              says so rather than showing a status nobody checked — the crons
-              still email on failure.
-            </p>
-          </div>
+              ⚠ EVERY CHECK THE KEY CAN SEE, not a hardcoded pair. Naming two in
+              code would hide a cron added next month -- which is the same shape
+              as the failure this panel exists for. */}
+          <SystemHealthPanel />
         </div>
 
         {/* Backorders — only when there is something to see. Not in the
@@ -696,6 +667,122 @@ export function DashboardClient() {
  * dashboard "Search" button. Results filter live as the user types; pick
  * one to open it in the modal.
  */
+/**
+ * System health, read from healthchecks.io.
+ *
+ * ⚠ WHY IT IS HERE. On 2026-08-20 three ping URLs were pasted carrying angle
+ * brackets. Every ping returned HTTP 400 and the caller discarded the result --
+ * jobs ran, cron logged rc=0, and the dead-man's switch was dead for six days.
+ * The only visible symptom was a stale timestamp on a dashboard nobody opened.
+ * This is that dashboard, put where it will be seen.
+ *
+ * It renders three distinct states and never conflates them: not configured,
+ * upstream unreachable, and the real list. A panel that shows green because it
+ * failed to ask is worse than no panel.
+ */
+function SystemHealthPanel() {
+  const [state, setState] = useState<{
+    loading: boolean;
+    configured: boolean;
+    error?: string;
+    checks: { name: string; status: string; last_ping: string | null; schedule: string | null }[];
+  }>({ loading: true, configured: false, checks: [] });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/admin/health");
+        const body = await res.json();
+        if (!cancelled) {
+          setState({
+            loading: false,
+            configured: !!body.configured,
+            error: body.error,
+            checks: body.checks ?? [],
+          });
+        }
+      } catch {
+        if (!cancelled) {
+          setState({ loading: false, configured: true, error: "Could not load", checks: [] });
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const STATUS: Record<string, { label: string; color: string }> = {
+    up:     { label: "Healthy", color: "#8fbe70" },
+    down:   { label: "Down",    color: "#e08585" },
+    grace:  { label: "Late",    color: "#e8b56a" },
+    paused: { label: "Paused",  color: "rgba(232,227,218,0.4)" },
+    new:    { label: "No pings", color: "rgba(232,227,218,0.4)" },
+  };
+
+  /** "5 days ago" beats an ISO timestamp when the question is "is this stale". */
+  const ago = (iso: string | null) => {
+    if (!iso) return "never";
+    const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+    if (mins < 60) return `${mins}m ago`;
+    const h = Math.round(mins / 60);
+    if (h < 48) return `${h}h ago`;
+    return `${Math.round(h / 24)}d ago`;
+  };
+
+  return (
+    <div className="glass-sage rounded-panel p-5">
+      <h2 className="font-display text-[22px] text-cream mb-3">
+        System <em className="italic-storm">health</em>
+      </h2>
+
+      {state.loading ? (
+        <p className="text-[12px] text-cream/45 py-4">Checking…</p>
+      ) : !state.configured ? (
+        <>
+          <p className="text-[12px] text-cream/55">Not configured.</p>
+          <p className="text-[10px] text-cream/30 mt-2 leading-relaxed">
+            Set HEALTHCHECKS_API_KEY in .env.kamal <em>and</em> add it to the
+            secret list in config/deploy.yml — one without the other reaches
+            nothing, and Kamal does not warn. The crons still email on failure.
+          </p>
+        </>
+      ) : state.error ? (
+        <>
+          <p className="text-[12px]" style={{ color: "#e8b56a" }}>{state.error}</p>
+          <p className="text-[10px] text-cream/30 mt-2">
+            The monitor is unreachable — which is not the same as a job failing,
+            and does not mean anything is wrong with the app.
+          </p>
+        </>
+      ) : state.checks.length === 0 ? (
+        <p className="text-[12px] text-cream/45 py-4">No checks on this account.</p>
+      ) : (
+        <div className="flex flex-col">
+          {state.checks.map((c) => {
+            const s = STATUS[c.status] ?? { label: c.status, color: "rgba(232,227,218,0.4)" };
+            return (
+              <div key={c.name}
+                className="flex items-center justify-between gap-3 py-2.5"
+                style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)" }}>
+                <span className="min-w-0">
+                  <span className="block text-[12px] text-cream/75 truncate">{c.name}</span>
+                  <span className="block text-[10px] text-cream/35 truncate">
+                    {c.schedule ?? "no schedule"} · last {ago(c.last_ping)}
+                  </span>
+                </span>
+                <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full whitespace-nowrap flex-shrink-0"
+                  style={{ background: `${s.color}1f`, color: s.color, border: `0.5px solid ${s.color}55` }}>
+                  {s.label}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SearchOverlay({
   orders, query, onQueryChange, onSelectOrder, onClose,
 }: {
