@@ -88,6 +88,50 @@ export const STAGE_ORDER_BY_TYPE: Record<string, readonly string[]> = {
 };
 
 /**
+ * ⚠ THESE ARRAYS AND lib/data.ts's STAGE_*_STAGES NOW MATCH EXACTLY, for every
+ * type. They have to, and this asserts it at module load rather than trusting
+ * two files to be edited together.
+ *
+ * They diverged for one reason: samples pointed here at ORDER_STAGE_ORDER --
+ * five stages -- while their UI list was a three-stage subset. That gap was
+ * real and dangerous: `isStageAllowedForType` reads THIS map, so the server
+ * would have accepted `stage: "In production"` on a sample, landing it
+ * somewhere its own rail cannot draw.
+ *
+ * The Entered -> Shipped rename on 2026-08-25 gave samples their own array and
+ * the divergence dissolved. Rather than delete one map -- stageIndex() needs an
+ * ORDERING, the rails need a LIST, and they may legitimately differ again --
+ * this fails loudly the moment they stop agreeing.
+ *
+ * If this throws, one of the two was edited and the other was not. That is the
+ * bug, not this check.
+ */
+if (process.env.NODE_ENV !== "production") {
+  // Imported lazily so this file stays free of a circular dependency at
+  // runtime; lib/data.ts imports nothing from here.
+  void (async () => {
+    try {
+      const data = await import("./data");
+      for (const [type, ordering] of Object.entries(STAGE_ORDER_BY_TYPE)) {
+        const list = (data.STAGE_LIST_BY_TYPE as Record<string, readonly string[]>)[type];
+        if (!list) continue;
+        const a = ordering.join(" > ");
+        const b = list.join(" > ");
+        if (a !== b) {
+          console.error(
+            `[stageLogic] ${type} ordering and UI list disagree.\n`
+            + `  STAGE_ORDER_BY_TYPE: ${a}\n`
+            + `  STAGE_LIST_BY_TYPE:  ${b}\n`
+            + `  One was edited without the other. stageIndex() and the rails `
+            + `will disagree about this flow.`,
+          );
+        }
+      }
+    } catch { /* never break a page over a dev-only check */ }
+  })();
+}
+
+/**
  * Samples report flow "order" so fieldsToClearOnBackwardMove applies to them:
  * their delivery date drives the calendar, and a stale one after a reversal
  * shows a delivery that is not happening.

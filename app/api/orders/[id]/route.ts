@@ -187,12 +187,17 @@ export async function PATCH(
     // currentType comes from the DATABASE row, never from the body. A
     // client that could name its own type could name one whose flow
     // contains the stage it wanted.
-    // BOTH checks. isStageAllowedForType asks whether the index maths
-    // works; isStageOfferedForType asks whether the row's UI flow contains
-    // the stage at all. They differ for SAMPLES, whose index map points at
-    // the full five-stage order flow while their real flow is three.
-    // Without the second, this route would accept "In production" on a
-    // sample -- a stage its rail cannot draw and its page does not list.
+    // ⚠ STILL BOTH, though they now agree for every type.
+    //
+    // They differed for SAMPLES until 2026-08-25: the index map pointed at the
+    // five-stage cabinet flow while the real flow was three, so this route
+    // would have accepted "In production" on a sample. The Entered -> Shipped
+    // rename gave samples their own array and the gap closed.
+    //
+    // Both are kept because they ask different questions and could legitimately
+    // diverge again -- one is an ORDERING for index maths, the other the LIST a
+    // rail draws. A dev-time check in lib/stageLogic.ts now shouts if they stop
+    // agreeing, so a future divergence surfaces there rather than here.
     if (!isStageAllowedForType(body.stage, currentType)
         || !isStageOfferedForType(body.stage, currentType)) {
       return NextResponse.json(

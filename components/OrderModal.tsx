@@ -1041,15 +1041,32 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
 
                 <div className="px-4 py-3 flex items-center justify-between gap-3"
                   style={{ borderLeft: "0.5px solid rgba(255,255,255,0.10)" }}>
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className={LABEL + " mb-1"}>Next action</p>
-                    <p className="text-[11px] text-cream/65 leading-snug">
-                      {nextStageFor(liveOrder)
-                        ? <>Move this to <span className="text-cream/90">{nextStageFor(liveOrder)}</span> when it is ready.</>
-                        : "Nothing further \u2014 this is the last stage."}
-                    </p>
+                    {/* ⚠ WHEN THE NEXT STAGE IS "Shipped", THE FIELD IS THE
+                        ACTION. A tracking number is what makes a group shipped
+                        -- not a button somebody presses -- so offering a button
+                        here would either bypass the rule or refuse and explain
+                        why. Typing the number does the thing. */}
+                    {nextStageFor(liveOrder) === "Shipped" ? (
+                      <p className="text-[11px] text-cream/65 leading-snug">
+                        Enter the tracking number to mark this shipped.
+                      </p>
+                    ) : (
+                      <p className="text-[11px] text-cream/65 leading-snug">
+                        {nextStageFor(liveOrder)
+                          ? <>Move this to <span className="text-cream/90">{nextStageFor(liveOrder)}</span> when it is ready.</>
+                          : "Nothing further \u2014 this is the last stage."}
+                      </p>
+                    )}
                   </div>
-                  {nextStageFor(liveOrder) && (
+
+                  {nextStageFor(liveOrder) === "Shipped" ? (
+                    <TrackingEntry
+                      order={liveOrder}
+                      onSaved={(stage) => stage && onStageChange(stage as Stage)}
+                    />
+                  ) : nextStageFor(liveOrder) ? (
                     <button
                       onClick={() => {
                         const next = nextStageFor(liveOrder);
@@ -1067,7 +1084,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                     >
                       {checkingAttachments ? "\u2026" : nextStageFor(liveOrder)}
                     </button>
-                  )}
+                  ) : null}
                 </div>
 
                 {/* One container, not two. This cell came out of ORDER INFO
@@ -1974,6 +1991,114 @@ function NextActionCard({
           {claimSlot}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Carrier and tracking number, for the flows that have one.
+ *
+ * ⚠ SAVING A NUMBER ADVANCES THE GROUP TO "Shipped". The server does that --
+ * see trackingTargetStage in lib/categories.ts -- so this component does not
+ * move anything itself. One rule, one place: the Shopify fulfilment path takes
+ * the same route, which is why a fulfilment and a person typing produce
+ * identical results.
+ *
+ * ⚠ IT DOES NOT MOVE ANYTHING BACKWARD. Clearing a number leaves the stage
+ * alone: undoing a stage is a deliberate act with a PIN behind it, not a side
+ * effect of correcting a typo.
+ *
+ * Cabinets never render this. They travel by freight to a cross dock -- there
+ * is no number to have, and the route refuses one with a 422.
+ */
+function TrackingEntry({
+  order, onSaved,
+}: {
+  order: Order;
+  onSaved: (advancedTo: string | null) => void;
+}) {
+  const { showToast } = useToast();
+  const [carrier, setCarrier] = useState(order.carrier ?? "");
+  const [number, setNumber] = useState(order.tracking_number ?? "");
+  const [saving, setSaving] = useState(false);
+
+  // Re-sync when the row changes underneath -- a Shopify fulfilment can write
+  // these while the modal is open, and a stale input would overwrite it.
+  useEffect(() => {
+    setCarrier(order.carrier ?? "");
+    setNumber(order.tracking_number ?? "");
+  }, [order.id, order.carrier, order.tracking_number]);
+
+  const dirty = carrier !== (order.carrier ?? "") || number !== (order.tracking_number ?? "");
+
+  async function save() {
+    if (!number.trim()) {
+      showToast("Add the tracking number \u2014 that is what marks this shipped.", { kind: "warn" });
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/orders/${order.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ carrier: carrier.trim(), tracking_number: number.trim() }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        showToast(body?.message ?? "Could not save the tracking number", { kind: "error" });
+        return;
+      }
+      const body = await res.json().catch(() => ({}));
+      const advanced = (body?.data?.stage as string | undefined) ?? null;
+      showToast(
+        advanced === "Shipped" ? "Tracking saved \u2014 marked shipped" : "Tracking saved",
+        { kind: "success" },
+      );
+      onSaved(advanced);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-1.5 flex-shrink-0">
+      <input
+        value={carrier}
+        onChange={(e) => setCarrier(e.target.value)}
+        placeholder="Carrier"
+        className="w-[80px] rounded-brand px-2 py-1.5 text-[11px] placeholder:text-cream/25"
+        style={{
+          background: "rgba(255,255,255,0.04)",
+          border: "0.5px solid rgba(255,255,255,0.12)",
+          color: "rgba(240,236,228,0.90)",
+          fontSize: "16px",
+        }}
+      />
+      <input
+        value={number}
+        onChange={(e) => setNumber(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") void save(); }}
+        placeholder="Tracking number"
+        className="w-[150px] rounded-brand px-2 py-1.5 text-[11px] placeholder:text-cream/25"
+        style={{
+          background: "rgba(255,255,255,0.04)",
+          border: "0.5px solid rgba(255,255,255,0.12)",
+          color: "rgba(240,236,228,0.90)",
+          fontSize: "16px",
+        }}
+      />
+      <button
+        onClick={() => void save()}
+        disabled={saving || !dirty}
+        className="px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all flex-shrink-0 disabled:opacity-40"
+        style={{
+          background: "rgba(184,130,106,0.20)",
+          border: "0.5px solid rgba(184,130,106,0.55)",
+          color: "#d9a888",
+        }}
+      >
+        {saving ? "\u2026" : "Ship"}
+      </button>
     </div>
   );
 }
