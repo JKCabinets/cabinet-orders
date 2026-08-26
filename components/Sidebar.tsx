@@ -99,13 +99,21 @@ export function Sidebar({ open, onClose }: SidebarProps) {
    * project with one new order and two moving along is not "one new project"
    * -- it is one new order inside a live purchase.
    */
-  const projectNewCount = allOrders.filter(o => {
-    if (o.archived || !o.project_id) return false;
-    const p = projects[o.project_id];
-    if (!p || p.archived) return false;
-    const flow = STAGE_LIST_BY_TYPE[o.type as OrderType] as readonly string[] | undefined;
-    return !!flow && flow.length > 0 && o.stage === flow[0];
-  }).length;
+  const projectNewCount = (() => {
+    // ⚠ COUNTS PROJECTS, NOT ORDERS. It counted orders at their first stage and
+    // read "8 new" beside a list of 7 projects -- a number that does not match
+    // the thing it sits on is a number people stop trusting. A purchase with
+    // two untouched orders is still ONE purchase waiting for somebody.
+    const withNew = new Set<string>();
+    for (const o of allOrders) {
+      if (o.archived || !o.project_id) continue;
+      const p = projects[o.project_id];
+      if (!p || p.archived) continue;
+      const flow = STAGE_LIST_BY_TYPE[o.type as OrderType] as readonly string[] | undefined;
+      if (flow && flow.length > 0 && o.stage === flow[0]) withNew.add(o.project_id);
+    }
+    return withNew.size;
+  })();
 
   const cabinetLate  = lateCount(orders);
   const hardwareLate = lateCount(hardware);

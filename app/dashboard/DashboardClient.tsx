@@ -269,7 +269,12 @@ export function DashboardClient() {
         if (sev(a) !== sev(b)) return sev(a) - sev(b);
         return (b.oldestHours ?? 0) - (a.oldestHours ?? 0);
       })
-      .slice(0, 6);
+      // ⚠ FIVE, not six. The panel sits beside the pipeline snapshot, which is
+      // five rows tall -- a sixth entry made the left column taller than
+      // anything on the right could fill. A dashboard list is a glance with a
+      // "view all" beneath it, so the cap is a layout decision as much as an
+      // editorial one.
+      .slice(0, 5);
   }, [entries]);
 
   /** One row per type, its own stages as segments. */
@@ -394,7 +399,7 @@ export function DashboardClient() {
           ))}
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 items-start">
 
           {/* ── Needs attention ── */}
           <div className="glass-sage rounded-panel p-5">
@@ -518,11 +523,19 @@ export function DashboardClient() {
                     </span>
                   ))}
 
-                  {pipelines.map((p) => (
+                  {pipelines.map((p, rowIdx) => (
                     <React.Fragment key={p.type}>
+                      {/* ⚠ THE SEPARATOR IS ON THE LABEL CELL ONLY, and the
+                          stage cells carry their own only where a segment
+                          exists. In a CSS grid every cell draws its own border,
+                          so putting one on all of them left hairlines floating
+                          in the blank space past the end of a three-stage flow.
+                          The first row has none at all -- the header above it
+                          already separates. */}
                       <span
                         className="flex items-center gap-2 py-1.5 pr-2 min-w-0"
-                        style={{ borderTop: "0.5px solid rgba(255,255,255,0.07)" }}
+                        style={rowIdx === 0 ? undefined
+                          : { borderTop: "0.5px solid rgba(255,255,255,0.07)" }}
                       >
                         <p.Icon className="w-3.5 h-3.5 text-cream/40 flex-shrink-0" />
                         <span className="text-[12px] text-cream/80 truncate">{p.label}</span>
@@ -532,12 +545,11 @@ export function DashboardClient() {
                         const s = p.segments[i];
                         // Past the end of a short flow: an empty cell that
                         // holds the column open, drawn as nothing.
-                        if (!s) {
-                          return (
-                            <span key={i} className="py-1.5"
-                              style={{ borderTop: "0.5px solid rgba(255,255,255,0.07)" }} />
-                          );
-                        }
+                        // Past the end of a short flow: an empty cell holding
+                        // the column open, drawing NOTHING. It used to carry a
+                        // borderTop, which is where the hairlines trailing off
+                        // into blank space came from.
+                        if (!s) return <span key={i} className="py-1.5" />;
                         const terminal = i === p.segments.length - 1;
                         const has = s.count > 0;
                         const bg = terminal
@@ -551,7 +563,8 @@ export function DashboardClient() {
                           : has ? "#8fb8dd" : "rgba(232,227,218,0.35)";
                         return (
                           <span key={i} className="py-1.5 min-w-0"
-                            style={{ borderTop: "0.5px solid rgba(255,255,255,0.07)" }}>
+                            style={rowIdx === 0 ? undefined
+                              : { borderTop: "0.5px solid rgba(255,255,255,0.07)" }}>
                             <span
                               className="flex items-center justify-between gap-1 pl-3 pr-4 py-1.5 text-[11px] min-w-0"
                               style={{
@@ -580,7 +593,7 @@ export function DashboardClient() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 items-start">
           {/* ── SLA / data health ── */}
           <div className="glass-sage rounded-panel p-5">
             <h2 className="font-display text-[22px] text-cream mb-3">

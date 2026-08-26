@@ -2,9 +2,11 @@
 
 import { useState, useMemo } from "react";
 import clsx from "clsx";
-import { Order, Stage, AVATAR_COLOR_STYLES, getBackorderStatus, nextStageFor, displayOrderNumber } from "@/lib/data";
+import {
+  Order, Stage, Project, OrderType, STAGE_LIST_BY_TYPE,
+  AVATAR_COLOR_STYLES, getBackorderStatus, nextStageFor, displayOrderNumber,
+} from "@/lib/data";
 import { STAGE_ORDER_BY_TYPE, ORDER_STAGE_ORDER } from "@/lib/stageLogic";
-import type { Project } from "@/lib/data";
 import { useStore } from "@/lib/store";
 import { useSession } from "next-auth/react";
 import { formatDateWithYear, parseOrderDate } from "@/lib/dateUtils";
@@ -815,17 +817,46 @@ function UpdateStatusActions({
     return <CustomFlowActions order={order} mobile={mobile} />;
   }
 
-  async function markEntered() {
-    const result = await (async () => {
+  /**
+   * Advance one step through THIS ROW'S OWN FLOW.
+   *
+   * ⚠ IT HARDCODED "Entered". Samples run New -> Shipped -> Delivered since
+   * 2026-08-25, so this offered them a stage that is not in their flow and ran
+   * the acknowledgment gate on the way -- asking for an attachment that does
+   * not exist for a transition that does not either. The button's own tooltip
+   * already said "Samples need no acknowledgment"; the code did not agree with
+   * it.
+   *
+   * ⚠ THE GATE IS TYPE-AWARE TOO. New -> Entered needs a manufacturer
+   * acknowledgment; that is a cabinet transition. Samples and hardware are
+   * exempt server-side, so running it here refused rows the API would allow --
+   * the same divergence fixed in OrderModal on 2026-08-25 and never carried
+   * across to this file.
+   */
+  async function advanceOne() {
+    const flow = (STAGE_LIST_BY_TYPE[order.type as OrderType] ?? []) as readonly string[];
+    const idx = flow.indexOf(order.stage);
+    const next = idx >= 0 && idx + 1 < flow.length ? flow[idx + 1] : null;
+    if (!next) return;
+
+    if (next === "Entered") {
       const gate = await checkAttachmentGate(order.id);
       if (!gate.ok) {
         onOpenModal?.(order, "needs-attachment");
         return;
       }
-      await moveStage(order.id, "Entered", currentUserId ?? undefined);
-    })();
-    return result;
+    }
+    // Anything else the server gates -- Shipped needs a tracking number, and
+    // it says so. Opening the modal is where that gets entered.
+    const res = await moveStage(order.id, next as Stage, currentUserId ?? undefined);
+    if (!res.ok && res.error === "tracking_required") onOpenModal?.(order);
   }
+
+  const rowFlowStages = (STAGE_LIST_BY_TYPE[order.type as OrderType] ?? []) as readonly string[];
+  const nextStageIdx = rowFlowStages.indexOf(order.stage);
+  const nextStageLabel = nextStageIdx >= 0 && nextStageIdx + 1 < rowFlowStages.length
+    ? rowFlowStages[nextStageIdx + 1]
+    : null;
 
   // ── New ─────────────────────────────────────────────────────────────
   if (stage === "New") {
@@ -843,16 +874,18 @@ function UpdateStatusActions({
             <OrderEntryActions order={order} mobile={mobile} onOpenModal={onOpenModal} />
           ) : (
             <button
-              onClick={() => withBusy(markEntered)}
+              onClick={() => withBusy(advanceOne)}
               disabled={busy}
               className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30"
               title={
-                order.type === "sample"
-                  ? "Samples need no acknowledgment"
+                order.type === "sample" || order.type === "hardware"
+                  ? "Add the tracking number to mark this shipped"
                   : "Requires an attached PDF"
               }
             >
-              {busy ? "..." : (mobile ? "Enter" : "Mark Entered")}
+              {/* Names the stage it actually moves to. It said "Mark Entered"
+                  on every type, including ones with no Entered stage. */}
+              {busy ? "..." : `Mark ${nextStageLabel ?? "…"}`}
             </button>
           )}
           <button
