@@ -11,6 +11,7 @@ import { attentionFor, type AttentionReason } from "@/lib/attention";
 import { PageHeader } from "@/components/AppShell";
 import { OrderModal } from "@/components/OrderModal";
 import { AvatarWithProfile } from "@/components/AvatarWithProfile";
+import { StagePill } from "@/components/OrderTable";
 import {
   Search, ChevronRight, ChevronDown, AlertTriangle, CheckCircle2, ArrowRight,
   Archive, RotateCcw, Loader2,
@@ -327,7 +328,7 @@ export function ProjectsClient() {
               <span>Project</span>
               <span>Date</span>
               <span>Customer</span>
-              <span>Orders</span>
+              <span>Orders &amp; stage</span>
               <span>Attention</span>
               <span>Fulfillment</span>
               <span className="text-right">Total</span>
@@ -379,7 +380,11 @@ export function ProjectsClient() {
                         // moved up on 2026-08-25 and orders.claimed_by is null
                         // on every group now, so reading it here printed
                         // "Unclaimed" beside a purchase with a visible owner.
-                        const owner = p.claimed_by ? team.find((m) => m.id === p.claimed_by) : undefined;
+                        // ⚠ NO PER-ORDER OWNER HERE. One claim covers the whole
+                        // purchase, so repeating the same avatar on every line
+                        // said nothing -- and at the size it rendered it
+                        // overlapped the name beside it. The owner appears once,
+                        // on the row, in its own column at the right.
                         return (
                           <span key={g.id} className="flex items-center gap-1.5 min-w-0">
                             <span className="w-1.5 h-1.5 rounded-full flex-shrink-0"
@@ -387,16 +392,7 @@ export function ProjectsClient() {
                             <span className="text-[11px] text-cream/70 w-[62px] flex-shrink-0">
                               {GROUP_LABEL[g.type] ?? g.type}
                             </span>
-                            <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full whitespace-nowrap"
-                              style={{ background: `${accent}1f`, border: `0.5px solid ${accent}55`, color: accent }}>
-                              {g.stage}
-                            </span>
-                            {owner
-                              ? <span className="flex items-center gap-1 min-w-0">
-                                  <AvatarWithProfile member={owner} size="sm" />
-                                  <span className="text-[10px] text-cream/45 truncate">{owner.name.split(" ")[0]}</span>
-                                </span>
-                              : <span className="text-[10px] text-cream/25 italic">Unclaimed</span>}
+                            <StagePill stage={g.stage} type={g.type} size="xs" />
                           </span>
                         );
                       })}
@@ -577,10 +573,10 @@ export function ProjectsClient() {
                                 <span className="text-[11px] text-cream/65">{GROUP_LABEL[g.type] ?? g.type}</span>
                               </span>
                               <span className="self-center">
-                                <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full whitespace-nowrap"
-                                  style={{ background: `${accent}1f`, border: `0.5px solid ${accent}55`, color: accent }}>
-                                  {g.stage}
-                                </span>
+                                {/* Shared pill, so the first-stage glow reaches
+                                    here too rather than being a table-only
+                                    treatment. */}
+                                <StagePill stage={g.stage} type={g.type} size="xs" />
                               </span>
                               <span className="self-center flex items-center gap-1.5 min-w-0">
                                 {owner
