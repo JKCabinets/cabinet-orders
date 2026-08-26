@@ -52,7 +52,15 @@ function worst(statuses: string[]): string {
 export async function GET(req: NextRequest) {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
-  const limited = await rateLimitOr429(req, 60, 60_000, "health:summary");
+  // ⚠ GENEROUS ON PURPOSE. checkRateLimit buckets by `${bucket}:${ip}`, NOT by
+  // user -- so everyone in one office shares a single allowance. This fires on
+  // every dashboard load, and a colleague refreshing must not be able to 429
+  // somebody else's health panel into reading "Not configured".
+  //
+  // The IP-keyed bucket is a wider problem than this route: it applies to every
+  // rate-limited endpoint in the app, and one person's activity can lock out a
+  // colleague behind the same NAT. Recorded here rather than fixed here.
+  const limited = await rateLimitOr429(req, 240, 60_000, "health:summary");
   if (limited) return limited;
 
   const key = process.env.HEALTHCHECKS_API_KEY;
