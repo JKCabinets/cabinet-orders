@@ -51,11 +51,30 @@ export function Sidebar({ open, onClose }: SidebarProps) {
     return !!flow && flow.length > 0 && o.stage === flow[0];
   }).length;
 
-  const cabinetCount  = atFirstStage(orders);
-  const hardwareCount = atFirstStage(hardware);
-  const sampleCount   = atFirstStage(samples);
-  const customCount   = atFirstStage(customs);
-  const warrantyCount = atFirstStage(warranties);
+  /**
+   * LIVE rows: not archived, not at the terminal stage of their own flow.
+   *
+   * ⚠ THE BADGE USED TO COUNT FIRST-STAGE ROWS ONLY, so Cabinets read 6 while a
+   * seventh sat at cross dock -- an order very much in flight reading as gone.
+   * The headline number answers "how much is in the pipeline"; the green badge
+   * beside it answers "how much has not been started". Two questions, two
+   * numbers, neither one standing in for the other.
+   */
+  const liveCount = (list: Order[]) => list.filter(o => {
+    if (o.archived) return false;
+    const flow = STAGE_LIST_BY_TYPE[o.type as OrderType] as readonly string[] | undefined;
+    return !flow || flow.length === 0 || o.stage !== flow[flow.length - 1];
+  }).length;
+
+  const cabinetCount  = liveCount(orders);
+  const hardwareCount = liveCount(hardware);
+  const sampleCount   = liveCount(samples);
+  const customCount   = liveCount(customs);
+  const warrantyCount = liveCount(warranties);
+
+  const cabinetNew  = atFirstStage(orders);
+  const hardwareNew = atFirstStage(hardware);
+  const sampleNew   = atFirstStage(samples);
 
   /**
    * My Work: rows I have claimed that need something doing.
@@ -168,7 +187,11 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                   sample group of one checkout belong to different people -- so
                   "what have I got" is the question most often asked. */}
               <NavItem href="/work" icon={<Inbox className="w-3.5 h-3.5" />} label="My Work" count={myWorkCount} pathname={pathname} />
-              <NavItem href="/work?scope=all" icon={<Inbox className="w-3.5 h-3.5" />} label="All Work" pathname={pathname} />
+              {/* No "All Work". Everything unclaimed is a tab inside My Work,
+                  and everything else is the Projects page -- a third list of the
+                  same rows is a third place for them to disagree. The ?scope=all
+                  route still resolves, so an old bookmark lands on My work
+                  rather than 404ing. */}
               {/* Backorders surfaces only when there's something to act on.
                   When the count drops to zero the link disappears — keeps
                   the sidebar quiet on calm days. */}
@@ -197,9 +220,9 @@ export function Sidebar({ open, onClose }: SidebarProps) {
               onToggle={() => setOrdersOpen(v => !v)}
             >
               <NavItem href="/projects" icon={<Layers className="w-3.5 h-3.5" />} label="Projects" pathname={pathname} />
-              <NavItem href="/orders/cabinets" icon={<Boxes className="w-3.5 h-3.5" />} label="Cabinets" count={cabinetCount} pathname={pathname} />
-              <NavItem href="/orders/hardware" icon={<Wrench className="w-3.5 h-3.5" />} label="Hardware" count={hardwareCount} pathname={pathname} />
-              <NavItem href="/samples" icon={<Package className="w-3.5 h-3.5" />} label="Samples" count={sampleCount} pathname={pathname} />
+              <NavItem href="/orders/cabinets" icon={<Boxes className="w-3.5 h-3.5" />} label="Cabinets" count={cabinetCount} newCount={cabinetNew} pathname={pathname} />
+              <NavItem href="/orders/hardware" icon={<Wrench className="w-3.5 h-3.5" />} label="Hardware" count={hardwareCount} newCount={hardwareNew} pathname={pathname} />
+              <NavItem href="/samples" icon={<Package className="w-3.5 h-3.5" />} label="Samples" count={sampleCount} newCount={sampleNew} pathname={pathname} />
             </SidebarSection>
 
             {/* ── Offline / service ──
@@ -324,13 +347,20 @@ function SidebarSection({
 }
 
 function NavItem({
-  href, label, icon, dot, count, pathname, comingSoon = false,
+  href, label, icon, dot, count, newCount, pathname, comingSoon = false,
 }: {
   href: string;
   label: string;
   icon?: React.ReactNode;
   dot?: string;
   count?: number;
+  /**
+   * Rows sitting at the FIRST stage of their flow -- work nobody has started.
+   *
+   * A separate badge rather than folded into `count`, because they answer
+   * different questions and merging them made the headline number wrong.
+   */
+  newCount?: number;
   pathname: string;
   comingSoon?: boolean;
 }) {
@@ -364,6 +394,19 @@ function NavItem({
       {icon}
       {dot && <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: dot }} />}
       <span className="flex-1 truncate">{label}</span>
+      {typeof newCount === "number" && newCount > 0 && (
+        <span
+          className="text-[9px] tabular-nums px-1.5 py-px rounded-full flex-shrink-0"
+          style={{
+            background: "rgba(143,190,112,0.18)",
+            border: "0.5px solid rgba(143,190,112,0.45)",
+            color: "#a0cc7a",
+          }}
+          title={`${newCount} not started yet`}
+        >
+          {newCount} new
+        </span>
+      )}
       {typeof count === "number" && (
         <span
           className={clsx(
