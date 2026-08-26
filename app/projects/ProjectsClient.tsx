@@ -262,7 +262,25 @@ export function ProjectsClient() {
    * gap-4 rather than gap-3 throughout: the row read as cramped because every
    * column was 4px from its neighbour regardless of how much it held.
    */
-  const GRID = "grid grid-cols-[24px_0.9fr_0.65fr_0.8fr_1.9fr_1.05fr_0.85fr_0.65fr_0.55fr_1.15fr_34px] gap-4";
+  /**
+   * ⚠ FIXED WIDTHS, NOT `fr` RATIOS.
+   *
+   * The previous version was all fractions, and at a 1660px row that meant
+   * hundreds of pixels of slack shared out proportionally. Changing 0.85fr to
+   * 0.9fr moved things by single digits -- invisible. The row read as cramped
+   * AND empty at once: chips jammed together while Customer held one short
+   * name in a wide cell.
+   *
+   * A date is always ~12 characters. A project id is always ~8. A total is
+   * always short. Giving those `fr` units means they grow with the window for
+   * no reason, stealing width from the two columns whose content genuinely
+   * varies -- Orders & stage (up to three chips) and Owner (avatar, name and a
+   * Release button).
+   *
+   * So: px for the predictable, minmax for the two that vary, and the table
+   * capped below so the row cannot stretch to fill an ultrawide display.
+   */
+  const GRID = "grid grid-cols-[24px_120px_100px_150px_minmax(260px,1.4fr)_minmax(150px,1fr)_130px_90px_80px_minmax(170px,0.9fr)_34px] gap-4";
 
   return (
     <>
@@ -332,7 +350,14 @@ export function ProjectsClient() {
             </div>
           </div>
         ) : (
-          <div className="rounded-panel overflow-hidden" style={{ border: "0.5px solid rgba(255,255,255,0.12)" }}>
+          <div
+            /* ⚠ CAPPED. A row stretched across an ultrawide display puts a
+               metre of whitespace between the project number and its owner --
+               the other half of why this read badly. The columns were not too
+               narrow; the row was too wide. */
+            className="rounded-panel overflow-x-auto max-w-[1500px]"
+            style={{ border: "0.5px solid rgba(255,255,255,0.12)" }}
+          >
             <div
               className={`${GRID} px-5 py-2.5 text-[9px] uppercase tracking-wider text-cream/40`}
               style={{ background: "rgba(255,255,255,0.03)" }}
