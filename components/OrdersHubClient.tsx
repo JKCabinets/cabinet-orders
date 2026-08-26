@@ -77,7 +77,11 @@ export function OrdersHubClient({
   const [activeStage, setActiveStage] = useState<string>(initialStage ?? ALL);
   const [search, setSearch] = useState("");
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-  const [modalReason, setModalReason] = useState<"needs-attachment" | undefined>(undefined);
+  // ⚠ WIDENS WITH THE MODAL. The hub is the component BETWEEN the table that
+  // names a reason and the modal that acts on it, so its state type has to
+  // hold every reason either end knows about. Widening the two ends and not
+  // the middle is what TS2345 caught here.
+  const [modalReason, setModalReason] = useState<"needs-attachment" | "needs-tracking" | undefined>(undefined);
   const [selectMode, setSelectMode] = useState(false);
   const [showNewForm, setShowNewForm] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());

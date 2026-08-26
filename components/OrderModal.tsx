@@ -37,7 +37,18 @@ interface OrderModalProps {
    * "needs-attachment", the modal shows a prominent banner at the top and
    * auto-opens the file picker so the user can attach the required PDF.
    */
-  initialReason?: "needs-attachment";
+  /**
+   * Why the modal was opened, when it was opened BY a refusal rather than by a
+   * click. Each value is a promise that the modal will explain itself:
+   *
+   *   needs-attachment  banner, scroll to the attachments, open the picker
+   *   needs-tracking    glow the tracking field and focus the number
+   *
+   * ⚠ ONE MECHANISM, not two. The table refuses and names the reason; the
+   * modal responds to the name. Adding a second channel for "and also highlight
+   * this" is how the two drift.
+   */
+  initialReason?: "needs-attachment" | "needs-tracking";
 }
 
 
@@ -291,6 +302,18 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
   // gate would now pass) or they dismiss it manually.
   const [showGateBanner, setShowGateBanner] = useState(
     initialReason === "needs-attachment",
+  );
+  /**
+   * Glow the tracking field when the modal was opened because a move was
+   * refused for want of a number.
+   *
+   * ⚠ IT PERSISTS UNTIL SAVED. A tracking number is a blocking gate -- nothing
+   * moves without it -- so the highlight stays put rather than fading on the
+   * first keystroke like a hint would. It clears when the save succeeds,
+   * because at that point it has been dealt with.
+   */
+  const [trackingHighlight, setTrackingHighlight] = useState(
+    initialReason === "needs-tracking",
   );
 
   useEffect(() => {
@@ -1064,7 +1087,11 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                   {nextStageFor(liveOrder) === "Shipped" ? (
                     <TrackingEntry
                       order={liveOrder}
-                      onSaved={(stage) => stage && onStageChange(stage as Stage)}
+                      highlight={trackingHighlight}
+                      onSaved={(stage) => {
+                        setTrackingHighlight(false);
+                        if (stage) onStageChange(stage as Stage);
+                      }}
                     />
                   ) : nextStageFor(liveOrder) ? (
                     <button
@@ -2012,12 +2039,25 @@ function NextActionCard({
  * is no number to have, and the route refuses one with a 422.
  */
 function TrackingEntry({
-  order, onSaved,
+  order, onSaved, highlight = false,
 }: {
   order: Order;
   onSaved: (advancedTo: string | null) => void;
+  /** Opened because a move was refused for want of a number. */
+  highlight?: boolean;
 }) {
   const { showToast } = useToast();
+  const numberRef = useRef<HTMLInputElement>(null);
+
+  // Focus the NUMBER, not the carrier. The number is what the gate wants;
+  // carrier is optional and often already filled from a fulfilment.
+  useEffect(() => {
+    if (!highlight) return;
+    // One frame, so the modal has mounted and the pipeline card is laid out
+    // before focus moves -- otherwise the browser scrolls to a stale position.
+    const id = requestAnimationFrame(() => numberRef.current?.focus());
+    return () => cancelAnimationFrame(id);
+  }, [highlight]);
   const [carrier, setCarrier] = useState(order.carrier ?? "");
   const [number, setNumber] = useState(order.tracking_number ?? "");
   const [saving, setSaving] = useState(false);
@@ -2075,14 +2115,16 @@ function TrackingEntry({
         }}
       />
       <input
+        ref={numberRef}
         value={number}
         onChange={(e) => setNumber(e.target.value)}
         onKeyDown={(e) => { if (e.key === "Enter") void save(); }}
         placeholder="Tracking number"
-        className="w-[150px] rounded-brand px-2 py-1.5 text-[11px] placeholder:text-cream/25"
+        className="w-[150px] rounded-brand px-2 py-1.5 text-[11px] placeholder:text-cream/25 transition-all"
         style={{
-          background: "rgba(255,255,255,0.04)",
-          border: "0.5px solid rgba(255,255,255,0.12)",
+          background: highlight ? "rgba(184,130,106,0.12)" : "rgba(255,255,255,0.04)",
+          border: `0.5px solid ${highlight ? "rgba(184,130,106,0.75)" : "rgba(255,255,255,0.12)"}`,
+          boxShadow: highlight ? "0 0 0 1px rgba(184,130,106,0.25), 0 0 12px rgba(184,130,106,0.45)" : undefined,
           color: "rgba(240,236,228,0.90)",
           fontSize: "16px",
         }}

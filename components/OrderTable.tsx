@@ -51,7 +51,7 @@ interface OrderTableProps {
    * optional `reason` is passed to the modal so it can render a
    * contextual banner / auto-focus action.
    */
-  onSelect: (order: Order, reason?: "needs-attachment") => void;
+  onSelect: (order: Order, reason?: "needs-attachment" | "needs-tracking") => void;
   /** Bulk-select mode props */
   selectMode?: boolean;
   selectedIds?: Set<string>;
@@ -241,7 +241,7 @@ function OrderRow({
   order, stage, onSelect, selectMode, selected, onToggleSelect, rowIdx,
 }: {
   order: Order; stage: string | null;
-  onSelect: (o: Order, reason?: "needs-attachment") => void;
+  onSelect: (o: Order, reason?: "needs-attachment" | "needs-tracking") => void;
   selectMode: boolean; selected: boolean; onToggleSelect?: (id: string) => void;
   rowIdx: number;
 }) {
@@ -356,7 +356,7 @@ function MobileRow({
   order, stage, onSelect, selectMode, selected, onToggleSelect,
 }: {
   order: Order; stage: string | null;
-  onSelect: (o: Order, reason?: "needs-attachment") => void;
+  onSelect: (o: Order, reason?: "needs-attachment" | "needs-tracking") => void;
   selectMode: boolean; selected: boolean; onToggleSelect?: (id: string) => void;
 }) {
   function handleClick() {
@@ -495,7 +495,7 @@ function PaymentPill({ status }: { status?: string | null }) {
 function ConfirmDeliveryActions({ order, mobile, onOpenModal }: {
   order: Order;
   mobile?: boolean;
-  onOpenModal?: (order: Order, reason?: "needs-attachment") => void;
+  onOpenModal?: (order: Order, reason?: "needs-attachment" | "needs-tracking") => void;
 }) {
   const { moveStage } = useStore();
   const { showToast } = useToast();
@@ -852,7 +852,7 @@ function UpdateStatusActions({
   order, stage, mobile = false, onOpenModal,
 }: {
   order: Order; stage: string | null; mobile?: boolean;
-  onOpenModal?: (o: Order, reason?: "needs-attachment") => void;
+  onOpenModal?: (o: Order, reason?: "needs-attachment" | "needs-tracking") => void;
 }) {
   const { currentUserId, claimedBy, claimOrder, moveStage, archiveOrder, busy, withBusy } = useRowActions(order);
 
@@ -928,7 +928,11 @@ function UpdateStatusActions({
     // Anything else the server gates -- Shipped needs a tracking number, and
     // it says so. Opening the modal is where that gets entered.
     const res = await moveStage(order.id, next as Stage, currentUserId ?? undefined);
-    if (!res.ok && res.error === "tracking_required") onOpenModal?.(order);
+    // ⚠ NAME THE REASON. The modal opening with no explanation is the failure
+    // shape this codebase keeps producing -- the delivery gate bounced rows
+    // back for a day with the reason in console.error. "needs-tracking" glows
+    // the field and focuses it, so the modal arrives already explaining itself.
+    if (!res.ok && res.error === "tracking_required") onOpenModal?.(order, "needs-tracking");
   }
 
   const rowFlowStages = (STAGE_LIST_BY_TYPE[order.type as OrderType] ?? []) as readonly string[];
@@ -1169,7 +1173,7 @@ function StatusCell({
 }: {
   order: Order; stage: string | null; mobile?: boolean;
   /** Called when a gate fails so the user can fix it in the modal. */
-  onOpenModal?: (o: Order, reason?: "needs-attachment") => void;
+  onOpenModal?: (o: Order, reason?: "needs-attachment" | "needs-tracking") => void;
 }) {
   const { unarchiveOrder, claimedBy, busy, withBusy } = useRowActions(order);
 
