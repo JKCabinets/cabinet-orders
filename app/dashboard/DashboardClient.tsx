@@ -736,30 +736,46 @@ function worstStatus(statuses: string[]): string {
 }
 
 function SystemHealthPanel() {
+  const { data: session } = useSession();
+  const isAdmin = (session?.user as { role?: string } | undefined)?.role === "admin";
+
   const [state, setState] = useState<{
     loading: boolean;
     configured: boolean;
     error?: string;
-    checks: { name: string; status: string; last_ping: string | null; schedule: string | null }[];
-  }>({ loading: true, configured: false, checks: [] });
+    groups: { key: string; label: string; detail: string; status: string; count: number }[];
+    total: number;
+  }>({ loading: true, configured: false, groups: [], total: 0 });
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch("/api/admin/health");
+        // ⚠ THE SUMMARY ENDPOINT, not /api/admin/health.
+        //
+        // Everyone sees whether the system is working; only admins see WHICH
+        // check. /api/admin/* is guarded by path, so a non-admin fetching it
+        // got a 403 that this panel rendered as "Not configured" -- a
+        // permissions failure reported as a configuration failure, in the one
+        // panel that exists to keep those apart.
+        //
+        // The rollup happens SERVER-SIDE, so a non-admin's browser never
+        // receives a check name. Hiding names in the component would not be
+        // access control.
+        const res = await fetch("/api/health-summary");
         const body = await res.json();
         if (!cancelled) {
           setState({
             loading: false,
             configured: !!body.configured,
             error: body.error,
-            checks: body.checks ?? [],
+            groups: body.groups ?? [],
+            total: body.total ?? 0,
           });
         }
       } catch {
         if (!cancelled) {
-          setState({ loading: false, configured: true, error: "Could not load", checks: [] });
+          setState({ loading: false, configured: true, error: "Could not load", groups: [], total: 0 });
         }
       }
     })();
@@ -767,21 +783,11 @@ function SystemHealthPanel() {
   }, []);
 
   const STATUS: Record<string, { label: string; color: string }> = {
-    up:     { label: "Healthy", color: "#8fbe70" },
-    down:   { label: "Down",    color: "#e08585" },
-    grace:  { label: "Late",    color: "#e8b56a" },
-    paused: { label: "Paused",  color: "rgba(232,227,218,0.4)" },
+    up:     { label: "Healthy",  color: "#8fbe70" },
+    down:   { label: "Down",     color: "#e08585" },
+    grace:  { label: "Late",     color: "#e8b56a" },
+    paused: { label: "Paused",   color: "rgba(232,227,218,0.4)" },
     new:    { label: "No pings", color: "rgba(232,227,218,0.4)" },
-  };
-
-  /** "5 days ago" beats an ISO timestamp when the question is "is this stale". */
-  const ago = (iso: string | null) => {
-    if (!iso) return "never";
-    const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
-    if (mins < 60) return `${mins}m ago`;
-    const h = Math.round(mins / 60);
-    if (h < 48) return `${h}h ago`;
-    return `${Math.round(h / 24)}d ago`;
   };
 
   return (
@@ -791,86 +797,69 @@ function SystemHealthPanel() {
       </h2>
 
       {state.loading ? (
-        <p className="text-[12px] text-cream/45 py-4">Checking…</p>
+        <p className="text-[12px] text-cream/45 py-4">Checking\u2026</p>
       ) : !state.configured ? (
         <>
           <p className="text-[12px] text-cream/55">Not configured.</p>
-          <p className="text-[10px] text-cream/30 mt-2 leading-relaxed">
-            Set HEALTHCHECKS_API_KEY in .env.kamal <em>and</em> add it to the
-            secret list in config/deploy.yml — one without the other reaches
-            nothing, and Kamal does not warn. The crons still email on failure.
-          </p>
+          {/* The remedy is admin business. Everyone else just needs to know
+              the panel is not reporting. */}
+          {isAdmin && (
+            <p className="text-[10px] text-cream/30 mt-2 leading-relaxed">
+              HEALTHCHECKS_API_KEY must be in THREE places: the value in
+              .env.kamal, a line in .kamal/secrets, and the name in
+              deploy.yml&apos;s secret list. Any one missing and it reaches
+              nothing.
+            </p>
+          )}
         </>
       ) : state.error ? (
         <>
           <p className="text-[12px]" style={{ color: "#e8b56a" }}>{state.error}</p>
           <p className="text-[10px] text-cream/30 mt-2">
-            The monitor is unreachable — which is not the same as a job failing,
-            and does not mean anything is wrong with the app.
+            The monitor is unreachable \u2014 which is not the same as a job
+            failing, and does not mean anything is wrong with the app.
           </p>
         </>
-      ) : state.checks.length === 0 ? (
-        <p className="text-[12px] text-cream/45 py-4">No checks on this account.</p>
+      ) : state.groups.length === 0 ? (
+        <p className="text-[12px] text-cream/45 py-4">No checks configured.</p>
       ) : (
         <>
           <div className="flex flex-col">
-            {(() => {
-              const byName = new Map(state.checks.map((c) => [c.name, c]));
-              const claimed = new Set<string>();
-              const rows = HEALTH_GROUPS.map((g) => {
-                const members = g.checks
-                  .map((n) => { claimed.add(n); return byName.get(n); })
-                  .filter((c): c is NonNullable<typeof c> => !!c);
-                return { ...g, members };
-              }).filter((g) => g.members.length > 0);
-
-              // Anything the groups above do not name. Hidden while empty --
-              // visible the moment a check is added and nobody maps it.
-              const orphans = state.checks.filter((c) => !claimed.has(c.name));
-              if (orphans.length > 0) {
-                rows.push({
-                  label: "Other checks",
-                  detail: `${orphans.length} not grouped — see /admin`,
-                  checks: orphans.map((o) => o.name),
-                  members: orphans,
-                });
-              }
-
-              return rows.map((g) => {
-                const status = worstStatus(g.members.map((m) => m.status));
-                const s = STATUS[status] ?? { label: status, color: "rgba(232,227,218,0.4)" };
-                const oldest = g.members
-                  .map((m) => m.last_ping)
-                  .filter((p): p is string => !!p)
-                  .sort()[0] ?? null;
-                return (
-                  <div key={g.label}
-                    className="flex items-center justify-between gap-3 py-3"
-                    style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)" }}>
-                    <span className="min-w-0">
-                      <span className="block text-[12px] text-cream/80 truncate">{g.label}</span>
+            {state.groups.map((g) => {
+              const s = STATUS[g.status] ?? { label: g.status, color: "rgba(232,227,218,0.4)" };
+              return (
+                <div key={g.key}
+                  className="flex items-center justify-between gap-3 py-3"
+                  style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)" }}>
+                  <span className="min-w-0">
+                    <span className="block text-[12px] text-cream/80 truncate">{g.label}</span>
+                    {/* ⚠ ADMINS ONLY. "Catalog sync \u00b7 5 checks" is operational
+                        detail; a designer needs the row and the pill. */}
+                    {isAdmin && (
                       <span className="block text-[10px] text-cream/35 truncate">
-                        {g.detail} · {g.members.length} check{g.members.length === 1 ? "" : "s"}
-                        {oldest ? ` · oldest ${ago(oldest)}` : ""}
+                        {g.detail} \u00b7 {g.count} check{g.count === 1 ? "" : "s"}
                       </span>
-                    </span>
-                    <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full whitespace-nowrap flex-shrink-0"
-                      style={{ background: `${s.color}1f`, color: s.color, border: `0.5px solid ${s.color}55` }}>
-                      {s.label}
-                    </span>
-                  </div>
-                );
-              });
-            })()}
+                    )}
+                  </span>
+                  <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full whitespace-nowrap flex-shrink-0"
+                    style={{ background: `${s.color}1f`, color: s.color, border: `0.5px solid ${s.color}55` }}>
+                    {s.label}
+                  </span>
+                </div>
+              );
+            })}
           </div>
-          <Link href="/admin" className="block mt-3 text-[11px] text-cream/45 hover:text-cream/80 transition-colors">
-            All {state.checks.length} checks →
-          </Link>
+          {isAdmin && (
+            <Link href="/admin" className="block mt-3 text-[11px] text-cream/45 hover:text-cream/80 transition-colors">
+              All {state.total} checks \u2192
+            </Link>
+          )}
         </>
       )}
     </div>
   );
 }
+
 
 function SearchOverlay({
   orders, query, onQueryChange, onSelectOrder, onClose,
