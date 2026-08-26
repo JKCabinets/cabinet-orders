@@ -1,6 +1,16 @@
 # JK Cabinets — Operations & Systems Reference
 
-**As of 2026-08-20 · supersedes OPERATIONS-2026-08-18.md**
+**As of 2026-08-26 · supersedes OPERATIONS-2026-08-18.md**
+
+⚠ **AMENDED 2026-08-26.** Corrections are marked inline. The largest are: the
+customer-facing stage table is now keyed on `(type, stage)`; a checkout splits
+into groups so "a sample is an order whose every line is the sample vendor" no
+longer holds; and the public lookup contract has moved here, because it is a
+promise to a customer rather than an implementation detail.
+
+**This document is shared with every team and is the master for anything
+customer-facing.** What the system IS lives in `docs/OMS-STATE-2026-08-26.md`;
+what to build next lives in the session handoff.
 **Companion to HANDOFF-2026-08-20-BUILD.md**
 
 Everything that is **not** about writing code: what the business does, which
@@ -31,8 +41,14 @@ Small internal team. Admin user: Garrett. Queen Creek, Arizona;
 | **J&K** | — | Direct | The manufacturer contacts the customer |
 | **JK Cabinets 2 You** | Own stock | Direct from JK | Samples — no delivery appointment |
 
-Only an order whose **every** line is "JK Cabinets 2 You" counts as a sample.
-Mixed orders are standard.
+⚠ **SUPERSEDED by the project model.** It used to be: only an order whose
+every line is "JK Cabinets 2 You" counts as a sample, and mixed orders are
+standard.
+
+A checkout is now a **project**, and its lines split into one `orders` row per
+category by vendor. A mixed order produces a cabinets group AND a samples group,
+each with its own stage and SLA clock. Classification is per LINE, in
+`lib/categories.ts`. See `docs/OMS-STATE-2026-08-26.md` §2.
 
 ⚠ **The two sample products have EMPTY skus** in `shopify_products`
 (ids `51966355210540`, `51875356508460`). Classification works from the
@@ -98,13 +114,61 @@ the only trigger with nobody present to confirm it.
 
 ## Rules for anything customer-facing
 
-**Never show internal stage names.** Translate: New → Order received ·
-Entered → Confirmed with the manufacturer · In production → In production ·
-At cross dock → **Arrived in Arizona** · Delivered → Delivered ·
-New claim → Claim received · In review → In review · Parts ordered → Parts
-ordered · Shipped → Parts shipped · Resolved → Resolved.
+**Never show internal stage names.**
+
+⚠ **TRANSLATE ON `(type, stage)`, NEVER ON STAGE ALONE.** Three flows now have
+a stage called **Shipped** and they mean different things: a warranty claim's
+parts, a sample parcel, a hardware parcel. A table keyed on the name alone would
+tell a sample customer "Parts shipped". The build handoff has warned since
+August that stage names are not globally unique; this is that same fact reaching
+the customer-facing layer, where nobody had noticed it.
+
+| Type | Internal | Customer-facing |
+|---|---|---|
+| Cabinets | New | Order received |
+| Cabinets | Entered | Confirmed with the manufacturer |
+| Cabinets | In production | In production |
+| Cabinets | At cross dock | **Arrived in Arizona** |
+| Cabinets | Delivered | Delivered |
+| Samples | New | Order received |
+| Samples | Shipped | Shipped |
+| Samples | Delivered | Delivered |
+| Hardware | New | Order received |
+| Hardware | Ordered | Ordered from the manufacturer |
+| Hardware | Shipped | Shipped |
+| Hardware | Delivered | Delivered |
+| Warranty | New claim | Claim received |
+| Warranty | In review | In review |
+| Warranty | Parts ordered | Parts ordered |
+| Warranty | Shipped | Parts shipped |
+| Warranty | Resolved | Resolved |
+
+"At cross dock" means nothing to somebody waiting on a kitchen. Custom jobs are
+not customer-visible: a customer never looks one up.
 
 **Never return a delivery date the customer has not already been given.**
+
+## ⚠ The public lookup contract
+
+`POST /api/public/lookup` is **not built yet**, and this is what it has to
+honour. It lives here rather than in a build document because it is a promise to
+a customer, not an implementation detail.
+
+⚠ **A LOOKUP RETURNS A PROJECT, NOT AN ORDER.** A checkout is one project with
+one row per product category, so `SHO-1050` may have **cabinets in production
+and samples already delivered at the same time**. A single status would have to
+be wrong about something. The response needs a **status per category**.
+
+- **Tracking numbers exist for samples and hardware only.** Cabinets travel by
+  freight to a cross dock and never have one.
+- **POST, not GET.** Order numbers and email addresses must not land in URLs,
+  browser history or server logs.
+- **Identical responses for "no such order" and "wrong email"**, or the endpoint
+  becomes an order-number oracle.
+- **A separate `public_api` database role.** The authenticated role holds a
+  `qual=true` SELECT on `orders` because Realtime requires it — acceptable for a
+  small trusted team, not for a public endpoint.
+- **Translate every stage** through the table above, keyed on `(type, stage)`.
 
 ## Order numbers
 
@@ -129,7 +193,7 @@ stripping `#`, trimming, uppercasing, prepending `SHO-`.
 | **`jk-sku-builder`** | ⚠ A SECOND application — see below | | ~$7.00 proj. |
 | **Upstash Redis** | Rate limiting (`rateLimitOr429`) | **Free tier** | $0.00 |
 | **GitHub + GHCR** | Repo and container registry | **Free** | $0.00 |
-| **healthchecks.io** | Dead-man's switch, 4 checks | **Free** | $0.00 |
+| **healthchecks.io** | Dead-man's switch. **4 real checks of 11 on the account** — see §6 | **Free** | $0.00 |
 | **GoDaddy** | Two domains — see §4 | | annual |
 | **Microsoft 365** | Tenant, Outlook, `no-reply@` shared mailbox | Shared mailboxes need no licence | existing |
 | **Avis Plus API** | Waypoint option catalogue, 60 req/min | | |
@@ -242,7 +306,15 @@ silence its own alarm. Email alerting, verified. Ping-URL map at
 webhook can be recreated whenever wanted. The stale note would have sent
 someone hunting for a restriction that does not exist.
 
-**Four checks**, one per cron job:
+**Four checks**, one per cron job — out of **eleven on the account**. The
+other seven are strays listed for deletion in §12, each with a 365-day period so
+they report "up" forever whatever happens.
+
+⚠ The in-app health panel (2026-08-26) ignores those seven **by name**, not by
+leaving them ungrouped — ungrouped is where a genuinely NEW check lands, and
+burying that signal under seven meaningless ones would defeat the point. Delete
+them from healthchecks.io and shrink `IGNORED_CHECKS` in
+`app/api/health-summary/route.ts` to match.
 
 | Check | Watches |
 |---|---|
@@ -295,9 +367,17 @@ the reason — previously `curl -f` discarded it and logged only `error: 500`.
 | **hourly at :20** | | **`webhook-health`** | **Reconciles Shopify's orders against the OMS** |
 
 **`teams-digest` is silent** because `TEAMS_WEBHOOK_URL` is empty — but it is
-now **safe to configure**. Migrated 2026-08-20: it uses the same SLA rules as
-the app, covers all four order types, and reports **by type** rather than by
-stage, because nineteen stages across four flows would be a wall nobody reads.
+now **safe to configure**. It uses the same SLA rules as the app and reports
+**by type** rather than by stage, because 23 stages across five flows would be a
+wall nobody reads.
+
+⚠ **IT COVERED ONLY FOUR OF THE FIVE TYPES until 2026-08-26.** `CATEGORIES` was
+a hardcoded list written when there were four; hardware shipped on 2026-08-25
+and the list did not change, so hardware rows were loaded, dropped from every
+category row, and **still counted in the headline total** — a digest whose
+number would not have matched the sum of its own table, with nothing to error
+about. The list now derives from `ORDER_TYPES` and the total is summed from the
+rows. Inert while the webhook URL is empty; wrong the moment it is set.
 
 It sends even when everything is on track — a digest that only arrives with bad
 news is indistinguishable from one that has silently stopped working.
@@ -438,8 +518,20 @@ subscriptions.
 warranty flow already worked this way and separate tables meant a union query
 for every list, count and metric.
 
-**Samples reuse the standard stage names**, so backward-move detection, date
-clearing, the production-complete cron and the tag merge all work unchanged.
+**~~Samples reuse the standard stage names.~~ REVERSED 2026-08-25.** They did,
+and that sharing was load-bearing — it gave them backward-move detection, date
+clearing and the tag merge for free.
+
+"Entered" was renamed **"Shipped"**, because that is the word a customer
+tracking an order sees; "entered" describes our bookkeeping. Samples now run
+`New → Shipped → Delivered` with their own ordering array, and
+`FLOW_BY_TYPE.sample` still reports `"order"` deliberately so they keep clearing
+the delivery date on a reversal — the calendar reads it.
+
+**Hardware was added 2026-08-25**: `New → Ordered → Shipped → Delivered`,
+drop-ship from the manufacturer via UPS. ⚠ **A tracking number is what moves a
+sample or hardware group to "Shipped"** — not a button. Cabinets travel by
+freight and never have one.
 
 **Samples get their own page**, reversed mid-discussion once volume was
 clarified: if samples are the highest-volume type, mixing them in buries the
@@ -547,13 +639,28 @@ covers the box, not the database, and the database is where the orders are.
 
 ## Important
 
-- **⚠ `orders` has no money column of any kind.** Verified 2026-08-20. Order
-  value lives only in Shopify, so **sell totals cannot be reported at all**
-  until four columns are added. This blocks the admin metrics panel entirely;
-  the decisions are recorded in SESSION-HANDOFF-OMS-2026-08-20.md §2.2.
+- ~~**⚠ `orders` has no money column of any kind.**~~ **DONE 2026-08-25**, and
+  not as planned. Money lives on **`projects`** — a checkout is what carries a
+  total — and `orders` gained only `total_price`, constrained by
+  `orders_total_price_standalone_only` so a project-linked row cannot hold one.
+  Revenue is the sum of both with no overlap possible, enforced by Postgres.
+  The `/admin` panel is live. **Historic projects still need backfilling**
+  through `/admin/shopify`; until then they sum as zero and the panel says how
+  many.
 - **Record the Graph client secret's expiry** somewhere other than the Azure
   portal.
-- **Does `rateLimitOr429` fail open or closed** when Upstash is unreachable?
+- ~~**Does `rateLimitOr429` fail open or closed** when Upstash is
+  unreachable?~~ **ANSWERED 2026-08-26: it fails OPEN.** `lib/auth.ts`:
+  *"Redis transient failure — fail open to avoid locking out legit users."*
+  Deliberate, and the right choice for a small trusted team.
+
+- ⚠ **NEW: rate limiting is keyed by IP, not by user.** `checkRateLimit` builds
+  its key as `` `${bucket}:${ip}` ``, so **everyone behind one office IP shares
+  one allowance on every rate-limited route** — one person working quickly can
+  429 a colleague, and a 429 body is not the shape any caller expects. Needs a
+  decision about the bucket (session user id, falling back to IP for
+  unauthenticated routes) and a pass over every caller's limit. **Its own
+  session.**
 - **Delete the seven stray healthchecks.io checks** (`jk-sync-failure`,
   `jk-orphan-mapping`, `jk-option-rename`, `jk-new-option-values`,
   `jk-stale-sync`, `jk-storefront`, `jk-orders-overdue`) — carefully; four real
