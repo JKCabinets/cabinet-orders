@@ -249,7 +249,20 @@ export function ProjectsClient() {
   const dateOf = (iso: string | null | undefined) =>
     iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—";
 
-  const GRID = "grid grid-cols-[24px_0.85fr_0.7fr_1fr_1.5fr_1.1fr_0.9fr_0.7fr_0.6fr_0.8fr_34px] gap-3";
+  /**
+   * ⚠ WIDTHS FOLLOW WHAT EACH COLUMN HOLDS, not an even split.
+   *
+   *   Customer lost the address line, so a name needs far less than 1fr.
+   *   Orders & stage carries up to three chips per row and was cramped
+   *     against Customer; it takes what Customer gave up.
+   *   Owner is the only column with a VARIABLE-WIDTH CONTROL -- an avatar, a
+   *     name and a Release button -- and had the least room, so the button ran
+   *     into the panel edge. It is now the widest of the trailing columns.
+   *
+   * gap-4 rather than gap-3 throughout: the row read as cramped because every
+   * column was 4px from its neighbour regardless of how much it held.
+   */
+  const GRID = "grid grid-cols-[24px_0.9fr_0.65fr_0.8fr_1.9fr_1.05fr_0.85fr_0.65fr_0.55fr_1.15fr_34px] gap-4";
 
   return (
     <>
@@ -321,7 +334,7 @@ export function ProjectsClient() {
         ) : (
           <div className="rounded-panel overflow-hidden" style={{ border: "0.5px solid rgba(255,255,255,0.12)" }}>
             <div
-              className={`${GRID} px-4 py-2.5 text-[9px] uppercase tracking-wider text-cream/40`}
+              className={`${GRID} px-5 py-2.5 text-[9px] uppercase tracking-wider text-cream/40`}
               style={{ background: "rgba(255,255,255,0.03)" }}
             >
               <span />
@@ -346,26 +359,29 @@ export function ProjectsClient() {
                 <div key={p.id} style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)" }}>
                   <button
                     onClick={() => toggle(p.id)}
-                    className={`${GRID} w-full px-4 py-3 text-left transition-colors hover:bg-white/4`}
+                    className={`${GRID} w-full px-5 py-3.5 text-left transition-colors hover:bg-white/4`}
                   >
                     <span className="self-center text-cream/40">
                       {open ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
                     </span>
 
+                    {/* leading-tight on both: the number and its source were
+                        far enough apart to read as two separate facts. */}
                     <span className="self-center min-w-0">
-                      <span className="block text-[13px] font-mono text-cream/90 truncate">{p.id}</span>
-                      <span className="block text-[10px] text-cream/35">
+                      <span className="block text-[13px] font-mono text-cream/90 truncate leading-tight">{p.id}</span>
+                      <span className="block text-[10px] text-cream/35 leading-tight mt-0.5">
                         {p.source === "Shopify" ? "Web order" : p.source ?? "—"}
                       </span>
                     </span>
 
                     <span className="self-center text-[11px] text-cream/55">{dateOf(p.created_at)}</span>
 
+                    {/* ⚠ NO ADDRESS. It truncated to "22792 E Via De Olivos,
+                        Queen Cree…" on every row -- long enough to crowd the
+                        column, short enough to be useless. The full address is
+                        in the modal, where there is room for it. */}
                     <span className="self-center min-w-0">
                       <span className="block text-[12px] text-cream/85 truncate">{p.name ?? "—"}</span>
-                      {p.ship_to && (
-                        <span className="block text-[10px] text-cream/35 truncate">{p.ship_to}</span>
-                      )}
                     </span>
 
                     {/* One line per group: category, its OWN stage, its OWN
@@ -452,7 +468,11 @@ export function ProjectsClient() {
                         A div role="button", not a <button> -- this sits inside
                         the row's expand button, and nesting buttons is invalid
                         HTML. */}
-                    <span className="self-center flex items-center justify-end gap-1.5 min-w-0">
+                    {/* pr-1 so the Release button clears the archive control
+                        beside it -- with an avatar, a name AND a button this is
+                        the widest thing in the row, and it was flush against
+                        the panel edge. */}
+                    <span className="self-center flex items-center justify-end gap-2 min-w-0 pr-1">
                       {(() => {
                         const owner = p.claimed_by ? team.find((m) => m.id === p.claimed_by) : undefined;
                         const mine = !!currentUserId && p.claimed_by === currentUserId;
