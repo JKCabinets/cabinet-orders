@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyCronAuth } from "@/lib/cronAuth";
 import { supabase } from "@/lib/supabase";
 import { slaTier, slaRuleFor, slaAgeHours, formatStageAge } from "@/lib/sla";
-import type { Order } from "@/lib/data";
+import { ORDER_TYPES, type Order, type OrderType } from "@/lib/data";
 
 /**
  * Weekday morning digest, posted to Teams.
@@ -41,12 +41,32 @@ import type { Order } from "@/lib/data";
  *   indistinguishable from a digest that has silently stopped working.
  */
 
-const CATEGORIES = [
-  { key: "order", label: "Standard orders" },
-  { key: "custom", label: "Custom orders" },
-  { key: "sample", label: "Sample orders" },
-  { key: "warranty", label: "Warranty claims" },
-] as const;
+/**
+ * ⚠ DERIVED FROM ORDER_TYPES, NOT HARDCODED.
+ *
+ * This was a literal list of four. `hardware` was added on 2026-08-25 and the
+ * list was not, so hardware rows were loaded, filtered out of every category
+ * row, and STILL COUNTED in `totalActive` -- a digest whose headline number did
+ * not match the sum of its own rows, with nothing to error about.
+ *
+ * The comment a few lines above already records this happening once:
+ * `neq("type", "warranty")` meant "standard orders only" until samples and
+ * customs quietly joined it. Twice is a pattern, so the list now comes from the
+ * same place everything else does.
+ *
+ * LABELS is a Record over OrderType, so a sixth type is a COMPILE ERROR here
+ * rather than a silently missing row. Same technique as TYPE_COPY in
+ * OrdersHubClient.
+ */
+const TYPE_LABELS: Record<OrderType, string> = {
+  order:    "Cabinet orders",
+  hardware: "Hardware orders",
+  sample:   "Sample orders",
+  custom:   "Custom jobs",
+  warranty: "Warranty claims",
+};
+
+const CATEGORIES = ORDER_TYPES.map((key) => ({ key, label: TYPE_LABELS[key] }));
 
 /**
  * Every column the SLA rules read. Getting this list wrong is how the old
@@ -130,7 +150,22 @@ export async function GET(req: NextRequest) {
     if (!worst || h > worst.hours) worst = { order: o, hours: h };
   }
 
-  const totalActive = orders.length;
+  // ⚠ COUNTED FROM THE CATEGORY ROWS, not from the raw list.
+  //
+  // `orders.length` counted every row including types no category matched, so
+  // the headline disagreed with the table beneath it whenever a type was
+  // missing from CATEGORIES. Deriving it from the rows makes that impossible:
+  // if a type is unrepresented the total drops too, which is visible, rather
+  // than the total staying right and the rows quietly under-reporting.
+  const totalActive = summaries.reduce((n, c) => n + c.active, 0);
+
+  // A row whose type matches no category is a bug, not a silent omission.
+  const uncategorised = orders.filter(
+    (o) => !CATEGORIES.some((c) => c.key === (o.type ?? "order")));
+  if (uncategorised.length > 0) {
+    console.error(`[teams-digest] ${uncategorised.length} row(s) of an `
+      + `unrecognised type: ${[...new Set(uncategorised.map(o => o.type))].join(", ")}`);
+  }
   const totalPastSla = summaries.reduce((s, c) => s + c.overSoft + c.overHard, 0);
   const totalHard = summaries.reduce((s, c) => s + c.overHard, 0);
   const newSinceYesterday = orders.filter(o => {
