@@ -502,6 +502,14 @@ export async function PATCH(
   const { error } = await supabase.from("orders").update(updates).eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  // Where the row ACTUALLY landed. Returned on every path below, because a
+  // caller cannot otherwise tell an advance from a plain save: TrackingEntry
+  // reads `data.stage` to decide between "Tracking saved" and "marked
+  // shipped", and no return path carried one, so it always chose the first
+  // and never called onStageChange. Realtime hid it by refreshing the row a
+  // moment later -- the feature looked right and reported the wrong thing.
+  const finalStage = (updates.stage as string | undefined) ?? currentStage;
+
   // Log activity
   const today = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" });
   let activityText = "";
@@ -550,6 +558,39 @@ export async function PATCH(
     await supabase.from("order_activity").insert({ order_id: id, text: activityText, time: today });
   }
 
+  // ⚠ ITS OWN ROW, NOT A BRANCH OF THE CHAIN ABOVE.
+  //
+  // A tracking number is the evidence behind "Shipped", and entering one
+  // advances the group by setting `updates.stage` WITHOUT `body.stage` -- so
+  // every branch of that if/else chain missed and the move left no trail at
+  // all. A stage change with no trail cannot be reconstructed later, which is
+  // the whole reason the delivery gate writes one.
+  //
+  // Independent, like the payment-hold and delivery-override rows below: one
+  // event, one row. A request that carries BOTH a stage and a number is two
+  // events and correctly gets two.
+  //
+  // Keyed on the number CHANGING, compared against the value loaded up front.
+  // Re-saving the same number is not an event.
+  if (typeof body.tracking_number === "string") {
+    const before = String(currentRow.tracking_number ?? "").trim();
+    const after = String(updates.tracking_number ?? "").trim();
+    if (before !== after) {
+      const who = auth.session.user.name ?? auth.session.user.username;
+      const carrierLabel = updates.carrier ? ` (${String(updates.carrier)})` : "";
+      const trackingText = !after
+        // Clearing a number does NOT move the row back, and the trail has to
+        // say so -- otherwise the next reader assumes the stage followed.
+        ? `Tracking number cleared by ${who} — stage unchanged`
+        : trackingAdvancesTo
+          ? `Tracking number ${after}${carrierLabel} added by ${who} → moved to "${trackingAdvancesTo}"`
+          : `Tracking number ${after}${carrierLabel} updated by ${who}`;
+      await supabase.from("order_activity").insert({
+        order_id: id, text: trackingText, time: today,
+      });
+    }
+  }
+
   // A separate row, not appended to the stage-change text: an override is
   // its own event, and each one should leave its own trace. The name comes
   // from the session, never from the request body.
@@ -575,9 +616,13 @@ export async function PATCH(
     });
   }
 
-  // Shopify writeback — unchanged
+  // Shopify writeback
   const shouldSync =
     body.stage !== undefined ||
+    // ⚠ A TRACKING ADVANCE IS A STAGE CHANGE. It sets updates.stage without
+    // body.stage, so testing the body alone left the Shopify stage tag saying
+    // the group was still unshipped after it had shipped.
+    trackingAdvancesTo !== null ||
     body.notes !== undefined ||
     body.production_start_date !== undefined ||
     body.production_est_finish_date !== undefined ||
@@ -594,7 +639,7 @@ export async function PATCH(
 
     if (order?.shopify_id) {
       const syncResult = await syncToShopify(order.shopify_id, {
-        ...(body.stage !== undefined && { stage: order.stage }),
+        ...((body.stage !== undefined || trackingAdvancesTo !== null) && { stage: order.stage }),
         ...(body.notes !== undefined && { notes: order.notes }),
         ...(body.production_start_date !== undefined && { production_start_date: order.production_start_date }),
         ...(body.production_est_finish_date !== undefined && { production_est_finish_date: order.production_est_finish_date }),
@@ -605,13 +650,14 @@ export async function PATCH(
 
       return NextResponse.json({
         ok: true,
+        data: { stage: finalStage },
         shopify_synced: syncResult.ok,
         shopify_error: syncResult.ok ? undefined : syncResult.error,
       });
     }
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, data: { stage: finalStage } });
 }
 
 /**

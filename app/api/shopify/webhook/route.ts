@@ -835,6 +835,29 @@ export async function POST(req: NextRequest) {
         }
 
         await supabase.from("orders").update(updates).eq("id", g.id);
+
+        // ⚠ THE GROUP THAT MOVED GETS THE ROW.
+        //
+        // The only note this handler writes is "Order updated in Shopify", and
+        // it goes on the CABINET group -- so a samples or hardware group could
+        // advance to Shipped while its own timeline said nothing and a generic
+        // line landed on a different group's trail.
+        //
+        // Same absence the PATCH route had on the other door. One rule, two
+        // doors, and neither was recording it.
+        //
+        // Fires once: the stage only changes when `g.stage !== target`, so the
+        // repeated orders/updated deliveries that follow write nothing.
+        if (typeof updates.stage === "string") {
+          const carrierLabel = updates.carrier ? ` (${String(updates.carrier)})` : "";
+          await supabase.from("order_activity").insert({
+            order_id: g.id,
+            text: `Shopify fulfilment carried tracking `
+              + `${String(updates.tracking_number ?? "")}${carrierLabel}`
+              + ` — moved to "${updates.stage}" automatically`,
+            time: today,
+          });
+        }
       }
 
       if (fulfillmentStatus === "fulfilled"

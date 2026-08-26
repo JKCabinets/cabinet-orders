@@ -48,14 +48,30 @@ export async function GET(req: NextRequest) {
 
   const results: { id: string; name: string; shopify_synced: boolean }[] = [];
 
+  const failures: { id: string; reason: string }[] = [];
+
   for (const order of orders) {
-    await supabase
+    // ⚠ THE UPDATE'S ERROR WAS DISCARDED. A failed write still wrote the
+    // activity row saying the order had advanced, and still counted toward
+    // the reported total -- so the one record that would reveal the failure
+    // asserted the opposite. There is nothing to DO about a failure here
+    // except not lie about it, which matters more once this cron owns a
+    // customer notification.
+    const { error: updateError } = await supabase
       .from("orders")
       .update({
         stage: "At cross dock",
         stage_entered_at: new Date().toISOString(),
       })
       .eq("id", order.id);
+
+    if (updateError) {
+      failures.push({ id: order.id, reason: updateError.message });
+      console.warn("[production-complete]", JSON.stringify({
+        outcome: "advance_failed", order_id: order.id, reason: updateError.message,
+      }));
+      continue;
+    }
 
     await supabase.from("order_activity").insert({
       order_id: order.id,
@@ -73,5 +89,21 @@ export async function GET(req: NextRequest) {
     results.push({ id: order.id, name: order.name, shopify_synced });
   }
 
-  return NextResponse.json({ ok: true, advanced: results.length, orders: results });
+  // ⚠ run-cron.sh pings on the HTTP STATUS. A run where every advance failed
+  // must be non-2xx or the dead-man's switch stays green through an outage --
+  // the exact shape of the six-day monitoring failure. A PARTIAL failure stays
+  // 200 and reports the count: the orders that advanced genuinely did.
+  if (results.length === 0 && failures.length > 0) {
+    return NextResponse.json(
+      { ok: false, advanced: 0, failed: failures.length, failures },
+      { status: 500 },
+    );
+  }
+
+  return NextResponse.json({
+    ok: true,
+    advanced: results.length,
+    ...(failures.length > 0 ? { failed: failures.length, failures } : {}),
+    orders: results,
+  });
 }
