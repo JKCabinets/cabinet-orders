@@ -173,7 +173,24 @@ function HealthChecksPanel() {
     return `${Math.round(h / 24)}d ago`;
   };
 
-  const down = state.checks.filter((c) => c.status !== "up" && c.status !== "paused").length;
+  /**
+   * ⚠ SEVEN OF THESE ELEVEN ARE STRAY. See OPERATIONS-2026-08-20.md §12:
+   * leftovers from an earlier setup, listed for deletion, each with a 365-day
+   * period so they report "up" forever whatever happens.
+   *
+   * They are marked rather than hidden, because THIS is the page where the
+   * deletion task lives. The dashboard excludes them entirely -- counting them
+   * there produced "Catalog sync · Healthy · 5 checks" when four of the five
+   * could not report anything else.
+   */
+  const LEGACY = new Set([
+    "jk-sync-failure", "jk-orphan-mapping", "jk-option-rename",
+    "jk-new-option-values", "jk-stale-sync", "jk-storefront",
+    "jk-orders-overdue",
+  ]);
+  const live = state.checks.filter((c) => !LEGACY.has(c.name));
+  const legacy = state.checks.filter((c) => LEGACY.has(c.name));
+  const down = live.filter((c) => c.status !== "up" && c.status !== "paused").length;
 
   return (
     <div className="mt-6">
@@ -183,7 +200,8 @@ function HealthChecksPanel() {
         </p>
         {!state.loading && state.configured && !state.error && (
           <span className="text-[10px]" style={{ color: down > 0 ? "#e8b56a" : "rgba(232,227,218,0.25)" }}>
-            · {state.checks.length} checks{down > 0 ? `, ${down} needing attention` : ", all healthy"}
+            · {live.length} monitoring{down > 0 ? `, ${down} needing attention` : ", all healthy"}
+            {legacy.length > 0 ? ` · ${legacy.length} legacy` : ""}
           </span>
         )}
       </div>
@@ -210,7 +228,8 @@ function HealthChecksPanel() {
         </div>
       ) : (
         <div className="rounded-xl border border-[rgba(255,255,255,0.10)] overflow-hidden">
-          {state.checks.map((c, i) => {
+          {[...live, ...legacy].map((c, i) => {
+            const isLegacy = LEGACY.has(c.name);
             const s = STATUS[c.status] ?? { label: c.status, color: "rgba(232,227,218,0.4)" };
             return (
               <div key={c.name}
@@ -220,11 +239,22 @@ function HealthChecksPanel() {
                   borderTop: i === 0 ? undefined : "0.5px solid rgba(255,255,255,0.08)",
                 }}>
                 <span className="min-w-0">
-                  <span className="block text-[12px] text-[rgba(232,227,218,0.80)] truncate font-mono">
-                    {c.name}
+                  <span className="flex items-center gap-2 min-w-0">
+                    <span className="text-[12px] truncate font-mono"
+                      style={{ color: isLegacy ? "rgba(232,227,218,0.40)" : "rgba(232,227,218,0.80)" }}>
+                      {c.name}
+                    </span>
+                    {isLegacy && (
+                      <span className="text-[9px] uppercase tracking-wider px-1.5 py-px rounded-full flex-shrink-0"
+                        style={{ background: "rgba(255,255,255,0.05)", color: "rgba(232,227,218,0.35)", border: "0.5px solid rgba(255,255,255,0.12)" }}>
+                        legacy
+                      </span>
+                    )}
                   </span>
                   <span className="block text-[10px] text-[rgba(232,227,218,0.35)] truncate">
-                    {c.schedule ?? "no schedule"} · last ping {ago(c.last_ping)}
+                    {isLegacy
+                      ? "Watches nothing \u2014 safe to delete (OPERATIONS \u00a712)"
+                      : `${c.schedule ?? "no schedule"} \u00b7 last ping ${ago(c.last_ping)}`}
                   </span>
                 </span>
                 <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full whitespace-nowrap flex-shrink-0"

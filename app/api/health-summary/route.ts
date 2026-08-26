@@ -13,6 +13,12 @@ import { requireAuth, rateLimitOr429 } from "@/lib/auth";
  * failure reported as a configuration failure, in the one panel whose whole
  * purpose is not to confuse those.
  *
+ * ⚠ A CONVENIENCE LAYER OVER EMAIL, NEVER A REPLACEMENT. Recorded in
+ * SESSION-HANDOFF §2.2 and worth repeating here: the dead-man's switch works
+ * because it is OFF-BOX. If the box is down, so is the OMS, and this panel
+ * shows nothing at all. healthchecks.io emailing on failure is the alarm; this
+ * is a window onto it.
+ *
  * ⚠ THE ROLLUP HAPPENS ON THE SERVER, deliberately. Sending every check and
  * hiding the names in the component would mean a non-admin's browser HAS the
  * list — hiding it in the UI is not access control, the same reasoning as the
@@ -20,26 +26,56 @@ import { requireAuth, rateLimitOr429 } from "@/lib/auth";
  * Nothing identifying a check leaves the server.
  */
 
+/**
+ * ⚠ FOUR REAL CHECKS, ONE PER CRON JOB. See OPERATIONS-2026-08-20.md §6.
+ *
+ * The account carries eleven. The other seven are STRAY -- leftovers from an
+ * earlier setup, listed for deletion in OPERATIONS §12, each with a 365-day
+ * period so they report "up" forever whatever happens.
+ *
+ * The first version of this panel grouped all eleven. The dashboard then read
+ * "Catalog sync · Healthy · 5 checks" when FOUR OF THOSE FIVE could not
+ * report anything else. That is green-because-nobody-asked wearing the costume
+ * of five checks agreeing -- precisely the failure this panel exists to catch,
+ * and it took reading the operations doc to see it.
+ */
 const HEALTH_GROUPS: { key: string; label: string; detail: string; checks: string[] }[] = [
   {
     key: "ingest",
     label: "Shopify ingest",
     detail: "Orders arriving from the storefront",
-    checks: ["jk-webhook-health", "jk-storefront", "jk-stale-sync"],
+    checks: ["jk-webhook-health"],
   },
   {
     key: "catalog",
     label: "Catalog sync",
-    detail: "Products and SKU mappings current",
-    checks: ["sync-avis-catalog", "jk-sync-failure", "jk-orphan-mapping",
-             "jk-option-rename", "jk-new-option-values"],
+    detail: "Waypoint option catalogue",
+    checks: ["sync-avis-catalog"],
   },
   {
     key: "jobs",
     label: "Scheduled jobs",
-    detail: "Nightly and hourly automation",
-    checks: ["production-complete", "teams-digest", "jk-orders-overdue"],
+    detail: "Production advance and the team digest",
+    checks: ["production-complete", "teams-digest"],
   },
+];
+
+/**
+ * ⚠ NAMED, NOT MERELY UNGROUPED.
+ *
+ * These are the seven strays. Leaving them out of HEALTH_GROUPS would drop
+ * them into "Other checks" below -- where a GENUINELY NEW check also lands.
+ * Then the one signal that matters (somebody added a cron and nobody mapped
+ * it) would be buried under seven that mean nothing.
+ *
+ * Deleting them from healthchecks.io is on the operations list; until that
+ * happens they are ignored here BY NAME, so the day one is deleted or a
+ * twelfth appears, this list stops matching and the difference shows up.
+ */
+const IGNORED_CHECKS: readonly string[] = [
+  "jk-sync-failure", "jk-orphan-mapping", "jk-option-rename",
+  "jk-new-option-values", "jk-stale-sync", "jk-storefront",
+  "jk-orders-overdue",
 ];
 
 /** down beats grace beats new/paused beats up — the worst wins. */
@@ -102,7 +138,10 @@ export async function GET(req: NextRequest) {
     // never a name, since that is the detail this endpoint exists to withhold.
     // Without it a check added next month would be silently unmonitored on
     // this panel, which is the failure the panel was built for.
-    const orphans = all.filter((c) => !claimed.has(c.name ?? ""));
+    const orphans = all.filter((c) => {
+      const n = c.name ?? "";
+      return !claimed.has(n) && !IGNORED_CHECKS.includes(n);
+    });
     if (orphans.length > 0) {
       groups.push({
         key: "other",
@@ -113,7 +152,17 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    return NextResponse.json({ configured: true, groups, total: all.length });
+    // ⚠ `total` COUNTS WHAT IS MONITORED, not what the account holds. Eleven
+    // checks exist; four of them watch anything. Reporting eleven would tell a
+    // reader the system is more observed than it is.
+    const monitored = all.length - IGNORED_CHECKS.filter(
+      (n) => byName.has(n)).length;
+    return NextResponse.json({
+      configured: true,
+      groups,
+      total: monitored,
+      ignored: all.length - monitored,
+    });
   } catch (err) {
     // A monitoring outage is not an application outage. Saying so keeps people
     // from learning to ignore both.
