@@ -399,7 +399,7 @@ export function DashboardClient() {
           ))}
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 items-start">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 items-stretch">
 
           {/* ── Needs attention ── */}
           <div className="glass-sage rounded-panel p-5">
@@ -435,7 +435,7 @@ export function DashboardClient() {
                     <button
                       key={e.key}
                       onClick={() => setSelectedOrder(e.orders[0])}
-                      className="grid grid-cols-[1.5fr_0.8fr_0.9fr_0.7fr] gap-3 py-2.5 text-left transition-colors hover:bg-white/4"
+                      className="grid grid-cols-[1.5fr_0.8fr_0.9fr_0.7fr] gap-3 py-2 text-left transition-colors hover:bg-white/4"
                       style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)" }}
                     >
                       <span className="flex items-start gap-2 min-w-0">
@@ -533,7 +533,7 @@ export function DashboardClient() {
                           The first row has none at all -- the header above it
                           already separates. */}
                       <span
-                        className="flex items-center gap-2 py-1.5 pr-2 min-w-0"
+                        className="flex items-center gap-2 py-3 pr-2 min-w-0"
                         style={rowIdx === 0 ? undefined
                           : { borderTop: "0.5px solid rgba(255,255,255,0.07)" }}
                       >
@@ -549,7 +549,7 @@ export function DashboardClient() {
                         // the column open, drawing NOTHING. It used to carry a
                         // borderTop, which is where the hairlines trailing off
                         // into blank space came from.
-                        if (!s) return <span key={i} className="py-1.5" />;
+                        if (!s) return <span key={i} className="py-3" />;
                         const terminal = i === p.segments.length - 1;
                         const has = s.count > 0;
                         const bg = terminal
@@ -562,11 +562,11 @@ export function DashboardClient() {
                           ? (has ? "#a0cc7a" : "rgba(160,204,122,0.45)")
                           : has ? "#8fb8dd" : "rgba(232,227,218,0.35)";
                         return (
-                          <span key={i} className="py-1.5 min-w-0"
+                          <span key={i} className="py-3 min-w-0"
                             style={rowIdx === 0 ? undefined
                               : { borderTop: "0.5px solid rgba(255,255,255,0.07)" }}>
                             <span
-                              className="flex items-center justify-between gap-1 pl-3 pr-4 py-1.5 text-[11px] min-w-0"
+                              className="flex items-center justify-between gap-1 pl-3 pr-4 py-2.5 text-[11px] min-w-0"
                               style={{
                                 background: bg,
                                 borderTop: `0.5px solid ${border}`,
@@ -593,7 +593,7 @@ export function DashboardClient() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 items-start">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 items-stretch">
           {/* ── SLA / data health ── */}
           <div className="glass-sage rounded-panel p-5">
             <h2 className="font-display text-[22px] text-cream mb-3">
@@ -680,6 +680,48 @@ export function DashboardClient() {
  * upstream unreachable, and the real list. A panel that shows green because it
  * failed to ask is worse than no panel.
  */
+/**
+ * The eleven healthchecks, rolled up to three concerns.
+ *
+ * ⚠ THE FULL LIST LIVES ON /admin. Eleven rows on a dashboard is a list nobody
+ * reads, and a check named `jk-orphan-mapping` means nothing to somebody
+ * entering orders. Three rows answer the question a team member actually has:
+ * is the system doing its job?
+ *
+ * ⚠ EACH ROW TAKES THE WORST STATUS IN ITS GROUP. One check down turns the row
+ * red -- a problem cannot hide behind nine green siblings, which is the whole
+ * point of a rollup rather than an average.
+ *
+ * ⚠ AND ANYTHING UNMAPPED FALLS INTO "Other", which appears ONLY when it has
+ * members. Without it a check added next month would be invisible -- exactly
+ * the failure this panel was built for, in different clothes.
+ */
+const HEALTH_GROUPS: { label: string; detail: string; checks: string[] }[] = [
+  {
+    label: "Shopify ingest",
+    detail: "Orders arriving from the storefront",
+    checks: ["jk-webhook-health", "jk-storefront", "jk-stale-sync"],
+  },
+  {
+    label: "Catalog sync",
+    detail: "Products and SKU mappings current",
+    checks: ["sync-avis-catalog", "jk-sync-failure", "jk-orphan-mapping",
+             "jk-option-rename", "jk-new-option-values"],
+  },
+  {
+    label: "Scheduled jobs",
+    detail: "Nightly and hourly automation",
+    checks: ["production-complete", "teams-digest", "jk-orders-overdue"],
+  },
+];
+
+/** down beats grace beats new/paused beats up -- the worst wins. */
+function worstStatus(statuses: string[]): string {
+  const rank = (s: string) =>
+    s === "down" ? 0 : s === "grace" ? 1 : s === "new" ? 2 : s === "paused" ? 3 : 4;
+  return statuses.slice().sort((a, b) => rank(a) - rank(b))[0] ?? "up";
+}
+
 function SystemHealthPanel() {
   const [state, setState] = useState<{
     loading: boolean;
@@ -757,27 +799,61 @@ function SystemHealthPanel() {
       ) : state.checks.length === 0 ? (
         <p className="text-[12px] text-cream/45 py-4">No checks on this account.</p>
       ) : (
-        <div className="flex flex-col">
-          {state.checks.map((c) => {
-            const s = STATUS[c.status] ?? { label: c.status, color: "rgba(232,227,218,0.4)" };
-            return (
-              <div key={c.name}
-                className="flex items-center justify-between gap-3 py-2.5"
-                style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)" }}>
-                <span className="min-w-0">
-                  <span className="block text-[12px] text-cream/75 truncate">{c.name}</span>
-                  <span className="block text-[10px] text-cream/35 truncate">
-                    {c.schedule ?? "no schedule"} · last {ago(c.last_ping)}
-                  </span>
-                </span>
-                <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full whitespace-nowrap flex-shrink-0"
-                  style={{ background: `${s.color}1f`, color: s.color, border: `0.5px solid ${s.color}55` }}>
-                  {s.label}
-                </span>
-              </div>
-            );
-          })}
-        </div>
+        <>
+          <div className="flex flex-col">
+            {(() => {
+              const byName = new Map(state.checks.map((c) => [c.name, c]));
+              const claimed = new Set<string>();
+              const rows = HEALTH_GROUPS.map((g) => {
+                const members = g.checks
+                  .map((n) => { claimed.add(n); return byName.get(n); })
+                  .filter((c): c is NonNullable<typeof c> => !!c);
+                return { ...g, members };
+              }).filter((g) => g.members.length > 0);
+
+              // Anything the groups above do not name. Hidden while empty --
+              // visible the moment a check is added and nobody maps it.
+              const orphans = state.checks.filter((c) => !claimed.has(c.name));
+              if (orphans.length > 0) {
+                rows.push({
+                  label: "Other checks",
+                  detail: `${orphans.length} not grouped — see /admin`,
+                  checks: orphans.map((o) => o.name),
+                  members: orphans,
+                });
+              }
+
+              return rows.map((g) => {
+                const status = worstStatus(g.members.map((m) => m.status));
+                const s = STATUS[status] ?? { label: status, color: "rgba(232,227,218,0.4)" };
+                const oldest = g.members
+                  .map((m) => m.last_ping)
+                  .filter((p): p is string => !!p)
+                  .sort()[0] ?? null;
+                return (
+                  <div key={g.label}
+                    className="flex items-center justify-between gap-3 py-3"
+                    style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)" }}>
+                    <span className="min-w-0">
+                      <span className="block text-[12px] text-cream/80 truncate">{g.label}</span>
+                      <span className="block text-[10px] text-cream/35 truncate">
+                        {g.detail} · {g.members.length} check{g.members.length === 1 ? "" : "s"}
+                        {oldest ? ` · oldest ${ago(oldest)}` : ""}
+                      </span>
+                    </span>
+                    <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full whitespace-nowrap flex-shrink-0"
+                      style={{ background: `${s.color}1f`, color: s.color, border: `0.5px solid ${s.color}55` }}>
+                      {s.label}
+                    </span>
+                  </div>
+                );
+              });
+            })()}
+          </div>
+          <Link href="/admin" className="block mt-3 text-[11px] text-cream/45 hover:text-cream/80 transition-colors">
+            All {state.checks.length} checks →
+          </Link>
+        </>
       )}
     </div>
   );
