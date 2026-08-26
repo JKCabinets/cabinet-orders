@@ -111,7 +111,31 @@ export default function CalendarPage() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          delivery_date: editDeliveryDate || null,
+          // ⚠ THE SCHEDULED DATE ONLY.
+          //
+          // This wrote BOTH fields to the same value, which collapsed a
+          // distinction the rest of the system depends on:
+          //
+          //   scheduled_delivery_date  a TARGET, held internally
+          //   delivery_date            a date the CUSTOMER HAS BEEN GIVEN
+          //
+          // Nothing else writes delivery_date -- the modal's DateEditor and
+          // the store's updateOrderDetails both take the scheduled one alone
+          // -- so this was the only reason the two were synonyms. It now goes
+          // unwritten, and the notification that TELLS the customer becomes
+          // its only writer. That is what gives the public lookup a field it
+          // can return without promising a date nobody has been given.
+          //
+          // ⚠ SIDE EFFECT, INTENDED: shouldSync in PATCH /api/orders/[id]
+          // tests body.delivery_date, and syncToShopify writes it into a
+          // Shopify note attribute called "Delivery Date". Scheduling a
+          // provisional date here used to push it onto the Shopify order.
+          // It no longer does -- OPERATIONS section 2, on the one path that
+          // leaves the building.
+          //
+          // Display is unaffected: CalendarOrder merges with
+          // `delivery_date || scheduled_delivery_date`, and the At-cross-dock
+          // SLA rule tests both.
           scheduled_delivery_date: editDeliveryDate || null,
           delivery_window: editWindow,
           delivery_notes: editNotes,
