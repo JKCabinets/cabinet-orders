@@ -30,7 +30,7 @@ import { useToast } from "./Toast";
  *   - Delivered / Archive: "Restore" (archive only) / status text
  */
 
-type SortKey = "id" | "date" | "name" | "source" | "payment_status" | "claimed_by";
+type SortKey = "id" | "date" | "name" | "source" | "payment_status" | "claimed_by" | "stage";
 type SortDir = "asc" | "desc";
 
 interface OrderTableProps {
@@ -104,6 +104,20 @@ export function OrderTable({
         case "source": av = a.source; bv = b.source; break;
         case "payment_status": av = a.payment_status ?? "zzz"; bv = b.payment_status ?? "zzz"; break;
         case "claimed_by": av = a.claimed_by ?? "zzz"; bv = b.claimed_by ?? "zzz"; break;
+        case "stage": {
+          // ⚠ BY PIPELINE POSITION, not alphabetically. Sorting the strings
+          // would put "At cross dock" before "New", which is the opposite of
+          // what somebody sorting by stage wants -- they want to read the
+          // pipeline in order. Index within the row's OWN flow, so a mixed
+          // table still groups sensibly.
+          const idx = (o: Order) => {
+            const f = (STAGE_LIST_BY_TYPE[o.type as OrderType] ?? []) as readonly string[];
+            const i = f.indexOf(o.stage);
+            return i < 0 ? 99 : i;
+          };
+          av = idx(a); bv = idx(b);
+          break;
+        }
         case "date":
           av = parseOrderDate(a.date) ?? 0;
           bv = parseOrderDate(b.date) ?? 0;
@@ -130,6 +144,12 @@ export function OrderTable({
               <SortableHeader label="Date"      col="date"           current={sortKey} dir={sortDir} onClick={setSort} width="w-[110px]" />
               <SortableHeader label="Customer"  col="name"           current={sortKey} dir={sortDir} onClick={setSort} />
               <SortableHeader label="Type"      col="source"         current={sortKey} dir={sortDir} onClick={setSort} width="w-[95px]" />
+              {/* ⚠ ONLY ON AN ALL-STAGES VIEW. When the table IS one stage,
+                  every row shares it and a column repeating that value 30
+                  times is noise. On All it is the thing you most need. */}
+              {stage === null && (
+                <SortableHeader label="Stage" col="stage" current={sortKey} dir={sortDir} onClick={setSort} width="w-[130px]" />
+              )}
               <th className="text-left px-3 py-2.5 text-[10px] uppercase tracking-[0.13em] text-cream/55 font-medium">Status</th>
               {stage !== "Archived" && (
                 <th className="text-left px-3 py-2.5 text-[10px] uppercase tracking-[0.13em] text-cream/55 font-medium w-[180px]">Update Status</th>
@@ -288,6 +308,11 @@ function OrderRow({
       <td className="px-3 py-2.5">
         <TypePill source={order.source} />
       </td>
+      {stage === null && (
+        <td className="px-3 py-2.5">
+          <StagePill stage={order.stage} type={order.type} />
+        </td>
+      )}
       <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
         <StatusCell order={order} stage={stage} onOpenModal={onSelect} />
       </td>
@@ -358,6 +383,47 @@ function MobileRow({
       </div>
       <ChevronRight className="w-3.5 h-3.5 text-cream/40 flex-shrink-0" />
     </button>
+  );
+}
+
+
+/**
+ * A stage pill, with the FIRST stage of a flow glowing.
+ *
+ * ⚠ THE GLOW MARKS UNTOUCHED WORK, everywhere it appears. "New" -- or
+ * "New claim", or hardware's "New" -- is the one stage that means nobody has
+ * done anything yet, and on a board of thirty rows that is the thing worth
+ * finding at a glance. Every other stage is somebody's work in progress.
+ *
+ * Read from STAGE_LIST_BY_TYPE rather than matching the string "New", because
+ * warranty's first stage is "New claim" and a string match would miss it.
+ */
+export function StagePill({
+  stage, type, size = "sm",
+}: {
+  stage: string;
+  type?: string | null;
+  size?: "sm" | "xs";
+}) {
+  const accent = STAGE_COLOR[stage] ?? "#91a597";
+  const flow = (type ? STAGE_LIST_BY_TYPE[type as OrderType] : undefined) as readonly string[] | undefined;
+  const isFirst = !!flow && flow.length > 0 && flow[0] === stage;
+  return (
+    <span
+      className={clsx(
+        "uppercase tracking-wider rounded-full whitespace-nowrap inline-block",
+        size === "xs" ? "text-[9px] px-1.5 py-0.5" : "text-[10px] px-2 py-0.5",
+      )}
+      style={{
+        background: `${accent}1f`,
+        border: `0.5px solid ${accent}${isFirst ? "88" : "55"}`,
+        color: accent,
+        // The glow. Subtle enough to scan past when you are not looking for it.
+        boxShadow: isFirst ? `0 0 0 1px ${accent}22, 0 0 8px ${accent}55` : undefined,
+      }}
+    >
+      {stage}
+    </span>
   );
 }
 
