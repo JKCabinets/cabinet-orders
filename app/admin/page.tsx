@@ -113,6 +113,133 @@ interface RevenueResponse {
   unpriced: { month: number; year: number };
 }
 
+/**
+ * Every healthcheck, in full.
+ *
+ * ⚠ THE DASHBOARD SHOWS THREE ROLLED-UP ROWS; this is the list behind them.
+ * Eleven rows of `jk-orphan-mapping` is noise to somebody entering orders and
+ * exactly what an admin wants when something is red.
+ *
+ * Same endpoint, same three states -- not configured, unreachable, the list --
+ * because a panel that goes green because it failed to ask is worse than no
+ * panel. That is not an abstract concern here: on 2026-08-20 three ping URLs
+ * were pasted carrying angle brackets, every ping returned HTTP 400, the
+ * caller discarded it, and the dead-man's switch was dead for six days with
+ * every other layer reporting success.
+ */
+function HealthChecksPanel() {
+  const [state, setState] = useState<{
+    loading: boolean;
+    configured: boolean;
+    error?: string;
+    checks: { name: string; status: string; last_ping: string | null; schedule: string | null }[];
+  }>({ loading: true, configured: false, checks: [] });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/admin/health");
+        const body = await res.json();
+        if (!cancelled) {
+          setState({
+            loading: false,
+            configured: !!body.configured,
+            error: body.error,
+            checks: body.checks ?? [],
+          });
+        }
+      } catch {
+        if (!cancelled) setState({ loading: false, configured: true, error: "Could not load", checks: [] });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const STATUS: Record<string, { label: string; color: string }> = {
+    up:     { label: "Healthy",  color: "#8fbe70" },
+    down:   { label: "Down",     color: "#e08585" },
+    grace:  { label: "Late",     color: "#e8b56a" },
+    paused: { label: "Paused",   color: "rgba(232,227,218,0.4)" },
+    new:    { label: "No pings", color: "rgba(232,227,218,0.4)" },
+  };
+
+  const ago = (iso: string | null) => {
+    if (!iso) return "never";
+    const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+    if (mins < 60) return `${mins}m ago`;
+    const h = Math.round(mins / 60);
+    if (h < 48) return `${h}h ago`;
+    return `${Math.round(h / 24)}d ago`;
+  };
+
+  const down = state.checks.filter((c) => c.status !== "up" && c.status !== "paused").length;
+
+  return (
+    <div className="mt-6">
+      <div className="flex items-baseline gap-2 mb-2">
+        <p className="text-[10px] uppercase tracking-widest text-[rgba(232,227,218,0.35)]">
+          Healthchecks
+        </p>
+        {!state.loading && state.configured && !state.error && (
+          <span className="text-[10px]" style={{ color: down > 0 ? "#e8b56a" : "rgba(232,227,218,0.25)" }}>
+            · {state.checks.length} checks{down > 0 ? `, ${down} needing attention` : ", all healthy"}
+          </span>
+        )}
+      </div>
+
+      {state.loading ? (
+        <div className="p-4 rounded-xl border border-[rgba(255,255,255,0.10)] bg-[rgba(255,255,255,0.04)]">
+          <p className="text-[11px] text-[rgba(232,227,218,0.40)]">Checking…</p>
+        </div>
+      ) : !state.configured ? (
+        <div className="p-4 rounded-xl border border-[rgba(255,255,255,0.10)] bg-[rgba(255,255,255,0.04)]">
+          <p className="text-[12px] text-[rgba(232,227,218,0.60)]">Not configured.</p>
+          <p className="text-[10px] text-[rgba(232,227,218,0.35)] mt-1.5 leading-relaxed">
+            HEALTHCHECKS_API_KEY must be in THREE places: the value in
+            .env.kamal, a line in .kamal/secrets, and the name in deploy.yml&apos;s
+            secret list. Any one missing and it reaches nothing.
+          </p>
+        </div>
+      ) : state.error ? (
+        <div className="p-4 rounded-xl border border-[rgba(232,181,106,0.35)] bg-[rgba(232,181,106,0.08)]">
+          <p className="text-[12px]" style={{ color: "#e8b56a" }}>{state.error}</p>
+          <p className="text-[10px] text-[rgba(232,227,218,0.35)] mt-1.5">
+            The monitor is unreachable, which is not the same as a job failing.
+          </p>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-[rgba(255,255,255,0.10)] overflow-hidden">
+          {state.checks.map((c, i) => {
+            const s = STATUS[c.status] ?? { label: c.status, color: "rgba(232,227,218,0.4)" };
+            return (
+              <div key={c.name}
+                className="flex items-center justify-between gap-3 px-4 py-2.5"
+                style={{
+                  background: "rgba(255,255,255,0.04)",
+                  borderTop: i === 0 ? undefined : "0.5px solid rgba(255,255,255,0.08)",
+                }}>
+                <span className="min-w-0">
+                  <span className="block text-[12px] text-[rgba(232,227,218,0.80)] truncate font-mono">
+                    {c.name}
+                  </span>
+                  <span className="block text-[10px] text-[rgba(232,227,218,0.35)] truncate">
+                    {c.schedule ?? "no schedule"} · last ping {ago(c.last_ping)}
+                  </span>
+                </span>
+                <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full whitespace-nowrap flex-shrink-0"
+                  style={{ background: `${s.color}1f`, color: s.color, border: `0.5px solid ${s.color}55` }}>
+                  {s.label}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminPage() {
   const { data: session } = useSession();
 
@@ -178,6 +305,9 @@ export default function AdminPage() {
             total lives there, while custom jobs stayed standalone rows and
             keep theirs on the order. */}
         <RevenuePanel />
+
+        {/* The full list behind the dashboard's three rolled-up rows. */}
+        <HealthChecksPanel />
 
         <AuditLog />
       </div>
