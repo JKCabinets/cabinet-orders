@@ -87,6 +87,14 @@ interface Entry {
  * The COUNT is the sum, so nothing disappears: an order at cross dock is still
  * counted, just under a wider heading.
  */
+/**
+ * The narrowest a chevron can get before its label stops being readable, and
+ * the width reserved for the type name. Together they set the point at which
+ * the snapshot starts scrolling instead of shrinking.
+ */
+const MIN_SEG = 104;
+const LABEL_W = 104;
+
 const DISPLAY_MERGE: Record<string, { label: string; stages: readonly string[] }[]> = {
   custom: [{ label: "Production & delivery", stages: ["In production", "At cross dock"] }],
 };
@@ -475,71 +483,99 @@ export function DashboardClient() {
               rather than stretching to fill the row -- flex-1 made hardware's
               three stages span the same width as cabinets' five, which said
               they were the same length. They are not. */}
-          <div className="glass-sage rounded-panel p-5 overflow-x-auto">
+          <div className="glass-sage rounded-panel p-5">
             <h2 className="font-display text-[22px] text-cream mb-3">
               Pipeline <em className="italic-storm">snapshot</em>
             </h2>
 
-            <div className="min-w-[560px]">
-              {/* Stage 1..N header. N is the longest flow -- custom, at six. */}
-              <div className="flex items-center gap-0 mb-1.5">
-                <span className="w-[110px] flex-shrink-0 text-[9px] uppercase tracking-wider text-cream/35">
-                  Order type
-                </span>
-                {Array.from({ length: maxStages }, (_, i) => (
-                  <span key={i} className="w-[112px] flex-shrink-0 text-[9px] uppercase tracking-wider text-cream/35 pl-3">
-                    Stage {i + 1}
-                  </span>
-                ))}
-              </div>
+            {/* ⚠ FLUID, WITH A FLOOR. Cells share the width equally and only
+                scroll once they would go below MIN_SEG -- fixed widths left
+                dead space on a wide screen AND forced a scroll on a narrow one
+                even where three segments would have fitted.
 
-              {pipelines.map((p) => (
-                <div key={p.type} className="flex items-center gap-0 py-1.5"
-                  style={{ borderTop: "0.5px solid rgba(255,255,255,0.07)" }}>
-                  <span className="w-[110px] flex-shrink-0 flex items-center gap-2">
-                    <p.Icon className="w-3.5 h-3.5 text-cream/40 flex-shrink-0" />
-                    <span className="text-[12px] text-cream/80 truncate">{p.label}</span>
-                  </span>
+                The scroll lives HERE, around the grid, so the panel's padding
+                and heading stay put while only the chart moves. */}
+            <div className="overflow-x-auto -mx-1 px-1">
+              <div style={{ minWidth: `${LABEL_W + maxStages * MIN_SEG}px` }}>
 
-                  {p.segments.map((s, i) => {
-                    const terminal = i === p.segments.length - 1;
-                    const has = s.count > 0;
-                    // Terminal green; anything holding work reads blue; empty
-                    // stages sit muted so the eye lands on where things ARE.
-                    const bg = terminal
-                      ? (has ? "rgba(143,190,112,0.20)" : "rgba(143,190,112,0.10)")
-                      : has ? "rgba(90,141,184,0.20)" : "rgba(255,255,255,0.04)";
-                    const border = terminal
-                      ? "rgba(143,190,112,0.45)"
-                      : has ? "rgba(90,141,184,0.50)" : "rgba(255,255,255,0.08)";
-                    const fg = terminal
-                      ? (has ? "#a0cc7a" : "rgba(160,204,122,0.45)")
-                      : has ? "#8fb8dd" : "rgba(232,227,218,0.35)";
-                    return (
+                {/* ⚠ ONE GRID FOR EVERY ROW, sized by the LONGEST flow. A
+                    three-stage row must line up column-for-column with a
+                    five-stage one, so the track count comes from maxStages and
+                    a short flow simply leaves its trailing cells empty. Sizing
+                    each row by its own length would stagger the columns. */}
+                <div
+                  className="grid items-center"
+                  style={{
+                    gridTemplateColumns: `${LABEL_W}px repeat(${maxStages}, minmax(${MIN_SEG}px, 1fr))`,
+                  }}
+                >
+                  <span className="text-[9px] uppercase tracking-wider text-cream/35 pb-1.5">
+                    Order type
+                  </span>
+                  {Array.from({ length: maxStages }, (_, i) => (
+                    <span key={i} className="text-[9px] uppercase tracking-wider text-cream/35 pb-1.5 pl-3">
+                      Stage {i + 1}
+                    </span>
+                  ))}
+
+                  {pipelines.map((p) => (
+                    <React.Fragment key={p.type}>
                       <span
-                        key={s.stage}
-                        className="w-[112px] flex-shrink-0 flex items-center justify-between gap-1 pl-3 pr-4 py-1.5 text-[11px]"
-                        style={{
-                          background: bg,
-                          borderTop: `0.5px solid ${border}`,
-                          borderBottom: `0.5px solid ${border}`,
-                          borderLeft: i === 0 ? `0.5px solid ${border}` : "none",
-                          // The chevron: point into the next segment, and notch
-                          // the left edge so the previous one nests into it.
-                          clipPath: terminal
-                            ? "polygon(0 0, 100% 0, 100% 100%, 0 100%, 8px 50%)"
-                            : "polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%, 8px 50%)",
-                          marginLeft: i === 0 ? 0 : -1,
-                        }}
-                        title={`${s.count} at ${s.stage}`}
+                        className="flex items-center gap-2 py-1.5 pr-2 min-w-0"
+                        style={{ borderTop: "0.5px solid rgba(255,255,255,0.07)" }}
                       >
-                        <span className="truncate" style={{ color: fg }}>{s.stage}</span>
-                        <span className="tabular-nums flex-shrink-0" style={{ color: fg }}>{s.count}</span>
+                        <p.Icon className="w-3.5 h-3.5 text-cream/40 flex-shrink-0" />
+                        <span className="text-[12px] text-cream/80 truncate">{p.label}</span>
                       </span>
-                    );
-                  })}
+
+                      {Array.from({ length: maxStages }, (_, i) => {
+                        const s = p.segments[i];
+                        // Past the end of a short flow: an empty cell that
+                        // holds the column open, drawn as nothing.
+                        if (!s) {
+                          return (
+                            <span key={i} className="py-1.5"
+                              style={{ borderTop: "0.5px solid rgba(255,255,255,0.07)" }} />
+                          );
+                        }
+                        const terminal = i === p.segments.length - 1;
+                        const has = s.count > 0;
+                        const bg = terminal
+                          ? (has ? "rgba(143,190,112,0.20)" : "rgba(143,190,112,0.10)")
+                          : has ? "rgba(90,141,184,0.20)" : "rgba(255,255,255,0.04)";
+                        const border = terminal
+                          ? "rgba(143,190,112,0.45)"
+                          : has ? "rgba(90,141,184,0.50)" : "rgba(255,255,255,0.08)";
+                        const fg = terminal
+                          ? (has ? "#a0cc7a" : "rgba(160,204,122,0.45)")
+                          : has ? "#8fb8dd" : "rgba(232,227,218,0.35)";
+                        return (
+                          <span key={i} className="py-1.5 min-w-0"
+                            style={{ borderTop: "0.5px solid rgba(255,255,255,0.07)" }}>
+                            <span
+                              className="flex items-center justify-between gap-1 pl-3 pr-4 py-1.5 text-[11px] min-w-0"
+                              style={{
+                                background: bg,
+                                borderTop: `0.5px solid ${border}`,
+                                borderBottom: `0.5px solid ${border}`,
+                                borderLeft: i === 0 ? `0.5px solid ${border}` : "none",
+                                clipPath: terminal
+                                  ? "polygon(0 0, 100% 0, 100% 100%, 0 100%, 8px 50%)"
+                                  : "polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%, 8px 50%)",
+                                marginLeft: i === 0 ? 0 : -1,
+                              }}
+                              title={`${s.count} at ${s.stage}`}
+                            >
+                              <span className="truncate" style={{ color: fg }}>{s.stage}</span>
+                              <span className="tabular-nums flex-shrink-0" style={{ color: fg }}>{s.count}</span>
+                            </span>
+                          </span>
+                        );
+                      })}
+                    </React.Fragment>
+                  ))}
                 </div>
-              ))}
+              </div>
             </div>
           </div>
         </div>
