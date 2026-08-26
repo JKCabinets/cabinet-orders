@@ -119,16 +119,28 @@ export const GROUP_SUFFIX: Record<OrderCategory, string> = {
 /** The stage a freshly ingested group starts in, per category. */
 export const FIRST_STAGE_BY_CATEGORY: Record<OrderCategory, string> = {
   order: "New",
-  hardware: "Ordered",
+  // ⚠ WAS "Ordered". An ingested hardware group arrived reading "we have
+  // placed this with the vendor" when nobody had looked at it yet. Every flow
+  // now starts with a stage that means "this has arrived and needs somebody".
+  hardware: "New",
   sample: "New",
 };
 
 /**
  * Is a Shopify fulfilment authoritative for this category?
  *
- * Samples and hardware are shipped BY US, tracked in Shopify with a real
- * carrier and tracking number — so a fulfilment is the real event, and pulling
- * carrier and tracking straight off it means nobody types them in.
+ * ⚠ AUTHORITATIVE FOR DATA IS NOT AUTHORITATIVE FOR STAGE. These are two
+ * questions and this function answers the first: does the fulfilment carry a
+ * carrier and tracking number worth keeping? fulfilmentTargetStage answers the
+ * second, and for hardware the answers now differ.
+ *
+ * Samples ship from JK's own stock, so a fulfilment IS us shipping.
+ *
+ * ⚠ HARDWARE IS DROP-SHIP -- corrected 2026-08-25. It does NOT ship from JK:
+ * the order is placed with the manufacturer, who ships direct to the customer
+ * via UPS. The fulfilment still carries real carrier and tracking, so it is
+ * worth reading; it just is not us doing the shipping, and nothing tells us the
+ * parcel arrived.
  *
  * Cabinets are DROP-SHIP. The manufacturer or their delivery partner handles
  * the shipment and speaks to the customer directly; Shopify never sees it. Any
@@ -152,16 +164,22 @@ export function fulfilmentIsAuthoritative(category: OrderCategory): boolean {
 /**
  * The stage a fulfilment advances a group to.
  *
- * Hardware has a Shipped stage and a fulfilment means shipped, so it stops
- * there — nothing in Shopify tells us the box arrived, and Delivered stays a
- * human action. Samples have no Shipped stage (New -> Entered -> Delivered),
- * so a fulfilment takes them to Delivered. That asymmetry is the stage list,
- * not a judgement about samples.
+ * ⚠ SAMPLES GO TO "Shipped", NOT "Delivered" -- corrected 2026-08-25 with the
+ * Entered -> Shipped rename. A fulfilment means WE POSTED IT. Sending it
+ * straight to Delivered claimed the customer had it, which Shopify has no way
+ * of knowing. Delivered stays a human action, as it is on every other flow.
+ *
+ * ⚠ HARDWARE MOVES NOWHERE. It used to go to "Shipped" -- a stage that no
+ * longer exists, and which assumed JK did the shipping. Hardware is drop-ship
+ * via the manufacturer's UPS account: the fulfilment tells us the manufacturer
+ * dispatched, which is worth recording as carrier and tracking, but nothing
+ * says the parcel arrived and there is no stage between Ordered and Delivered
+ * for it to wait in. Returning a stage outside the flow is exactly what
+ * stranded QUO-1787174567522 on 2026-08-19.
  *
  * Returns null for categories a fulfilment must not move.
  */
 export function fulfilmentTargetStage(category: OrderCategory): string | null {
-  if (category === "hardware") return "Shipped";
-  if (category === "sample") return "Delivered";
+  if (category === "sample") return "Shipped";
   return null;
 }

@@ -88,7 +88,12 @@ const productionDatesMissing = (o: Order): boolean =>
 const deliveryDateMissing = (o: Order): boolean =>
   !o.delivery_date && !o.scheduled_delivery_date;
 
-/** Standard Shopify cabinet orders. Samples share this: same stage names. */
+/**
+ * Standard Shopify cabinet orders.
+ *
+ * ⚠ SAMPLES NO LONGER SHARE THIS. They did while they shared the stage names;
+ * "Entered" became "Shipped" on 2026-08-25 and they have SAMPLE_RULES now.
+ */
 const STANDARD_RULES: Partial<Record<string, SlaRule>> = {
   // Measured from the order date, so bouncing an order back to New cannot
   // reset its clock. Every later stage asks "how long stuck here" instead.
@@ -210,25 +215,50 @@ const trackingMissing = (o: Order): boolean => !o.tracking_number;
  * So a hardware group ordered a fortnight ago WITH tracking is quiet; one
  * ordered yesterday WITHOUT it starts a clock.
  *
- * "Shipped" has no rule. It is waiting on a carrier, with no field that would
- * say when to stop worrying -- the same reason warranty's "Shipped" has none.
- * "Delivered" is terminal.
+ * ⚠ THE FLOW CHANGED on 2026-08-25: New -> Ordered -> Delivered. Hardware is
+ * DROP-SHIP via the manufacturer's UPS account, so the old "Shipped" stage --
+ * which assumed JK did the shipping -- is gone, and a "New" stage was added
+ * because an ingested group used to arrive already reading as placed.
  *
  * ⚠ Expect hardware groups to start appearing in SLA counts once a hardware
  * product exists in Shopify. None does yet, so this is inert today.
  */
 const HARDWARE_RULES: Partial<Record<string, SlaRule>> = {
+  // ⚠ ADDED with the New stage on 2026-08-25. Measures OUR responsiveness --
+  // how long a hardware order sits before somebody places it with the vendor.
+  // Every flow's first stage asks this; hardware had no first stage to ask it
+  // of.
+  "New":     { softHours: SOFT_HOURS, hardHours: HARD_HOURS, measureFrom: "created" },
   "Ordered": {
     softHours: SOFT_HOURS,
     hardHours: HARD_HOURS,
     clockRuns: trackingMissing,
     waitingFor: "a tracking number",
   },
+  // "Delivered" is terminal. There is no stage between Ordered and Delivered
+  // any more: UPS carries it from the manufacturer and nothing tells us it
+  // arrived, so marking it delivered stays a human action.
+};
+
+/**
+ * Samples: New -> Shipped -> Delivered.
+ *
+ * ⚠ THEY NO LONGER SHARE STANDARD_RULES. They did while they shared the stage
+ * names; after the Entered -> Shipped rename, "Entered" is not a sample stage
+ * and "Shipped" had no rule, so every sample would have been unmeasured past
+ * New.
+ *
+ * "New" measures OUR responsiveness -- how long before somebody posts it.
+ * "Shipped" has no rule: it is with a carrier, and there is no field that says
+ * when to stop worrying. Same reason warranty's "Shipped" has none.
+ */
+const SAMPLE_RULES: Partial<Record<string, SlaRule>> = {
+  "New": { softHours: SOFT_HOURS, hardHours: HARD_HOURS, measureFrom: "created" },
 };
 
 export const SLA_RULES: Record<OrderType, Partial<Record<string, SlaRule>>> = {
   order: STANDARD_RULES,
-  sample: STANDARD_RULES,
+  sample: SAMPLE_RULES,
   warranty: WARRANTY_RULES,
   custom: CUSTOM_RULES,
   hardware: HARDWARE_RULES,

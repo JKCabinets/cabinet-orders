@@ -99,8 +99,8 @@ export type WarrantyStage =
  * three. Always pass the row type.
  */
 export type HardwareStage =
+  | "New"
   | "Ordered"
-  | "Shipped"
   | "Delivered";
 
 /**
@@ -132,15 +132,25 @@ export type CustomStage =
   | "Delivered";
 
 /**
- * Sample orders reuse OrderStage verbatim. A sample is an ordinary Shopify
- * order that skips the manufacturer, so it carries the same stage names and
- * shares ORDER_STAGE_ORDER. In practice it moves New -> Entered ->
- * Delivered; the intermediate stages simply never get set, and skipping
- * forward is not a backwards move.
+ * Sample orders: New -> Shipped -> Delivered.
+ *
+ * ⚠ "Entered" WAS RENAMED TO "Shipped" on 2026-08-25, and that is a customer
+ * word, not an internal one. A customer tracking their order sees "shipped";
+ * "entered" describes a thing that happened in our system and means nothing to
+ * them.
+ *
+ * ⚠ THIS IS NO LONGER OrderStage. Samples shared it verbatim, which is what
+ * let them reuse ORDER_STAGE_ORDER for backward-move detection and date
+ * clearing. "Shipped" is not in that array, so samples now need their own
+ * ordering -- see SAMPLE_STAGE_ORDER in lib/stageLogic.ts. They still CLEAR on
+ * a backward move: the delivery date drives the calendar.
  */
-export type SampleStage = OrderStage;
+export type SampleStage =
+  | "New"
+  | "Shipped"
+  | "Delivered";
 
-export type Stage = OrderStage | WarrantyStage | CustomStage | HardwareStage;
+export type Stage = OrderStage | WarrantyStage | CustomStage | HardwareStage | SampleStage;
 
 export interface ActivityEntry {
   text: string;
@@ -519,16 +529,30 @@ export const CUSTOM_STAGES: CustomStage[] = [
 ];
 
 /**
- * The stages a sample order is actually offered in the UI. The underlying
- * ordering is ORDER_STAGE_ORDER (see SampleStage), so a sample jumping
- * Entered -> Delivered is an ordinary forward move.
+ * Samples ship from JK's own stock, so a Shopify fulfilment IS the shipment.
+ * "Shipped" is what the customer sees; it used to say "Entered", which
+ * described our bookkeeping rather than their parcel.
  */
-export const SAMPLE_STAGES: OrderStage[] = [
-  "New", "Entered", "Delivered",
+export const SAMPLE_STAGES: SampleStage[] = [
+  "New", "Shipped", "Delivered",
 ];
 
+/**
+ * Hardware is DROP-SHIP: we place the order with the manufacturer, who ships
+ * direct to the customer via UPS.
+ *
+ * ⚠ "New" WAS MISSING. The flow started at Ordered, so an ingested hardware
+ * group arrived reading "we have placed this with the vendor" when in fact
+ * nobody had looked at it. Every other flow starts with a stage that means
+ * "this has arrived and needs somebody".
+ *
+ * ⚠ "Shipped" IS GONE. It was there when hardware was thought to ship from JK
+ * stock. It does not: UPS carries it from the manufacturer, nothing tells us it
+ * arrived, and a stage nobody can move a row out of is a place rows go to sit.
+ * Delivered stays a human action.
+ */
 export const HARDWARE_STAGES: HardwareStage[] = [
-  "Ordered", "Shipped", "Delivered",
+  "New", "Ordered", "Delivered",
 ];
 
 /**

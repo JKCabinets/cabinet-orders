@@ -22,27 +22,47 @@ export const CUSTOM_STAGE_ORDER = [
 ] as const;
 
 /**
- * Hardware ships on its own timeline, so it gets its own ordering rather
- * than a subset of another flow the way samples reuse ORDER_STAGE_ORDER.
+ * Samples: New -> Shipped -> Delivered.
  *
- * ⚠ All three names collide: "Ordered" is also a CUSTOM stage, "Shipped" a
- * WARRANTY one, "Delivered" an ORDER one. stageIndex() falls back to a
- * search across order -> warranty -> custom when no type is passed, so an
- * untyped lookup of any hardware stage resolves to the WRONG flow. Every
- * call site must pass the row type.
+ * ⚠ THEY NO LONGER SHARE ORDER_STAGE_ORDER. "Entered" was renamed "Shipped" on
+ * 2026-08-25 -- the word a customer sees -- and "Shipped" is not in the cabinet
+ * array. Sharing it would make stageIndex() return -1 for every sample, which
+ * silently disables backward-move detection and makes isStageAllowedForType
+ * reject the stage. Their own array, and FLOW_BY_TYPE keeps reporting "order"
+ * so they still clear dates on a reversal.
+ */
+export const SAMPLE_STAGE_ORDER = [
+  "New", "Shipped", "Delivered",
+] as const;
+
+/**
+ * Hardware is DROP-SHIP via the manufacturer's UPS account: New -> Ordered ->
+ * Delivered.
+ *
+ * ⚠ "New" was added and "Shipped" removed on 2026-08-25. The flow began at
+ * Ordered, so an ingested group read as already placed with the vendor. And
+ * Shipped assumed JK did the shipping -- nothing tells us a UPS parcel
+ * arrived, so a row would have sat there until somebody guessed.
+ *
+ * ⚠ Every name still collides: "New" and "Delivered" are ORDER stages,
+ * "Ordered" is a CUSTOM one. stageIndex() falls back to searching
+ * order -> warranty -> custom when no type is passed, so an untyped lookup
+ * resolves to the WRONG flow. Every call site must pass the row type.
  */
 export const HARDWARE_STAGE_ORDER = [
-  "Ordered", "Shipped", "Delivered",
+  "New", "Ordered", "Delivered",
 ] as const;
 
 export const ALLOWED_STAGES: ReadonlySet<string> = new Set<string>([
   ...ORDER_STAGE_ORDER,
   ...WARRANTY_STAGE_ORDER,
   ...CUSTOM_STAGE_ORDER,
-  // Adds no new members -- every hardware stage name already appears in
-  // another flow. Listed anyway so the union stays honest about its
-  // sources, and so removing a flow cannot silently drop a name.
+  // Hardware adds no new members -- every one of its names already appears in
+  // another flow. Samples add none either, since "Shipped" is a warranty
+  // stage. Both listed anyway so the union stays honest about its sources, and
+  // so removing a flow cannot silently drop a name still used elsewhere.
   ...HARDWARE_STAGE_ORDER,
+  ...SAMPLE_STAGE_ORDER,
 ]);
 
 export type StageFlow = "order" | "warranty" | "custom" | "hardware" | "unknown";
@@ -56,15 +76,23 @@ export type StageFlow = "order" | "warranty" | "custom" | "hardware" | "unknown"
  */
 export const STAGE_ORDER_BY_TYPE: Record<string, readonly string[]> = {
   order: ORDER_STAGE_ORDER,
-  sample: ORDER_STAGE_ORDER,
+  // ⚠ Its OWN array since the Entered -> Shipped rename. Pointing this at
+  // ORDER_STAGE_ORDER would make stageIndex() return -1 for every sample.
+  sample: SAMPLE_STAGE_ORDER,
   warranty: WARRANTY_STAGE_ORDER,
   custom: CUSTOM_STAGE_ORDER,
   hardware: HARDWARE_STAGE_ORDER,
 };
 
 /**
- * Samples report flow "order" because they share the order array; that is
- * what makes fieldsToClearOnBackwardMove apply to them correctly.
+ * Samples report flow "order" so fieldsToClearOnBackwardMove applies to them:
+ * their delivery date drives the calendar, and a stale one after a reversal
+ * shows a delivery that is not happening.
+ *
+ * ⚠ They no longer SHARE the order array -- see SAMPLE_STAGE_ORDER -- so this
+ * is now a deliberate statement rather than a consequence. The clearing code
+ * resolves positions against the row's OWN flow, so a sample with no
+ * "In production" stage simply never matches those rules.
  */
 const FLOW_BY_TYPE: Record<string, StageFlow> = {
   order: "order",
