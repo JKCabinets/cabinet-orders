@@ -10,7 +10,8 @@ import { PageHeader } from "@/components/AppShell";
 import { OrderTable } from "@/components/OrderTable";
 import { OrderModal } from "@/components/OrderModal";
 import { BulkActionBar } from "@/components/BulkActionBar";
-import { Search, CheckSquare, X, CalendarDays } from "lucide-react";
+import { NewOrderModal } from "@/components/NewOrderModal";
+import { Search, CheckSquare, X, CalendarDays, Plus } from "lucide-react";
 
 /**
  * The hub for a Shopify order type — cabinets, hardware, samples.
@@ -31,10 +32,12 @@ import { Search, CheckSquare, X, CalendarDays } from "lucide-react";
  * codebase keeps producing. /samples can adopt this in a one-line change.
  */
 
-const TYPE_COPY: Partial<Record<OrderType, { eyebrow: string; title: string; accent: string }>> = {
-  order:    { eyebrow: "Shopify cabinet orders", title: "Cabinet", accent: "orders" },
+const TYPE_COPY: Record<OrderType, { eyebrow: string; title: string; accent: string }> = {
+  order:    { eyebrow: "Shopify cabinet orders", title: "Cabinet",  accent: "orders" },
   hardware: { eyebrow: "Shopify hardware",       title: "Hardware", accent: "orders" },
   sample:   { eyebrow: "Shopify sample orders",  title: "Sample",   accent: "orders" },
+  custom:   { eyebrow: "Offline contract work",  title: "Custom",   accent: "jobs" },
+  warranty: { eyebrow: "Service",                title: "Warranty", accent: "claims" },
 };
 
 /**
@@ -54,12 +57,21 @@ export function OrdersHubClient({
   type,
   initialStage,
   archive = false,
+  createLabel,
 }: {
   type: OrderType;
   /** Stage to preselect, from a legacy /orders/<stage> URL. null = All. */
   initialStage?: OrderStage | null;
   /** Archive mode: archived rows of this type, no stage cards. */
   archive?: boolean;
+  /**
+   * Label for a create button, or absent for none.
+   *
+   * ⚠ ONLY CUSTOM JOBS AND WARRANTY CLAIMS can be created by hand -- cabinets,
+   * samples and hardware are groups of a Shopify project. The caller decides,
+   * and MANUAL_CREATABLE_TYPES is the server's answer to the same question.
+   */
+  createLabel?: string;
 }) {
   const { allOrders } = useStore();
   const [activeStage, setActiveStage] = useState<string>(initialStage ?? ALL);
@@ -67,6 +79,7 @@ export function OrdersHubClient({
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [modalReason, setModalReason] = useState<"needs-attachment" | undefined>(undefined);
   const [selectMode, setSelectMode] = useState(false);
+  const [showNewForm, setShowNewForm] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const stages = (STAGE_LIST_BY_TYPE[type] ?? []) as readonly string[];
@@ -118,7 +131,9 @@ export function OrdersHubClient({
   // matched no branch and printed itself into the Status column.
   const tableStage = activeStage === ALL ? null : archive ? "Archived" : activeStage;
   const calendarView = activeStage === ALL ? undefined : STAGE_CALENDAR_VIEW[activeStage];
-  const copy = TYPE_COPY[type] ?? { eyebrow: "Orders", title: "Orders", accent: "" };
+  // Exhaustive Record, so a sixth OrderType is a compile error here rather
+  // than a page silently titled "Orders".
+  const copy = TYPE_COPY[type];
 
   return (
     <>
@@ -149,10 +164,19 @@ export function OrdersHubClient({
               {selectMode ? <X className="w-3.5 h-3.5" /> : <CheckSquare className="w-3.5 h-3.5" />}
               {selectMode ? (selectedIds.size > 0 ? `${selectedIds.size} selected` : "Cancel") : "Select"}
             </button>
-            {/* No create button. A cabinet order, a sample and a hardware group
-                are all groups of a Shopify PROJECT -- they arrive by ingest,
-                split from one checkout by vendor. Custom jobs are created on
-                /custom, warranty claims on /warranty. */}
+            {/* Cabinets, samples and hardware get NO create button: they are
+                groups of a Shopify PROJECT, split from one checkout by vendor
+                at ingest. A hand-made one would have no project, no shopify_id
+                and no line items while sitting here looking real. */}
+            {createLabel && (
+              <button
+                onClick={() => setShowNewForm(true)}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[11px] uppercase tracking-wider bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30 transition-all"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                {createLabel}
+              </button>
+            )}
           </>
         }
       />
@@ -243,6 +267,10 @@ export function OrdersHubClient({
           onClose={() => { setSelectedOrder(null); setModalReason(undefined); }}
           onStageChange={(s) => setSelectedOrder((prev) => (prev ? { ...prev, stage: s } : null))}
         />
+      )}
+
+      {showNewForm && (
+        <NewOrderModal type={type} onClose={() => setShowNewForm(false)} />
       )}
 
       <BulkActionBar

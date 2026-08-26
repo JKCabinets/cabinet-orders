@@ -867,11 +867,24 @@ function UpdateStatusActions({
   //
   // Only branch when the prop genuinely describes this row.
   const rowFlow = STAGE_ORDER_BY_TYPE[order.type] ?? ORDER_STAGE_ORDER;
-  // A null stage means an all-stages table. The guard's own note says an
-  // "All" tab is one of the two cases that broke it, and returning null here
-  // keeps that behaviour: no actions offered when the column cannot know
-  // which action fits.
-  if (stage === null || order.stage !== stage || !rowFlow.includes(stage)) return null;
+
+  // ⚠ THE FIX FOR BOTH CASES ABOVE IS TO BRANCH ON THE ROW, not to refuse.
+  //
+  // Both failures were the prop NOT DESCRIBING THIS ROW -- an All tab passing
+  // one stage while rows are in many, and "In review" existing in two flows.
+  // Neither is solved by declining to act; both are solved by asking the row
+  // what stage IT is in, which is never ambiguous.
+  //
+  // Refusing cost every All view its action column: /samples and /custom
+  // showed no way to advance anything, and the three list pages each grew a
+  // "__none__" sentinel to work around it.
+  //
+  // The prop now decides only whether this column renders at all (the archive
+  // has no actions). `stage` is rebound to the row's own value, so every
+  // branch below -- twenty of them -- is correct without being rewritten.
+  if (stage === "Archived") return null;
+  if (!rowFlow.includes(order.stage)) return null;
+  stage = order.stage;
 
   // Custom orders share the TAIL of the standard flow (In production ->
   // At cross dock -> Delivered) and those branches below are correct for
