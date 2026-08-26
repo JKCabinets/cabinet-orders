@@ -5,6 +5,7 @@ import { getShopifyToken } from "@/lib/shopify";
 import { mergeTags } from "@/lib/shopifyStageSync";
 import { ALLOWED_STAGES, isStageAllowedForType, isBackwardsMove, verifyAdminPin, fieldsToClearOnBackwardMove, describeFieldsCleared } from "@/lib/stageGuards";
 import { isPaymentHoldStatus, paymentHoldLabel, parseMoney, isStageOfferedForType } from "@/lib/data";
+import { trackingTargetStage, categoryHasTracking, type OrderCategory } from "@/lib/categories";
 import { orderAllVendorsGreen } from "@/lib/acknowledgments";
 
 /** Push order updates back to Shopify */
@@ -156,7 +157,7 @@ export async function PATCH(
   // values AFTER the update has been applied.)
   const { data: currentRow } = await supabase
     .from("orders")
-    .select("stage, type, payment_status, payment_hold_cleared_for, project_id")
+    .select("stage, type, payment_status, payment_hold_cleared_for, project_id, tracking_number")
     .eq("id", id)
     .single();
   if (!currentRow) {
@@ -292,6 +293,27 @@ export async function PATCH(
     }
   }
 
+  // ⚠ "Shipped" REQUIRES A TRACKING NUMBER, whichever direction you come from.
+  //
+  // The stage means "dispatched, and here is the proof". Allowing it without
+  // one would make it a claim nobody can check -- and the public lookup reads
+  // this to answer "where are my samples", so an unevidenced Shipped becomes a
+  // wrong answer given to a customer.
+  if (body.stage === "Shipped" && categoryHasTracking(currentType as OrderCategory)) {
+    const incoming = typeof body.tracking_number === "string"
+      ? cleanInput(body.tracking_number).trim()
+      : "";
+    if (!incoming && !currentRow.tracking_number) {
+      return NextResponse.json(
+        {
+          error: "tracking_required",
+          message: "Add the tracking number -- that is what marks this shipped.",
+        },
+        { status: 400 },
+      );
+    }
+  }
+
   let deliveryOverrideReason: string | null = null;
   if (body.stage === "Delivered" && currentStage === "At cross dock"
       && currentType !== "sample") {
@@ -319,7 +341,47 @@ export async function PATCH(
     }
   }
 
+  // ── Tracking ─────────────────────────────────────────────────────────
+  //
+  // ⚠ ENTERING A TRACKING NUMBER IS WHAT MAKES A GROUP SHIPPED. Not a button:
+  // the number is the evidence, so "Shipped" becomes a fact somebody can
+  // answer a customer with. Same shape as production_start_date advancing a
+  // cabinet order -- the data and the stage move together, so they cannot
+  // disagree.
+  //
+  // Applies to samples and hardware only. Cabinets travel by freight to a
+  // cross dock: there is no number to have, and trackingTargetStage returns
+  // null for them.
+  let trackingAdvancesTo: string | null = null;
+  if (typeof body.tracking_number === "string") {
+    const num = cleanInput(body.tracking_number).trim().slice(0, 100);
+    const cat = currentType as OrderCategory;
+    if (num && !categoryHasTracking(cat)) {
+      return NextResponse.json(
+        {
+          error: "tracking_not_applicable",
+          message: `${currentType} orders travel by freight to a cross dock -- there is no tracking number to record.`,
+        },
+        { status: 422 },
+      );
+    }
+    // A number ADVANCES; clearing one does NOT move the row back. Undoing a
+    // stage is a deliberate act with a PIN behind it, not a side effect of
+    // correcting a typo.
+    if (num) {
+      const target = trackingTargetStage(cat);
+      if (target && currentStage !== target && !body.stage) trackingAdvancesTo = target;
+    }
+  }
+
   const updates: Record<string, unknown> = {};
+  if (typeof body.tracking_number === "string") {
+    updates.tracking_number = cleanInput(body.tracking_number).trim().slice(0, 100) || null;
+  }
+  if (typeof body.carrier === "string") {
+    updates.carrier = cleanInput(body.carrier).trim().slice(0, 60) || null;
+  }
+  if (trackingAdvancesTo)          updates.stage      = trackingAdvancesTo;
   if (body.stage)                  updates.stage      = body.stage;
   // Bump stage_entered_at only when the stage ACTUALLY changes.
   //

@@ -228,16 +228,23 @@ const HARDWARE_RULES: Partial<Record<string, SlaRule>> = {
   // how long a hardware order sits before somebody places it with the vendor.
   // Every flow's first stage asks this; hardware had no first stage to ask it
   // of.
+  // Measures OUR responsiveness -- how long before somebody places the order
+  // with the vendor.
   "New":     { softHours: SOFT_HOURS, hardHours: HARD_HOURS, measureFrom: "created" },
+  // ⚠ MISSING TRACKING, not elapsed time. A manufacturer takes as long as it
+  // takes; "placed, and nobody has recorded a dispatch" is the actionable
+  // thing. Entering the number both stops this clock AND advances the group to
+  // Shipped -- one action, because they are one fact.
   "Ordered": {
     softHours: SOFT_HOURS,
     hardHours: HARD_HOURS,
     clockRuns: trackingMissing,
     waitingFor: "a tracking number",
   },
-  // "Delivered" is terminal. There is no stage between Ordered and Delivered
-  // any more: UPS carries it from the manufacturer and nothing tells us it
-  // arrived, so marking it delivered stays a human action.
+  // "Shipped": no rule. It is with UPS, and there is no field that says when to
+  // stop worrying -- the same reason warranty's "Shipped" has none.
+  // "Delivered": terminal, and a human action. Nothing tells us a parcel
+  // arrived.
 };
 
 /**
@@ -253,7 +260,19 @@ const HARDWARE_RULES: Partial<Record<string, SlaRule>> = {
  * when to stop worrying. Same reason warranty's "Shipped" has none.
  */
 const SAMPLE_RULES: Partial<Record<string, SlaRule>> = {
-  "New": { softHours: SOFT_HOURS, hardHours: HARD_HOURS, measureFrom: "created" },
+  // ⚠ NO "Ordered" STAGE, deliberately. A sample is picked off JK's own shelf,
+  // labelled and posted the same day -- there is nothing to wait on between
+  // arriving and shipping. This clock already measures that gap: a sample
+  // unposted for two days flags here. Split it into Ordered -> Shipped only if
+  // same-day ever stops being true.
+  "New": {
+    softHours: SOFT_HOURS,
+    hardHours: HARD_HOURS,
+    measureFrom: "created",
+    clockRuns: trackingMissing,
+    waitingFor: "a tracking number",
+  },
+  // "Shipped": with a carrier. "Delivered": terminal, human.
 };
 
 export const SLA_RULES: Record<OrderType, Partial<Record<string, SlaRule>>> = {

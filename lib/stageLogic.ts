@@ -39,10 +39,13 @@ export const SAMPLE_STAGE_ORDER = [
  * Hardware is DROP-SHIP via the manufacturer's UPS account: New -> Ordered ->
  * Delivered.
  *
- * ⚠ "New" was added and "Shipped" removed on 2026-08-25. The flow began at
- * Ordered, so an ingested group read as already placed with the vendor. And
- * Shipped assumed JK did the shipping -- nothing tells us a UPS parcel
- * arrived, so a row would have sat there until somebody guessed.
+ * ⚠ "New" was added on 2026-08-25 -- the flow began at Ordered, so an ingested
+ * group read as already placed with the vendor.
+ *
+ * ⚠ "Shipped" is REACHED BY ENTERING A TRACKING NUMBER, not by a button. It
+ * was briefly removed on the belief that it meant "JK shipped it"; on a
+ * drop-ship flow it means the MANUFACTURER DISPATCHED, which is exactly what a
+ * tracking number evidences.
  *
  * ⚠ Every name still collides: "New" and "Delivered" are ORDER stages,
  * "Ordered" is a CUSTOM one. stageIndex() falls back to searching
@@ -50,7 +53,7 @@ export const SAMPLE_STAGE_ORDER = [
  * resolves to the WRONG flow. Every call site must pass the row type.
  */
 export const HARDWARE_STAGE_ORDER = [
-  "New", "Ordered", "Delivered",
+  "New", "Ordered", "Shipped", "Delivered",
 ] as const;
 
 export const ALLOWED_STAGES: ReadonlySet<string> = new Set<string>([

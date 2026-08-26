@@ -812,12 +812,26 @@ export async function POST(req: NextRequest) {
         // it "Delivered" is untrue. It is also why the signed-receipt gate
         // exists -- we are not the ones delivering.
         if (fulfillmentStatus === "fulfilled" && fulfilmentIsAuthoritative(cat)) {
-          const target = fulfilmentTargetStage(cat);
-          if (target && g.stage !== target) updates.stage = target;
+          const num = firstFulfilment
+            ? shopifyInput(firstFulfilment.tracking_number)
+            : "";
           if (firstFulfilment) {
             updates.carrier = shopifyInput(firstFulfilment.tracking_company);
-            updates.tracking_number = shopifyInput(firstFulfilment.tracking_number);
+            updates.tracking_number = num;
           }
+          // ⚠ THE TRACKING NUMBER MOVES THE STAGE, not the fulfilment event.
+          //
+          // This used to set the stage from fulfilmentTargetStage AND write the
+          // tracking as two independent decisions -- so a fulfilment with no
+          // number still advanced the group, claiming a dispatch it had no
+          // evidence of. Worse, it was a second implementation of the rule the
+          // modal uses, which is the shape that has bitten this codebase four
+          // times in a week.
+          //
+          // No number, no move: a fulfilment without tracking tells us nothing
+          // a customer could act on.
+          const target = num ? fulfilmentTargetStage(cat) : null;
+          if (target && g.stage !== target) updates.stage = target;
         }
 
         await supabase.from("orders").update(updates).eq("id", g.id);

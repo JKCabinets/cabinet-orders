@@ -101,6 +101,7 @@ export type WarrantyStage =
 export type HardwareStage =
   | "New"
   | "Ordered"
+  | "Shipped"
   | "Delivered";
 
 /**
@@ -538,21 +539,21 @@ export const SAMPLE_STAGES: SampleStage[] = [
 ];
 
 /**
- * Hardware is DROP-SHIP: we place the order with the manufacturer, who ships
+ * Hardware is DROP-SHIP: the order is placed with the manufacturer, who ships
  * direct to the customer via UPS.
  *
- * ⚠ "New" WAS MISSING. The flow started at Ordered, so an ingested hardware
- * group arrived reading "we have placed this with the vendor" when in fact
- * nobody had looked at it. Every other flow starts with a stage that means
- * "this has arrived and needs somebody".
+ * New       arrived, nobody has looked at it
+ * Ordered   placed with the manufacturer, waiting on dispatch
+ * Shipped   dispatched -- REACHED BY ENTERING A TRACKING NUMBER
+ * Delivered a human action; nothing tells us a parcel arrived
  *
- * ⚠ "Shipped" IS GONE. It was there when hardware was thought to ship from JK
- * stock. It does not: UPS carries it from the manufacturer, nothing tells us it
- * arrived, and a stage nobody can move a row out of is a place rows go to sit.
- * Delivered stays a human action.
+ * ⚠ "Ordered" and "Shipped" are genuinely different states here, which is what
+ * separates hardware from samples. A sample is picked off JK's own shelf and
+ * posted the same day, so there is nothing to wait on between arriving and
+ * shipping. Hardware waits on a manufacturer.
  */
 export const HARDWARE_STAGES: HardwareStage[] = [
-  "New", "Ordered", "Delivered",
+  "New", "Ordered", "Shipped", "Delivered",
 ];
 
 /**

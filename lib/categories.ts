@@ -161,6 +161,35 @@ export function fulfilmentIsAuthoritative(category: OrderCategory): boolean {
   return category === "sample" || category === "hardware";
 }
 
+
+/**
+ * The stage a TRACKING NUMBER advances a group to.
+ *
+ * ⚠ TRACKING IS WHAT MAKES A GROUP "SHIPPED". Not a button somebody presses --
+ * the number is the evidence, so the stage becomes a fact you can answer a
+ * customer with rather than a flag whose truth nobody can check. Same shape as
+ * `production_start_date` advancing a cabinet order to In production: the data
+ * and the stage move together, so they cannot disagree.
+ *
+ * It also means one rule serves both entry paths. A person typing the number in
+ * the modal and a Shopify fulfilment carrying it take the SAME route -- the
+ * webhook used to decide the stage itself, separately, which is the one-rule-
+ * two-implementations shape that has bitten this codebase four times in a week.
+ *
+ * ⚠ CABINETS RETURN NULL, and always will. They move by freight to a cross
+ * dock: there is no tracking number to have, no Shipped stage to move to, and a
+ * fulfilment on that vendor is bookkeeping. See fulfilmentIsAuthoritative.
+ */
+export function trackingTargetStage(category: OrderCategory): string | null {
+  if (category === "sample" || category === "hardware") return "Shipped";
+  return null;
+}
+
+/** Does this category carry a tracking number at all? */
+export function categoryHasTracking(category: OrderCategory): boolean {
+  return trackingTargetStage(category) !== null;
+}
+
 /**
  * The stage a fulfilment advances a group to.
  *
@@ -180,6 +209,10 @@ export function fulfilmentIsAuthoritative(category: OrderCategory): boolean {
  * Returns null for categories a fulfilment must not move.
  */
 export function fulfilmentTargetStage(category: OrderCategory): string | null {
-  if (category === "sample") return "Shipped";
-  return null;
+  // ⚠ DEFERS TO trackingTargetStage. A fulfilment carries a tracking number,
+  // and a tracking number is what makes a group Shipped -- so this is the same
+  // question asked from a different doorway, not a second rule. It answered
+  // separately until 2026-08-25, which meant the webhook could move a group to
+  // a stage the modal would never have chosen.
+  return trackingTargetStage(category);
 }
