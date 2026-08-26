@@ -379,7 +379,7 @@ export function DashboardClient() {
             <Link
               key={t.key}
               href={t.href}
-              className="lift-card glass-sage rounded-panel px-4 py-3.5 flex items-center gap-3.5 group"
+              className="lift-card glass-sage rounded-panel px-4 py-3 flex items-center gap-3.5 group"
             >
               <span
                 className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
@@ -389,7 +389,7 @@ export function DashboardClient() {
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block text-[11px] text-cream/55">{t.label}</span>
-                <span className="block font-display text-[30px] leading-none" style={{ color: t.color }}>
+                <span className="block font-display text-[26px] leading-none" style={{ color: t.color }}>
                   {t.count}
                 </span>
                 <span className="block text-[10px] text-cream/35 mt-0.5 truncate">{t.sub}</span>
@@ -399,7 +399,7 @@ export function DashboardClient() {
           ))}
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 items-stretch">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-stretch">
 
           {/* ── Needs attention ── */}
           <div className="glass-sage rounded-panel p-5">
@@ -435,7 +435,7 @@ export function DashboardClient() {
                     <button
                       key={e.key}
                       onClick={() => setSelectedOrder(e.orders[0])}
-                      className="grid grid-cols-[1.5fr_0.8fr_0.9fr_0.7fr] gap-3 py-2 text-left transition-colors hover:bg-white/4"
+                      className="grid grid-cols-[1.5fr_0.8fr_0.9fr_0.7fr] gap-3 py-1.5 text-left transition-colors hover:bg-white/4"
                       style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)" }}
                     >
                       <span className="flex items-start gap-2 min-w-0">
@@ -525,6 +525,23 @@ export function DashboardClient() {
 
                   {pipelines.map((p, rowIdx) => (
                     <React.Fragment key={p.type}>
+                      {/* ⚠ ONE LINE ACROSS THE WHOLE ROW, drawn as its own
+                          full-width grid item.
+
+                          Per-cell borderTop was drawn on the label and the
+                          filled stage cells but NOT on the empty trailing
+                          cells of a short flow -- so the line ran under
+                          hardware's three stages and stopped dead. A grid
+                          cannot draw a border across cells; it needs an
+                          element that spans them. */}
+                      {rowIdx > 0 && (
+                        <span
+                          style={{
+                            gridColumn: `1 / span ${maxStages + 1}`,
+                            borderTop: "0.5px solid rgba(255,255,255,0.07)",
+                          }}
+                        />
+                      )}
                       {/* ⚠ THE SEPARATOR IS ON THE LABEL CELL ONLY, and the
                           stage cells carry their own only where a segment
                           exists. In a CSS grid every cell draws its own border,
@@ -533,9 +550,7 @@ export function DashboardClient() {
                           The first row has none at all -- the header above it
                           already separates. */}
                       <span
-                        className="flex items-center gap-2 py-3 pr-2 min-w-0"
-                        style={rowIdx === 0 ? undefined
-                          : { borderTop: "0.5px solid rgba(255,255,255,0.07)" }}
+                        className="flex items-center gap-2 py-2 pr-2 min-w-0"
                       >
                         <p.Icon className="w-3.5 h-3.5 text-cream/40 flex-shrink-0" />
                         <span className="text-[12px] text-cream/80 truncate">{p.label}</span>
@@ -549,7 +564,7 @@ export function DashboardClient() {
                         // the column open, drawing NOTHING. It used to carry a
                         // borderTop, which is where the hairlines trailing off
                         // into blank space came from.
-                        if (!s) return <span key={i} className="py-3" />;
+                        if (!s) return <span key={i} className="py-2" />;
                         const terminal = i === p.segments.length - 1;
                         const has = s.count > 0;
                         const bg = terminal
@@ -562,11 +577,9 @@ export function DashboardClient() {
                           ? (has ? "#a0cc7a" : "rgba(160,204,122,0.45)")
                           : has ? "#8fb8dd" : "rgba(232,227,218,0.35)";
                         return (
-                          <span key={i} className="py-3 min-w-0"
-                            style={rowIdx === 0 ? undefined
-                              : { borderTop: "0.5px solid rgba(255,255,255,0.07)" }}>
+                          <span key={i} className="py-2 min-w-0">
                             <span
-                              className="flex items-center justify-between gap-1 pl-3 pr-4 py-2.5 text-[11px] min-w-0"
+                              className="flex items-center justify-between gap-1 pl-3 pr-4 py-2 text-[11px] min-w-0"
                               style={{
                                 background: bg,
                                 borderTop: `0.5px solid ${border}`,
@@ -593,7 +606,7 @@ export function DashboardClient() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 items-stretch">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-stretch">
           {/* ── SLA / data health ── */}
           <div className="glass-sage rounded-panel p-5">
             <h2 className="font-display text-[22px] text-cream mb-3">
