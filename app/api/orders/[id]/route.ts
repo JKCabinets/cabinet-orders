@@ -575,16 +575,44 @@ export async function PATCH(
   if (typeof body.tracking_number === "string") {
     const before = String(currentRow.tracking_number ?? "").trim();
     const after = String(updates.tracking_number ?? "").trim();
-    if (before !== after) {
+    const numberChanged = before !== after;
+
+    // ⚠ THE ADVANCE IS AN EVENT EVEN WHEN THE NUMBER IS NOT.
+    //
+    // This was keyed on `before !== after` alone and shipped that way on
+    // 2026-08-26. A row moved back to New KEEPS its tracking number -- the
+    // backward-move clear does not touch it -- so the modal pre-fills the
+    // field from order.tracking_number and pressing Ship re-submits the
+    // identical string. trackingAdvancesTo fires, the stage moves
+    // New -> Shipped, and the comparison says nothing happened.
+    //
+    // Nothing above catches it either: a tracking-only save leaves body.stage
+    // undefined, which is the hole this block exists to close. Verified on
+    // SHO-1051-SMP -- stage Shipped, stage_entered_at set, no row.
+    //
+    // The number is the evidence. THE STAGE MOVE is what the trail exists to
+    // record. Either one is enough on its own.
+    if (numberChanged || trackingAdvancesTo) {
       const who = auth.session.user.name ?? auth.session.user.username;
       const carrierLabel = updates.carrier ? ` (${String(updates.carrier)})` : "";
-      const trackingText = !after
+
+      let trackingText: string;
+      if (!after) {
         // Clearing a number does NOT move the row back, and the trail has to
         // say so -- otherwise the next reader assumes the stage followed.
-        ? `Tracking number cleared by ${who} — stage unchanged`
-        : trackingAdvancesTo
-          ? `Tracking number ${after}${carrierLabel} added by ${who} → moved to "${trackingAdvancesTo}"`
-          : `Tracking number ${after}${carrierLabel} updated by ${who}`;
+        // Unreachable alongside an advance: trackingAdvancesTo requires a
+        // non-empty number.
+        trackingText = `Tracking number cleared by ${who} — stage unchanged`;
+      } else if (trackingAdvancesTo && numberChanged) {
+        trackingText = `Tracking number ${after}${carrierLabel} added by ${who} → moved to "${trackingAdvancesTo}"`;
+      } else if (trackingAdvancesTo) {
+        // Re-submitted unchanged. Say CONFIRMED rather than added: the number
+        // was already on the row, and what actually happened here is the move.
+        trackingText = `Tracking number ${after}${carrierLabel} confirmed by ${who} → moved to "${trackingAdvancesTo}"`;
+      } else {
+        trackingText = `Tracking number ${after}${carrierLabel} updated by ${who}`;
+      }
+
       await supabase.from("order_activity").insert({
         order_id: id, text: trackingText, time: today,
       });
