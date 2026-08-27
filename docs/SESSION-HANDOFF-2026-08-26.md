@@ -1,5 +1,9 @@
 # Session handoff — 2026-08-26
 
+⚠ **SUPERSEDED BY `SESSION-HANDOFF-2026-08-27.md`** for the remaining-work list
+and for the method. This file stays as the record of the 2026-08-26 session:
+§1 to §3 are its own and are not repeated there.
+
 For whoever picks this up next, including a fresh assistant chat with no memory
 of it.
 
@@ -170,97 +174,11 @@ acknowledgment gate; it would not be if it were delivery or payment.
 
 # 5. How to work on this
 
-**The assistant has no shell on the box.** It builds and tests in a sandbox,
-delivers files, and Garrett runs them. Edits ship as **idempotent, anchor-based
-Python patch scripts** validating every anchor first and writing nothing on any
-miss. New files ship whole with `shasum -a 256`.
+**Moved to `SESSION-HANDOFF-2026-08-27.md` §5**, which is the current handoff and
+owns it. Nothing was dropped — every lesson that was here was carried forward
+verbatim, and that file adds what the 08-27 session cost.
 
-```bash
-cd ~/cabinet-orders
-python3 patch_whatever.py
-npx tsc --noEmit 2>&1 | grep -E "error TS"; echo "EXIT: $?"   # EXIT:1 = clean
-rm patch_whatever.py                                          # BEFORE git add
-git add -A && git commit -m "…" && git push origin main && kamal deploy 2>&1 | tee kamal-deploy.log
-echo "=== ERRORS: $(grep -cE 'ERROR \(' kamal-deploy.log) ==="
-```
-
-⚠ `"Finished all"` prints on aborts. `grep -c 'ERROR (SSHKit'` reports zero on a
-config error. Use `grep -cE 'ERROR \('`.
-
-## ⚠ Work from WHOLE FILES, never snippets
-
-Every anchor failure this session traces to reasoning about a partly-visible
-file: a duplicate `style` attribute that could not be seen, a blank line that was
-assumed, a second call site nobody knew existed. Pull the file, check the length
-against `wc -l`, then patch.
-
-Large files come across as base64 when a plain paste keeps arriving empty:
-
-```bash
-ssh garrett@5.78.220.153 "cd ~/cabinet-orders && base64 -w0 path/to/file" > ~/Downloads/file.b64
-```
-
-## Lessons that each cost real time
-
-**A secret needs THREE files.** The value in `.env.kamal`, a line in
-`.kamal/secrets` reading it out, the name under `env.secret` in
-`config/deploy.yml`. Missing the second fails the deploy loudly. Missing the
-third reaches nothing, silently.
-
-**esbuild parses; `tsc` understands.** A sandbox parse will not catch a
-duplicate JSX attribute (TS17001), an undeclared import, or a name that does not
-resolve. Three missing-import errors this session were invisible to it.
-
-**Two call sites can need opposite treatment.** `if (stage === "New") { const
-claimedBy = …` appeared in two components; one needed a helper, the other
-already had the value in scope and would have been **shadowed** by the rewrite.
-Four attempts. Split the file at function boundaries rather than matching text.
-
-**Count elements, not strings.** A guard counting `"AvatarWithProfile"` read 5
-where there were 3 renders — the import line contains the name twice.
-
-**A replacement that is a PREFIX of its anchor skips silently.** "Already
-applied" is derived from the replacement being present; a prefix is present
-before the step runs. Cost one unapplied fix.
-
-**Guards that scan for a string will fire on their own comments.** Three did.
-Strip comments before scanning code.
-
-**A CSS grid cannot draw a line across cells.** `borderTop` on each cell draws
-under *that cell*, so a row whose short flow leaves cells empty gets a line that
-stops halfway. Use an element spanning `1 / span N`.
-
-**`fr` units hide small changes.** At a 1660px row there are hundreds of spare
-pixels, so moving `0.85fr` to `0.9fr` shifts columns by single digits. Fixed px
-for predictable content, `minmax()` only where content varies.
-
-**A ternary branch takes ONE expression**, exactly like `{cond && (…)}`. A
-comment plus an element is two children in both.
-
-**When a patch is abandoned mid-way, write down its unapplied steps.** Twice
-this week a patch was abandoned, the problem fixed, and only the part being
-looked at rebuilt. The rest did not fail — it stopped existing, unnoticed for
-hours. "All Work" stayed in the sidebar for a full day that way.
-
-**A description of a fix needs one home too.** This session fixed a duplication
-— the same stale table in two documents — by writing the rule against
-duplication into all three, with three different row counts, each claiming to
-solve exactly that. The instinct to make every document self-explaining is what
-creates the copies that drift. The split now lives in `OPERATIONS` alone and
-everything else points at it.
-
-## ⚠ The failure mode this system actually has
-
-Not crashes. **Silence.**
-
-A tag overwrite that ran for weeks. A 64-day cron outage hidden by a duplicate
-code path. Six days of dead monitoring with every layer reporting success. Seven
-fields that existed in the database and in the API while being invisible to
-every typed caller.
-
-Two habits catch these. **Read the thing end to end rather than grepping it for
-what you expect to find** — three corrections in this session, including a bug
-shipped the same day, were invisible to search and obvious on a full read. And
-when a rule matters, **make something notice**: a CHECK constraint, a type, a
-guard in the patch, an assertion at module load. A rule that lives only in a
-comment is a rule that will be broken by someone who never read it.
+The method is "how to work on it safely", which the split in `OPERATIONS` gives
+to the session handoff. That means the CURRENT one, singular. Leaving a copy here
+is how one section becomes two that say slightly different things, which is the
+failure this document set exists to prevent.
