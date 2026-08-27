@@ -512,31 +512,68 @@ export async function PATCH(
 
   // Log activity
   const today = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  let activityText = "";
+  // ⚠ EVERY CHANGE GETS A ROW. INDEPENDENT CHECKS, NOT A CHAIN.
+  //
+  // This was `if / else if` down to a single `activityText`, so one PATCH
+  // recorded at most ONE thing -- and which thing depended on branch order. A
+  // save carrying a stage move and a delivery date logged the move and said
+  // nothing about the date. The guarantee was unstatable: the trail recorded
+  // something about each request rather than everything it changed.
+  //
+  // It also had no branch for tracking at all, which is how a tracking-driven
+  // advance went unrecorded for a day. That row is written separately below,
+  // where it was added for exactly that reason.
+  //
+  // ⚠ NOT ONE ROW PER FIELD. The combined forms are kept on purpose:
+  // "Production start date set → moved to In production" is one row describing
+  // two facts and it is better than two, because the date IS the move. Same
+  // shape as the tracking number. One row per EVENT, and every event gets one.
+  //
+  // ⚠ ONE INSERT AT A TIME, not a batch. A multi-row INSERT shares a single
+  // now(), so rows from one request would carry identical timestamps and sort
+  // arbitrarily against each other. The common case is still a single row.
+  const who = auth.session.user.name ?? auth.session.user.username;
+  const activityTexts: string[] = [];
+
+  // ── The stage move, in whichever form names what caused it ─────────────
   if (autoAdvancedTo) {
     // Production start date triggered an automatic stage advance.
-    activityText = `Production start date set → moved to "${autoAdvancedTo}" by ${auth.session.user.name}`;
-  }
-  else if (body.stage) {
-    activityText = `Moved to "${body.stage}" by ${auth.session.user.name}`;
-    // When a backward move clears dates, append the list so the activity
-    // log explains why the calendar suddenly looks different.
+    activityTexts.push(`Production start date set → moved to "${autoAdvancedTo}" by ${who}`);
+  } else if (body.stage) {
+    // When a backward move clears fields, append the list so the activity log
+    // explains why the calendar suddenly looks different -- and, since
+    // 2026-08-27, why the tracking number is gone.
     const clearedNote = clearedFields ? describeFieldsCleared(clearedFields) : "";
-    if (clearedNote) activityText += ` — cleared ${clearedNote}`;
+    activityTexts.push(
+      `Moved to "${body.stage}" by ${who}` + (clearedNote ? ` — cleared ${clearedNote}` : ""),
+    );
   }
-  else if (body.notes !== undefined)       activityText = `Notes updated by ${auth.session.user.name}`;
-  else if (body.internal_notes !== undefined) activityText = `Internal notes updated by ${auth.session.user.name}`;
-  else if (body.archived === true)         activityText = `Archived by ${auth.session.user.name}`;
-  else if (body.archived === false)        activityText = `Restored by ${auth.session.user.name}`;
-  else if (body.production_start_date !== undefined || body.production_est_finish_date !== undefined)
-                                           activityText = `Production dates updated by ${auth.session.user.name}`;
-  else if (body.delivery_date !== undefined || body.scheduled_delivery_date !== undefined)
-                                           activityText = `Delivery scheduled by ${auth.session.user.name}`;
-  else if (body.total_price !== undefined)
-                                           activityText = updates.total_price === null
-                                             ? `Job total cleared by ${auth.session.user.name}`
-                                             : `Job total set to $${updates.total_price} by ${auth.session.user.name}`;
-  else if ("claimed_by" in body) {
+
+  // ── Everything else, each asked independently ──────────────────────────
+  if (body.notes !== undefined) activityTexts.push(`Notes updated by ${who}`);
+  if (body.internal_notes !== undefined) activityTexts.push(`Internal notes updated by ${who}`);
+  if (body.archived === true) activityTexts.push(`Archived by ${who}`);
+  if (body.archived === false) activityTexts.push(`Restored by ${who}`);
+
+  // ⚠ SUPPRESSED WHEN THE AUTO-ADVANCE ROW ALREADY SAID IT. That row names the
+  // start date as the cause of the move; a second row reading "production dates
+  // updated" is the same fact told twice, which is its own kind of untrue.
+  if (!autoAdvancedTo
+      && (body.production_start_date !== undefined || body.production_est_finish_date !== undefined)) {
+    activityTexts.push(`Production dates updated by ${who}`);
+  }
+
+  if (body.delivery_date !== undefined || body.scheduled_delivery_date !== undefined) {
+    activityTexts.push(`Delivery scheduled by ${who}`);
+  }
+
+  if (body.total_price !== undefined) {
+    activityTexts.push(updates.total_price === null
+      ? `Job total cleared by ${who}`
+      : `Job total set to $${updates.total_price} by ${who}`);
+  }
+
+  if ("claimed_by" in body) {
     // body.claimed_by is now a team_members.id. Resolve to display
     // name for the audit log; fall back to the raw id if the team
     // member has been deleted (unlikely but defensive).
@@ -549,13 +586,13 @@ export async function PATCH(
         .maybeSingle();
       if (tm?.name) claimDisplay = tm.name;
     }
-    activityText = body.claimed_by
+    activityTexts.push(body.claimed_by
       ? `Order claimed by ${claimDisplay}`
-      : `Order unclaimed by ${auth.session.user.name}`;
+      : `Order unclaimed by ${who}`);
   }
 
-  if (activityText) {
-    await supabase.from("order_activity").insert({ order_id: id, text: activityText, time: today });
+  for (const text of activityTexts) {
+    await supabase.from("order_activity").insert({ order_id: id, text, time: today });
   }
 
   // ⚠ ITS OWN ROW, NOT A BRANCH OF THE CHAIN ABOVE.
