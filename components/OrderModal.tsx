@@ -390,6 +390,23 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
     ?? projectGroups[0]
     ?? order;
 
+  /**
+   * Who owns this row, resolved THROUGH THE PROJECT for a Shopify group.
+   *
+   * ⚠ `orders.claimed_by` is null on every project-linked row since the claim
+   * moved up on 2026-08-25. Reading it raw reports a clearly-owned purchase as
+   * unclaimed.
+   *
+   * Computed once here because it was resolved correctly inside the team-member
+   * cell and read RAW in AcknowledgmentPanel's `eligible` prop -- so the header
+   * showed the owner's name while the panel below concluded the order was
+   * unclaimed and rendered nothing. One rule, two readings, and only one of them
+   * updated.
+   */
+  const resolvedClaimedBy = liveOrder.project_id
+    ? (projects[liveOrder.project_id]?.claimed_by ?? null)
+    : (liveOrder.claimed_by ?? null);
+
   // If the modal was opened via the row Submit/Resubmit, pop the .xlsx picker.
   useEffect(() => {
     if (consumeAckPicker(liveOrder.id)) {
@@ -701,8 +718,12 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                 border: "0.5px solid rgba(255,255,255,0.14)",
               }}
             >
-              {liveOrder.claimed_by
-                ? (team.find((m) => m.id === liveOrder.claimed_by)?.name ?? "Claimed")
+              {/* ⚠ Read the RESOLVED owner. Reading the raw column here is
+                  why the header said UNCLAIMED while the Team Member cell four
+                  sections below showed the owner's name and avatar, on the same
+                  row, at the same moment. */}
+              {resolvedClaimedBy
+                ? (team.find((m) => m.id === resolvedClaimedBy)?.name ?? "Claimed")
                 : "Unclaimed"}
             </span>
             </div>
@@ -732,7 +753,12 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
             {/* Per-manufacturer order PDF. Not for samples -- they ship from
                 JK's own stock, so there is no manufacturer to send one to. */}
             {liveOrder.type !== "sample"
-              && (liveOrder.stage !== "New" || !!liveOrder.claimed_by)
+              // ⚠ THIS HID THE FIRST STEP OF THE WORKFLOW. The designer pulls
+              // this PDF and enters it into the manufacturer's ordering system --
+              // and on a project-linked cabinet group at New, which is exactly
+              // when it is needed, the raw column is null and the buttons never
+              // rendered.
+              && (liveOrder.stage !== "New" || !!resolvedClaimedBy)
               && exportVendors.map((v) => (
               <a
                 key={v}
@@ -1148,9 +1174,11 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                   // orders.claimed_by is null on those rows since the claim
                   // moved up, so reading it here showed every purchase as
                   // unclaimed however clearly it was owned.
-                  const claimedBy = liveOrder.project_id
-                    ? (projects[liveOrder.project_id]?.claimed_by ?? null)
-                    : (liveOrder.claimed_by ?? null);
+                  // Hoisted to component scope on 2026-08-27 as
+                  // `resolvedClaimedBy`, because the AcknowledgmentPanel's
+                  // eligibility check was reading the raw column and hiding
+                  // itself on every owned Shopify group.
+                  const claimedBy = resolvedClaimedBy;
                   const ownerName = isNewStage
                     ? claimedBy
                     : liveOrder.entered_by ?? claimedBy;
@@ -1322,7 +1350,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                 by default: showing it wrongly is cosmetic, hiding it wrongly
                 means a missed manufacturer confirmation. */}
           {liveOrder.type !== "sample" && (
-            <AcknowledgmentPanel ref={ackPanelRef} orderId={liveOrder.id} orderName={liveOrder.name} eligible={liveOrder.stage !== "New" || !!liveOrder.claimed_by} onAdvance={() => { if (liveOrder.stage === "New") moveStage(liveOrder.id, "Entered", currentUserId).then((r) => { if (!r.ok) showToast(r.error ?? "Could not move to Entered", { kind: "error" }); }); }} onAdvanceOverride={() => { if (liveOrder.stage === "New") moveStage(liveOrder.id, "Entered", currentUserId, undefined, true).then((r) => { if (!r.ok) showToast(r.error ?? "Could not move to Entered", { kind: "error" }); }); }} />
+            <AcknowledgmentPanel ref={ackPanelRef} orderId={liveOrder.id} orderName={liveOrder.name} eligible={liveOrder.stage !== "New" || !!resolvedClaimedBy} onAdvance={() => { if (liveOrder.stage === "New") moveStage(liveOrder.id, "Entered", currentUserId).then((r) => { if (!r.ok) showToast(r.error ?? "Could not move to Entered", { kind: "error" }); }); }} onAdvanceOverride={() => { if (liveOrder.stage === "New") moveStage(liveOrder.id, "Entered", currentUserId, undefined, true).then((r) => { if (!r.ok) showToast(r.error ?? "Could not move to Entered", { kind: "error" }); }); }} />
           )}
           {/* Notes and attachments as three cards in one row, collapsed to a
               summary line. This was two full-height textareas plus the
