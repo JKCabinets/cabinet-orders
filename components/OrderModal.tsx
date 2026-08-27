@@ -1085,34 +1085,49 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                     )}
                   </div>
 
-                  {nextStageFor(liveOrder) === "Shipped" ? (
-                    <TrackingEntry
-                      order={liveOrder}
-                      highlight={trackingHighlight}
-                      onSaved={(stage) => {
-                        setTrackingHighlight(false);
-                        if (stage) onStageChange(stage as Stage);
-                      }}
-                    />
-                  ) : nextStageFor(liveOrder) ? (
-                    <button
-                      onClick={() => {
-                        const next = nextStageFor(liveOrder);
-                        // Empty PIN on purpose: this only ever offers the NEXT
-                        // stage, so it is never a backward move.
-                        if (next) doMoveStage(next as Stage, "");
-                      }}
-                      disabled={checkingAttachments}
-                      className="px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all flex-shrink-0 disabled:opacity-40"
-                      style={{
-                        background: "rgba(184,130,106,0.20)",
-                        border: "0.5px solid rgba(184,130,106,0.55)",
-                        color: "#d9a888",
-                      }}
-                    >
-                      {checkingAttachments ? "\u2026" : nextStageFor(liveOrder)}
-                    </button>
-                  ) : null}
+                  {/* ⚠ THE FIELD BELONGS TO THE TYPE, NOT TO ONE STAGE.
+                      It rendered only while `nextStageFor === "Shipped"` -- and
+                      the number is what MAKES the group shipped, so the control
+                      unmounted the instant it succeeded. A number could be
+                      entered once and never afterwards seen, corrected or
+                      cleared.
+
+                      Now it renders wherever the type carries tracking, and the
+                      next-action button renders BESIDE it rather than instead
+                      of it. At New the field is still the only action, because
+                      the number is the action and a button there would either
+                      bypass the rule or refuse and explain why. */}
+                  <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap justify-end">
+                    {typeCarriesTracking(liveOrder.type) && (
+                      <TrackingEntry
+                        order={liveOrder}
+                        highlight={trackingHighlight}
+                        onSaved={(stage) => {
+                          setTrackingHighlight(false);
+                          if (stage) onStageChange(stage as Stage);
+                        }}
+                      />
+                    )}
+                    {nextStageFor(liveOrder) && nextStageFor(liveOrder) !== "Shipped" && (
+                      <button
+                        onClick={() => {
+                          const next = nextStageFor(liveOrder);
+                          // Empty PIN on purpose: this only ever offers the NEXT
+                          // stage, so it is never a backward move.
+                          if (next) doMoveStage(next as Stage, "");
+                        }}
+                        disabled={checkingAttachments}
+                        className="px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all flex-shrink-0 disabled:opacity-40"
+                        style={{
+                          background: "rgba(184,130,106,0.20)",
+                          border: "0.5px solid rgba(184,130,106,0.55)",
+                          color: "#d9a888",
+                        }}
+                      >
+                        {checkingAttachments ? "\u2026" : nextStageFor(liveOrder)}
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* One container, not two. This cell came out of ORDER INFO
@@ -2101,8 +2116,19 @@ function TrackingEntry({
 
   const dirty = carrier !== (order.carrier ?? "") || number !== (order.tracking_number ?? "");
 
+  // ⚠ CLEARING IS A REAL ACTION. save() refused every empty submit, so once a
+  // number was on the row there was no way to take it off -- and the field
+  // itself vanished after the first save, so there was no way to look at it
+  // either. A row holding the wrong number is worse than one holding none.
+  const stored = (order.tracking_number ?? "").trim();
+  const clearing = !number.trim() && !!stored;
+
+  // Whether saving will advance the group. Only true where the flow has a
+  // Shipped ahead of it -- at Shipped or Delivered this is a plain edit.
+  const willAdvance = !!number.trim() && nextStageFor(order) === "Shipped";
+
   async function save() {
-    if (!number.trim()) {
+    if (!number.trim() && !stored) {
       showToast("Add the tracking number \u2014 that is what marks this shipped.", { kind: "warn" });
       return;
     }
@@ -2111,7 +2137,13 @@ function TrackingEntry({
       const res = await fetch(`/api/orders/${order.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ carrier: carrier.trim(), tracking_number: number.trim() }),
+        // ⚠ CLEARING TAKES THE CARRIER WITH IT. A carrier describing a parcel
+        // whose number has gone is the same contradiction that a tracking
+        // number on an unshipped row was. One truth per item.
+        body: JSON.stringify({
+          carrier: clearing ? "" : carrier.trim(),
+          tracking_number: number.trim(),
+        }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -2121,7 +2153,12 @@ function TrackingEntry({
       const body = await res.json().catch(() => ({}));
       const advanced = (body?.data?.stage as string | undefined) ?? null;
       showToast(
-        advanced === "Shipped" ? "Tracking saved \u2014 marked shipped" : "Tracking saved",
+        clearing
+          // Clearing does NOT move the row back -- undoing a stage is a
+          // PIN-gated act, not a side effect of correcting a typo. Say so,
+          // rather than leaving someone to wonder.
+          ? "Tracking cleared \u2014 stage unchanged"
+          : advanced === "Shipped" ? "Tracking saved \u2014 marked shipped" : "Tracking saved",
         { kind: "success" },
       );
       onSaved(advanced);
@@ -2169,7 +2206,9 @@ function TrackingEntry({
           color: "#d9a888",
         }}
       >
-        {saving ? "\u2026" : "Ship"}
+        {/* It read "Ship" on a group already shipped, which is the same
+            class of untruth as a toast that says "saved" on an advance. */}
+        {saving ? "\u2026" : clearing ? "Clear" : willAdvance ? "Ship" : "Save"}
       </button>
     </div>
   );

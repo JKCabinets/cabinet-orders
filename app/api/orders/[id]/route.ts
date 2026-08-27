@@ -157,7 +157,10 @@ export async function PATCH(
   // values AFTER the update has been applied.)
   const { data: currentRow } = await supabase
     .from("orders")
-    .select("stage, type, payment_status, payment_hold_cleared_for, project_id, tracking_number")
+    // ⚠ carrier is here so a CARRIER-ONLY edit can be compared and recorded.
+    // Without the stored value the activity block could only see the number
+    // change, and correcting a carrier wrote nothing at all.
+    .select("stage, type, payment_status, payment_hold_cleared_for, project_id, tracking_number, carrier")
     .eq("id", id)
     .single();
   if (!currentRow) {
@@ -613,6 +616,14 @@ export async function PATCH(
     const before = String(currentRow.tracking_number ?? "").trim();
     const after = String(updates.tracking_number ?? "").trim();
     const numberChanged = before !== after;
+    // ⚠ A CARRIER-ONLY EDIT IS STILL AN EDIT. The condition below was
+    // `numberChanged || trackingAdvancesTo`, so correcting a carrier and
+    // leaving the number wrote nothing. Not hypothetical: on 2026-08-27 typing
+    // a carrier is what made the form dirty enough to submit, which advanced
+    // the group -- and nothing recorded why.
+    const carrierBefore = String(currentRow.carrier ?? "").trim();
+    const carrierAfter = String(updates.carrier ?? "").trim();
+    const carrierChanged = typeof body.carrier === "string" && carrierBefore !== carrierAfter;
 
     // ⚠ THE ADVANCE IS AN EVENT EVEN WHEN THE NUMBER IS NOT.
     //
@@ -629,7 +640,7 @@ export async function PATCH(
     //
     // The number is the evidence. THE STAGE MOVE is what the trail exists to
     // record. Either one is enough on its own.
-    if (numberChanged || trackingAdvancesTo) {
+    if (numberChanged || carrierChanged || trackingAdvancesTo) {
       const who = auth.session.user.name ?? auth.session.user.username;
       const carrierLabel = updates.carrier ? ` (${String(updates.carrier)})` : "";
 
@@ -646,6 +657,12 @@ export async function PATCH(
         // Re-submitted unchanged. Say CONFIRMED rather than added: the number
         // was already on the row, and what actually happened here is the move.
         trackingText = `Tracking number ${after}${carrierLabel} confirmed by ${who} → moved to "${trackingAdvancesTo}"`;
+      } else if (!numberChanged && carrierChanged) {
+        // The number did not move. Saying it was "updated" would be untrue,
+        // and the trail is the one place that has to stay literal.
+        trackingText = carrierAfter
+          ? `Carrier set to ${carrierAfter} by ${who}`
+          : `Carrier cleared by ${who}`;
       } else {
         trackingText = `Tracking number ${after}${carrierLabel} updated by ${who}`;
       }
