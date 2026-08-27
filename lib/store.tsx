@@ -417,6 +417,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           cleared && "production_start_date" in cleared ? null : o.production_start_date,
         production_est_finish_date:
           cleared && "production_est_finish_date" in cleared ? null : o.production_est_finish_date,
+        // ⚠ MIRRORED FOR THE SAME REASON AS THE DATES, and it matters more.
+        // Without this the modal re-renders still holding the old number for
+        // the moment before realtime lands -- and TrackingEntry pre-fills from
+        // it, so Ship re-submits a number the server has already cleared. That
+        // window is where the 2026-08-27 bug lived.
+        tracking_number:
+          cleared && "tracking_number" in cleared ? null : o.tracking_number,
+        carrier:
+          cleared && "carrier" in cleared ? null : o.carrier,
         activity: [...o.activity, { text: `Moved to "${stage}"`, time: t }]
       } : o
     );

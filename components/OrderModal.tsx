@@ -22,6 +22,7 @@ import { DamageReportPanel } from "./DamageReportPanel";
 import { AcknowledgmentPanel, type AcknowledgmentPanelHandle } from "./AcknowledgmentPanel";
 import { consumeAckPicker } from "@/lib/ackStatus";
 import { STAGE_ACCENT } from "@/lib/data";
+import { typeCarriesTracking } from "@/lib/categories";
 
 interface OrderModalProps {
   /**
@@ -1238,23 +1239,52 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                 <p className={LABEL + " mb-1"}>PO / Reference</p>
                 <p className="text-xs font-mono text-cream/65">{poReference(liveOrder)}</p>
               </div>
-              <div className="px-4 py-3" style={CELL}>
-                {/* Start and estimated finish read as a span, not two facts. */}
-                <p className={LABEL + " mb-1"}>Production dates</p>
-                <p className="text-xs text-cream/65">
-                  {liveOrder.production_start_date || liveOrder.production_est_finish_date
-                    ? `${liveOrder.production_start_date || "?"} \u2192 ${liveOrder.production_est_finish_date || "?"}`
-                    : "Not set"}
-                </p>
-              </div>
-              <div className="px-4 py-3" style={CELL}>
-                {/* Scheduled, not actual. A date the customer has not been
-                    given is not a promise, and this is the internal view. */}
-                <p className={LABEL + " mb-1"}>Delivery target</p>
-                <p className="text-xs text-cream/65">
-                  {liveOrder.scheduled_delivery_date || liveOrder.delivery_date || "Not set"}
-                </p>
-              </div>
+              {/* ⚠ THE LAST TWO CELLS DEPEND ON THE TYPE.
+                  Samples are picked off a shelf and posted; hardware is placed
+                  with a manufacturer who dispatches it. Neither has production
+                  dates, so both cells read "Not set" forever -- two of the six
+                  facts in this panel saying nothing, on the types where the
+                  tracking number IS the fact.
+
+                  TWO CELLS EITHER WAY. This is a 3-column grid and the second
+                  row only fills at six; the 4-column version went ragged the
+                  moment a cell moved out of it. */}
+              {typeCarriesTracking(liveOrder.type) ? (
+                <>
+                  <div className="px-4 py-3" style={CELL}>
+                    <p className={LABEL + " mb-1"}>Tracking number</p>
+                    <p className="text-xs font-mono text-cream/65">
+                      {liveOrder.tracking_number || "Not set"}
+                    </p>
+                  </div>
+                  <div className="px-4 py-3" style={CELL}>
+                    <p className={LABEL + " mb-1"}>Carrier</p>
+                    <p className="text-xs text-cream/65">
+                      {liveOrder.carrier || "Not set"}
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="px-4 py-3" style={CELL}>
+                    {/* Start and estimated finish read as a span, not two facts. */}
+                    <p className={LABEL + " mb-1"}>Production dates</p>
+                    <p className="text-xs text-cream/65">
+                      {liveOrder.production_start_date || liveOrder.production_est_finish_date
+                        ? `${liveOrder.production_start_date || "?"} \u2192 ${liveOrder.production_est_finish_date || "?"}`
+                        : "Not set"}
+                    </p>
+                  </div>
+                  <div className="px-4 py-3" style={CELL}>
+                    {/* Scheduled, not actual. A date the customer has not been
+                        given is not a promise, and this is the internal view. */}
+                    <p className={LABEL + " mb-1"}>Delivery target</p>
+                    <p className="text-xs text-cream/65">
+                      {liveOrder.scheduled_delivery_date || liveOrder.delivery_date || "Not set"}
+                    </p>
+                  </div>
+                </>
+              )}
             </div>
           </div>
 

@@ -269,8 +269,23 @@ export function isBackwardsMove(
  * or null if nothing should change.
  */
 
-/** Flows whose date fields drive automation, and so go stale on a reversal. */
-const FLOWS_THAT_CLEAR: ReadonlySet<StageFlow> = new Set<StageFlow>(["order"]);
+/**
+ * Flows that clear on a reversal.
+ *
+ * ⚠ HARDWARE ADDED 2026-08-27. It was excluded on the grounds that it has no
+ * production or delivery dates to clear, which was true and is no longer the
+ * whole question: it carries a TRACKING NUMBER, and HARDWARE_RULES.Ordered
+ * gates its SLA clock on that number being absent. A hardware group bounced
+ * back from Shipped kept the number and never started the clock whose entire
+ * purpose is "placed, and nobody has recorded a dispatch".
+ *
+ * Adding it costs nothing else: the date rules below resolve positions against
+ * the row's OWN flow, and hardware has no "In production" or "At cross dock",
+ * so posOf returns -1 and those rules never match.
+ *
+ * Custom and warranty stay out, for the reasons in the block above.
+ */
+const FLOWS_THAT_CLEAR: ReadonlySet<StageFlow> = new Set<StageFlow>(["order", "hardware"]);
 
 /**
  * ⚠ NEVER CLEARED, whatever the flow.
@@ -349,6 +364,35 @@ export function fieldsToClearOnBackwardMove(
     clear.production_est_finish_date = null;
   }
 
+  // ⚠ ONE TRUTH PER ITEM.
+  //
+  // A tracking number is the EVIDENCE for "Shipped". A row sitting before that
+  // stage has not shipped, so holding the number is a contradiction -- and the
+  // rest of the system reads it as fact:
+  //
+  //   · SAMPLE_RULES.New and HARDWARE_RULES.Ordered both gate their clock on
+  //     `!o.tracking_number`, so a retained number switches the SLA off for
+  //     precisely the row that needs chasing.
+  //   · The modal pre-fills TrackingEntry from the row, so Ship re-submits the
+  //     same string and the advance reads as "nothing changed".
+  //
+  // Both were live on SHO-1051-SMP on 2026-08-27. Re-entry starts fresh even
+  // when the number is identical: what is being recorded is a new shipment
+  // decision, not the same one twice. The old number is not lost -- the
+  // activity row that put it there is the history.
+  //
+  // ⚠ "Shipped" AS A LITERAL, knowingly. trackingTargetStage() in
+  // lib/categories.ts is the one implementation of this rule, but that module
+  // statically imports lib/data, and THIS file is deliberately free of one to
+  // avoid a runtime cycle -- see the lazy import in the dev assertion above.
+  // Resolved against the row's OWN flow, so cabinets and custom jobs have no
+  // "Shipped" position and never match, and warranty never reaches here.
+  const shippedPos = posOf("Shipped");
+  if (shippedPos >= 0 && target.idx < shippedPos) {
+    clear.tracking_number = null;
+    clear.carrier = null;
+  }
+
   // Target is "New" → also clear entered_by (the order has un-entered)
   if (targetStage === "New") {
     clear.entered_by = null;
@@ -375,6 +419,13 @@ export function describeFieldsCleared(cleared: Record<string, string | null> | n
     scheduled_delivery_date: "delivery date",
     delivery_window: "delivery window",
     delivery_notes: "delivery notes",
+    // ⚠ BOTH MAP TO ONE LABEL so the Set below dedupes them, exactly as
+    // delivery_date and scheduled_delivery_date do. A field cleared without a
+    // label here is cleared SILENTLY: the activity row would read "cleared
+    // entered-by" while the tracking number had gone too, which is the kind of
+    // omission this trail exists to prevent.
+    tracking_number: "tracking number",
+    carrier: "tracking number",
   };
   // Dedupe (delivery_date + scheduled_delivery_date both map to "delivery date")
   const set = new Set<string>();

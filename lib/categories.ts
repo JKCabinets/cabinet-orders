@@ -199,6 +199,22 @@ export function categoryHasTracking(category: OrderCategory): boolean {
 }
 
 /**
+ * The same question asked with an OrderType rather than an OrderCategory.
+ *
+ * ⚠ NOT A SECOND RULE -- it narrows and defers. OrderType is a superset:
+ * warranty and custom rows are never produced by grouping a checkout, so they
+ * are not categories at all. Every UI caller holds an OrderType, and without
+ * this each one would need `categoryHasTracking(type as OrderCategory)` -- a
+ * cast that happens to work only because trackingTargetStage returns null for
+ * anything unrecognised. A cast that is right by accident is the shape this
+ * codebase keeps paying for, so the narrowing lives here once.
+ */
+export function typeCarriesTracking(type: string | null | undefined): boolean {
+  return (type === "order" || type === "hardware" || type === "sample")
+    && categoryHasTracking(type);
+}
+
+/**
  * The stage a fulfilment advances a group to.
  *
  * ⚠ SAMPLES GO TO "Shipped", NOT "Delivered" -- corrected 2026-08-25 with the
