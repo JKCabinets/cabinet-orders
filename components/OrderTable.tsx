@@ -5,6 +5,7 @@ import clsx from "clsx";
 import {
   Order, Stage, Project, OrderType, STAGE_LIST_BY_TYPE,
   AVATAR_COLOR_STYLES, getBackorderStatus, nextStageFor, displayOrderNumber,
+  STAGE_ACCENT,
 } from "@/lib/data";
 import { STAGE_ORDER_BY_TYPE, ORDER_STAGE_ORDER } from "@/lib/stageLogic";
 import { useStore } from "@/lib/store";
@@ -58,13 +59,19 @@ interface OrderTableProps {
   onToggleSelect?: (id: string) => void;
 }
 
+// ⚠ ONE COPY, NOT A SECOND ONE.
+//
+// This was a private map of five stages, written before the sample and
+// hardware flows existed. "Shipped" and "Ordered" were not in it, so every
+// pill this file draws for those rows fell back to grey while the modal drew
+// them blue and amber from STAGE_ACCENT. One fact, two copies, and only one of
+// them updated -- the shape that has bitten this codebase repeatedly.
+//
+// "Archived" is not a stage in any flow, so it is not in STAGE_ACCENT and is
+// added here rather than pushed into the shared map.
 const STAGE_COLOR: Record<string, string> = {
-  "New":            "#c97070",
-  "Entered":        "#d4922a",
-  "In production":  "#c8b84a",
-  "At cross dock":  "#5a8db8",
-  "Delivered":      "#8fbe70",
-  "Archived":       "#91a597",
+  ...STAGE_ACCENT,
+  "Archived": "#91a597",
 };
 
 // Payment status pills — Shopify financial_status values mapped to brand colors
@@ -783,6 +790,18 @@ function StatusLabel({ order, stage, claimedBy }: {
     return <span className="text-[10px] text-cream/55">Parts on order</span>;
   }
   if (stage === "Shipped") {
+    // ⚠ "Shipped" IS IN THREE FLOWS AND MEANS THREE THINGS. For a warranty
+    // claim it is the replacement PARTS in transit. For a sample or hardware
+    // group it is the customer's parcel, and the tracking number is what is
+    // worth showing -- it is the evidence that put the row in this stage.
+    //
+    // A row can sit here without one: a backward move or an admin override
+    // does not clear the stage, so say so rather than render an empty cell.
+    if (order.type !== "warranty") {
+      return order.tracking_number
+        ? <span className="text-[10px] text-cream/55 font-mono">{order.tracking_number}</span>
+        : <span className="text-[10px] text-cream/55 italic">Awaiting tracking</span>;
+    }
     return <span className="text-[10px] text-cream/55">In transit</span>;
   }
   if (stage === "Resolved") {
@@ -1161,6 +1180,44 @@ function UpdateStatusActions({
         className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30"
       >
         {busy ? "..." : "Archive"}
+      </button>
+    );
+  }
+
+  // ── Anything else that has a next stage ─────────────────────────────
+  //
+  // ⚠ THE COLUMN WAS EMPTY FOR THREE REAL STATES. Every branch above is keyed
+  // on a stage NAME, and the flows added on 2026-08-25 brought names none of
+  // them match:
+  //
+  //     sample   at "Shipped"  -> Delivered
+  //     hardware at "Ordered"  -> Shipped
+  //     hardware at "Shipped"  -> Delivered
+  //
+  // All three fell past twenty branches to `return null` -- no button on the
+  // row, none on mobile, and no way to move the group on from any list page.
+  //
+  // Deliberately NOT three more named branches. advanceOne resolves the next
+  // stage from the row's OWN STAGE_LIST_BY_TYPE, so this covers the two flows
+  // that exist and any third added later. Last on purpose: every branch above
+  // still wins, so nothing that works today changes.
+  //
+  // The server remains the gate. "Shipped" needs a tracking number and answers
+  // `tracking_required`, which advanceOne turns into the modal opening with the
+  // field glowing and focused.
+  if (nextStageLabel) {
+    return (
+      <button
+        onClick={() => withBusy(advanceOne)}
+        disabled={busy}
+        title={
+          nextStageLabel === "Shipped"
+            ? "Needs a tracking number — that is what marks it shipped"
+            : `Move to ${nextStageLabel}`
+        }
+        className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30"
+      >
+        {busy ? "..." : (mobile ? nextStageLabel : `Mark ${nextStageLabel} →`)}
       </button>
     );
   }
