@@ -769,12 +769,60 @@ export async function POST(req: NextRequest) {
       }).eq("id", project.id);
 
       const { data: groups } = await supabase
-        .from("orders").select("id, type, stage").eq("project_id", project.id);
+        .from("orders")
+        // ⚠ tracking_number and carrier are SELECTED because the fulfilment
+        // path below compares against them. Without the stored value it cannot
+        // tell "Shopify is telling us something new" from "Shopify is
+        // re-sending what we already have".
+        .select("id, type, stage, tracking_number, carrier")
+        .eq("project_id", project.id);
       const groupRows = groups ?? [];
 
-      const fulfillmentStatus = String(payload.fulfillment_status ?? "");
       const fulfillments = (payload.fulfillments as Array<Record<string, unknown>>) ?? [];
-      const firstFulfilment = fulfillments[0];
+
+      /**
+       * The categories a fulfilment covers.
+       *
+       * ⚠ NOT A SECOND MATCHER. categoryForVendor is the one implementation of
+       * "which group does this line belong to", and a fulfilment's line_items
+       * carry the same vendor strings the order's do -- so this asks the
+       * question that is already answered, of a subset of the same lines.
+       */
+      const fulfilmentCategories = (fl: Record<string, unknown>): Set<OrderCategory> => {
+        const items = (fl.line_items as Array<Record<string, unknown>> | undefined) ?? [];
+        const cats = new Set<OrderCategory>();
+        for (const li of items) cats.add(categoryForVendor(shopifyInput(li.vendor)));
+        return cats;
+      };
+
+      /**
+       * The fulfilment covering this category that carries a tracking number.
+       *
+       * ⚠ THIS REPLACES `fulfillment_status === "fulfilled"`, which was an
+       * ORDER-LEVEL test applied to a per-group fact -- and therefore wrong on
+       * the exact shape the project model exists for. Cabinets go by freight
+       * and are never fulfilled in Shopify, so a cabinets-plus-samples checkout
+       * sits at "partial" forever and the whole block was skipped: the sample
+       * label was bought, Shopify held the number, and nothing pulled it.
+       * Single-category orders worked, which is why it looked fine.
+       *
+       * ⚠ It also replaces `fulfillments[0]`, which handed the first
+       * fulfilment's number to EVERY group -- samples posted Monday and
+       * hardware dispatched Thursday would both have shown Monday's parcel.
+       *
+       * The LAST match wins, so a re-shipment supersedes the one before it.
+       * That reads Shopify's array order as chronological, which is what it
+       * does and is not a documented guarantee.
+       */
+      const fulfilmentFor = (cat: OrderCategory): Record<string, unknown> | null => {
+        let found: Record<string, unknown> | null = null;
+        for (const fl of fulfillments) {
+          if (!shopifyInput(fl.tracking_number)) continue;
+          if (!fulfilmentCategories(fl).has(cat)) continue;
+          found = fl;
+        }
+        return found;
+      };
 
       // GROUPS ARE NEVER CREATED OR DESTROYED HERE. A group may already be
       // claimed, carry attachments and hold activity; deleting it because a
@@ -804,33 +852,43 @@ export async function POST(req: NextRequest) {
           payment_status: payload.financial_status ?? null,
         };
 
-        // A fulfilment is authoritative only for what WE ship. Samples and
-        // hardware are tracked in Shopify with a real carrier and number, so
-        // the event is the real thing and the tracking comes free. Cabinets
-        // are drop-ship: the manufacturer's partner delivers and Shopify never
-        // sees that shipment, so a fulfilment there is bookkeeping and calling
-        // it "Delivered" is untrue. It is also why the signed-receipt gate
-        // exists -- we are not the ones delivering.
-        if (fulfillmentStatus === "fulfilled" && fulfilmentIsAuthoritative(cat)) {
-          const num = firstFulfilment
-            ? shopifyInput(firstFulfilment.tracking_number)
-            : "";
-          if (firstFulfilment) {
-            updates.carrier = shopifyInput(firstFulfilment.tracking_company);
+        // A fulfilment is authoritative only for what WE ship. Samples ship
+        // from JK's own stock, so a fulfilment IS us shipping. Cabinets are
+        // drop-ship by freight: the manufacturer's partner delivers, Shopify
+        // never sees that shipment, and calling it "Delivered" is untrue --
+        // which is also why the signed-receipt gate exists. Whether hardware
+        // tracking reaches Shopify at all is undecided; see
+        // fulfilmentIsAuthoritative.
+        let replacedTracking = "";
+        const fl = fulfilmentIsAuthoritative(cat) ? fulfilmentFor(cat) : null;
+        if (fl) {
+          const num = shopifyInput(fl.tracking_number);
+          const carrier = shopifyInput(fl.tracking_company);
+          const existingNum = String(g.tracking_number ?? "").trim();
+
+          // ⚠ WRITE ONLY WHAT CHANGED. This wrote the number unconditionally,
+          // and orders/updated fires on payment changes, edits and refunds --
+          // not just shipping. So a number corrected by hand was reverted by
+          // the next unrelated Shopify event, silently, since the row only
+          // recorded a STAGE change and there was none.
+          if (num !== existingNum) {
             updates.tracking_number = num;
+            updates.carrier = carrier;
+            // Remember what was displaced so the overwrite gets recorded
+            // rather than done quietly.
+            if (existingNum) replacedTracking = existingNum;
+          } else if (carrier && carrier !== String(g.carrier ?? "").trim()) {
+            updates.carrier = carrier;
           }
+
           // ⚠ THE TRACKING NUMBER MOVES THE STAGE, not the fulfilment event.
           //
-          // This used to set the stage from fulfilmentTargetStage AND write the
-          // tracking as two independent decisions -- so a fulfilment with no
-          // number still advanced the group, claiming a dispatch it had no
-          // evidence of. Worse, it was a second implementation of the rule the
-          // modal uses, which is the shape that has bitten this codebase four
-          // times in a week.
-          //
-          // No number, no move: a fulfilment without tracking tells us nothing
-          // a customer could act on.
-          const target = num ? fulfilmentTargetStage(cat) : null;
+          // fulfilmentFor only returns a fulfilment that CARRIES a number, so
+          // reaching here IS the evidence. This used to decide the stage
+          // separately from the tracking, so a fulfilment with no number still
+          // advanced the group -- claiming a dispatch it had no evidence of,
+          // through a second implementation of the rule the modal uses.
+          const target = fulfilmentTargetStage(cat);
           if (target && g.stage !== target) updates.stage = target;
         }
 
@@ -846,22 +904,39 @@ export async function POST(req: NextRequest) {
         // Same absence the PATCH route had on the other door. One rule, two
         // doors, and neither was recording it.
         //
-        // Fires once: the stage only changes when `g.stage !== target`, so the
-        // repeated orders/updated deliveries that follow write nothing.
+        // ⚠ THREE CASES, because a fulfilment can change the tracking WITHOUT
+        // changing the stage -- a re-shipment on a group already at Shipped.
+        // An overwrite nothing records is the failure this trail exists to
+        // close. Each case fires only on a real change, so the repeated
+        // orders/updated deliveries that follow write nothing.
+        const finalNum = String(updates.tracking_number ?? g.tracking_number ?? "");
+        const finalCarrier = String(updates.carrier ?? g.carrier ?? "");
+        const carrierLabel = finalCarrier ? ` (${finalCarrier})` : "";
+        let fulfilmentNote = "";
         if (typeof updates.stage === "string") {
-          const carrierLabel = updates.carrier ? ` (${String(updates.carrier)})` : "";
+          fulfilmentNote = `Shopify fulfilment carried tracking ${finalNum}${carrierLabel}`
+            + ` — moved to "${updates.stage}" automatically`;
+        } else if (replacedTracking) {
+          fulfilmentNote = `Shopify fulfilment replaced tracking ${replacedTracking}`
+            + ` with ${finalNum}${carrierLabel} — stage unchanged`;
+        } else if (updates.tracking_number !== undefined) {
+          fulfilmentNote = `Shopify fulfilment recorded tracking ${finalNum}${carrierLabel}`;
+        }
+        if (fulfilmentNote) {
           await supabase.from("order_activity").insert({
-            order_id: g.id,
-            text: `Shopify fulfilment carried tracking `
-              + `${String(updates.tracking_number ?? "")}${carrierLabel}`
-              + ` — moved to "${updates.stage}" automatically`,
-            time: today,
+            order_id: g.id, text: fulfilmentNote, time: today,
           });
         }
       }
 
-      if (fulfillmentStatus === "fulfilled"
-          && groupRows.some(g => !fulfilmentIsAuthoritative(String(g.type) as OrderCategory))) {
+      // ⚠ PER FULFILMENT, not per order status -- same reason as above. The
+      // old test asked whether the WHOLE order was fulfilled, which a
+      // cabinets-plus-samples checkout never is, so the one signal worth having
+      // was recorded only on single-category orders.
+      for (const fl of fulfillments) {
+        const dropShip = [...fulfilmentCategories(fl)]
+          .filter(c => !fulfilmentIsAuthoritative(c));
+        if (dropShip.length === 0) continue;
         // NOT nothing: a fulfilment on a drop-ship vendor means the
         // MANUFACTURER DISPATCHED. That is the real trigger behind the
         // notification the order confirmation already promises ("we will
@@ -871,7 +946,8 @@ export async function POST(req: NextRequest) {
         // signal exists by the time that work lands.
         logWebhook("fulfilment_not_applied", {
           order_id: project.id, reason: "drop_ship_vendor",
-          carrier: firstFulfilment ? String(firstFulfilment.tracking_company ?? "") : "",
+          categories: dropShip.join(","),
+          carrier: String(fl.tracking_company ?? ""),
         });
       }
 
