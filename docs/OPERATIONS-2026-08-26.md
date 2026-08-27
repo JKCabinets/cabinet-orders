@@ -9,17 +9,27 @@ longer holds; and the public lookup contract has moved here, because it is a
 promise to a customer rather than an implementation detail.
 
 **This document is shared with every team and is the master for anything
-customer-facing.** What the system IS lives in `docs/OMS-STATE-2026-08-26.md`;
-what to build next lives in the session handoff.
-**Companion to HANDOFF-2026-08-20-BUILD.md**
+customer-facing.** The rest of the document set, and what each part owns, is in
+the table below.
 
 Everything that is **not** about writing code: what the business does, which
 services it runs on, what it costs, what it has promised customers, which
 credentials expire, and why decisions were made.
 
-**The document set:** `HANDOFF-2026-08-20-BUILD.md` (the OMS codebase) ·
-`SESSION-HANDOFF-OMS-2026-08-20.md` (what to build next) ·
-`HANDOFF-WEBSITE-TEAM-2026-08-20.md` (the storefront side) · the System Map.
+**⚠ The document set — one home per fact. This table is the only copy of the
+split.** Every other document points here rather than restating it. Three
+descriptions of the same split, in three documents, with three different row
+counts, is the failure the split exists to prevent — and it is how the website
+handoff and the System Map fell out of the set entirely.
+
+| Document | Owns |
+|---|---|
+| `docs/OMS-STATE-*.md` (repo, living) | what the system IS — data model, pipelines, gates, monitoring |
+| **The session handoff** (passed forward) | what changed, what remains, how to work on it safely |
+| **This document** (shared with every team) | the business, services, credentials, customer commitments, the stage translation, the public lookup contract |
+| `HANDOFF-*-BUILD.md` | implementation history — superseded for the data model, which now lives in `OMS-STATE` |
+| `HANDOFF-WEBSITE-TEAM-2026-08-20.md` | the storefront side |
+| **The System Map** | ⚠ named in every version of this list and described in none. Confirm what it covers, or drop it from the set. |
 
 ---
 
@@ -190,7 +200,7 @@ stripping `#`, trimming, uppercasing, prepending `SHO-`.
 | **Shopify apps** | Aris Product Options $24 · TnC Terms Checkbox $12.99 · Workflow Transactional Email $0 | | $36.99 |
 | *(Shopify tax)* | AZ state 5.60% + county 1.10% + Queen Creek 2.25% | | ~$6.80 |
 | **Help Scout** | Helpdesk: email, live chat, knowledge base | Standard, 1 user | **$32.57** inc. tax — trial to Sep 1, **first charge Sep 2** |
-| **`jk-sku-builder`** | ⚠ A SECOND application — see below | | ~$7.00 proj. |
+| **`jk-sku-builder`** | ⚠ A SECOND application — see below | | **~$17 total** — $7.00 host + $9.91 Supabase compute, the latter already inside the Supabase row above |
 | **Upstash Redis** | Rate limiting (`rateLimitOr429`) | **Free tier** | $0.00 |
 | **GitHub + GHCR** | Repo and container registry | **Free** | $0.00 |
 | **healthchecks.io** | Dead-man's switch. **4 real checks of 11 on the account** — see §6 | **Free** | $0.00 |
@@ -199,16 +209,22 @@ stripping `#`, trimming, uppercasing, prepending `SHO-`.
 | **Avis Plus API** | Waypoint option catalogue, 60 req/min | | |
 | **Tidio** | Current chat widget — **to retire** | | |
 
-⚠ **`jk-sku-builder` is a second application nobody has documented.** It has
-its own Supabase project (micro compute, $9.91) and its own host (~$7/month
-projected, platform unidentified). Roughly 9% of the monthly total, and it
-appears nowhere in the build handoff or the system map. **What is it, is it
-live, does it touch the same Shopify store, and does the OMS depend on it?**
+⚠ **`jk-sku-builder` is a second application nobody has documented.** It costs
+**~$17/month: ~$7 for its own host (platform unidentified), plus ~$9.91 for its
+own Supabase project — which is folded into the "2× micro compute" of the
+Supabase row above.** That is roughly 9% of the monthly total, **split across
+two line items**: the table reads $7, and the two figures only reconcile if you
+know where the rest is hiding. It appears nowhere in the build handoff or the
+system map. **What is it, is it live, does it touch the same Shopify store, and
+does the OMS depend on it?**
 
 **Upstash is doing ~301 commands a month** — about ten a day. Zero cost, but
 worth knowing it is a whole vendor and network dependency for that volume.
-Also unverified: whether `rateLimitOr429` fails open or closed when Upstash is
-unreachable.
+
+⚠ **`rateLimitOr429` fails OPEN.** `lib/auth.ts`: *"Redis transient failure —
+fail open to avoid locking out legit users."* Deliberate, and the right choice
+for a small trusted team. ⚠ It is keyed by `${bucket}:${ip}`, so everyone behind
+one office IP shares one allowance on every rate-limited route. See §12.
 
 ---
 
@@ -382,6 +398,13 @@ rows. Inert while the webhook URL is empty; wrong the moment it is set.
 It sends even when everything is on track — a digest that only arrives with bad
 news is indistinguishable from one that has silently stopped working.
 
+⚠ **The SLA clock and the digest schedule do not line up.** The clock runs
+wall-clock hours including weekends; the digest runs weekdays only. An order
+arriving Friday 5pm passes the 24h soft threshold on Saturday afternoon and
+hard-breaches on Sunday afternoon with nobody working, and first appears in a
+digest at **Monday 07:00 Phoenix**. Either the clock should respect business
+days or the digest should run at weekends. Currently neither does.
+
 To enable: create a Teams channel and an Incoming Webhook (Connectors) or a
 Workflow, put the URL in `TEAMS_WEBHOOK_URL`, and deploy. The route allows both
 host families and posts an Adaptive Card; if the first post is rejected, the
@@ -510,6 +533,21 @@ truth.
 health check; and the knowledge that Shopify's admin UI hides app-created
 subscriptions.
 
+**⚠ Six-day monitoring outage (2026-08-20 → 2026-08-26).** Three healthchecks.io
+ping URLs were pasted carrying angle brackets — `<https://hc-ping.com/uuid>` —
+which are invalid in a URL, so every ping returned **HTTP 400** and
+`curl … || true` discarded it. **For six days the dead-man's switch was dead.**
+The jobs ran, cron logged `rc=0`, the container logged success; the only symptom
+was a stale timestamp on a dashboard nobody had reason to open.
+`jk-webhook-health` kept working because it was added separately, without the
+brackets, which made it look like a scheduling fault for the first half hour.
+Found with `od -c` — every readable view showed something plausible, a length
+check reported 57 characters instead of 56 without saying which URL, and the
+assumed culprit, a Windows line ending, was wrong. →
+**Produced two rules:** validate the ping URL shape before pinging, and log a
+non-2xx ping. **The job's exit status stays untouched by either** — monitoring
+must never break the thing it monitors.
+
 ---
 
 # 10. Decisions and why
@@ -550,7 +588,10 @@ it is.
 
 **The delivery gate has an override, and the override needs a reason.** A gate
 that can strand a genuinely delivered order gets routed around. The control is
-not permission — anyone may override — it is accountability.
+not permission — anyone may override — it is accountability. ⚠ **This is true of
+the delivery gate and NOT of `override_ack` on `New → Entered`**, which is
+client-supplied, unlogged and has no role check. That inconsistency is
+known-wrong, not a second policy.
 
 **Public form submissions land in staging tables, not `orders`** — except
 quotes, above. Direct public writes would start SLA clocks on bot submissions.
@@ -570,11 +611,14 @@ Email was the fallback, but Teams gives per-channel routing and notification
 control an inbox does not, and an alert you cannot route is the one that gets
 ignored.
 
-**A "job" is one order.** The store allows mixed colours and door styles in a
-single order, and a follow-up order days later has its own production timeline,
-acknowledgment and delivery. Grouping them would invent a relationship the
-operation does not have — every stage gate, SLA clock and delivery here is
-per-order.
+**A JOB IS ONE GROUP**, not a customer's whole relationship. A single checkout
+may mix colours and door styles, and a follow-up checkout days later has its own
+production timeline, acknowledgment and delivery. Grouping them would invent a
+relationship the operation does not have — every stage gate, SLA clock and
+delivery here is **per-group**. ⚠ **The word "order" in this decision predates
+the project model**: what it called one order is now one **group**, and what it
+called "a single order" at checkout is now a **project**. The reasoning survives
+the rename; the noun did not.
 
 **Order value is stored at ingest, not queried live.** A metrics page that
 depends on Shopify is one that breaks when Shopify does, and 2026-08-20
@@ -629,6 +673,18 @@ covers the box, not the database, and the database is where the orders are.
 
 ## Critical
 
+- **⚠ Help Scout's trial ends 2026-09-01 and the first charge is 2026-09-02.**
+  Two other items hang off that date: pointing the Shopify store contact email
+  at Help Scout, and retiring Tidio once the Beacon is live. It is the nearest
+  dated commitment in this document.
+- **⚠ Warranty claims have customer-facing copy and no way to reach a
+  customer.** The translation table in §2 gives all five warranty stages
+  customer wording. The only specified public endpoint returns a **project**,
+  and a warranty claim is standalone — it has none. Custom is explicitly carved
+  out as never looked up; warranty is not. **Decide before public intake is
+  built:** lookup by claim number, or those five rows have no delivery vehicle.
+  A product decision, not a documentation one, and it blocks the public intake
+  work.
 - **⚠ Garrett is the sole admin on every service.** Confirmed 2026-08-18: OMS,
   Shopify, Supabase, Hetzner, GitHub, Microsoft 365, Help Scout, GoDaddy. No
   second holder of any credential, no break-glass procedure. **The largest
@@ -636,6 +692,13 @@ covers the box, not the database, and the database is where the orders are.
 - **Supabase PITR status and retention.**
 - **Test the Hetzner restore once.** An untested backup is a hypothesis.
 - **What `jk-sku-builder` is**, whether it is live, and what depends on it.
+
+⚠ **The sole-admin, restore and PITR items above are one chain, not three
+separate gaps.** A single credential holder · files that exist only on the box
+(`~/cron-jobs/healthchecks.map`, `.env.kamal`, `~/.cron-secret`, the crontab) ·
+a 7-day backup window against a failure mode that is silent · a restore that has
+never been tested · unknown Supabase PITR. There is no redundancy at any link,
+so the first one to fail takes the rest with it.
 
 ## Important
 
@@ -661,10 +724,13 @@ covers the box, not the database, and the database is where the orders are.
   decision about the bucket (session user id, falling back to IP for
   unauthenticated routes) and a pass over every caller's limit. **Its own
   session.**
-- **Delete the seven stray healthchecks.io checks** (`jk-sync-failure`,
-  `jk-orphan-mapping`, `jk-option-rename`, `jk-new-option-values`,
-  `jk-stale-sync`, `jk-storefront`, `jk-orders-overdue`) — carefully; four real
-  ones share the account.
+- **Delete the seven stray healthchecks.io checks — ⚠ BY EXACT NAME, NEVER BY
+  PATTERN.** All seven are `jk-`-prefixed, and so is **`jk-webhook-health`**,
+  which is real, is the Shopify ingestion reconciliation, and caught the
+  genuinely missed order #1038. A `jk-*` selection kills the only check with a
+  proven catch. The seven are `jk-sync-failure`, `jk-orphan-mapping`,
+  `jk-option-rename`, `jk-new-option-values`, `jk-stale-sync`, `jk-storefront`,
+  `jk-orders-overdue`. See §6 for the panel-side follow-up.
 - **Point the Shopify store contact email at Help Scout.**
 - **Retire Tidio** once the Beacon is live.
 - **Confirm what the TnC Terms Checkbox app persists.** If it only gates the
