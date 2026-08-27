@@ -3,7 +3,13 @@
 import { useEffect, useState } from "react";
 import type { ReconcileResult } from "@/lib/reconcile";
 
-export type AckSummary = { verdict: "green" | "red"; uploaded_at: string; result: ReconcileResult };
+export type AckSummary = {
+  verdict: "green" | "red";
+  uploaded_at: string;
+  result: ReconcileResult;
+  /** The order changed after this verdict was reached. A stale green is not a green. */
+  stale?: boolean;
+};
 
 export type AckStatus = {
   loading: boolean;
@@ -13,15 +19,17 @@ export type AckStatus = {
   hasWaypoint: boolean;
   /** at least one vendor has an ack of any verdict */
   hasAck: boolean;
-  /** every vendor on the order has a latest green ack (vendors.length > 0) */
+  /** every vendor on the order has a latest green, NON-STALE ack (vendors.length > 0) */
   allGreen: boolean;
   /** at least one vendor's latest ack is red */
   anyRed: boolean;
+  /** at least one vendor's latest ack was matched against lines that have since changed */
+  anyStale: boolean;
 };
 
 const EMPTY: AckStatus = {
   loading: true, vendors: [], ackByVendor: {},
-  hasWaypoint: false, hasAck: false, allGreen: false, anyRed: false,
+  hasWaypoint: false, hasAck: false, allGreen: false, anyRed: false, anyStale: false,
 };
 
 // Module-level cache + per-order subscriber sets. Both the table row
@@ -44,8 +52,12 @@ function computeStatus(vendors: string[], ackByVendor: Record<string, AckSummary
     ackByVendor,
     hasWaypoint: vendors.some((v) => /waypoint/i.test(v)),
     hasAck: acks.some((a) => !!a),
-    allGreen: vendors.length > 0 && acks.every((a) => a?.verdict === "green"),
+    // ⚠ A STALE GREEN DOES NOT COUNT. The verdict was about lines that have
+    // since changed, so it cannot stand in for a confirmation of the order as
+    // it is now.
+    allGreen: vendors.length > 0 && acks.every((a) => a?.verdict === "green" && !a?.stale),
     anyRed: acks.some((a) => a?.verdict === "red"),
+    anyStale: acks.some((a) => !!a?.stale),
   };
 }
 

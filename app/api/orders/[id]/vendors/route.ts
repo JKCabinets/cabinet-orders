@@ -37,7 +37,8 @@ export async function GET(
 
   const { data: order, error } = await supabase
     .from("orders")
-    .select("vendor, sku_items")
+    // name and ship_to feed the ack fingerprint — see latestAckByVendor.
+    .select("vendor, sku_items, name, ship_to")
     .eq("id", id)
     .single();
 
@@ -47,7 +48,7 @@ export async function GET(
 
   const skuItems: SkuItem[] = Array.isArray(order.sku_items) ? order.sku_items : [];
   const lookup = await lookupVendorsForSkus(skuItems, order.vendor);
-  const ackByVendor = await latestAckByVendor(id, lookup.uniqueVendors);
+  const ackByVendor = await latestAckByVendor(id, lookup.uniqueVendors, order);
 
   return NextResponse.json({
     vendors: lookup.uniqueVendors,

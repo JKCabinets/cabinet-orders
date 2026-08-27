@@ -131,8 +131,15 @@ export interface ReconcileResult {
   name_ok: boolean;
 }
 
-/** Normalize a name/string for comparison: collapse whitespace, trim, uppercase. */
-function normName(s: string): string {
+/**
+ * Normalize a name/string for comparison: collapse whitespace, trim, uppercase.
+ *
+ * ⚠ EXPORTED for lib/ackFingerprint. The fingerprint that decides whether a
+ * green ack is still about this order has to normalise exactly as the engine
+ * does -- a second implementation would stale acks over differences reconcileAck
+ * treats as noise, blocking orders for no reason a person could see.
+ */
+export function normName(s: string): string {
   return (s ?? "").replace(/\s+/g, " ").trim().toUpperCase();
 }
 
@@ -146,7 +153,7 @@ function normName(s: string): string {
  * (e.g. a misspelled street, a wrong zip, "Olivos" vs "Olives"). This mirrors
  * the name gate's exact-match intent: noise out, real discrepancies kept.
  */
-function normAddress(s: string): string {
+export function normAddress(s: string): string {
   return (s ?? "")
     // remove phone-like sequences (480-219-9580, (480) 219 9580, 4802199580)
     .replace(/\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/g, " ")
@@ -167,7 +174,7 @@ function normAddress(s: string): string {
  * (missing_from_ack + extra_in_ack). Matching on separator-stripped keys fixes
  * that; the original spelling is preserved separately for display.
  */
-function skuKey(s: string): string {
+export function skuKey(s: string): string {
   return (s ?? "").replace(/[^0-9A-Za-z]/g, "").toUpperCase();
 }
 

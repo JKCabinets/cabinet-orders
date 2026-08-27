@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, rateLimitOr429 } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
-import { decodeSku, type SkuItem } from "@/lib/skuDecoder";
+import { type SkuItem } from "@/lib/skuDecoder";
+import { linesForAckVendor, ackFingerprint } from "@/lib/ackFingerprint";
 import { parseWaypointAck, type Grid } from "@/lib/waypointAck";
 import { reconcileAck, type OrderForReconcile } from "@/lib/reconcile";
 import * as XLSX from "xlsx";
@@ -159,24 +160,23 @@ export async function POST(
   // identifies the family unambiguously (decodeSku sets doorCode only for the
   // Waypoint shape), so the variant_id resolver isn't needed here.
   const skuItems: SkuItem[] = Array.isArray(order.sku_items) ? order.sku_items : [];
-  const waypointLines = skuItems.filter((it) => {
-    const d = decodeSku(it.sku);
-    return !!(d && d.doorCode);
-  });
+
+  // ⚠ ONE SELECTOR, SHARED WITH THE STAGE GATE. This filtered by SKU shape
+  // inline and built the reconcile shape here. lib/ackFingerprint owns both now,
+  // because the gate has to fingerprint the IDENTICAL line set -- if the two
+  // ever select differently, by even one line, every ack reads stale and no
+  // cabinet order can advance.
+  //
+  // Null means "no selector for this vendor", which cannot happen here: VENDOR
+  // is the Waypoint constant. Coalesced rather than asserted so a future vendor
+  // reaching this route degrades to "reconciles nothing" instead of throwing.
+  const ackLines = linesForAckVendor(VENDOR, skuItems) ?? [];
 
   const orderForReconcile: OrderForReconcile = {
     id: order.id,
     name: order.name ?? "",
     ship_to: order.ship_to ?? "",
-    sku_items: waypointLines.map((it) => ({
-      sku: it.sku,
-      quantity: Number(it.quantity) || 0,
-      // Carry the line's modification sub-SKUs through; without them the mod
-      // gate has nothing on the order side to compare against.
-      //
-      // SkuItem now carries modifications directly (unified in lib/data).
-      modifications: (it.modifications ?? []).map((m) => m.sku),
-    })),
+    sku_items: ackLines,
   };
 
   const result = reconcileAck(ack, orderForReconcile);
@@ -195,6 +195,13 @@ export async function POST(
     parsed_json: ack,
     result_json: result,
     uploaded_by: session.user.id,
+    // ⚠ WHAT THIS VERDICT WAS ABOUT. Hashed from exactly the fields
+    // reconcileAck compares, so the stage gate can tell a green ack that still
+    // describes the order from one that describes lines since edited away.
+    // Requires migrations/2026-08-27-ack-lines-fingerprint.sql.
+    lines_fingerprint: ackFingerprint(
+      order.name ?? "", order.ship_to ?? "", ackLines,
+    ),
   });
   if (insErr) {
     // Surface the failure — never report success on a failed write (Principle #3).
@@ -214,7 +221,7 @@ export async function POST(
     waypoint_order: ack.waypoint_order,
     po: ack.po,
     po_matches_order: poMatchesOrder,
-    waypoint_line_count: waypointLines.length,
+    waypoint_line_count: ackLines.length,
     total_line_count: skuItems.length,
   });
 }

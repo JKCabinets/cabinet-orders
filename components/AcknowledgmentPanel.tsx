@@ -135,13 +135,21 @@ export const AcknowledgmentPanel = forwardRef<AcknowledgmentPanelHandle, Acknowl
                 <div key={v} className="px-3 py-2.5 bg-[#111] border border-[rgba(255,255,255,0.10)] rounded-lg">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2 min-w-0">
-                      {ack?.verdict === "green" && <Check className="w-4 h-4 flex-shrink-0" style={{ color: "#8fbe70" }} />}
+                      {/* ⚠ THREE STATES, NOT TWO. A stale ack is neither
+                          matched nor mismatched -- it was matched, against an
+                          order that has since changed. Rendering it as a green
+                          check while the gate silently refuses to advance is
+                          the exact failure this codebase keeps producing. */}
+                      {ack?.verdict === "green" && !ack.stale && <Check className="w-4 h-4 flex-shrink-0" style={{ color: "#8fbe70" }} />}
                       {ack?.verdict === "red" && <X className="w-4 h-4 flex-shrink-0" style={{ color: "#e89090" }} />}
+                      {ack?.verdict === "green" && ack.stale && <AlertTriangle className="w-4 h-4 flex-shrink-0" style={{ color: "#e8b56a" }} />}
                       <div className="min-w-0">
                         <p className="text-xs text-cream/90 truncate">{label}</p>
                         <p className="text-[10px] text-cream/40">
                           {!ack
                             ? "No acknowledgment submitted yet"
+                            : ack.stale
+                            ? "Matched, but the order has changed since — resubmit"
                             : ack.verdict === "green"
                             ? "Matched"
                             : `${count} discrepanc${count === 1 ? "y" : "ies"}`}
@@ -216,7 +224,10 @@ export const AcknowledgmentPanel = forwardRef<AcknowledgmentPanelHandle, Acknowl
                 <Check className="w-3.5 h-3.5" /> Entry Complete
               </button>
             )}
-            {!status.allGreen && status.anyRed && (
+            {/* ⚠ anyStale IS HERE ON PURPOSE. Gated on anyRed alone, a stale
+                green rendered NEITHER button -- allGreen false, anyRed false --
+                leaving a blocked order with no override and no explanation. */}
+            {!status.allGreen && (status.anyRed || status.anyStale) && (
               <button
                 onClick={handleManualPush}
                 disabled={pushing}
