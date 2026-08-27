@@ -52,12 +52,35 @@ const normalise = (v: string | null | undefined): string =>
  * group and still get worked, and somebody gets told once.
  */
 export const CABINET_VENDORS: readonly string[] = [
+  // ⚠ VERIFIED AGAINST SHOPIFY 2026-08-27, from the product vendor dropdown.
+  // These are exact strings and isUnknownVendor compares them exactly.
   "Waypoint Cabinetry",
-  "Waypoint",
-  "Select Cabinetry",
+  "HCI Cabinetry",
+  "J&K Cabinetry",
+
+  // ⚠ "HCI" and "J&K" were the ONLY entries here until 2026-08-27, so every
+  // HCI and J&K line on every cabinet order logged as an unknown vendor --
+  // defeating the safeguard this list exists to protect. Kept alongside the
+  // real strings rather than replaced: older rows may carry them, and a string
+  // that would be recognised if it arrived costs nothing.
   "HCI",
   "J&K",
+
+  // Website-facing alias for Waypoint. It does NOT appear in Shopify's vendor
+  // list -- the product vendor is "Waypoint Cabinetry" and the alias is a
+  // storefront label. Listed so that if one ever does arrive it is not reported
+  // as unknown.
+  "Waypoint",
+  "Select Cabinetry",
 ];
+
+// ⚠ THE CANONICAL VENDOR NAMES ALSO LIVE IN lib/vendorLookup.ts, as
+// VENDOR_WAYPOINT / VENDOR_HCI / VENDOR_JK, and the two lists DISAGREED until
+// 2026-08-27 -- which is what caused the bug above. Edit them together.
+//
+// They cannot import each other today: vendorLookup pulls in supabase and the
+// SKU maps, and this module is imported by client components. Moving the names
+// into lib/data.ts, which both already import from, is the actual fix.
 
 const HARDWARE_SET = new Set(HARDWARE_VENDORS.map(normalise));
 const CABINET_SET = new Set(CABINET_VENDORS.map(normalise));
