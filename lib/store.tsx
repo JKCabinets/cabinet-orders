@@ -265,7 +265,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       );
     },
     onUpdate: (row) => {
-      setRawOrders((prev) => prev.map((o) => (o.id === row.id ? row : o)));
+      setRawOrders((prev) => prev.map((o) => {
+        if (o.id !== row.id) return o;
+        // ⚠ A REALTIME PAYLOAD CANNOT CARRY A JOIN.
+        //
+        // It is the `orders` row and nothing else, so shapeOrder's
+        // `activity: raw.activity ?? []` always yields an EMPTY trail. This
+        // replaced the stored row wholesale, so every live update blanked
+        // that order's Activity tab until the next full refetch -- and an
+        // empty trail is indistinguishable from nothing having been recorded,
+        // which is the failure mode this system actually has.
+        //
+        // Every other mutation in this file merges with `{ ...o, ... }` and
+        // keeps the trail. This was the only wholesale replace.
+        //
+        // ⚠ Stops it going BACKWARDS; does not make new entries arrive live.
+        // Nothing subscribes to order_activity, so a row the server wrote
+        // still needs a refetch to show up. Guarded on length rather than
+        // replaced unconditionally, so a caller that ever does supply
+        // activity wins.
+        return row.activity.length > 0 ? row : { ...row, activity: o.activity };
+      }));
     },
     onDelete: (id) => {
       setRawOrders((prev) => prev.filter((o) => o.id !== id));

@@ -136,11 +136,19 @@ export const FIRST_STAGE_BY_CATEGORY: Record<OrderCategory, string> = {
  *
  * Samples ship from JK's own stock, so a fulfilment IS us shipping.
  *
- * ⚠ HARDWARE IS DROP-SHIP -- corrected 2026-08-25. It does NOT ship from JK:
- * the order is placed with the manufacturer, who ships direct to the customer
- * via UPS. The fulfilment still carries real carrier and tracking, so it is
- * worth reading; it just is not us doing the shipping, and nothing tells us the
- * parcel arrived.
+ * ⚠ HARDWARE IS DROP-SHIP, AND EVERYTHING AFTER THAT IS UNVERIFIED. It does
+ * NOT ship from JK: the order is placed with the manufacturer, who ships
+ * direct, and the MANUFACTURER supplies the tracking number.
+ *
+ * Whether that number ever reaches SHOPIFY depends on the vendor and whether
+ * they are integrated with it. That is undecided, and no hardware product is
+ * live, so nothing has tested it. "Via UPS" and "the fulfilment still carries
+ * real carrier and tracking" were written here as fact on 2026-08-25; they are
+ * assumptions, and they are the reason to re-read this before building on it.
+ *
+ * Returning true remains correct: IF a fulfilment arrives it is worth reading.
+ * That is not a claim that one will. Nothing tells us the parcel arrived
+ * either way.
  *
  * Cabinets are DROP-SHIP. The manufacturer or their delivery partner handles
  * the shipment and speaks to the customer directly; Shopify never sees it. Any
@@ -198,13 +206,23 @@ export function categoryHasTracking(category: OrderCategory): boolean {
  * straight to Delivered claimed the customer had it, which Shopify has no way
  * of knowing. Delivered stays a human action, as it is on every other flow.
  *
- * ⚠ HARDWARE MOVES NOWHERE. It used to go to "Shipped" -- a stage that no
- * longer exists, and which assumed JK did the shipping. Hardware is drop-ship
- * via the manufacturer's UPS account: the fulfilment tells us the manufacturer
- * dispatched, which is worth recording as carrier and tracking, but nothing
- * says the parcel arrived and there is no stage between Ordered and Delivered
- * for it to wait in. Returning a stage outside the flow is exactly what
- * stranded QUO-1787174567522 on 2026-08-19.
+ * ⚠ HARDWARE GOES TO "Shipped", AND THIS COMMENT SAID THE OPPOSITE until
+ * 2026-08-26. It read "HARDWARE MOVES NOWHERE", on the grounds that "Shipped"
+ * was a stage that no longer existed and there was nothing between Ordered and
+ * Delivered for it to wait in. Hardware's flow gained Shipped the same day --
+ * New -> Ordered -> Shipped -> Delivered -- so the deferral below has returned
+ * "Shipped" for hardware ever since while the comment above it denied that.
+ * The code was right. A comment that contradicts the function under it is worse
+ * than no comment: it is read and believed.
+ *
+ * ⚠ It answers "what WOULD a hardware fulfilment mean", not "one will arrive".
+ * See fulfilmentIsAuthoritative -- whether hardware tracking reaches Shopify at
+ * all is undecided. The guard that matters is elsewhere and unchanged: no
+ * tracking number, no move.
+ *
+ * Returning a stage outside the row's own flow is what stranded
+ * QUO-1787174567522 on 2026-08-19, which is why this defers rather than
+ * answering the question a second time.
  *
  * Returns null for categories a fulfilment must not move.
  */
