@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo } from "react";
-import { X, Check, Clock, ChevronRight, Archive, RotateCcw, Trash2, Loader2, Download } from "lucide-react";
+import { X, Check, Clock, ChevronRight, Archive, RotateCcw, Trash2, Loader2, Download, AlertTriangle, Upload } from "lucide-react";
 import clsx from "clsx";
 import { useSession } from "next-auth/react";
 import {
@@ -20,7 +20,7 @@ import { AttachmentsPanel, type AttachmentsPanelHandle } from "./AttachmentsPane
 import { OrderDetails } from "./OrderDetails";
 import { DamageReportPanel } from "./DamageReportPanel";
 import { AcknowledgmentPanel, type AcknowledgmentPanelHandle } from "./AcknowledgmentPanel";
-import { consumeAckPicker } from "@/lib/ackStatus";
+import { consumeAckPicker, useAckStatus } from "@/lib/ackStatus";
 import { STAGE_ACCENT } from "@/lib/data";
 import { typeCarriesTracking } from "@/lib/categories";
 
@@ -406,6 +406,35 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
   const resolvedClaimedBy = liveOrder.project_id
     ? (projects[liveOrder.project_id]?.claimed_by ?? null)
     : (liveOrder.claimed_by ?? null);
+
+  /**
+   * The acknowledgment gate, read where the ACTION is.
+   *
+   * ⚠ ONE EXPRESSION. `ackEligible` was written out twice -- once here in
+   * spirit and once inline in AcknowledgmentPanel's `eligible` prop -- and the
+   * copy in the prop read the retired ownership column, which is why the panel
+   * was invisible on every owned Shopify cabinet group for two days.
+   *
+   * The subscription is a shared module-level cache, so the modal and the panel
+   * (and the table row) all read one fetch. A second subscriber costs nothing.
+   */
+  const ackEligible = liveOrder.stage !== "New" || !!resolvedClaimedBy;
+  const ackStatus = useAckStatus(liveOrder.id, ackEligible);
+
+  /**
+   * Does THIS row's advance depend on an acknowledgment we can reconcile?
+   *
+   * Only at New, only on a cabinet flow, and only when a Waypoint-family vendor
+   * is on the order -- `hasWaypoint` rather than a fourth copy of that regex.
+   * HCI and J&K have no parser, so their orders keep the generic button and the
+   * PDF-attachment gate behind it.
+   */
+  const ackGates =
+    liveOrder.stage === "New"
+    && liveOrder.type !== "sample"
+    && liveOrder.type !== "hardware"
+    && ackStatus.hasWaypoint;
+  const ackSatisfied = ackStatus.allGreen;
 
   // If the modal was opened via the row Submit/Resubmit, pop the .xlsx picker.
   useEffect(() => {
@@ -1098,7 +1127,28 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                         -- not a button somebody presses -- so offering a button
                         here would either bypass the rule or refuse and explain
                         why. Typing the number does the thing. */}
-                    {nextStageFor(liveOrder) === "Shipped" ? (
+                    {/* ⚠ SAY WHAT IS REQUIRED, BEFORE IT IS PRESSED. This read
+                        "Move this to Entered when it is ready" on a row that
+                        could not move: the gate ran on click, failed, and only
+                        then produced a banner. A requirement discovered by
+                        failing is not a requirement anyone was told. */}
+                    {ackGates ? (
+                      <>
+                        <p className="text-[11px] text-cream/65 leading-snug">
+                          Upload the manufacturer acknowledgment before moving to Entered.
+                        </p>
+                        <p
+                          className="text-[11px] mt-1 flex items-center gap-1.5 leading-snug"
+                          style={{ color: ackSatisfied ? "#a0cc7a" : "#e8b56a" }}
+                        >
+                          {ackSatisfied ? (
+                            <><Check className="w-3 h-3 flex-shrink-0" /> Manufacturer acknowledgment matched</>
+                          ) : (
+                            <><AlertTriangle className="w-3 h-3 flex-shrink-0" /> Manufacturer acknowledgment required</>
+                          )}
+                        </p>
+                      </>
+                    ) : nextStageFor(liveOrder) === "Shipped" ? (
                       <p className="text-[11px] text-cream/65 leading-snug">
                         Enter the tracking number to mark this shipped.
                       </p>
@@ -1134,7 +1184,44 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                         }}
                       />
                     )}
-                    {nextStageFor(liveOrder) && nextStageFor(liveOrder) !== "Shipped" && (
+                    {/* ⚠ THE EVIDENCE CONTROL, NOT A BUTTON THAT FAILS. A green
+                        acknowledgment is what makes a cabinet group Entered --
+                        same rule as a tracking number making a group Shipped --
+                        so uploading it belongs here, and Move to Entered stays
+                        disabled until the evidence exists.
+
+                        The picker is the panel's; this only opens it, so there
+                        is one upload path rather than two. */}
+                    {ackGates && !ackSatisfied && (
+                      <button
+                        onClick={() => ackPanelRef.current?.openFilePicker()}
+                        title="Upload the manufacturer's .xlsx acknowledgment"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all flex-shrink-0 bg-white/4 border border-cream/18 text-cream/85 hover:bg-white/8 hover:border-terracotta/40"
+                      >
+                        <Upload className="w-3 h-3" /> Upload acknowledgment
+                      </button>
+                    )}
+                    {ackGates && (
+                      <button
+                        onClick={() => doMoveStage("Entered" as Stage, "")}
+                        disabled={!ackSatisfied || checkingAttachments}
+                        title={ackSatisfied
+                          ? "The acknowledgment matched — move to Entered"
+                          : "Needs a matched manufacturer acknowledgment first"}
+                        className="px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                        style={{
+                          background: "rgba(184,130,106,0.20)",
+                          border: "0.5px solid rgba(184,130,106,0.55)",
+                          color: "#d9a888",
+                        }}
+                      >
+                        {checkingAttachments ? "\u2026" : "Move to Entered"}
+                      </button>
+                    )}
+                    {/* ⚠ SUPPRESSED ON THE ACKNOWLEDGMENT PATH. Rendering both
+                        gave one transition two controls, which is how ENTERED
+                        and Entry Complete ended up on screen together. */}
+                    {!ackGates && nextStageFor(liveOrder) && nextStageFor(liveOrder) !== "Shipped" && (
                       <button
                         onClick={() => {
                           const next = nextStageFor(liveOrder);
@@ -1350,7 +1437,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                 by default: showing it wrongly is cosmetic, hiding it wrongly
                 means a missed manufacturer confirmation. */}
           {liveOrder.type !== "sample" && (
-            <AcknowledgmentPanel ref={ackPanelRef} orderId={liveOrder.id} orderName={liveOrder.name} eligible={liveOrder.stage !== "New" || !!resolvedClaimedBy} onAdvance={() => { if (liveOrder.stage === "New") moveStage(liveOrder.id, "Entered", currentUserId).then((r) => { if (!r.ok) showToast(r.error ?? "Could not move to Entered", { kind: "error" }); }); }} onAdvanceOverride={() => { if (liveOrder.stage === "New") moveStage(liveOrder.id, "Entered", currentUserId, undefined, true).then((r) => { if (!r.ok) showToast(r.error ?? "Could not move to Entered", { kind: "error" }); }); }} />
+            <AcknowledgmentPanel ref={ackPanelRef} orderId={liveOrder.id} orderName={liveOrder.name} eligible={ackEligible} onAdvanceOverride={() => { if (liveOrder.stage === "New") moveStage(liveOrder.id, "Entered", currentUserId, undefined, true).then((r) => { if (!r.ok) showToast(r.error ?? "Could not move to Entered", { kind: "error" }); }); }} />
           )}
           {/* Notes and attachments as three cards in one row, collapsed to a
               summary line. This was two full-height textareas plus the

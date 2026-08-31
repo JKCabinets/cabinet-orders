@@ -17,8 +17,12 @@ interface AcknowledgmentPanelProps {
   orderName: string;
   /** Same gate the export pills use: claimed, or past New. */
   eligible: boolean;
-  /** Advance to Entered on a matched (green) order. */
-  onAdvance?: () => void;
+  /**
+   * ⚠ onAdvance REMOVED 2026-08-27. "Move to Entered" lives in the modal's
+   * next-action slot now: a green acknowledgment is what makes the group
+   * Entered, so the control belongs where the action is, and having it here too
+   * put two controls for one transition on the same screen.
+   */
   /** Advance to Entered overriding red discrepancies (manual push). */
   onAdvanceOverride?: () => void;
 }
@@ -44,7 +48,7 @@ function discrepancyCount(r: ReconcileResult): number {
  * dialog on open. Only Waypoint reconciliation exists today.
  */
 export const AcknowledgmentPanel = forwardRef<AcknowledgmentPanelHandle, AcknowledgmentPanelProps>(
-  function AcknowledgmentPanel({ orderId, orderName, eligible, onAdvance, onAdvanceOverride }, ref) {
+  function AcknowledgmentPanel({ orderId, orderName, eligible, onAdvanceOverride }, ref) {
     const { showToast } = useToast();
     const status = useAckStatus(orderId, eligible);
     const [uploadingVendor, setUploadingVendor] = useState<string | null>(null);
@@ -215,15 +219,13 @@ export const AcknowledgmentPanel = forwardRef<AcknowledgmentPanelHandle, Acknowl
               );
             })}
 
-            {/* Advance actions — mirror the row buttons */}
-            {status.allGreen && (
-              <button
-                onClick={() => onAdvance?.()}
-                className="mt-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-[rgba(143,190,112,0.5)] bg-[rgba(143,190,112,0.16)] text-[#a0cc7a] text-[11px] uppercase tracking-wider font-medium hover:bg-[rgba(143,190,112,0.26)] transition-all"
-              >
-                <Check className="w-3.5 h-3.5" /> Entry Complete
-              </button>
-            )}
+            {/* ⚠ "Entry Complete" MOVED to the modal's next-action slot on
+                2026-08-27, as "Move to Entered". It sat here beside an ENTERED
+                button in the panel above it -- one transition, two controls, and
+                the working one was the further from where anyone was looking.
+
+                Manual Push stays: an override belongs next to the discrepancy
+                breakdown it is overriding, which is only rendered here. */}
             {/* ⚠ anyStale IS HERE ON PURPOSE. Gated on anyRed alone, a stale
                 green rendered NEITHER button -- allGreen false, anyRed false --
                 leaving a blocked order with no override and no explanation. */}
