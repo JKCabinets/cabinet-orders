@@ -44,12 +44,38 @@ Small internal team. Admin user: Garrett. Queen Creek, Arizona;
 
 ## Vendors and who does what
 
-| Vendor | Also called | Ships how | Who contacts the customer |
+⚠ **The "Shopify vendor" column is the EXACT string on the product**, verified
+from the Shopify product dropdown on 2026-08-27. Grouping is by line-item vendor
+and `isUnknownVendor` compares exactly, so a space or a missing word routes a
+line to the wrong queue or floods the unknown-vendor log. Two of these were
+wrong in `lib/categories.ts` until 2026-08-27.
+
+| Vendor | Shopify vendor string | Ships how | Who contacts the customer |
 |---|---|---|---|
-| **Waypoint** | "Select Cabinetry" | Manufacturer → local delivery agent | The agent arranges the appointment |
-| **HCI** | — | Direct | The manufacturer contacts the customer |
-| **J&K** | — | Direct | The manufacturer contacts the customer |
-| **JK Cabinets 2 You** | Own stock | Direct from JK | Samples — no delivery appointment |
+| **Waypoint** | `Waypoint Cabinetry` | Manufacturer → local delivery agent | The agent arranges the appointment |
+| **HCI** | `HCI Cabinetry` | Direct | The manufacturer contacts the customer |
+| **J&K** | `J&K Cabinetry` | Direct | The manufacturer contacts the customer |
+| **JK Cabinets 2 You** | `JK Cabinets 2 You` | Direct from JK | Samples — no delivery appointment |
+| **Hardware** | ⚠ **UNKNOWN** | Manufacturer, direct | — |
+
+⚠ **"Select Cabinetry" is a STOREFRONT ALIAS ONLY.** It does not appear in
+Shopify's vendor list — the product vendor is `Waypoint Cabinetry`. It is
+accepted by the code in case a line ever carries it, and it should not be
+treated as a vendor anyone will see on an order.
+
+⚠ **No hardware vendor is known.** `lib/categories.ts` carries
+`HARDWARE_VENDORS = ["Top Knobs", "Blum"]`, taken from a mockup and never seen
+in a real payload. **Create one test product carrying the intended string and
+ingest a real order before hardware goes live** — a hardware line whose vendor
+does not match ingests as cabinets and inherits the acknowledgment gate,
+production dates and the signed-receipt gate, none of which it can satisfy.
+
+**Commercially the lines are not equivalent, and it matters.** HCI and J&K are
+RTA, stocked, and can be cancelled or returned at any time. **Waypoint is locked
+in and non-refundable once in production** — which is why its acknowledgment
+gate is the one that has been built, and why an order advancing to Entered on a
+stale confirmation is a real financial exposure rather than a tidiness problem.
+Both HCI and J&K may be retired entirely during 2027.
 
 ⚠ **SUPERSEDED by the project model.** It used to be: only an order whose
 every line is "JK Cabinets 2 You" counts as a sample, and mixed orders are
@@ -65,6 +91,27 @@ each with its own stage and SLA clock. Classification is per LINE, in
 payload's per-line vendor rather than the SKU, so this is fine — but SKU
 decoding does nothing useful for them, and **a new sample product must carry
 the vendor string exactly** or its orders ingest as standard.
+
+## How a cabinet order is placed and confirmed
+
+The process the acknowledgment gate exists to protect, recorded 2026-08-27
+because it lived nowhere:
+
+1. The designer pulls the **PDF order** out of the OMS.
+2. They enter it into the **manufacturer's own ordering system**.
+3. The manufacturer returns an **Excel acknowledgment** of what was ordered.
+4. That `.xlsx` is uploaded to the OMS, which **reconciles it against the
+   order** and either gives a green light or lists every line that is off.
+
+⚠ **Only Waypoint has a parser.** HCI and J&K use different acknowledgment
+formats, and neither is implemented. Their orders satisfy the gate with an
+attached file instead.
+
+⚠ **A green acknowledgment goes stale if the order changes afterwards.** It is
+evidence about a specific set of lines; if a customer amends the order, the
+confirmation no longer describes it. The OMS detects this and blocks the advance
+until a fresh acknowledgment is uploaded — see `OMS-STATE` §3. It does **not**
+move an already-advanced order backwards.
 
 ## Product reference
 
@@ -673,6 +720,24 @@ covers the box, not the database, and the database is where the orders are.
 
 ## Critical
 
+- **⚠ Is `.kamal/secrets.bak` holding real secret VALUES?** It is committed to
+  git. `.kamal/secrets` itself belongs there — it holds `$REFERENCES`, not
+  values — but the `.bak` is the shape of the 2026-08-03 incident, where that
+  exact file was regenerated from a stale paste and silently lost four keys.
+  **If it contains literal values, the answer is rotation, not deletion:** git
+  history keeps it either way. Raised 2026-08-27 and not yet checked.
+- **⚠ Should the New → Entered gate be tightened to match what we tell people?**
+  It currently passes on **a green acknowledgment OR any attachment at all** —
+  a customer drawing satisfies it. Every message about it, including the
+  in-app requirement line, says "manufacturer acknowledgment required", which is
+  stricter than what is enforced. Tightening means requiring an attachment of a
+  specific `kind`; the column exists and `proof_of_delivery` already uses it.
+  It is a real behaviour change — anyone relying on "attach anything" starts
+  being refused — and it is the HCI/J&K path, so it is a business decision.
+- **⚠ Who supplies hardware, and are they integrated with Shopify?** Decides
+  whether a tracking number ever reaches the OMS automatically or whether manual
+  entry is the only door. Nothing should be built on the current code comments,
+  which state as fact things nobody has verified.
 - **⚠ Help Scout's trial ends 2026-09-01 and the first charge is 2026-09-02.**
   Two other items hang off that date: pointing the Shopify store contact email
   at Help Scout, and retiring Tidio once the Beacon is live. It is the nearest
@@ -702,6 +767,16 @@ so the first one to fail takes the rest with it.
 
 ## Important
 
+- **⚠ Do the project money totals include line-item ADD-ONS?** Shopify line
+  items carry `_apo_options` and `_apo_addons` from the options app, and the
+  order inspected on 2026-08-27 had `_apo_addons: "23.89"` on a single line.
+  If ingest sums only the base line price, that is revenue going unrecorded.
+  Check before the historic backfill runs, or the backfill bakes the error in.
+- **Is "Simple Trends" ever a product VENDOR?** It appeared as a chip beside
+  the vendor field on a Shopify product page. If it is a tag, it is irrelevant;
+  if it is ever a vendor it will log as unknown and route to the cabinet queue
+  by fallback, exactly as `HCI Cabinetry` and `J&K Cabinetry` did until
+  2026-08-27.
 - ~~**⚠ `orders` has no money column of any kind.**~~ **DONE 2026-08-25**, and
   not as planned. Money lives on **`projects`** — a checkout is what carries a
   total — and `orders` gained only `total_price`, constrained by
