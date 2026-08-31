@@ -160,6 +160,55 @@ cabinets should stay at `New`.
 - **Documentation corrections** landed from the previous session's read-through,
   and this repo now holds a session handoff for the first time.
 
+## Later the same session
+
+Four more commits after the sections above were written, all deployed and
+confirmed.
+
+**Cabinet vendor strings match Shopify.** `CABINET_VENDORS` listed HCI and J&K
+as bare `"HCI"` and `"J&K"`; Shopify's product vendor field says `HCI Cabinetry`
+and `J&K Cabinetry`, and `isUnknownVendor` compares exactly. So every HCI and
+J&K line on every cabinet order logged as an unknown vendor — defeating the one
+safeguard that exists to make "unknown" mean unknown. ⚠ Routing was never
+affected: `categoryForVendor` falls through to `order`, which is the right
+answer for cabinets either way. The canonical names also live in
+`lib/vendorLookup.ts` and the two lists disagreed, which is what caused it.
+
+⚠ **A green acknowledgment is now checked against the lines it matched.**
+`lib/ackFingerprint.ts` hashes exactly what `reconcileAck`'s verdict depends on —
+normalised name, normalised ship-to, and per-SKU quantities and modifications —
+stores it at upload, and recomputes at the gate. A stale green blocks the
+advance and the panel says *"Matched, but the order has changed since"*.
+
+- **A comparison, not a mutation.** Clearing the ack on write would fire on every
+  `orders/updated` (the webhook rewrites `sku_items` constantly, usually to an
+  identical value) and would depend on every future write path remembering to
+  call it. A fingerprint recomputed at the gate cannot be bypassed by a code path
+  nobody thought of.
+- **One selector, two call sites.** `linesForAckVendor` is called by both the
+  upload route and the gate. If those ever selected differently, by one line,
+  every ack would read stale and no cabinet order could advance.
+- **NULL means valid.** Every row written before this carries null. Treating that
+  as stale would have invalidated every historical acknowledgment on deploy.
+- Verified with 17 property tests against the real transformed module, and then
+  in production against a real upload and a deliberately wrong one.
+
+⚠ **Ownership resolved through the project, in four more places.** `eligible`
+on the acknowledgment panel, the header pill, the manufacturer PDF export gate
+and the team-member cell each read `orders.claimed_by` — null on every
+project-linked row since the claim moved up on 2026-08-25. Consequences, all
+live for two days: **the .xlsx reconciliation panel did not render at all** on
+an owned Shopify cabinet group at New, **the manufacturer PDF export was
+hidden** — the first step of the actual workflow — and the header said UNCLAIMED
+while the team-member cell four sections below showed the owner's name.
+
+**The acknowledgment is the next action.** At New a cabinet group offered a plain
+ENTERED button that failed the gate on click and produced a banner pointing at
+the PDF fallback. The next-action slot now states the requirement before it is
+pressed, hosts **Upload acknowledgment**, and keeps **Move to Entered** disabled
+until the ack is green. `Entry Complete` left the panel below — one transition,
+one control. Manual Push stayed, next to the discrepancy breakdown it overrides.
+
 ---
 
 # 2. ⚠ What changed about the FACTS
@@ -202,6 +251,83 @@ publish to Shopify at all is an open design question**, and it is the same
 "one project, several statuses" problem the public lookup contract already
 answers with a status per category.
 
+⚠ **The Shopify vendor strings, verified from the product dropdown 2026-08-27.**
+`Waypoint Cabinetry`, `HCI Cabinetry`, `J&K Cabinetry`, `JK Cabinets 2 You`.
+**`Select Cabinetry` does not appear** — it is a storefront-facing alias only,
+and Shopify's product vendor is `Waypoint Cabinetry`. `HARDWARE_VENDORS` is
+still `["Top Knobs", "Blum"]` from a mockup and is still in no document.
+
+**How the acknowledgment actually works.** The designer pulls the PDF order out
+of the OMS and enters it into the manufacturer's ordering system. The
+manufacturer returns an Excel acknowledgment of what was ordered. That .xlsx is
+uploaded to the OMS, which reconciles it against the order and gives a green
+light — or lists every line that is off. ⚠ **HCI and J&K use different
+acknowledgment formats and have no parser.** Only Waypoint is implemented.
+
+⚠ **HCI and J&K are not commercially the same as Waypoint.** Both are RTA,
+stocked, and can be cancelled or returned at any time; Waypoint is locked in and
+non-refundable once in production. Those two lines may be retired entirely next
+year, which is why building their parsers has not been worth it. The gate stays
+for them regardless — the decision was to keep it, not to loosen it.
+---
+
+# 2b. ⚠ Two things that are not what their comments say
+
+Found at the end of the session, both by reading rather than searching, and both
+change what can honestly be built next.
+
+## The New → Entered gate is looser than every message about it
+
+`app/api/orders/[id]/route.ts`:
+
+```
+if (!(await orderAllVendorsGreen(id)) && (!attachments || attachments.length === 0))
+```
+
+**A green acknowledgment OR any attachment at all.** Any file — a customer
+drawing, a photo — satisfies it. `checkAttachmentGate` in `lib/stageGates.ts` is
+the same: `count === 0`. So the banner asking for "the manufacturer's
+acknowledgment PDF", and the requirement line shipped this session saying
+*Manufacturer acknowledgment required*, both describe something stricter than
+what is enforced.
+
+⚠ **And the comment three lines above it says the opposite about overrides:**
+*"Admin role override is NOT provided — attachments are a hard requirement"* —
+while the same `if` contains `&& !body.override_ack`. Any client can send
+`override_ack: true` and skip the gate entirely. That is the known-wrong item at
+full strength: not merely unlogged and role-check-free, but documented as not
+existing.
+
+**The decision this forces, and it is not made.** Either the UI tells the truth
+about a loose gate, or the gate tightens to match the UI. Tightening means
+requiring an attachment of a specific `kind` — the column exists and
+`proof_of_delivery` already uses it — which would make *"Manufacturer
+acknowledgment required"* literally true and would be the HCI/J&K path. It is a
+real behaviour change: anyone relying on "attach anything" starts being refused.
+
+## The attention enrichment path is dead
+
+`lib/attention.ts` documents `AttentionEnrichment` for facts that need a join,
+with `ackMissing` and `receiptMissing`. **No caller passes it.** All five call
+sites in `WorkClient` and `DashboardClient` are `attentionFor(o)` with no second
+argument.
+
+So **"Manufacturer acknowledgment missing" and "Signed delivery receipt missing"
+have never appeared on a screen.** The mechanism is built, documented, and
+unreachable — a safeguard that exists and never fires.
+
+⚠ **This blocks the stale-ack reason.** Making a stale acknowledgment visible
+outside the modal means adding `ack_stale` beside them — which would be a third
+dead reason unless enrichment flows first. Both callers hold a list of orders and
+`orderAllVendorsGreen` is per-order, so calling it per row is an N+1 across the
+whole queue. It needs a batch endpoint: given N order ids, return which have a
+green non-stale acknowledgment and which have a `proof_of_delivery` attachment,
+one query per table. Then both clients fetch once and pass `enrich` per row.
+
+**One open question on its shape:** the batch has to carry the fingerprint
+result, because a stale green is not green for `ack_missing` purposes and is
+separately `ack_stale` — two facts per order, not one boolean.
+
 ---
 
 # 3. Two principles, now load-bearing
@@ -225,16 +351,19 @@ claiming the number was updated.
 
 | | Piece | Notes |
 |---|---|---|
-| 1 | **The column drop** | `shopify_id`, `ship_to`, `customer_phone`, `customer_email`, `payment_status`, `payment_hold_cleared_*` still on `orders` after being copied to `projects`. **109 references across 18 files.** Not urgent — ingest writes both sides so they do not drift, confirmed this session at webhook lines 622/678 and 765/802 — but code first, verified, THEN the migration. `orders.name` stays until warranty linking exists. **Its own session.** |
-| 2 | **Rate limiting is keyed by IP** | `` `${bucket}:${ip}` `` — everyone behind one office IP shares one allowance on every rate-limited route. Confirmed this session that `rateLimitOr429` **fails open**. Needs a decision about the bucket and a pass over every caller's limit. **Its own session.** |
-| 3 | **Notifications** | The order confirmation promises *"we will notify you when your order has finished production and is on its way"* and nothing sends it. **The one hook point is confirmed** — `PATCH /api/orders/[id]` is the sole writer of all four date fields, because every UI goes through the route. `POST /api/orders` writes no dates and only accepts custom and warranty. **Read the email from `projects`**, not from `orders`, or the column drop gets worse. **Trigger 5 must gate on the receipt existing**, not on the stage — the delivery override reaches Delivered with no receipt, and "signed for" would be false in writing. **Add the old values to the existing `currentRow` SELECT** and set-vs-changed falls out with no new query. `production-complete` fires at **1am Phoenix**. |
-| 4 | **Public intake** | Claims intake and `POST /api/public/lookup`. ⚠ **Warranty claims have customer-facing copy and no way to reach a customer** — the translation table gives all five warranty stages wording, the endpoint returns a *project*, and warranty is standalone. Now in `OPERATIONS` §12 Critical. Decide before building. |
-| 5 | **Historic money backfill** | Projects ingested before the money columns sum as zero; `/admin` says how many. Backfill via `/admin/shopify`. |
-| 6 | **Delete the seven stray healthchecks** | ⚠ **BY EXACT NAME, NEVER BY PATTERN** — all seven are `jk-`-prefixed and so is `jk-webhook-health`, which is real and caught the genuinely missed order #1038. Names are in `OPERATIONS` §12. Then shrink `IGNORED_CHECKS`. |
-| 7 | **`/projects?filter=archived`** | The sidebar links to it; the page reads its filter from state, not the URL, so it lands on All. |
-| 8 | **`OrderTable` spacing** | The action column was fixed this session; the SPACING pass was not. It is a `<table>` and needs its own. |
-| 9 | **The acknowledgment half of one truth per item** | An ack tested against a real order should REPLACE the last one, not accumulate. Same rule as the tracking number. Needs `AcknowledgmentPanel.tsx`, `lib/acknowledgments.ts`, `lib/ackStatus.ts` and `app/api/orders/[id]/acknowledgment/route.ts` — none read this session. ⚠ **Decide first whether "the last ack" means one per ORDER or one per VENDOR**; a cabinet order can span several manufacturers. |
-| 10 | **Known-wrong code** | `override_ack` is client-supplied, unlogged and has no role check — the fix is small and is described below · the calendar fetches orders itself, bypassing the store, and its `saveDelivery` swallows its own failure (`catch {}`, no `res.ok` check) ten lines below a `saveProductionDates` that checks both · concurrent identical webhook deliveries can race on insert · one private stage-colour copy remains, location unknown · a project-linked group at `New` renders a **Claim** button whose only outcome is a warning toast, because `claimIfStandalone` refuses every project-linked row — the release **X** has the same problem · the `Delivered` branch offers **Archive Order**, which writes `orders.archived`, but a purchase archives as a whole through `/api/projects/[id]` · the modal's `DateEditor` still offers production dates on samples. |
+| 1 | **Batch attention enrichment** | Makes `ack_missing`, `receipt_missing` and a new `ack_stale` reachable for the first time. New endpoint taking N order ids and returning, per order, whether the acknowledgment is green and whether it is stale, plus whether a `proof_of_delivery` attachment exists — one query per table, not per row. Then `WorkClient` and `DashboardClient` pass `enrich`. ⚠ **Without this the fingerprint shipped this session is only visible to somebody who opens the modal**, and a customer changing an already-Entered order is exactly the case nobody would open it for. |
+| 2 | **The New → Entered gate decision** | See §2b. Tell the truth about a loose gate, or tighten it to an attachment `kind`. Blocks the requirement model, because a per-stage requirement list cannot be honest until the gate is. |
+| 3 | **The requirement model** | One `requirementsFor(order)` returning `{label, satisfied, action}[]`, derived beside the server gate rather than beside the UI, asserting at module load that every stage in every flow has an entry — same shape as `lib/attention.ts`. Drives the next-action panel for all five flows: acknowledgment at New, tracking number at Ordered, signed receipt at At cross dock. ⚠ If the panel computes its own list, that is the same rule in two places, and the visible symptom is a green checklist beside a server refusal. |
+| 4 | **The Overview layout** | The agreed design is below. ⚠ Deliver as a NEW component shipped whole with a checksum plus a small patch swapping it in — `OrderModal.tsx` is ~2,400 lines and a half-applied patch leaves the modal broken. |
+| 5 | **The column drop** | `shopify_id`, `ship_to`, `customer_phone`, `customer_email`, `payment_status`, `payment_hold_cleared_*` still on `orders` after being copied to `projects`. **109 references across 18 files.** Ingest writes both sides so they do not drift — confirmed at webhook lines 622/678 and 765/802. Code first, verified, THEN the migration. `orders.name` stays until warranty linking exists. **Its own session.** |
+| 6 | **Rate limiting is keyed by IP** | `` `${bucket}:${ip}` `` — one office IP shares one allowance on every rate-limited route. `rateLimitOr429` **fails open**, confirmed. Needs a decision about the bucket and a pass over every caller's limit. **Its own session.** |
+| 7 | **Notifications** | The order confirmation promises *"we will notify you when your order has finished production and is on its way"* and nothing sends it. **The hook point is confirmed:** `PATCH /api/orders/[id]` is the sole writer of all four date fields, because every UI goes through the route. **Read the email from `projects`.** **Trigger 5 must gate on the receipt existing**, not on the stage — the delivery override reaches Delivered with no receipt, and "signed for" would be false in writing. **Add the old values to the existing `currentRow` SELECT** and set-vs-changed falls out with no new query. `production-complete` fires at **1am Phoenix**. |
+| 8 | **Public intake** | Claims intake and `POST /api/public/lookup`. ⚠ **Warranty claims have customer-facing copy and no way to reach a customer** — the translation table gives all five warranty stages wording, the endpoint returns a *project*, and warranty is standalone. In `OPERATIONS` §12 Critical. Decide before building. |
+| 9 | **Historic money backfill** | Projects ingested before the money columns sum as zero; `/admin` says how many. Backfill via `/admin/shopify`. |
+| 10 | **Delete the seven stray healthchecks** | ⚠ **BY EXACT NAME, NEVER BY PATTERN** — all seven are `jk-`-prefixed and so is `jk-webhook-health`, which is real and caught the genuinely missed order #1038. Names in `OPERATIONS` §12. Then shrink `IGNORED_CHECKS`. |
+| 11 | **`/projects?filter=archived`** | The sidebar links to it; the page reads its filter from state, not the URL, so it lands on All. |
+| 12 | **`OrderTable` spacing** | The action column was fixed this session; the SPACING pass was not. It is a `<table>` and needs its own. |
+| 13 | **Known-wrong code** | ⚠ `override_ack` is client-supplied, unlogged, has no role check, and the comment beside it denies it exists — see §2b · **`GroupStrip`'s owner still reads `g.claimed_by` raw**, which is why the order card says `unclaimed` under a header showing the owner's name; the strip only renders for project-linked rows, so one prop fixes it · the calendar fetches orders itself, bypassing the store, and its `saveDelivery` swallows its own failure (`catch {}`, no `res.ok`) ten lines below a `saveProductionDates` that checks both · concurrent identical webhook deliveries can race on insert · one private stage-colour copy remains, location unknown · a project-linked group at `New` renders a **Claim** button whose only outcome is a warning toast — **decision made: remove Claim from the table entirely, it does not belong there** · the `Delivered` branch offers **Archive Order**, which writes `orders.archived`, but a purchase archives as a whole through `/api/projects/[id]` · the modal's `DateEditor` still offers production dates on samples · `lib/stageGates.ts` has an orphaned doc comment describing `checkAttachmentGate` sitting above `checkDeliveryProofGate` · `AckSummary` is declared twice, in `lib/acknowledgments.ts` and `lib/ackStatus.ts`.
 
 **⚠ On `override_ack`.** Named as known-wrong in `OPERATIONS` §10, `OMS-STATE` §3
 and here. That stops the next reader inferring a policy from the delivery gate's
@@ -243,6 +372,55 @@ fix is small:** read the role from the session, require a reason, write the
 activity row. It matches two implementations that already exist. It is the right
 rank while it is the acknowledgment gate; it would not be if it were delivery or
 payment.
+
+## The modal redesign, as agreed
+
+Design intent from 2026-08-27, recorded because it exists nowhere else. Behaviour
+first, then layout — the behaviour half shipped.
+
+**The stage rail and the next action group together, visually.** SLA warnings
+(`2d overdue`) move up beside the stage heading. The next-action panel gets
+larger and holds every function for the current stage.
+
+**The current stage's requirements are bubbles with checkmarks** — satisfied and
+unsatisfied both visible, so the gate is legible before it is hit rather than
+after. A cabinet order at New progresses: **Claim order** → **Submit
+acknowledgment** (→ **Resubmit** while red) → **Move to Entered** once green.
+
+⚠ **The next action is per TYPE.** Cabinets, hardware and samples each follow
+their own path, and the panel reflects the row's own flow rather than a shared
+sequence with exceptions.
+
+**The override lives in the next-action section**, not in a separate panel.
+
+**Red-ack discrepancies go to the full order page.** Clicking the red
+acknowledgment opens it, where every line item is already listed and a
+per-line problem has something to attach to. ⚠ **`reconcileAck` also produces
+ship-name and ship-address mismatches, which belong to no line item** — those
+have to stay in the next-action panel or the click-through hides them.
+
+⚠ **A stale acknowledgment after Entered does NOT move the order back.** If a
+customer changes an order that has already advanced, the row stays where it is
+and asks for an updated acknowledgment until it goes green again. Reverting a
+stage would be a side effect of a customer phone call, which is not a decision
+the system should take.
+
+**The `…` menu holds:** Claim project, Unclaim project, Re-decode.
+
+**"Acknowledgment required" appears once**, in the next-action panel only — not
+also under the stage heading.
+
+**Attachment uploads happen in the Attachments card or in the Files tab.** Both
+are entry points to the same thing.
+
+**Do not duplicate the action buttons in a sticky footer.** The mockup showed
+Upload acknowledgment and Move to Entered in both the panel and a footer; that is
+the same duplication that put ENTERED and Entry Complete on screen together.
+
+⚠ **The mockup shows Cabinets `Unclaimed` and Samples `Garrett` on one project.**
+Those cannot differ — one owner per purchase is the whole reason the claim moved
+up. The mockup inherited the `GroupStrip` bug it was drawn beside; both cards
+should read the same name.
 
 ## Bigger than any of the above, and not code
 
@@ -262,6 +440,31 @@ payment.
 - ⚠ **Who supplies hardware, and are they integrated with Shopify.** Decides
   whether the fulfilment path is real for hardware or whether manual entry is the
   only door. Nothing should be built on the current comments.
+- ⚠ **`.kamal/secrets.bak` is committed to git.** `.kamal/secrets` belongs there
+  — it holds `$REFERENCES`, not values. The `.bak` is the shape of the
+  2026-08-03 incident, where that exact file was regenerated from a stale paste
+  and silently lost four keys. **Check today whether it contains literal values
+  rather than references. If it does, the answer is rotation, not deletion** —
+  git history keeps it either way. Raised at the start of the 08-27 session and
+  never checked.
+- **Seven `patch_*.py` scripts and `DELETE_THESE_FILES.txt` are committed.** The
+  scripts are anchor-based patches against code that has since moved, so
+  re-running one would either miss loudly or hit something it should not. Inert
+  where they sit; worth deleting deliberately rather than leaving as litter that
+  looks runnable.
+- **`docs/` holds nine files; the split table in `OPERATIONS` names six.**
+  `RECOVERY.md`, `KNOWN-WRONG-ADDITIONS-2026-08-25.md` and
+  `HANDOFF-2026-08-25-REWORK.md` are unaccounted for — the last is a handoff no
+  current document mentions at all. `KNOWN-WRONG-ADDITIONS` §3 is also stale: it
+  proposes a second predicate reading `STAGE_LIST_BY_TYPE`, and
+  `isStageOfferedForType` already exists and is called. "This table is the only
+  copy of the split" is a stronger claim than it can currently support.
+- **Two questions from the Shopify product pages, neither chased.** Line items
+  carry `_apo_addons` with a price (`"23.89"` on the order inspected) — **confirm
+  the project money totals include add-ons and not just the base line price**,
+  because that is revenue. And a chip reading **"Simple Trends"** sat beside the
+  vendor field; if that is ever a *vendor* rather than a tag it will log as
+  unknown, like HCI and J&K did.
 
 ---
 
@@ -353,6 +556,45 @@ archive will not open. Both happened.
 ⚠ **Check the upload against `wc -l`.** A truncated paste looks exactly like a
 short file.
 
+## ⚠ How files get pulled, and why it is never a grep
+
+**Ask for whole files. Read them end to end. Do not grep the repo to decide what
+to ask for, and do not work from a snippet.**
+
+The reason is not tidiness. Every anchor failure in this project traces to
+reasoning about a file that was only partly visible, and every wrong diagnosis
+traces to a search that returned what was looked for and nothing about what was
+not. This session produced four examples in one day:
+
+- A search for `liveOrder.claimed_by` found four readings and missed a fifth
+  written as `g.claimed_by` in a loop — the one that is still wrong. **A search
+  scoped to one identifier is not a search for the fact.**
+- A guard verifying a vendor list matched its own COMMENTS as well as the array,
+  reporting seven values where the array held five distinct ones. Strip comments
+  before scanning code.
+- A detailed case that the acknowledgment feature was deadlocked, built entirely
+  from reading code, was killed by one screenshot of a Shopify dropdown. **The
+  thing that was actually broken sat in the same dropdown.**
+- `docs/RECOVERY.md` and `docs/KNOWN-WRONG-ADDITIONS-2026-08-25.md` both contain
+  claims that are false today, and neither would be found by searching for the
+  thing they are wrong about.
+
+**The pull, every time:**
+
+```bash
+ssh garrett@5.78.220.153 "cd ~/cabinet-orders && tar -czf - lib/a.ts lib/b.ts" > ~/Downloads/set.tar.gz
+ssh garrett@5.78.220.153 "cd ~/cabinet-orders && wc -l lib/a.ts lib/b.ts"
+```
+
+`tar -tzvf` first as a manifest, then check the extracted counts against the
+`wc -l`. ⚠ **Never combine them into one command** — the count lands inside the
+gzip and the archive will not open. That happened; it is recoverable by
+stripping the bytes before the gzip magic, but only if you notice.
+
+⚠ **Do not propose a step that depends on a file you have not read.** A design
+proposed on an unread `stageGates.ts` was wrong about what the gate checks, and
+the correction changed the whole plan.
+
 ## Lessons that each cost real time
 
 **A secret needs THREE files.** The value in `.env.kamal`, a line in
@@ -426,6 +668,30 @@ fact. The database says what changed. It does not say what was pressed.
 ⚠ **A zero from a log grep settles nothing.** Container logs rotate at 10 MB, are
 not shipped anywhere, and a container replacement loses them. Zero does not
 distinguish "never happened" from "rotated away".
+
+⚠ **`{cond && (…)}` TAKES ONE EXPRESSION, and so does a ternary branch.** A JSX
+comment plus an element is two children and will not compile. This lesson was
+written into this file at 8pm and broken at 11pm by inserting an explanatory
+comment above a component inside a `&&`. Caught by the sandbox parse rather than
+by remembering it.
+
+⚠ **An "already applied" marker must survive every step after it, INCLUDING
+steps in a later patch.** A doc patch used a sentence as its marker; a second
+patch replaced that sentence. Once both had run, the first reported a miss on a
+file that was already correct.
+
+⚠ **Steps that chain need SEQUENTIAL validation.** Validating every anchor
+against the file as it stood before the run means a step anchored on an earlier
+step's output can never pass. Apply in sequence in memory and still write nothing
+if any step misses — all-or-nothing is about the disk, not about the check.
+
+⚠ **A design can inherit the bug it was drawn beside.** The modal mockup showed
+two group cards on one project with different owners, which the model forbids —
+because the screen it was traced from had the ownership bug.
+
+⚠ **Verify what a screenshot proves, not what it suggests.** `docker exec … echo
+ok` proves a container is running and nothing about which build. The image tag
+against `git rev-parse --short HEAD` is the check.
 
 ## ⚠ The failure mode this system actually has
 
