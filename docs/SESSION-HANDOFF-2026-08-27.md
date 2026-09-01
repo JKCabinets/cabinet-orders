@@ -209,6 +209,17 @@ pressed, hosts **Upload acknowledgment**, and keeps **Move to Entered** disabled
 until the ack is green. `Entry Complete` left the panel below — one transition,
 one control. Manual Push stayed, next to the discrepancy breakdown it overrides.
 
+⚠ **ONLY WHERE A WAYPOINT-FAMILY VENDOR IS ON THE ORDER.** The condition is
+`stage === "New" && type is a cabinet flow && ackStatus.hasWaypoint`. HCI and
+J&K have no parser, so their orders take NONE of the above: they keep the
+generic ENTERED button and the attachment gate behind it, exactly as before.
+**Manual Push is not their normal path.**
+
+This qualifier was written into the patch and left out of this document, and a
+reader working only from here concluded — correctly, from what was written —
+that two of the four cabinet vendors might have no route to Entered at all. The
+code was right and the handoff was wrong, which is the more dangerous way round.
+
 ---
 
 # 2. ⚠ What changed about the FACTS

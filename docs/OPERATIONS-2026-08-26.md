@@ -29,7 +29,7 @@ handoff and the System Map fell out of the set entirely.
 | **This document** (shared with every team) | the business, services, credentials, customer commitments, the stage translation, the public lookup contract |
 | `HANDOFF-*-BUILD.md` | implementation history — superseded for the data model, which now lives in `OMS-STATE` |
 | `HANDOFF-WEBSITE-TEAM-2026-08-20.md` | the storefront side |
-| **The System Map** | ⚠ named in every version of this list and described in none. Confirm what it covers, or drop it from the set. |
+| **The System Map** | external services, the box, and flows that cross a system boundary — the wiring nothing else draws. ⚠ Redrawn 2026-08-27 and DELIBERATELY NARROWED: it used to draw the data model, the pipelines, the SLA table and a failure register, and those copies had drifted two weeks in a fortnight. It is not a description of the system; it is a description of what the system is plugged into. |
 
 ---
 
