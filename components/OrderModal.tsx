@@ -429,12 +429,32 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
    * HCI and J&K have no parser, so their orders keep the generic button and the
    * PDF-attachment gate behind it.
    */
-  const ackGates =
+  /**
+   * Could THIS row's advance be gated on an acknowledgment at all? The type
+   * and stage half of the question, separated from the vendor half so the
+   * clauses are written once and `ackUnknown` below cannot drift from
+   * `ackGates`.
+   */
+  const ackCouldGate =
     liveOrder.stage === "New"
     && liveOrder.type !== "sample"
-    && liveOrder.type !== "hardware"
-    && ackStatus.hasWaypoint;
+    && liveOrder.type !== "hardware";
+  const ackGates = ackCouldGate && ackStatus.hasWaypoint;
   const ackSatisfied = ackStatus.allGreen;
+  /**
+   * ⚠ NOT-YET-KNOWN IS NOT NOT-SATISFIED.
+   *
+   * useAckStatus returns EMPTY while a fetch is in flight, and invalidateAck()
+   * puts it back there after every upload. In that window `allGreen` and
+   * `hasWaypoint` are both false, so ackGates flips off and the generic button
+   * appears -- and pressing it would run the attachment gate against an
+   * acknowledgment that is green but not yet loaded.
+   *
+   * Only meaningful where the ack could gate and a fetch was actually started:
+   * when `ackEligible` is false useAckStatus performs no fetch and reports
+   * loading forever, which is not a race.
+   */
+  const ackUnknown = ackCouldGate && ackEligible && ackStatus.loading;
 
   // If the modal was opened via the row Submit/Resubmit, pop the .xlsx picker.
   useEffect(() => {
@@ -569,7 +589,13 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
     // Same shape as the bulk route's half-implemented gate. One rule, two
     // places, and only one of them had the clause.
     const gateApplies = liveOrder.type !== "sample" && liveOrder.type !== "hardware";
-    if (gateApplies && stage === "Entered" && liveOrder.stage === "New") {
+    // ⚠ THE SERVER PASSES ON A GREEN ACK **OR** AN ATTACHMENT. This ran
+    // checkAttachmentGate unconditionally -- a bare count === 0 -- so a green
+    // acknowledgment with no separately-attached file was refused here, before
+    // the request the server would have allowed. The ack .xlsx lands in
+    // order_acknowledgments and is never written as an attachment, so that is
+    // the ordinary Waypoint case rather than an edge one.
+    if (gateApplies && stage === "Entered" && liveOrder.stage === "New" && !ackSatisfied) {
       setCheckingAttachments(true);
       setEnteredGateError(false);
       const result = await checkAttachmentGate(liveOrder.id);
@@ -1039,10 +1065,11 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
               <div className="mt-4 rounded-brand px-4 py-3"
                 style={{ background: "rgba(212,146,42,0.12)", border: "0.5px solid rgba(212,146,42,0.40)" }}>
                 <p className="font-display text-[15px] mb-1" style={{ color: "#e8b56a" }}>
-                  Acknowledgment <em className="italic-storm">required</em>
+                  Acknowledgment or file <em className="italic-storm">required</em>
                 </p>
                 <p className="text-[11px] text-cream/65">
-                  Upload the manufacturer&apos;s acknowledgment PDF in the Attachments section below before moving to Entered.
+                  Upload the manufacturer&apos;s acknowledgment, or attach any file for this
+                  order in the Attachments section below, before moving to Entered.
                 </p>
               </div>
             )}
@@ -1136,6 +1163,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                       <>
                         <p className="text-[11px] text-cream/65 leading-snug">
                           Upload the manufacturer acknowledgment before moving to Entered.
+                          An attached file also releases the gate.
                         </p>
                         <p
                           className="text-[11px] mt-1 flex items-center gap-1.5 leading-snug"
@@ -1144,7 +1172,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                           {ackSatisfied ? (
                             <><Check className="w-3 h-3 flex-shrink-0" /> Manufacturer acknowledgment matched</>
                           ) : (
-                            <><AlertTriangle className="w-3 h-3 flex-shrink-0" /> Manufacturer acknowledgment required</>
+                            <><AlertTriangle className="w-3 h-3 flex-shrink-0" /> No matched acknowledgment — an attached file also releases this</>
                           )}
                         </p>
                       </>
@@ -1204,10 +1232,10 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                     {ackGates && (
                       <button
                         onClick={() => doMoveStage("Entered" as Stage, "")}
-                        disabled={!ackSatisfied || checkingAttachments}
+                        disabled={checkingAttachments}
                         title={ackSatisfied
                           ? "The acknowledgment matched — move to Entered"
-                          : "Needs a matched manufacturer acknowledgment first"}
+                          : "No matched acknowledgment — an attached file will also let this through"}
                         className="px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
                         style={{
                           background: "rgba(184,130,106,0.20)",
@@ -1229,7 +1257,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                           // stage, so it is never a backward move.
                           if (next) doMoveStage(next as Stage, "");
                         }}
-                        disabled={checkingAttachments}
+                        disabled={checkingAttachments || ackUnknown}
                         className="px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all flex-shrink-0 disabled:opacity-40"
                         style={{
                           background: "rgba(184,130,106,0.20)",
