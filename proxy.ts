@@ -78,6 +78,16 @@ const PUBLIC_PATHS: readonly string[] = [
   // report-only revival; see the CSP strategy note above.)
   "/api/csp-report",
   "/api/health",  //
+  // ⚠ EVERY ROUTE UNDER app/api/public/ IS UNAUTHENTICATED, BY CONSTRUCTION.
+  // Adding a file to that directory makes it public; there is no second
+  // decision anywhere that would catch a mistake. Put a route there only when
+  // a customer's browser must reach it with no session -- today the order
+  // lookup, next the claims intake -- and give it its own rate limiting,
+  // because the proxy is doing nothing for it.
+  //
+  // Prefix form matches the entries above: this permits "/api/public/lookup"
+  // and not "/api/public-anything".
+  "/api/public",
 ];
 
 function isPublicPath(pathname: string): boolean {
