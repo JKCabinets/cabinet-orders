@@ -144,15 +144,41 @@ export function escapeHtml(input: unknown): string {
  */
 const inMemoryMap = new Map<string, { count: number; resetAt: number }>();
 
+export interface RateLimitOptions {
+  /**
+   * Refuse when the limiter itself fails, instead of allowing.
+   *
+   * ⚠ DEFAULTS TO FALSE, WHICH IS RIGHT FOR AUTHENTICATED ROUTES. Locking the
+   * team out of the OMS because Upstash blinked is worse than letting a burst
+   * through, and every one of those routes has auth behind the limiter.
+   *
+   * A PUBLIC route has nothing behind it. There, failing open converts a Redis
+   * outage into an unlimited endpoint, and for the order lookup that means an
+   * oracle confirming which order numbers exist.
+   */
+  failClosed?: boolean;
+  /**
+   * Bucket on this instead of the caller's IP.
+   *
+   * ⚠ FOR LIMITING ATTEMPTS AGAINST ONE TARGET, not attempts from one source.
+   * The two answer different questions and a route may want both: an IP bucket
+   * limits how fast anyone can WALK order numbers, a subject bucket limits how
+   * many times ANYONE can guess at a single one. A subject is also not
+   * spoofable by a request header, which an IP may be.
+   */
+  subject?: string;
+}
+
 export async function checkRateLimit(
   req: NextRequest,
   limit = 60,
   windowMs = 60_000,
-  bucket = "default"
+  bucket = "default",
+  opts: RateLimitOptions = {}
 ): Promise<boolean> {
   const ip =
     req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
-  const key = `${bucket}:${ip}`;
+  const key = `${bucket}:${opts.subject ?? ip}`;
 
   // ── Upstash Redis path ────────────────────────────────────────────────────
   if (
@@ -178,9 +204,13 @@ export async function checkRateLimit(
       const { success } = await ratelimit.limit(key);
       return success;
     } catch {
-      // Redis transient failure — fail open to avoid locking out legit users.
-      // Sensitive endpoints must additionally enforce auth at the route level.
-      return true;
+      // Redis transient failure. Fail OPEN by default, to avoid locking out
+      // legitimate users over an outage they cannot see; those routes enforce
+      // auth as well, so the limiter is not the only control.
+      //
+      // ⚠ A PUBLIC ROUTE MUST PASS failClosed. There is no auth behind it, so
+      // an open failure is an unlimited endpoint for as long as Redis is down.
+      return opts.failClosed !== true;
     }
   }
 
