@@ -94,6 +94,11 @@ export async function POST(
     name: sub.claimant_name,
     detail: `${sub.claim_type} claim`,
     notes: notesParts.join("\n"),
+    // ⚠ NO `member`. The session carries id, name, email, role and username --
+    // not initials -- and every other create route on this box defaults this
+    // to "AX" rather than deriving it. Attribution is not lost: created_by
+    // holds the username and the activity row below names the person. Assigning
+    // the claim to whoever happened to triage it would also be a guess.
     createdBy: auth.session.user.username,
     claimantName: sub.claimant_name,
     claimantEmail: sub.claimant_email,
