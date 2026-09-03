@@ -33,6 +33,19 @@ interface CarrierEntry {
    * validated, so this list is forgiving on purpose.
    */
   readonly aliases: readonly string[];
+  /**
+   * ⚠ A CARRIER SITE RENDERS "NOT FOUND" AS A NORMAL PAGE, NOT AN ERROR. So a
+   * link built from a junk number looks identical to a working one -- the web
+   * team hit exactly this while testing, where "1515" produced a perfectly
+   * respectable UPS tracking page. A number that cannot be this carrier's gets
+   * no link and renders as plain text, which is what an unknown carrier
+   * already does.
+   *
+   * Deliberately loose rather than exhaustive: these cover the formats in use,
+   * and anything unusual loses its link but keeps its number. Failing toward
+   * plain text is the safe direction.
+   */
+  readonly looksValid: (trackingNumber: string) => boolean;
   readonly url: (trackingNumber: string) => string;
 }
 
@@ -40,16 +53,22 @@ const CARRIERS: readonly CarrierEntry[] = [
   {
     name: "UPS",
     aliases: ["ups", "unitedparcelservice", "unitedparcel"],
+    // 1Z + 16 alphanumerics is the dominant UPS form.
+    looksValid: (n) => /^1Z[0-9A-Z]{16}$/i.test(n),
     url: (n) => `https://www.ups.com/track?tracknum=${encodeURIComponent(n)}`,
   },
   {
     name: "USPS",
     aliases: ["usps", "unitedstatespostalservice", "uspostalservice", "postalservice", "uspost"],
+    // Domestic IMpb is 20-26 digits; international is 2 letters, 9 digits, "US".
+    looksValid: (n) => /^\d{20,26}$/.test(n) || /^[A-Z]{2}\d{9}US$/i.test(n),
     url: (n) => `https://tools.usps.com/go/TrackConfirmAction?tLabels=${encodeURIComponent(n)}`,
   },
   {
     name: "FedEx",
     aliases: ["fedex", "federalexpress", "fedexground", "fedexexpress", "fedexhomedelivery"],
+    // Express is 12, Ground is 15, SmartPost is 20-22.
+    looksValid: (n) => /^(\d{12}|\d{15}|\d{20,22})$/.test(n),
     url: (n) => `https://www.fedex.com/fedextrack/?trknbr=${encodeURIComponent(n)}`,
   },
 ];
@@ -64,6 +83,9 @@ const CARRIERS: readonly CarrierEntry[] = [
  * and neither is visible in review.
  */
 {
+  // The probe only exercises interpolation, so it deliberately bypasses
+  // looksValid -- a probe that had to satisfy three different real formats
+  // would test the probe rather than the templates.
   const PROBE = "PROBE1234567890";
   const seen = new Map<string, string>();
   for (const c of CARRIERS) {
@@ -115,6 +137,10 @@ export function trackingLinkFor(
   if (!match) {
     // Unknown or absent carrier. Show what we have; link nothing.
     return { carrier: raw, url: null };
+  }
+  if (!match.looksValid(number)) {
+    // Recognised carrier, implausible number. Name the carrier, link nothing.
+    return { carrier: match.name, url: null };
   }
   return { carrier: match.name, url: match.url(number) };
 }

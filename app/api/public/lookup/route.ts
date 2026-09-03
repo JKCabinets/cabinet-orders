@@ -3,8 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { checkRateLimit } from "@/lib/auth";
 import { trackingLinkFor } from "@/lib/carriers";
 import {
-  cabinetStages, TRACKING_GROUP_LABEL,
-  DELIVERY_NOTE_AWAITING, NOTE_NO_CABINETS,
+  cabinetStages, TRACKING_GROUP_LABEL, NOTE_NO_CABINETS,
   type CustomerStage,
 } from "@/lib/customerFacing";
 import type { OrderType } from "@/lib/data";
@@ -16,18 +15,25 @@ import type { OrderType } from "@/lib/data";
  * to the code that consumes it. Section 9.6 of the project handoff puts this
  * question at forty to fifty percent of all customer contact.
  *
- * ⚠ 200 IN EVERY CASE. Never 404 on a miss. A different status, a different
- * shape, OR A DIFFERENT RESPONSE TIME for "no such order" against "wrong
- * email" turns this into an oracle that confirms which order numbers are real.
- * Every path below does the same two queries and returns through the same
- * exit, for that reason and no other.
+ * ⚠ 200 IN EVERY CASE, WITHOUT EXCEPTION. Never 404 on a miss. A different
+ * status, a different shape, or a different response time for "no such order"
+ * against "wrong email" turns this into an oracle that confirms which order
+ * numbers are real. That includes a 500: `handle()` below is wrapped, because
+ * an unhandled database error is a distinguishable response an attacker can
+ * provoke, and the first version of this file could return one.
  *
- * ⚠ CABINETS ONLY IN `stages`, decided 2026-09-01. One project can hold
- * cabinets in production and a sample already delivered, and the page renders
- * ONE step list. Rather than flatten two truths into one status, the step list
- * is the cabinet group and everything else appears as tracking. They cannot
- * overlap: cabinets go by freight to a cross dock and never carry a tracking
- * number.
+ * ⚠ CABINETS ONLY IN `stages`. One project can hold cabinets in production and
+ * a sample already delivered, and the page renders ONE step list. Rather than
+ * flatten two truths into one status, the step list is the cabinet group and
+ * everything else appears as tracking. They cannot overlap: cabinets go by
+ * freight to a cross dock and never carry a tracking number.
+ *
+ * ⚠ RUNS AS THE SERVICE ROLE. `lib/supabase` is the full-access client, so the
+ * only thing keeping customer_phone, ship_to and total_price out of this
+ * response is the column list in the query below. The `public_api` role with
+ * narrow column grants was designed to be the real boundary and does not exist
+ * yet. Until it does, TREAT THE SELECT LISTS AS A SECURITY CONTROL: widening
+ * one here has no second check anywhere.
  */
 
 const ALLOWED_ORIGINS = (process.env.LOOKUP_ALLOWED_ORIGINS
@@ -38,6 +44,9 @@ const ALLOWED_ORIGINS = (process.env.LOOKUP_ALLOWED_ORIGINS
  * ⚠ CORS IS REQUIRED HERE, UNLIKE THE CLAIM AND CONTACT FORMS. Those post a
  * plain form and take a redirect; this one uses fetch because the answer
  * renders in place, so the browser must be allowed to READ the response.
+ *
+ * No Allow-Credentials: the endpoint authenticates on the body, not a cookie,
+ * and echoing credentials back would let a third-party page ride a session.
  */
 function corsFor(req: NextRequest): Record<string, string> {
   const base: Record<string, string> = {
@@ -59,8 +68,10 @@ export async function OPTIONS(req: NextRequest) {
 const MAX_BODY_LEN = 2_000;
 const MAX_FIELD_LEN = 200;
 
-/** The only body a miss ever produces. Built once so no path can vary it. */
+/** The only body a miss ever produces. One constant, so no path can vary it. */
 const NOT_FOUND = { found: false } as const;
+
+const GROUP_SUFFIXES = ["-CAB", "-HW", "-SMP", "-CST"];
 
 /**
  * Normalise what a customer types into a project id.
@@ -69,13 +80,13 @@ const NOT_FOUND = { found: false } as const;
  * the OMS stores "SHO-1035". Staff paste "SHO-1035-CAB" out of a log line, so
  * a group suffix is stripped rather than rejected.
  *
- * Returns "" for anything that cannot be a project id, which short-circuits to
- * a miss WITHOUT a database round trip. That is the one deliberate exception
- * to the equal-work rule below: a malformed number reveals nothing about which
- * real orders exist, because it could not have been one either way.
+ * ⚠ THE FINAL REGEX IS AN INJECTION CONTROL, NOT TIDINESS. PostgREST filters
+ * are expressed in the query string, where `,` `.` `(` `)` are syntax. Allowing
+ * only A-Z, 0-9 and hyphen is what makes `.eq("id", reference)` safe against a
+ * crafted value.
+ *
+ * Returns "" for anything that cannot be a project id.
  */
-const GROUP_SUFFIXES = ["-CAB", "-HW", "-SMP", "-CST"];
-
 export function normaliseOrderNumber(raw: string): string {
   let s = String(raw ?? "").toUpperCase();
   s = s.replace(/ORDER/g, "").replace(/#/g, "").trim();
@@ -84,16 +95,18 @@ export function normaliseOrderNumber(raw: string): string {
   for (const suffix of GROUP_SUFFIXES) {
     if (s.endsWith(suffix)) { s = s.slice(0, -suffix.length); break; }
   }
-  // A bare number is the common case. Anything already prefixed is left alone.
   if (/^\d+$/.test(s)) s = `SHO-${s}`;
   // Only ever look up a project. QUO- and WRN- rows have no project and are
-  // not customer-facing purchases.
+  // not customer-facing purchases -- which is also what keeps a claimant's
+  // name and email unreachable from here.
   if (!/^SHO-[A-Z0-9-]+$/.test(s)) return "";
   return s;
 }
 
-/** Date-only columns are "YYYY-MM-DD" with no time. Formatting them through
- *  Date() would parse midnight UTC and render the PREVIOUS day in Phoenix. */
+/**
+ * Date-only columns are "YYYY-MM-DD" with no time. Formatting them through
+ * Date() would parse midnight UTC and render the PREVIOUS day in Phoenix.
+ */
 const MONTHS = ["January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December"];
 
@@ -119,17 +132,30 @@ interface GroupRow {
   type: string;
   stage: string;
   scheduled_delivery_date: string | null;
+  production_est_finish_date: string | null;
   customer_email: string | null;
   carrier: string | null;
   tracking_number: string | null;
 }
 
-export async function POST(req: NextRequest) {
-  const CORS = corsFor(req);
-  const json = (body: unknown) =>
-    NextResponse.json(body, { status: 200, headers: CORS });
+async function handle(
+  req: NextRequest,
+  json: (body: unknown) => NextResponse,
+): Promise<NextResponse> {
+  // ── IP rate limit, before anything is parsed ─────────────────────────────
+  //
+  // ⚠ FAILS CLOSED, unlike every other caller. Elsewhere a Redis outage
+  // letting requests through means spam; here it means an unthrottled order
+  // number oracle. A lookup that stops answering during an outage is a far
+  // smaller problem than one that answers without limit.
+  //
+  // Verified 2026-09-01 to key on the real client IP: fifteen requests bearing
+  // fifteen different X-Forwarded-For values shared one bucket, so the header
+  // is being replaced by the proxy rather than trusted.
+  if (!await checkRateLimit(req, 20, 60_000, "lookup:ip", { failClosed: true })) {
+    return json(NOT_FOUND);
+  }
 
-  // ── Body ─────────────────────────────────────────────────────────────────
   let body: { order_number?: unknown; email?: unknown };
   try {
     const raw = await req.text();
@@ -138,48 +164,46 @@ export async function POST(req: NextRequest) {
   } catch {
     return json(NOT_FOUND);
   }
+  if (!body || typeof body !== "object") return json(NOT_FOUND);
 
   const reference = normaliseOrderNumber(
     String(body.order_number ?? "").slice(0, MAX_FIELD_LEN),
   );
   const email = String(body.email ?? "").slice(0, MAX_FIELD_LEN).trim().toLowerCase();
 
-  // ── Rate limiting ────────────────────────────────────────────────────────
-  //
-  // ⚠ FAILS CLOSED, unlike every other caller. Elsewhere a Redis outage
-  // letting requests through means spam; here it means an unthrottled order
-  // number oracle. A lookup that stops answering during an outage is a far
-  // smaller problem than one that answers without limit.
-  //
-  // ⚠ TWO BUCKETS, because they stop different attacks. The IP bucket is what
-  // limits ENUMERATION -- walking order numbers to learn which are real. The
-  // order-number bucket limits GUESSING THE EMAIL on one order somebody
-  // already knows, and unlike the IP it cannot be spoofed by a header.
-  const ipOk = await checkRateLimit(req, 20, 60_000, "lookup:ip", { failClosed: true });
-  if (!ipOk) return json(NOT_FOUND);
-
+  // ⚠ SECOND BUCKET, ON THE ORDER NUMBER. The IP bucket limits ENUMERATION --
+  // walking numbers to learn which are real. This one limits GUESSING THE
+  // EMAIL on an order somebody already knows, and unlike an IP it cannot be
+  // influenced by a request header at all.
   if (reference) {
-    const refOk = await checkRateLimit(
+    if (!await checkRateLimit(
       req, 8, 60_000, "lookup:ref", { failClosed: true, subject: reference },
-    );
-    if (!refOk) return json(NOT_FOUND);
+    )) return json(NOT_FOUND);
   }
 
   if (!reference || !email) return json(NOT_FOUND);
 
   // ── The same two queries on every path ───────────────────────────────────
   //
-  // ⚠ NO SHORT-CIRCUIT ON A MISSING PROJECT. Returning early there would make
-  // "no such order" one query and "wrong email" two, which is measurable from
+  // ⚠ NO SHORT-CIRCUIT ON A MISSING PROJECT. Returning early would make "no
+  // such order" one query and "wrong email" two, which is measurable from
   // outside and is precisely the oracle the contract forbids. The group query
-  // simply returns nothing for an id that does not exist.
+  // returns nothing for an id that does not exist.
+  //
+  // ⚠ THE SELECT LISTS ARE THE ONLY THING NARROWING SERVICE-ROLE ACCESS.
+  // `projects` also holds customer_phone, ship_to and total_price; `orders`
+  // holds internal_notes. None of them belong in a public response.
   const [projectRes, groupRes] = await Promise.all([
     supabase.from("projects")
       .select("id, customer_email, created_at")
       .eq("id", reference)
       .maybeSingle(),
     supabase.from("orders")
-      .select("type, stage, scheduled_delivery_date, customer_email, carrier, tracking_number")
+      // ⚠ ONE STRING LITERAL, NOT A CONCATENATION. supabase-js infers the row
+      // type from this argument as a literal type. Splitting it with `+` makes
+      // it an expression, inference collapses to GenericStringError[], and the
+      // cast below fails to compile. Keep it on one line however long it gets.
+      .select("type, stage, scheduled_delivery_date, production_est_finish_date, customer_email, carrier, tracking_number")
       .eq("project_id", reference),
   ]);
 
@@ -193,21 +217,35 @@ export async function POST(req: NextRequest) {
   // and fail SILENTLY -- a customer with the right number and the right email
   // told we cannot find their order. Every group must carry one, so they are
   // the reliable half.
-  const candidates = [
+  const emailMatches = email !== "" && [
     project?.customer_email,
     ...groups.map((g) => g.customer_email),
-  ];
-  const emailMatches = candidates.some(
-    (c) => String(c ?? "").trim().toLowerCase() === email && email !== "",
-  );
+  ].some((c) => String(c ?? "").trim().toLowerCase() === email);
 
-  // ── Build the answer, then decide whether to give it ─────────────────────
+  // ⚠ THE MISS RETURNS *BEFORE* ANY WORK THAT DEPENDS ON WHAT WAS FOUND.
+  //
+  // The first version of this file built the whole response and then decided
+  // whether to send it, which meant "wrong email" did five stages and a
+  // tracking array of work that "no such order" did not. Sub-microsecond
+  // against milliseconds of jitter, and still the difference the contract
+  // forbids. Both misses now do exactly two queries and return one constant.
+  if (!project || !emailMatches) return json(NOT_FOUND);
+
   const cabinets = groups.find((g) => g.type === "order");
 
-  const stages: CustomerStage[] = cabinets ? cabinetStages(cabinets.stage) : [];
   const scheduled = cabinets
     ? formatDateOnly(cabinets.scheduled_delivery_date)
     : null;
+
+  const stages: CustomerStage[] = cabinets
+    ? cabinetStages(cabinets.stage, {
+      // ⚠ THE ESTIMATE GOES TO THE NOTE, NEVER TO scheduled_date. The page
+      // renders that field as "Delivery booked for …", which would turn a
+      // working production date into a delivery commitment.
+      estimatedFinish: formatDateOnly(cabinets.production_est_finish_date),
+      deliveryScheduled: scheduled !== null,
+    })
+    : [];
 
   const tracking = groups
     .filter((g) => g.type !== "order")
@@ -225,26 +263,36 @@ export async function POST(req: NextRequest) {
     })
     .filter((t): t is NonNullable<typeof t> => t !== null);
 
-  let deliveryNote: string | null = null;
-  if (!cabinets) deliveryNote = NOTE_NO_CABINETS;
-  else if (!scheduled && cabinets.stage !== "Delivered") {
-    deliveryNote = DELIVERY_NOTE_AWAITING;
-  }
-
-  if (!project || !emailMatches) return json(NOT_FOUND);
-
   return json({
     found: true,
     reference: project.id,
     placed_on: formatTimestamp(project.created_at),
     scheduled_date: scheduled,
-    delivery_note: deliveryNote,
+    // ⚠ CABINET ORDERS CARRY PER-STAGE NOTES INSTEAD. This is now only the
+    // samples-only case, where there are no steps and it is the whole answer.
+    delivery_note: cabinets ? null : NOTE_NO_CABINETS,
     stages,
     tracking,
-    // ⚠ ALWAYS EMPTY. Warranty updates go to the customer by email, decided
-    // 2026-09-01 -- push rather than pull, which also removes the enumeration
-    // surface a claim lookup would have created. The storefront block is built
-    // and correct; it renders nothing while this is empty.
+    // ⚠ ALWAYS EMPTY. Warranty updates go to the customer by email -- push
+    // rather than pull, which also removes the enumeration surface a claim
+    // lookup would have created. The storefront block is built and correct; it
+    // renders nothing while this is empty.
     claims: [],
   });
+}
+
+export async function POST(req: NextRequest) {
+  const CORS = corsFor(req);
+  const json = (body: unknown) =>
+    NextResponse.json(body, { status: 200, headers: CORS });
+  try {
+    return await handle(req, json);
+  } catch {
+    // ⚠ A 500 IS A DISTINGUISHABLE RESPONSE. Supabase surfaces most failures
+    // in `.error` rather than by throwing, but Promise.all rejects on a
+    // transport failure, and the unhandled version of this returned a 500 that
+    // an attacker could provoke and measure. Nothing is logged here on
+    // purpose: the request body holds a customer's email address.
+    return json(NOT_FOUND);
+  }
 }
