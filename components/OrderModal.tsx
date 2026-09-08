@@ -1594,12 +1594,39 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
           </>)}
 
           {tab === "items" && (() => {
-            const workGroups = projectGroups.filter((g) => g.type !== "warranty");
+            // ⚠ WARRANTY IS NO LONGER EXCLUDED. Until 2026-09-01 this read
+            // `.filter((g) => g.type !== "warranty")`, with a message saying a
+            // claim carries damage reports rather than SKU lines. True when
+            // written; false once a claim started recording what needs
+            // replacing. sku_items on a claim is the SKU, the quantity
+            // affected and the PART -- "Middle Drawer Only" -- which is the
+            // whole of what the vendor is asked to supply.
+            //
+            // Safe because projectGroups returns [self] for a row with no
+            // project_id, so a claim resolves to itself and cannot pull in
+            // other standalone rows.
+            const workGroups = projectGroups;
             if (workGroups.length === 0) {
               return (
                 <div className="px-6 py-8 text-center">
                   <p className="text-[12px] text-cream/45">
-                    A warranty claim carries damage reports, not SKU lines.
+                    Nothing to show yet.
+                  </p>
+                </div>
+              );
+            }
+            // A claim before anybody has recorded the parts. Says what is
+            // missing and what to do, rather than asserting there is nothing
+            // to record -- which is what the old message did, and why this
+            // stayed wrong.
+            if (liveOrder.type === "warranty" && (liveOrder.sku_items?.length ?? 0) === 0) {
+              return (
+                <div className="px-6 py-8 text-center">
+                  <p className="text-[12px] text-cream/45">
+                    No replacement parts recorded on this claim yet.
+                  </p>
+                  <p className="text-[11px] text-cream/30 mt-1">
+                    Add the SKU, the quantity affected and which part it is.
                   </p>
                 </div>
               );
