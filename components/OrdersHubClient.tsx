@@ -12,6 +12,7 @@ import { OrderModal } from "@/components/OrderModal";
 import { BulkActionBar } from "@/components/BulkActionBar";
 import { NewOrderModal } from "@/components/NewOrderModal";
 import { WarrantyClaimModal } from "@/components/WarrantyClaimModal";
+import { ClaimDrafts } from "@/components/ClaimDrafts";
 import { Search, CheckSquare, X, CalendarDays, Plus } from "lucide-react";
 
 /**
@@ -277,6 +278,15 @@ export function OrdersHubClient({
       {/* ⚠ A CLAIM IS ABOUT A GROUP, NOT A PURCHASE. WarrantyClaimModal asks
           which purchase and then which part of it; the generic create form can
           only ask the first, and renders both as the same order number. */}
+      {/* ⚠ ABOVE THE TABLE, NOT IN IT. Drafts are not rows in `orders`: they
+          have no id, no stage of their own and no SLA clock until somebody
+          creates the claim. Putting them in the table would hand them to bulk
+          actions and the stage-move path, which act on things that exist.
+
+          Hidden in archive view: nothing waiting to be worked belongs in a
+          list of finished work. */}
+      {type === "warranty" && !archive && <ClaimDrafts />}
+
       {showNewForm && (type === "warranty" ? (
         <WarrantyClaimModal onClose={() => setShowNewForm(false)} />
       ) : (

@@ -56,6 +56,12 @@ const STAGE_TINT: Record<string, string> = {
   "Delivered": "#8fbe70", "Resolved": "#8fbe70",
 };
 
+export interface ClaimPhoto {
+  path: string;
+  /** Signed by the list route, one hour. Null when signing failed. */
+  url: string | null;
+}
+
 export interface ClaimSubmissionSeed {
   id: string;
   order_number: string | null;
@@ -66,12 +72,28 @@ export interface ClaimSubmissionSeed {
   claimant_phone: string | null;
   message: string | null;
   received_at: string;
+  photos?: ClaimPhoto[];
 }
 
 interface Props {
   onClose: () => void;
-  /** Present when promoting a customer submission rather than logging by hand. */
+  /**
+   * The DRAFT this claim is being made from.
+   *
+   * ⚠ A SUBMISSION IS NOT A CLAIM. The customer says "my base drawer cabinet
+   * has a dent in the drawer front"; a vendor cannot fill that. The team
+   * member reads it, confirms which order it belongs to, and writes what is
+   * actually needed -- "DB15, replacement top drawer front". Creating the
+   * claim is that act, which is why a draft sits at New claim until somebody
+   * does it.
+   *
+   * Absent for a manual claim: same screen, nothing prefilled. Your example
+   * was a mistake on our side needing a replacement, where there is no
+   * customer report to work from.
+   */
   submission?: ClaimSubmissionSeed | null;
+  /** Called after a draft is completed, so the queue can drop it. */
+  onDone?: () => void;
 }
 
 interface ClaimLine {
@@ -88,7 +110,7 @@ interface ClaimLine {
   purchased: number | null;
 }
 
-export function WarrantyClaimModal({ onClose, submission }: Props) {
+export function WarrantyClaimModal({ onClose, submission, onDone }: Props) {
   const { addOrder, allOrdersIncludingArchived, projects } = useStore();
 
   const [search, setSearch] = useState(submission?.order_number ?? "");
@@ -198,7 +220,44 @@ export function WarrantyClaimModal({ onClose, submission }: Props) {
     if (!canSave || !group) return;
     setSaving(true);
     setError("");
+
+    const items = claimedLines.map((l) => ({
+      sku: l.sku,
+      quantity: l.quantity,
+      description: l.description,
+    }));
+
     try {
+      // ── Completing a draft ─────────────────────────────────────────────
+      //
+      // ⚠ A DIFFERENT ENDPOINT, ON PURPOSE. The promote route also marks the
+      // submission as handled and copies the customer's photos onto the claim,
+      // in one place, after the row exists. Creating through addOrder and then
+      // marking the draft separately would leave a window where the claim
+      // exists and the draft still looks unhandled -- so a second person could
+      // work it again.
+      if (submission) {
+        const res = await fetch(`/api/claim-submissions/${submission.id}/promote`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            about_order_id: group.id,
+            issue: issue.trim(),
+            internal_notes: internalNote.trim(),
+            sku_items: items,
+            delivery_method: deliveryMethod.trim(),
+            scheduled_delivery_date: expectedShip || null,
+            production_start_date: isCabinetClaim ? (prodStart || null) : null,
+            production_est_finish_date: isCabinetClaim ? (prodFinish || null) : null,
+          }),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.message ?? json.error ?? "Could not create the claim.");
+        onDone?.();
+        onClose();
+        return;
+      }
+
       await addOrder({
         type: "warranty",
         about_order_id: group.id,
@@ -211,11 +270,7 @@ export function WarrantyClaimModal({ onClose, submission }: Props) {
         delivery_method: deliveryMethod.trim(),
         claimant_name: name.trim(),
         claimant_email: email.trim(),
-        sku_items: claimedLines.map((l) => ({
-          sku: l.sku,
-          quantity: l.quantity,
-          description: l.description,
-        })),
+        sku_items: items,
         // ⚠ EXISTING COLUMNS, NOT NEW ONES. `Shipped` is the stage that waits
         // on parts leaving, so the expected ship date lives in
         // scheduled_delivery_date; `Parts ordered` on a cabinet claim waits on
@@ -380,6 +435,50 @@ export function WarrantyClaimModal({ onClose, submission }: Props) {
                     </p>
                   </div>
                 </section>
+
+                {/* What the customer sent */}
+                {submission && (
+                  <section>
+                    <label className={LABEL_CLS}>What the customer sent</label>
+                    <div className="rounded-xl p-4" style={{ border: HAIRLINE, background: "rgba(145,165,151,0.10)" }}>
+                      <p className="text-[13px] text-[rgba(232,227,218,0.80)] leading-relaxed whitespace-pre-wrap">
+                        {submission.message || "No description given."}
+                      </p>
+                      <p className="text-[11px] text-[rgba(232,227,218,0.40)] mt-2">
+                        {submission.claim_type} · order typed as {submission.order_number_raw}
+                        {submission.claimant_phone ? ` · ${submission.claimant_phone}` : ""}
+                      </p>
+
+                      {/* ⚠ SIGNED URLS, ONE HOUR. The bucket is private, so a raw
+                          path shows nothing -- and a damage claim cannot be judged
+                          without the photographs. */}
+                      {(submission.photos ?? []).length > 0 && (
+                        <div className="flex gap-2 mt-3 flex-wrap">
+                          {(submission.photos ?? []).map((ph) =>
+                            ph.url ? (
+                              <a key={ph.path} href={ph.url} target="_blank" rel="noopener"
+                                className="block rounded-lg overflow-hidden"
+                                style={{ border: HAIRLINE, width: 74, height: 74 }}>
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={ph.url} alt="Customer photo"
+                                  style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                              </a>
+                            ) : (
+                              <span key={ph.path}
+                                className="rounded-lg flex items-center justify-center text-[10px] text-[rgba(232,227,218,0.35)]"
+                                style={{ border: HAIRLINE, width: 74, height: 74 }}>
+                                unavailable
+                              </span>
+                            ),
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-[rgba(232,227,218,0.30)] mt-1.5">
+                      Kept as sent. What you write below is what the vendor sees.
+                    </p>
+                  </section>
+                )}
 
                 {/* Who */}
                 <section>
