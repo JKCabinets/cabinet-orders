@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, cleanInput, rateLimitOr429 } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import { ORDER_TYPES, MANUAL_CREATABLE_TYPES, ID_PREFIX_BY_TYPE, parseMoney, type OrderType } from "@/lib/data";
+import { createWarranty } from "@/lib/createWarranty";
 
 export async function GET(req: NextRequest) {
   const auth = await requireAuth();
@@ -99,11 +100,49 @@ export async function POST(req: NextRequest) {
   }
 
   const today = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "America/Phoenix" });
-  const isWarranty = type === "warranty";
-  // Warranty ids keep their existing 4-digit short form.
-  const id = isWarranty
-    ? `WRN-${String(Date.now()).slice(-4).padStart(4, "0")}`
-    : `${ID_PREFIX_BY_TYPE[type]}-${Date.now()}`;
+
+  // ── Warranty claims are built elsewhere ──────────────────────────────────
+  //
+  // ⚠ ONE CREATE PATH, SHARED WITH PROMOTION. A claim raised by hand and a
+  // claim promoted from a customer submission differ only in where the facts
+  // come from. When they were two inserts they drifted: this route generated
+  // `WRN-${Date.now().slice(-4)}`, which repeats every ten seconds against a
+  // primary key, and accepted no about_order_id at all -- so every hand-logged
+  // claim was unlinked and its Terms 12.3 window could not be computed.
+  //
+  // lib/createWarranty validates the parent, allocates WRN-1048-1 against the
+  // sequence already used for that purchase, and retries on a duplicate key.
+  if (type === "warranty") {
+    const created = await createWarranty({
+      aboutOrderId: String(body.about_order_id ?? ""),
+      name: body.name as string,
+      detail: (body.detail as string) ?? "",
+      notes: (body.notes as string) ?? "",
+      internalNotes: (body.internal_notes as string) ?? "",
+      sku: (body.sku as string) ?? "",
+      member: (body.member as string) ?? undefined,
+      createdBy: auth.session.user.username,
+      claimantName: (body.claimant_name as string) ?? null,
+      claimantEmail: (body.claimant_email as string) ?? null,
+      // ⚠ NULL, DELIBERATELY. reported_at is the moment a CUSTOMER reported
+      // the problem. For a claim typed in by staff that moment is now, and the
+      // SLA rules fall back to created_at when this is absent. Only promotion
+      // carries a real value, from claim_submissions.received_at.
+      reportedAt: null,
+      source: (body.source as string) ?? "Manual",
+      activityText: `Claim logged by ${auth.session.user.name}`,
+    });
+
+    if (!created.ok) {
+      return NextResponse.json(
+        { error: created.error, message: created.message },
+        { status: created.status },
+      );
+    }
+    return NextResponse.json({ data: created.order }, { status: 201 });
+  }
+
+  const id = `${ID_PREFIX_BY_TYPE[type]}-${Date.now()}`;
 
   const newOrder = {
     id,
@@ -111,9 +150,9 @@ export async function POST(req: NextRequest) {
     name:       cleanInput(body.name as string),
     source:     body.source  ?? "Manual",
     detail:     cleanInput((body.detail as string) ?? ""),
-    // Only warranties start outside the order flow. Samples and custom
-    // orders both start at "New".
-    stage:      isWarranty ? "New claim" : "New",
+    // Warranty is handled above and returns before reaching here, so the only
+    // type left that this route creates is `custom`, which starts at "New".
+    stage:      "New",
     member:     body.member  ?? "AX",
     date:       today,
     sku:        cleanInput((body.sku as string) ?? ""),
