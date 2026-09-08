@@ -72,9 +72,35 @@ export async function GET(req: NextRequest) {
     }, {} as typeof groupsByProject);
   }
 
+  // ── Photos ───────────────────────────────────────────────────────────────
+  //
+  // ⚠ SIGNED URLS, MINTED HERE. The claim-photos bucket is private and has no
+  // storage policies, so only the service role can read it -- which is the
+  // point: these are photographs of somebody's home, submitted before anyone
+  // has verified who they are. A raw path is useless to the browser, so the
+  // review screen would show nothing and the person completing a damage claim
+  // would be judging it blind.
+  //
+  // One hour. Long enough to work a queue, short enough that a URL pasted into
+  // a chat stops working.
+  const signedByPath = new Map<string, string>();
+  const allPaths = rows.flatMap((r) => (Array.isArray(r.photo_paths) ? r.photo_paths : []));
+  if (allPaths.length > 0) {
+    const { data: signed } = await supabase.storage
+      .from("claim-photos")
+      .createSignedUrls(allPaths as string[], 3600);
+    for (const entry of signed ?? []) {
+      // A failed entry carries an error and no signedUrl. Skipped rather than
+      // faked: a broken image is clearer than a link that goes nowhere.
+      if (entry.path && entry.signedUrl) signedByPath.set(entry.path, entry.signedUrl);
+    }
+  }
+
   return NextResponse.json({
     data: rows.map((r) => ({
       ...r,
+      photos: (Array.isArray(r.photo_paths) ? r.photo_paths : [])
+        .map((path: string) => ({ path, url: signedByPath.get(path) ?? null })),
       // Empty when the typed number matched nothing. That is a real state, not
       // an error: the person promoting picks the group by hand and the raw
       // string is right there to work from.

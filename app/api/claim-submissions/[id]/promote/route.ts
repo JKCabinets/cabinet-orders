@@ -44,6 +44,39 @@ export async function POST(
   }
 
   const aboutOrderId = String(body.about_order_id ?? "").trim();
+
+  /**
+   * ⚠ COMPLETION, NOT CONVERSION. A submission is a DRAFT: the customer says
+   * "my base drawer cabinet has a dent in the drawer front", which is not
+   * something a vendor can fill. The team member reads it and writes what is
+   * actually needed -- "DB15, replacement top drawer front" -- against the
+   * order they have confirmed it belongs to.
+   *
+   * So this route takes the staff's version of every field. The submission is
+   * kept untouched as the customer's original report, because received_at
+   * carries legal weight under Terms 12.3 and editing a report in place is how
+   * the report gets lost.
+   */
+  const issue = String(body.issue ?? "").slice(0, 500).trim();
+  const internalNotes = String(body.internal_notes ?? "").slice(0, 1000).trim();
+  const deliveryMethod = String(body.delivery_method ?? "").slice(0, 120).trim();
+  const skuItems = Array.isArray(body.sku_items)
+    ? (body.sku_items as { sku?: unknown; quantity?: unknown; description?: unknown }[])
+      .map((i) => ({
+        sku: String(i.sku ?? "").slice(0, 120),
+        quantity: Math.max(0, Math.trunc(Number(i.quantity) || 0)),
+        description: String(i.description ?? "").slice(0, 300),
+      }))
+      // A line at zero was never selected. Filtering here rather than trusting
+      // the client keeps a stray row out of the vendor's replacement order.
+      .filter((i) => i.quantity > 0 && (i.sku || i.description))
+    : [];
+
+  const dateOrNull = (v: unknown) => {
+    const t = String(v ?? "").trim();
+    return /^\d{4}-\d{2}-\d{2}$/.test(t) ? t : null;
+  };
+
   if (!aboutOrderId) {
     return NextResponse.json(
       {
@@ -92,7 +125,9 @@ export async function POST(
   const created = await createWarranty({
     aboutOrderId,
     name: sub.claimant_name,
-    detail: `${sub.claim_type} claim`,
+    // The staff description wins; the customer's own words are kept verbatim
+    // in notes below, as the report they actually made.
+    detail: issue || `${sub.claim_type} claim`,
     notes: notesParts.join("\n"),
     // ⚠ NO `member`. The session carries id, name, email, role and username --
     // not initials -- and every other create route on this box defaults this
@@ -101,6 +136,12 @@ export async function POST(
     // the claim to whoever happened to triage it would also be a guess.
     createdBy: auth.session.user.username,
     claimedBy: auth.session.user.id,
+    internalNotes,
+    skuItems,
+    deliveryMethod,
+    scheduledDeliveryDate: dateOrNull(body.scheduled_delivery_date),
+    productionStartDate: dateOrNull(body.production_start_date),
+    productionEstFinishDate: dateOrNull(body.production_est_finish_date),
     claimantName: sub.claimant_name,
     claimantEmail: sub.claimant_email,
     // The carry. See the header.
