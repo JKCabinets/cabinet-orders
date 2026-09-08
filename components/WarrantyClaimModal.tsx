@@ -100,6 +100,18 @@ interface ClaimLine {
   key: string;
   sku: string;
   /**
+   * ⚠ CARRIED FROM THE PARENT LINE, NOT RE-DERIVED.
+   *
+   * OrderDetails groups on `item.door_style` and `item.color` -- decoded and
+   * persisted server-side at ingest, per LINE, not per row. Dropping them when
+   * building a claim line left the group header reading "Unknown style" with
+   * no colour, on a SKU whose own suffix says Painted Navy. The claim is for
+   * the same physical part as the original line, so the same style and colour
+   * are the right answer and the client has no business decoding them again.
+   */
+  doorStyle?: string;
+  color?: string;
+  /**
    * ⚠ FREE TEXT, NOT THE PARENT'S PRODUCT NAME. A customer with a damaged B12
    * needs "top drawer front only" recorded, not "Base Cabinet 12"". What is
    * being replaced is rarely the whole line item, and the vendor needs the
@@ -202,6 +214,8 @@ export function WarrantyClaimModal({ onClose, submission, onDone }: Props) {
       (group.sku_items ?? []).map((i: SkuItem, n: number) => ({
         key: `${group.id}-${n}`,
         sku: i.sku,
+        doorStyle: i.door_style ?? undefined,
+        color: i.color ?? undefined,
         description: i.description ?? "",
         quantity: 0,
         purchased: i.quantity ?? null,
@@ -225,6 +239,10 @@ export function WarrantyClaimModal({ onClose, submission, onDone }: Props) {
       sku: l.sku,
       quantity: l.quantity,
       description: l.description,
+      // Undefined for a line added by hand, which has no parent to inherit
+      // from. It groups under "no style" rather than borrowing someone else's.
+      door_style: l.doorStyle,
+      color: l.color,
     }));
 
     try {

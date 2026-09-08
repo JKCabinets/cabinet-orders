@@ -61,11 +61,20 @@ export async function POST(
   const internalNotes = String(body.internal_notes ?? "").slice(0, 1000).trim();
   const deliveryMethod = String(body.delivery_method ?? "").slice(0, 120).trim();
   const skuItems = Array.isArray(body.sku_items)
-    ? (body.sku_items as { sku?: unknown; quantity?: unknown; description?: unknown }[])
+    ? (body.sku_items as {
+        sku?: unknown; quantity?: unknown; description?: unknown;
+        door_style?: unknown; color?: unknown;
+      }[])
       .map((i) => ({
         sku: String(i.sku ?? "").slice(0, 120),
         quantity: Math.max(0, Math.trunc(Number(i.quantity) || 0)),
         description: String(i.description ?? "").slice(0, 300),
+        // ⚠ CARRIED, NOT DROPPED. OrderDetails groups on these two per LINE.
+        // Rebuilding the item without them would make a promoted claim show
+        // "Unknown style" where a manual one shows the real one -- the same
+        // data, two behaviours, decided by which door it came through.
+        door_style: i.door_style ? String(i.door_style).slice(0, 120) : undefined,
+        color: i.color ? String(i.color).slice(0, 120) : undefined,
       }))
       // A line at zero was never selected. Filtering here rather than trusting
       // the client keeps a stray row out of the vendor's replacement order.
