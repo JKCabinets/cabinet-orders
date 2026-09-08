@@ -11,6 +11,7 @@ import { OrderTable } from "@/components/OrderTable";
 import { OrderModal } from "@/components/OrderModal";
 import { BulkActionBar } from "@/components/BulkActionBar";
 import { NewOrderModal } from "@/components/NewOrderModal";
+import { WarrantyClaimModal } from "@/components/WarrantyClaimModal";
 import { Search, CheckSquare, X, CalendarDays, Plus } from "lucide-react";
 
 /**
@@ -273,9 +274,14 @@ export function OrdersHubClient({
         />
       )}
 
-      {showNewForm && (
+      {/* ⚠ A CLAIM IS ABOUT A GROUP, NOT A PURCHASE. WarrantyClaimModal asks
+          which purchase and then which part of it; the generic create form can
+          only ask the first, and renders both as the same order number. */}
+      {showNewForm && (type === "warranty" ? (
+        <WarrantyClaimModal onClose={() => setShowNewForm(false)} />
+      ) : (
         <NewOrderModal type={type} onClose={() => setShowNewForm(false)} />
-      )}
+      ))}
 
       <BulkActionBar
         selectedOrders={selectedOrders}
