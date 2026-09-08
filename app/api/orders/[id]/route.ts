@@ -405,8 +405,21 @@ export async function PATCH(
   if (body.stage && body.stage !== currentStage) {
     updates.stage_entered_at = new Date().toISOString();
   }
-  // Auto-clear claim when order leaves New; set entered_by when moving to Entered
-  if (body.stage && body.stage !== "New") updates.claimed_by = null;
+  // ⚠ NOTHING CLEARS A CLAIM HERE ANY MORE. Removed 2026-09-01.
+  //
+  // This used to be `if (body.stage && body.stage !== "New") claimed_by = null`.
+  // It cleared the column with NO ownership check, so any stage move by anyone
+  // discarded whoever held the row -- the exact thing release_order() refuses
+  // with `not_owner` and release_project() restricts to admins. It also read
+  // "New" literally, so a warranty row at `New claim` lost its owner on a PATCH
+  // that did not change its stage at all.
+  //
+  // claim_order() deliberately permits claiming at ANY stage: the restriction
+  // is present in that function, commented out, with a note explaining why.
+  // Ending a claim is release_order()'s job, and it checks ownership.
+  //
+  // An explicit `claimed_by` in the body is still honoured below -- that is the
+  // admin hand-off path, and it is deliberate rather than a side effect.
   // entered_by stores the immutable username (not display name) so that
   // when users rename, the historical record still resolves correctly.
   if (body.stage === "Entered")    updates.entered_by = auth.session.user.id;  // team_members.id

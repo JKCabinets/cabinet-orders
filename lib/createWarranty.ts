@@ -29,7 +29,17 @@ export interface CreateWarrantyInput {
   internalNotes?: string;
   sku?: string;
   member?: string;
+  /** team_members.username. Goes to created_by, which is a display record. */
   createdBy: string;
+  /**
+   * team_members.id, the immutable one.
+   *
+   * ⚠ NOT createdBy. claim_order() and release_order() both compare
+   * claimed_by against auth.session.user.id; a claim written under a username
+   * would never match, and release_order() would refuse the owner with
+   * `not_owner`.
+   */
+  claimedBy?: string | null;
   /** Self-reported and unverified — whatever was typed into the claim form. */
   claimantName?: string | null;
   claimantEmail?: string | null;
@@ -160,6 +170,11 @@ export async function createWarranty(
       claimant_email: input.claimantEmail ? cleanInput(input.claimantEmail) : null,
       reported_at: input.reportedAt ?? null,
       created_by: input.createdBy,
+      // ⚠ ASSIGNED ON CREATION. A claim arrives already belonging to whoever
+      // raised it, rather than sitting unowned until somebody notices. Safe
+      // only because stage changes no longer clear this column; before
+      // 2026-09-01 it would have been discarded on the first advance.
+      claimed_by: input.claimedBy ?? null,
       // Carried from the parent so the claim is workable without a join. The
       // customer OF RECORD is still the parent's; claimant_* is what the
       // person filling in the form said, and a mismatch is worth seeing.

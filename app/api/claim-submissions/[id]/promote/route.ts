@@ -100,6 +100,7 @@ export async function POST(
     // holds the username and the activity row below names the person. Assigning
     // the claim to whoever happened to triage it would also be a guess.
     createdBy: auth.session.user.username,
+    claimedBy: auth.session.user.id,
     claimantName: sub.claimant_name,
     claimantEmail: sub.claimant_email,
     // The carry. See the header.

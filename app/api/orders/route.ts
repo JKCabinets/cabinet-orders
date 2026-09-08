@@ -122,6 +122,7 @@ export async function POST(req: NextRequest) {
       sku: (body.sku as string) ?? "",
       member: (body.member as string) ?? undefined,
       createdBy: auth.session.user.username,
+      claimedBy: auth.session.user.id,
       claimantName: (body.claimant_name as string) ?? null,
       claimantEmail: (body.claimant_email as string) ?? null,
       // ⚠ NULL, DELIBERATELY. reported_at is the moment a CUSTOMER reported
