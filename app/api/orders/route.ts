@@ -123,6 +123,17 @@ export async function POST(req: NextRequest) {
       member: (body.member as string) ?? undefined,
       createdBy: auth.session.user.username,
       claimedBy: auth.session.user.id,
+      // ⚠ THE CLAIMED LINES ARE THE CLAIM. Each carries the SKU, the quantity
+      // affected, and `description` -- the part, in the vendor's terms, which
+      // is what a replacement order is actually placed for. Dropping them left
+      // a row that looked complete and said nothing.
+      skuItems: Array.isArray(body.sku_items)
+        ? (body.sku_items as { sku: string; quantity: number; description?: string }[])
+        : undefined,
+      deliveryMethod: (body.delivery_method as string) ?? "",
+      scheduledDeliveryDate: (body.scheduled_delivery_date as string) ?? null,
+      productionStartDate: (body.production_start_date as string) ?? null,
+      productionEstFinishDate: (body.production_est_finish_date as string) ?? null,
       claimantName: (body.claimant_name as string) ?? null,
       claimantEmail: (body.claimant_email as string) ?? null,
       // ⚠ NULL, DELIBERATELY. reported_at is the moment a CUSTOMER reported

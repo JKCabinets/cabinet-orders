@@ -51,6 +51,28 @@ export interface CreateWarrantyInput {
    */
   reportedAt?: string | null;
   source?: string;
+  /**
+   * What is being replaced, in the vendor's terms.
+   *
+   * ⚠ NOT A COPY OF THE PARENT'S LINES. A customer with a dented DB15 needs
+   * "top drawer front only" recorded against that SKU, at the quantity
+   * affected -- not the whole cabinet at the quantity purchased. `description`
+   * is where the part goes, and it is why this cannot be derived from the
+   * parent row.
+   */
+  skuItems?: { sku: string; quantity: number; description?: string }[];
+  deliveryMethod?: string;
+  /**
+   * ⚠ EXISTING COLUMNS, CHOSEN TO MATCH THE STAGES THAT WAIT ON THEM.
+   * `Shipped` waits on parts leaving, so the expected ship date is
+   * scheduled_delivery_date. `Parts ordered` on a cabinet claim waits on a
+   * build, so it uses the production pair. Both stages currently have NO SLA
+   * rule -- sla.ts says there is no field that would say when to stop
+   * worrying. After this there is one.
+   */
+  scheduledDeliveryDate?: string | null;
+  productionStartDate?: string | null;
+  productionEstFinishDate?: string | null;
   /** Line for the activity log. The row must say how it came to exist. */
   activityText: string;
 }
@@ -170,6 +192,11 @@ export async function createWarranty(
       claimant_email: input.claimantEmail ? cleanInput(input.claimantEmail) : null,
       reported_at: input.reportedAt ?? null,
       created_by: input.createdBy,
+      sku_items: input.skuItems ?? [],
+      delivery_method: cleanInput(input.deliveryMethod ?? ""),
+      scheduled_delivery_date: input.scheduledDeliveryDate || null,
+      production_start_date: input.productionStartDate || null,
+      production_est_finish_date: input.productionEstFinishDate || null,
       // ⚠ ASSIGNED ON CREATION. A claim arrives already belonging to whoever
       // raised it, rather than sitting unowned until somebody notices. Safe
       // only because stage changes no longer clear this column; before
