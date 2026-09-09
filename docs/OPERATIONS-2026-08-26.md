@@ -859,6 +859,14 @@ so the first one to fail takes the rest with it.
 
 ## Important
 
+- **⚠ Can a warranty claim be raised against a CUSTOM job, and if so whose
+  terms govern it?** Raised 2026-09-09 when the receipt gate was taken off
+  custom jobs, because they are outside our Terms. The claim modal's order
+  picker currently excludes custom as a target. If the answer is no, that
+  exclusion is already correct and should say why; if yes, it needs
+  revisiting -- and the warranty flow's customer-facing copy, the 48-hour
+  window and the reporting conditions all assume our Terms. Garrett's call.
+  **Do not change the picker either way without asking.**
 - **⚠ Do the project money totals include line-item ADD-ONS?** Shopify line
   items carry `_apo_options` and `_apo_addons` from the options app, and the
   order inspected on 2026-08-27 had `_apo_addons: "23.89"` on a single line.
@@ -920,6 +928,16 @@ so the first one to fail takes the rest with it.
 ---
 
 # 13. Chargeback evidence — what to assemble per order
+
+⚠ **Shopify checkouts only — custom jobs are outside it.** This list is
+built on our Terms, and a custom job is not governed by them: the customer
+signs a contract and a purchase order with their own terms, and those two
+documents are the record for a custom dispute. Terms 12.3 and the signed
+proof of delivery that evidences it do not reach a custom job, which is why
+the OMS does not gate a custom delivery on a receipt (decided 2026-09-09;
+recorded on the custom block of `lib/requirements.ts`). Somebody assembling
+evidence for a custom dispute from this list would find half of it missing
+and conclude the file was incomplete.
 
 Terms acceptance record (timestamp, IP, exact text, policy version) · order
 confirmation email and its delivery confirmation · AVS and CVV results · 3DS

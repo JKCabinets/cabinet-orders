@@ -7,16 +7,15 @@
  * truth.
  */
 
+import type { Order } from "@/lib/data";
+import { requirementsFor } from "@/lib/requirements";
+
 export type GateResult =
   | { ok: true }
   | { ok: false; reason: "no-attachments"; message: string }
   | { ok: false; reason: "no-delivery-proof"; message: string }
   | { ok: false; reason: "network"; message: string };
 
-/**
- * Returns ok=true if the order has at least one attachment, else ok=false
- * with reason="no-attachments". Used to gate New→Entered transitions.
- */
 /**
  * Returns ok=true if the order carries an attachment marked as a signed
  * delivery receipt (kind = 'proof_of_delivery'). Gates At cross dock ->
@@ -28,10 +27,23 @@ export type GateResult =
  *
  * As with checkAttachmentGate, the server is the source of truth -- this
  * exists to fail fast and offer the override in the same click.
+ *
+ * ⚠ WHETHER A RECEIPT IS NEEDED AT ALL IS ASKED OF lib/requirements -- the
+ * same line the PATCH route reads -- so this takes the ROW, not an id. Not
+ * a type list: custom jobs are not governed by our Terms, so Terms 12.3 and
+ * its signed proof of delivery do not reach them, and that is recorded once
+ * on the custom block of the table rather than here and in the route.
+ * Resolved against the row's CURRENT stage: `proof_of_delivery` lives at
+ * At cross dock, and asking about the target would exempt everything.
  */
-export async function checkDeliveryProofGate(orderId: string): Promise<GateResult> {
+export async function checkDeliveryProofGate(
+  order: Pick<Order, "id" | "type" | "stage">,
+): Promise<GateResult> {
+  if (!requirementsFor(order).some((r) => r.id === "proof_of_delivery")) {
+    return { ok: true };
+  }
   try {
-    const res = await fetch(`/api/orders/attachments?orderId=${encodeURIComponent(orderId)}`);
+    const res = await fetch(`/api/orders/attachments?orderId=${encodeURIComponent(order.id)}`);
     if (!res.ok) {
       return { ok: false, reason: "network", message: "Could not verify attachments" };
     }
@@ -51,6 +63,10 @@ export async function checkDeliveryProofGate(orderId: string): Promise<GateResul
   }
 }
 
+/**
+ * Returns ok=true if the order has at least one attachment, else ok=false
+ * with reason="no-attachments". Used to gate New→Entered transitions.
+ */
 export async function checkAttachmentGate(orderId: string): Promise<GateResult> {
   try {
     const res = await fetch(`/api/orders/attachments?orderId=${encodeURIComponent(orderId)}`);

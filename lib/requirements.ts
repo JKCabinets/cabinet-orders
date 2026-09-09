@@ -208,11 +208,30 @@ export const REQUIREMENTS: Record<OrderType, Record<string, Requirement[]>> = {
     "Delivered": [],
   },
 
-  // ⚠ CUSTOM HAS NO REQUIREMENTS ANYWHERE, and that is a decision rather than
-  // an omission. Custom jobs are hand-driven end to end: priced by hand, paid
-  // in person, scheduled by conversation, and the production-complete cron is
-  // filtered to exclude them. A missing date is not a stalled pipeline, it is
-  // a date that lives somewhere other than this system.
+  // ⚠ CUSTOM HAS NO REQUIREMENTS ANYWHERE, and that is two decisions rather
+  // than one omission -- they have different reasons, and the reasons matter
+  // more than the empty lists.
+  //
+  // No CLOCK requirements. Custom jobs are hand-driven end to end: priced by
+  // hand, paid in person, scheduled by conversation, and the
+  // production-complete cron is filtered to exclude them. A missing date is
+  // not a stalled pipeline, it is a date that lives somewhere other than this
+  // system. That is a statement about clocks and queues.
+  //
+  // No GATE requirements either, and in particular NO SIGNED RECEIPT. Custom
+  // jobs are not governed by our Terms and policies at all: a custom customer
+  // signs a contract and a purchase order with their own terms. Terms 12.3 --
+  // the 48-hour reporting window, the conditions precedent, the signed proof
+  // of delivery that evidences them -- is a Shopify-checkout agreement and
+  // does not reach a custom job. Decided 2026-09-09. Until then the route
+  // gated custom on a receipt, which was not merely unnecessary: it was
+  // enforcing the wrong document. "Exempt because hand-driven" is a reason
+  // somebody reinstates the gate against once the process tightens; "Terms
+  // 12.3 does not apply" is not.
+  //
+  // ⚠ THE ROUTE AND THE ROW BUTTON BOTH ASK THIS TABLE whether a receipt is
+  // needed, so this block is the one place that records which flows Terms
+  // 12.3 governs. Adding an entry here is adding a gate there.
   custom: {
     "New": [], "In review": [], "Ordered": [],
     "In production": [], "At cross dock": [], "Delivered": [],

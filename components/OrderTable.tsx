@@ -498,6 +498,10 @@ function PaymentPill({ status }: { status?: string | null }) {
  * The server enforces all of this independently -- see the delivery proof
  * gate in app/api/orders/[id]/route.ts. This exists so the failure is
  * actionable in one click instead of an error toast with no remedy.
+ *
+ * Rendered for every type at At cross dock, including custom jobs. Whether
+ * the receipt applies is decided inside checkDeliveryProofGate from
+ * lib/requirements, not here: a custom job passes straight through.
  */
 function ConfirmDeliveryActions({ order, mobile, onOpenModal }: {
   order: Order;
@@ -518,7 +522,7 @@ function ConfirmDeliveryActions({ order, mobile, onOpenModal }: {
       // Skip the client check when overriding -- we already know there is no
       // receipt, and the server will demand the reason regardless.
       if (!overrideReason) {
-        const gate = await checkDeliveryProofGate(order.id);
+        const gate = await checkDeliveryProofGate(order);
         if (!gate.ok) {
           if (gate.reason === "network") {
             showToast(gate.message, { kind: "error" });

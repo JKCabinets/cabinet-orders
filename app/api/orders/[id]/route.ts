@@ -4,9 +4,10 @@ import { supabase } from "@/lib/supabase";
 import { getShopifyToken } from "@/lib/shopify";
 import { mergeTags } from "@/lib/shopifyStageSync";
 import { ALLOWED_STAGES, isStageAllowedForType, isBackwardsMove, verifyAdminPin, fieldsToClearOnBackwardMove, describeFieldsCleared } from "@/lib/stageGuards";
-import { isPaymentHoldStatus, paymentHoldLabel, parseMoney, isStageOfferedForType } from "@/lib/data";
+import { isPaymentHoldStatus, paymentHoldLabel, parseMoney, isStageOfferedForType, type OrderType, type Stage } from "@/lib/data";
 import { trackingTargetStage, categoryHasTracking, type OrderCategory } from "@/lib/categories";
 import { orderAllVendorsGreen } from "@/lib/acknowledgments";
+import { requirementsFor } from "@/lib/requirements";
 
 /** Push order updates back to Shopify */
 async function syncToShopify(
@@ -281,17 +282,6 @@ export async function PATCH(
     }
   }
 
-  // ── Delivery proof gate ─────────────────────────────────────
-  // At cross dock -> Delivered needs the signed delivery receipt, which the
-  // confirmation email already tells the customer they will sign.
-  //
-  // Looks for kind = 'proof_of_delivery' specifically. A plain attachment
-  // count would pass on the Entered-stage ack PDFs and enforce nothing.
-  //
-  // Samples are exempt, as with the ack gate.
-  //
-  // The override needs a REASON and is checked here, not just in the UI --
-  // otherwise it is decoration, which is exactly what override_ack is.
   // ── Payment hold ───────────────────────────────────────
   // financial_status already reaches us on orders/updated, so a refund is
   // known within seconds. Nothing acted on it until now: a refunded order
@@ -355,9 +345,36 @@ export async function PATCH(
     }
   }
 
+  // ── Delivery proof gate ─────────────────────────────────────
+  // At cross dock -> Delivered needs the signed delivery receipt, which the
+  // confirmation email already tells the customer they will sign.
+  //
+  // Looks for kind = 'proof_of_delivery' specifically. A plain attachment
+  // count would pass on the Entered-stage ack PDFs and enforce nothing.
+  //
+  // ⚠ WHETHER A RECEIPT IS NEEDED IS ASKED OF lib/requirements, NOT OF A
+  // TYPE LIST. This read `currentType !== "sample"`, which gated custom jobs
+  // -- and custom jobs are not governed by our Terms and policies at all. A
+  // custom customer signs a contract and a purchase order with their own
+  // terms; Terms 12.3, the 48-hour window, the conditions precedent and the
+  // signed proof of delivery that evidences them are a Shopify-checkout
+  // agreement and do not reach a custom job. The gate was enforcing the
+  // wrong document. The table's custom block records that once, and the row
+  // button in OrderTable asks the same line, so the two cannot disagree.
+  // First slice of the PATCH-gates migration (OMS-STATE §4).
+  //
+  // ⚠ RESOLVED AGAINST THE CURRENT STAGE, NOT THE TARGET. `proof_of_delivery`
+  // lives at At cross dock; asked of Delivered it would return nothing and
+  // exempt everything silently.
+  //
+  // The override needs a REASON and is checked here, not just in the UI --
+  // otherwise it is decoration, which is exactly what override_ack is.
+  const receiptRequired = requirementsFor({
+    type: currentType as OrderType, stage: currentStage as Stage,
+  }).some((r) => r.id === "proof_of_delivery");
+
   let deliveryOverrideReason: string | null = null;
-  if (body.stage === "Delivered" && currentStage === "At cross dock"
-      && currentType !== "sample") {
+  if (body.stage === "Delivered" && receiptRequired) {
     const { data: receipts } = await supabase
       .from("order_attachments")
       .select("id")
