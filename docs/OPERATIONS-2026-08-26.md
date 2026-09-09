@@ -519,6 +519,41 @@ removing it needs Plus, as do custom sidebar apps.
 
 # 9. Incident history
 
+**⚠ `projects` readable and writable by the public anon key (2026-08-25 →
+2026-09-01).** `projects` was the only table in the database with RLS
+disabled. Supabase's default privileges grant ALL to `anon` on new tables in
+the public schema, and RLS is what normally makes that harmless — so the grants
+stood alone: SELECT, INSERT, UPDATE, DELETE, TRUNCATE. The key is
+`NEXT_PUBLIC_SUPABASE_ANON_KEY`, which **ships in the client bundle on every
+page load, including the login page**; it is public by design, and RLS and
+grants are the controls.
+
+Exposed: customer email, phone, ship-to address, name and every price on the
+table. PostgREST honours `limit` and `offset`, so the exposure was the whole
+table, and it was **not read-only** — PostgREST exposes DELETE and a filter such
+as `?id=neq.__none__` matches every row.
+
+Found by asking what a public route's boundary actually was, not by an alarm.
+Supabase's own linter had it as the single ERROR-level finding in the database.
+`projects` is also **the only table created outside `migrations/`** — made by
+hand when the project model landed 2026-08-25, while every table that went
+through a migration got RLS. That is one fact, not two.
+
+Closed by `migrations/2026-09-01-projects-rls.sql`: RLS and four policies in
+one transaction, mirroring `orders`. ⚠ **The SQL editor cannot verify this** —
+it runs as `postgres` and bypasses RLS. The only check that means anything is a
+request with the anon key from outside, which now returns `200 []`.
+
+→ **Produced the rule that a new table gets RLS in the same transaction as its
+`create table`, before a row exists.** The window between the two is the whole
+vulnerability. → **And the argument for the schema living in the repo:** the
+database still cannot be rebuilt from git.
+
+⚠ **The Supabase API logs have not been reviewed** for `anon` reads of
+`/rest/v1/projects` during the window. Bots do sweep for exposed Supabase
+projects using keys scraped from JS bundles. Probably nothing, given the store
+is password protected — "probably" is doing work in that sentence.
+
 **64-day cron outage (2026-05-21 → 2026-07-24).** All three crons dead, 175
 silent failures. `run-cron.sh` had a hardcoded `sslip.io` hostname orphaned by
 the domain cutover. Unnoticed because a duplicate code path was doing the stage
@@ -720,13 +755,24 @@ covers the box, not the database, and the database is where the orders are.
 
 ## Critical
 
-- **⚠ Is `.kamal/secrets.bak` holding real secret VALUES?** It is committed to
-  git. `.kamal/secrets` itself belongs there — it holds `$REFERENCES`, not
-  values — but the `.bak` is the shape of the 2026-08-03 incident, where that
-  exact file was regenerated from a stale paste and silently lost four keys.
-  **If it contains literal values, the answer is rotation, not deletion:** git
-  history keeps it either way. Raised 2026-08-27 and not yet checked.
-- **⚠ Should the New → Entered gate be tightened to match what we tell people?**
+- **✅ `.kamal/secrets.bak` holds references, not values.** Checked 2026-09-08.
+  All nineteen entries are templates: subtracting each key name's length from
+  its value length gives **42 for every row without exception**, which only
+  happens if each value interpolates its own key name. No rotation needed;
+  deleting it is tidiness. ⚠ Two things it surfaced: it is missing
+  `HEALTHCHECKS_API_KEY` relative to the live file, which is the 2026-08-03
+  shape again in miniature, and **neither file holds any Microsoft Graph
+  credential at all** — see below.
+- **✅ The New → Entered gate stays LOOSE, and the wording now says so.**
+  Decided 2026-09-08. HCI and J&K change their order forms constantly, so a
+  parser for them would be a gate that breaks on someone else's schedule; the
+  acknowledgment check is a helpful tool for Waypoint rather than a hard
+  requirement for everyone. The in-app text was corrected to name both
+  remedies. ⚠ Fixing the wording also uncovered that the modal's Entered button
+  was broken in BOTH directions — see the 2026-09-08 handoff §3.
+
+- **~~⚠ Should the New → Entered gate be tightened to match what we tell
+  people?~~** *(superseded by the entry above; kept for the reasoning.)*
   It currently passes on **a green acknowledgment OR any attachment at all** —
   a customer drawing satisfies it. Every message about it, including the
   in-app requirement line, says "manufacturer acknowledgment required", which is
@@ -734,6 +780,36 @@ covers the box, not the database, and the database is where the orders are.
   specific `kind`; the column exists and `proof_of_delivery` already uses it.
   It is a real behaviour change — anyone relying on "attach anything" starts
   being refused — and it is the HCI/J&K path, so it is a business decision.
+- **⚠ MICROSOFT GRAPH REACHES NOTHING.** Found 2026-09-08. There is no Graph
+  entry in `.kamal/secrets` (twenty keys, none of them Graph) and none in
+  `config/deploy.yml`. Two of the three files in §5's chain are absent, so
+  whatever sits in `.env.kamal` stops there and never reaches the container.
+  Every planned notification goes out `no-reply@` via Graph, and the
+  production-complete message fires unattended from the 1am cron **against a
+  promise the Shopify order confirmation already makes to every cabinet
+  customer**. Nothing has surfaced it because nothing sends yet. This is
+  failure mode 1 in §5 — the silent one — and it is the highest-ranked item on
+  the remaining-work list.
+
+- **⚠ THE `public_api` ROLE DOES NOT EXIST.** Found 2026-09-08. `pg_roles` has
+  no such role, and both public endpoints run as the **service role** — full
+  access, RLS bypassed. §9's note that `public_api` with column-level grants is
+  "the control that matters, given the accepted `qual=true` SELECT risk"
+  describes a compensating control that was never built, so that acceptance is
+  void. Nothing is exploitable as written: each route selects an explicit
+  column list. But the select lists are now the ONLY boundary, and a future
+  edit to a public route can reach `customer_phone` or `internal_notes` with no
+  second check. supabase-js authenticates with an API key rather than a
+  Postgres role, so building it means signing a short-lived JWT with
+  `role: "public_api"` using `SUPABASE_JWT_SECRET`, which is already in
+  `.kamal/secrets`.
+
+- **⚠ `projects` AND `order_acknowledgments` HAVE NO CREATING MIGRATION.**
+  Neither is in `migrations/` nor in the versioned schema files, which all
+  predate them by months. The schema of record exists only in Supabase, so the
+  database cannot be rebuilt from the repo — and the RLS exposure in §9 is the
+  first concrete cost of that.
+
 - **⚠ Who supplies hardware, and are they integrated with Shopify?** Decides
   whether a tracking number ever reaches the OMS automatically or whether manual
   entry is the only door. Nothing should be built on the current code comments,
