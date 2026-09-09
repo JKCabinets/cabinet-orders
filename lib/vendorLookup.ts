@@ -79,41 +79,89 @@ function vendorFamilyFromSku(fullSku: string): string | null {
   return null;
 }
 
-export async function lookupVendorsForSkus(
-  skuItems: ResolvableItem[],
-  fallbackOrderVendor?: string | null
-): Promise<VendorLookupResult> {
+/**
+ * The two shopify_products lookups, for ANY number of orders at once.
+ *
+ * ⚠ THIS IS THE ONLY I/O IN THE CHAIN. Everything else is decidable from the
+ * SKU string and these two maps, which is what makes resolving a whole work
+ * queue two queries instead of two per row.
+ *
+ * Pass every line item across every order. Duplicate variant ids and base SKUs
+ * collapse, so the queries do not grow with the number of orders, only with
+ * the number of distinct products.
+ */
+export interface VendorMaps {
+  /** shopify_products.id (the Shopify variant id) → vendor */
+  byVariantId: Map<string, string>;
+  /** shopify_products.sku (the BASE sku) → vendor */
+  byBaseSku: Map<string, string>;
+}
+
+export async function prefetchVendorMaps(
+  allItems: ResolvableItem[],
+): Promise<VendorMaps> {
   // Warm the mapping cache before any decode/classify runs (no-op once loaded).
   await ensureSkuMaps();
 
+  const byVariantId = new Map<string, string>();
+  const byBaseSku = new Map<string, string>();
+
+  const variantIds = Array.from(new Set(
+    allItems.map((i) => String(i.variant_id ?? "").trim()).filter(Boolean),
+  ));
+  if (variantIds.length > 0) {
+    const { data } = await supabase
+      .from("shopify_products").select("id, vendor").in("id", variantIds);
+    for (const p of data ?? []) {
+      const v = String(p.vendor ?? "").trim();
+      if (v) byVariantId.set(String(p.id), v);
+    }
+  }
+
+  // ⚠ FETCHED FOR EVERY ITEM, not only the ones layers 1 and 2 missed. The
+  // per-order version could narrow this because it already knew what layers 1
+  // and 2 had resolved; here the maps are built before any order is resolved.
+  // The cost is a wider `in` list, which collapses on duplicates; the
+  // alternative is resolving twice to find out what to fetch.
+  const baseSkus = Array.from(new Set(
+    allItems.map((i) => (i.sku ? baseSku(i.sku) : "")).filter(Boolean),
+  ));
+  if (baseSkus.length > 0) {
+    const { data } = await supabase
+      .from("shopify_products").select("sku, vendor").in("sku", baseSkus);
+    for (const p of data ?? []) {
+      const v = String(p.vendor ?? "").trim();
+      if (v) byBaseSku.set(String(p.sku), v);
+    }
+  }
+
+  return { byVariantId, byBaseSku };
+}
+
+/**
+ * The four-layer chain. NO I/O — the same rules, resolved against prefetched
+ * maps.
+ *
+ * ⚠ THE LAYER ORDER IS THE POINT AND MUST NOT BE REARRANGED. variant_id is
+ * globally unique and collision-proof; two vendors can share a base SKU like
+ * "B24" but never a variant id. Base-SKU lookup is the ambiguous one, so it is
+ * last, and layer 4 only fills what nothing else could.
+ */
+export function resolveVendors(
+  skuItems: ResolvableItem[],
+  fallbackOrderVendor: string | null | undefined,
+  maps: VendorMaps,
+): VendorLookupResult {
   const vendorBySku = new Map<string, string>();
   const fallback = (fallbackOrderVendor ?? "").trim();
 
   // ── Layer 1: variant_id (authoritative, collision-proof) ──────────────────
-  // Map each distinct variant_id to the full SKUs that carry it, then resolve
-  // all of them in one query against shopify_products.id.
-  const variantToFulls = new Map<string, string[]>();
   for (const item of skuItems) {
     if (!item.sku) continue;
     const vid = String(item.variant_id ?? "").trim();
     if (!vid) continue;
-    const list = variantToFulls.get(vid) ?? [];
-    list.push(item.sku);
-    variantToFulls.set(vid, list);
-  }
-
-  const variantIds = Array.from(variantToFulls.keys());
-  if (variantIds.length > 0) {
-    const { data: products } = await supabase
-      .from("shopify_products")
-      .select("id, vendor")
-      .in("id", variantIds);
-    for (const product of products ?? []) {
-      const v = String(product.vendor ?? "").trim();
-      if (!v) continue;
-      const fulls = variantToFulls.get(String(product.id)) ?? [];
-      for (const full of fulls) vendorBySku.set(full, v);
-    }
+    const v = maps.byVariantId.get(vid);
+    if (v) vendorBySku.set(item.sku, v);
   }
 
   // ── Layer 2: vendor family by SKU shape (for anything still unresolved) ───
@@ -124,31 +172,12 @@ export async function lookupVendorsForSkus(
   }
 
   // ── Layer 3: base SKU lookup (legacy; ambiguous on shared bases, so last) ─
-  const stillUnresolved = skuItems.filter(i => i.sku && !vendorBySku.has(i.sku));
-  if (stillUnresolved.length > 0) {
-    const baseToFulls = new Map<string, string[]>();
-    for (const item of stillUnresolved) {
-      const base = baseSku(item.sku);
-      if (!base) continue;
-      const list = baseToFulls.get(base) ?? [];
-      list.push(item.sku);
-      baseToFulls.set(base, list);
-    }
-    const baseSkus = Array.from(baseToFulls.keys());
-    if (baseSkus.length > 0) {
-      const { data: products } = await supabase
-        .from("shopify_products")
-        .select("sku, vendor")
-        .in("sku", baseSkus);
-      for (const product of products ?? []) {
-        const v = String(product.vendor ?? "").trim();
-        if (!v) continue;
-        const fulls = baseToFulls.get(String(product.sku)) ?? [];
-        for (const full of fulls) {
-          if (!vendorBySku.has(full)) vendorBySku.set(full, v);
-        }
-      }
-    }
+  for (const item of skuItems) {
+    if (!item.sku || vendorBySku.has(item.sku)) continue;
+    const base = baseSku(item.sku);
+    if (!base) continue;
+    const v = maps.byBaseSku.get(base);
+    if (v) vendorBySku.set(item.sku, v);
   }
 
   // ── Layer 4: order-level fallback vendor (manual orders) ──────────────────
@@ -175,6 +204,19 @@ export async function lookupVendorsForSkus(
     uniqueVendors: Array.from(uniqueSet).sort((a, b) => a.localeCompare(b)),
     hasUnassigned,
   };
+}
+
+/**
+ * One order's worth. Unchanged signature and unchanged behaviour — it is now a
+ * prefetch plus a resolve, so every existing caller exercises the same chain
+ * the batch path uses.
+ */
+export async function lookupVendorsForSkus(
+  skuItems: ResolvableItem[],
+  fallbackOrderVendor?: string | null
+): Promise<VendorLookupResult> {
+  const maps = await prefetchVendorMaps(skuItems);
+  return resolveVendors(skuItems, fallbackOrderVendor, maps);
 }
 
 export { UNKNOWN_VENDOR };
