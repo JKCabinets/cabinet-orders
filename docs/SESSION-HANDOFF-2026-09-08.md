@@ -295,12 +295,25 @@ script and a chosen MIME, opened later by a staff member through a signed URL.
 The quote-form route does this correctly, which is how it was spotted. **Not yet
 fixed.**
 
-**Microsoft Graph reaches nothing.** No Graph entry in `.kamal/secrets` (twenty
-keys, none of them Graph) and none in `config/deploy.yml`. Two of the three
-files absent, so whatever is in `.env.kamal` stops there. Every notification in
-the website team's design goes out `no-reply@` via Graph, and trigger 6 fires
-unattended from the 1am cron against a promise the Shopify order confirmation
-already makes to every cabinet customer. **Not yet fixed.**
+**⚠ NOTHING CAN SEND MAIL. Graph is UNBUILT, not broken — I filed it wrongly
+here first.** There is no Graph credential in `.env.kamal` (44 entries, none of
+them Graph), none in `.kamal/secrets`, none in `config/deploy.yml`, and **no
+code anywhere that sends mail**: no `graph.microsoft`, no `sendMail`, nothing.
+
+I originally wrote this up as §5's failure mode 1 — a secret that exists and
+silently does not arrive. That was wrong. Nothing arrives because nothing was
+put in, and nothing fails silently because nothing runs. OPERATIONS §8's
+"set up 2026-08-18" describes an **app registration in Azure**; the box knows
+nothing about it.
+
+The distinction decides how it is treated: a broken integration is an urgent
+fix, an unbuilt one is a feature that ranks against other features. Filed
+wrongly it would either be hunted for as a bug that does not exist, or trusted
+as working because it appears in a list of configured services.
+
+⚠ **The promise is unaffected either way.** The Shopify order confirmation tells
+every cabinet customer we will notify them when production finishes. Nothing
+can send that.
 
 **`.kamal/secrets.bak` is clean.** All nineteen values are references, proven by
 a constant 42-character offset between key name length and value length across
@@ -376,8 +389,12 @@ amending a stale base is how the corrections get lost. Each needs:
 
 # 8. Remaining work, ranked
 
-1. **The Graph credential.** Silently broken rather than merely incomplete —
-   every notification currently reaches nobody.
+⚠ **REWRITTEN AFTER THE SESSION CONTINUED.** Items 3 and 4 below were the
+requirement model and batch attention; both are DONE — see §11. What follows is
+what is actually left.
+
+1. **The next-action panel.** Started, not finished, and §11 says exactly where
+   it stopped. The one piece with work already done against it.
 2. **`storedType`.** Two lines. A live stored-XSS mitigation wired to nothing.
 3. **The requirement model.** ⚠ Larger than the old handoff's item 3 describes:
    the requirement is encoded in FOUR places — `SLA_RULES.clockRuns`/
@@ -398,6 +415,130 @@ amending a stale base is how the corrections get lost. Each needs:
 6. **Missing migrations** for `projects` and `order_acknowledgments`.
 7. **Admin release for standalone rows** — see §5.
 8. **Stale comments**, listed in §9.
+
+---
+
+# 11. After this handoff was written
+
+The session did not stop here. Everything below happened afterwards, in order.
+
+## The requirement model — DONE, and larger than §8 item 3 described
+
+`lib/requirements.ts` is the source: what a row still needs, per `(type,
+stage)`, each entry carrying a label, a remedy, a predicate, and whether being
+unmet keeps an SLA clock running.
+
+```
+lib/requirements.ts          the source
+  ├── lib/sla.ts             clockRuns / waitingFor derive from it
+  ├── lib/attention.ts       the two join-backed reasons derive from it
+  ├── app/work/WorkClient     3 call sites
+  └── app/dashboard/…Client   4 call sites
+        via lib/useOrderEnrichment.ts → POST /api/orders/enrichment
+```
+
+⚠ **The SLA derivation changed no behaviour, and that was proved rather than
+asserted:** 384 rows — every combination of the five relevant date/tracking
+fields across every stage of every flow — compared against the four original
+predicates. Zero differences.
+
+⚠ **Three states, not two.** A requirement is `met`, `unmet` or `unknown`.
+Unknown is what a join-backed requirement reports when nobody fetched the
+enrichment. In `attention.ts` unknown produces NO reason — a queue that guesses
+sends somebody to redo finished work. In the modal it renders as an open circle
+with the move button disabled — a modal that guesses is corrected a second
+later by the person looking at it. Same table, opposite defaults, both
+deliberate.
+
+## The enrichment endpoint
+
+`POST /api/orders/enrichment` answers `{ackGreen, hasAttachment,
+hasProofOfDelivery}` for many rows in **five queries regardless of row count**.
+Two reasons built in August — `ack_missing`, `receipt_missing` — had never
+appeared on a screen because answering them meant a query per row.
+
+Getting there needed two splits, each keeping ONE implementation:
+
+- `lib/vendorLookup.ts` → `prefetchVendorMaps` (the two queries, any number of
+  orders) + `resolveVendors` (the four layers, no I/O). Layer precedence
+  verified: variant_id beats SKU shape beats base SKU beats fallback.
+- `lib/acknowledgments.ts` → `summariseAcks` + `allVendorsGreen`, both pure.
+
+⚠ **The batch path and the server gate call the same functions.** A second copy
+of either would mean the queue and the gate disagreeing about whether an order
+can advance, and the queue is the one people would believe.
+
+⚠ `attentionForProject` **had no `enrich` parameter at all** — a hardcoded
+`attentionFor(g, undefined, now)`. Passing enrichment in the clients would have
+left every project-rendered screen blind, which looks exactly like the feature
+not working. Fixed.
+
+⚠ **Eleven attention call sites, not five.** §8 of the 08-27 handoff said "all
+five call sites in WorkClient and DashboardClient". There are seven across
+those two and four more in `components/Sidebar.tsx`. Sidebar is deliberately
+NOT enriched: all four of its calls ask only about `sla_breached` and
+`sla_due_soon`, both row-only.
+
+## Entered → In production is now gated
+
+⚠ **There was never a gate.** Setting `production_start_date` at Entered
+AUTO-ADVANCES the row, and that was the whole rule; nothing refused a manual
+advance without dates. The row then sat at In production where
+`production-complete` — which advances on `production_est_finish_date <= today`
+— could never move it.
+
+Garrett's correction, and it is domain knowledge rather than preference: the
+manufacturer gives production dates within a day or two of the order being
+placed, **well before production starts**. So "in production without dates" is
+a skipped step, not an honest record of an unknown.
+
+The gate accepts the date in the SAME request, because a PATCH carrying both
+the stage and the date is what the modal sends. The auto-advance is untouched —
+it fires only when `body.stage === undefined`.
+
+⚠ **This raises the blocked count.** `Entered` had no clocking requirement
+before; a cabinet order sitting there over 24 hours without dates now reads as
+blocked. That is the intended signal.
+
+## Where the next-action panel stopped
+
+Three notes from using the OMS, all one cause — the slot was a hand-written
+branch per case, so every gate had to be taught to it separately:
+
+1. Submit/Resubmit acknowledgment renders in `AcknowledgmentPanel` AND the slot.
+2. The production-dates prompt sits in `DateEditor` below rather than the slot.
+3. At Entered the slot's button advanced without dates. **Server half fixed
+   above; the UI half is the panel.**
+
+`components/NextActionPanel.tsx` is written and NOT deployed. It generates a
+checklist from `requirementsFor` — one row per requirement, tick from
+`state()`, remedy as a button, move button disabled until all are met — with
+inline date fields, because setting the dates IS the action at Entered.
+
+⚠ **It has a known bug: it patches `delivery_date` where `DateEditor` writes
+`scheduled_delivery_date`.** Fix that before wiring.
+
+⚠ **`OrderModal.tsx` ALREADY DEFINES A LOCAL `NextActionCard` at ~2172 that is
+DEAD** — one occurrence repo-wide, rendered nowhere. It is an earlier version
+of this same card that was inlined into the stage grid at ~1128 and left
+behind. The new component is named `NextActionPanel` only to avoid colliding
+with it; **the dead one should be deleted**, along with any helper that becomes
+unused with it — `tsc` will not say, because `noUnusedLocals` is off.
+
+⚠ **THE WORK STOPPED HERE ON PURPOSE.** The remaining patch deletes a
+component, drops its orphaned helpers, replaces a grid cell and strips
+`AcknowledgmentPanel`'s duplicate buttons — and `OrderModal.tsx` is 2,574 lines
+of which roughly 900 were still unread. Four guards tripped during this session,
+every one on an anchor written from a half-remembered read rather than from the
+file. **Read it end to end first.**
+
+## Live at the end of the session
+
+The live next-action slot is the `glass-sage` grid at ~1128: three cells,
+Current stage · Next action · owner. Saving a field is
+`updateOrderDetails(id, details)` from the store. `doMoveStage` already runs the
+client Entered gate and handles the delivery-proof refusal, so the panel's move
+button should keep calling it rather than checking anything itself.
 
 ---
 
