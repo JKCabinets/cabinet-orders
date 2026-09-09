@@ -68,6 +68,8 @@ export interface SlaRule {
   measureFrom?: "stage" | "created" | "reported";
 }
 
+import { clockRunsFor, waitingForText } from "@/lib/requirements";
+
 const SOFT_HOURS = 24;
 const HARD_HOURS = 48;
 
@@ -99,18 +101,13 @@ const STANDARD_RULES: Partial<Record<string, SlaRule>> = {
   // reset its clock. Every later stage asks "how long stuck here" instead.
   "New":     { softHours: SOFT_HOURS, hardHours: HARD_HOURS, measureFrom: "created" },
   "Entered": { softHours: SOFT_HOURS, hardHours: HARD_HOURS },
-  "In production": {
-    softHours: SOFT_HOURS,
-    hardHours: HARD_HOURS,
-    clockRuns: productionDatesMissing,
-    waitingFor: "production dates",
-  },
-  "At cross dock": {
-    softHours: SOFT_HOURS,
-    hardHours: HARD_HOURS,
-    clockRuns: deliveryDateMissing,
-    waitingFor: "a delivery date",
-  },
+  // clockRuns / waitingFor now come from lib/requirements. The requirement
+  // `production_dates` holds the same predicate and the same wording.
+  "In production": { softHours: SOFT_HOURS, hardHours: HARD_HOURS },
+  // Requirement `delivery_date`. The signed receipt is also a requirement of
+  // this stage, but carries clocks:false -- it gates the MOVE to Delivered
+  // rather than stranding the row, and no clock ran on it before.
+  "At cross dock": { softHours: SOFT_HOURS, hardHours: HARD_HOURS },
   // "Delivered" has no rule, which means no SLA. Same as target Infinity.
 };
 
@@ -235,12 +232,9 @@ const HARDWARE_RULES: Partial<Record<string, SlaRule>> = {
   // takes; "placed, and nobody has recorded a dispatch" is the actionable
   // thing. Entering the number both stops this clock AND advances the group to
   // Shipped -- one action, because they are one fact.
-  "Ordered": {
-    softHours: SOFT_HOURS,
-    hardHours: HARD_HOURS,
-    clockRuns: trackingMissing,
-    waitingFor: "a tracking number",
-  },
+  // Requirement `tracking_number`. Still MISSING TRACKING rather than elapsed
+  // time -- the comment above is unchanged and still the reason.
+  "Ordered": { softHours: SOFT_HOURS, hardHours: HARD_HOURS },
   // "Shipped": no rule. It is with UPS, and there is no field that says when to
   // stop worrying -- the same reason warranty's "Shipped" has none.
   // "Delivered": terminal, and a human action. Nothing tells us a parcel
@@ -265,13 +259,8 @@ const SAMPLE_RULES: Partial<Record<string, SlaRule>> = {
   // arriving and shipping. This clock already measures that gap: a sample
   // unposted for two days flags here. Split it into Ordered -> Shipped only if
   // same-day ever stops being true.
-  "New": {
-    softHours: SOFT_HOURS,
-    hardHours: HARD_HOURS,
-    measureFrom: "created",
-    clockRuns: trackingMissing,
-    waitingFor: "a tracking number",
-  },
+  // Requirement `tracking_number`.
+  "New": { softHours: SOFT_HOURS, hardHours: HARD_HOURS, measureFrom: "created" },
   // "Shipped": with a carrier. "Delivered": terminal, human.
 };
 
@@ -283,10 +272,27 @@ export const SLA_RULES: Record<OrderType, Partial<Record<string, SlaRule>>> = {
   hardware: HARDWARE_RULES,
 };
 
-/** The rule for this row's type and current stage, if any. */
+/**
+ * The rule for this row's type and current stage, if any.
+ *
+ * ⚠ `clockRuns` AND `waitingFor` ARE OVERLAID HERE, from lib/requirements.
+ * SLA_RULES above keeps the hours and the measure-from, which are SLA policy;
+ * what a row is waiting for is not, and was the same fact written in four
+ * places. Every caller reads the returned object, so overlaying inside this
+ * function means none of them changed.
+ *
+ * A stage with no clocking requirement gets `clockRuns: undefined`, which is
+ * exactly what an absent `clockRuns` meant before: the clock always runs.
+ */
 export function slaRuleFor(order: Order): SlaRule | undefined {
   const rules = SLA_RULES[order.type] ?? SLA_RULES.order;
-  return rules[order.stage];
+  const rule = rules[order.stage];
+  if (!rule) return undefined;
+
+  const waitingFor = waitingForText(order);
+  if (!waitingFor) return rule;
+
+  return { ...rule, waitingFor, clockRuns: clockRunsFor };
 }
 
 /**
