@@ -140,7 +140,12 @@ export async function POST(req: NextRequest) {
   const { error: uploadError } = await supabase.storage
     .from("order-attachments")
     .upload(filePath, arrayBuffer, {
-      contentType: file.type || "application/octet-stream",
+      // ⚠ storedType, NOT file.type. This is the whole point of sniffing the
+      // magic bytes above: `file.type` is whatever the uploading client said,
+      // and on a file that turns out to be SVG or HTML it is what makes a
+      // signed URL execute in a staff member's session. The sniffed value was
+      // computed here and discarded until 2026-09-08.
+      contentType: storedType,
       upsert: false,
     });
 
@@ -157,7 +162,10 @@ export async function POST(req: NextRequest) {
       file_name: cleanInput(safeName),
       file_path: filePath,
       file_size: file.size,
-      file_type: cleanInput(file.type || "application/octet-stream").slice(0, 200),
+      // Matches the stored object. Two different answers to "what is this
+      // file" — one on the object, one on the row — is the kind of drift that
+      // makes a later fix look already done.
+      file_type: cleanInput(storedType).slice(0, 200),
       uploaded_by: cleanInput(auth.session.user.name ?? auth.session.user.username),
       // Whitelisted above, and constrained again by the DB CHECK.
       kind,
