@@ -780,16 +780,32 @@ covers the box, not the database, and the database is where the orders are.
   specific `kind`; the column exists and `proof_of_delivery` already uses it.
   It is a real behaviour change — anyone relying on "attach anything" starts
   being refused — and it is the HCI/J&K path, so it is a business decision.
-- **⚠ MICROSOFT GRAPH REACHES NOTHING.** Found 2026-09-08. There is no Graph
-  entry in `.kamal/secrets` (twenty keys, none of them Graph) and none in
-  `config/deploy.yml`. Two of the three files in §5's chain are absent, so
-  whatever sits in `.env.kamal` stops there and never reaches the container.
-  Every planned notification goes out `no-reply@` via Graph, and the
-  production-complete message fires unattended from the 1am cron **against a
-  promise the Shopify order confirmation already makes to every cabinet
-  customer**. Nothing has surfaced it because nothing sends yet. This is
-  failure mode 1 in §5 — the silent one — and it is the highest-ranked item on
-  the remaining-work list.
+- **⚠ NOTHING IN THE OMS CAN SEND MAIL. Graph is UNBUILT, not broken.**
+  Established 2026-09-08. There is no Graph credential in `.env.kamal` (44
+  entries, none of them Graph), none in `.kamal/secrets`, none in
+  `config/deploy.yml` — and **no code anywhere that sends mail**: no
+  `graph.microsoft`, no `sendMail`, nothing.
+
+  ⚠ **This was first written up as failure mode 1 from §5 — a secret that
+  exists and silently does not arrive — and that was wrong.** Nothing arrives
+  because nothing was put in, and nothing fails silently because nothing runs.
+  §8's "set up 2026-08-18" describes an **app registration in Azure**; the box
+  knows nothing about it.
+
+  The distinction decides how this is treated. A broken integration is a fix
+  and it is urgent. An unbuilt one is a feature and it ranks against other
+  features — and filed under the wrong heading it would either be hunted for as
+  a bug that does not exist, or trusted as working because it appears in a list
+  of configured services.
+
+  What it needs: the credential in all three files per §5, client-credentials
+  auth, a send helper, the templates, and triggers hanging off
+  `PATCH /api/orders/[id]`. Its own session.
+
+  ⚠ **The promise in §2 is unaffected by which of the two it is.** The Shopify
+  order confirmation tells every cabinet customer we will notify them when
+  production finishes and it is on its way. Nothing can send that message, and
+  the cron that would fire it runs unattended at 1am.
 
 - **⚠ THE `public_api` ROLE DOES NOT EXIST.** Found 2026-09-08. `pg_roles` has
   no such role, and both public endpoints run as the **service role** — full
