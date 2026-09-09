@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { useStore } from "@/lib/store";
+import { useOrderEnrichment } from "@/lib/useOrderEnrichment";
 import { Order, Project, STAGE_ACCENT, displayOrderNumber } from "@/lib/data";
 import {
   attentionFor, attentionForProject,
@@ -103,6 +104,16 @@ export function WorkClient({
   const [selected, setSelected] = useState<Order | null>(null);
 
   /** Every entry that wants somebody, before scope and reason filtering. */
+  /**
+   * ⚠ ONE FETCH FOR THE BOARD, not one per row. The two join-backed reasons
+   * live in order_acknowledgments and order_attachments, neither of which is
+   * on the row; asking per row is why they have never appeared here.
+   *
+   * Rows render immediately without it. Unknown produces no reason, so the
+   * queue gains these two a moment after it draws rather than waiting.
+   */
+  const enrich = useOrderEnrichment(allOrders);
+
   const allEntries = useMemo(() => {
     const out: Entry[] = [];
 
@@ -122,7 +133,7 @@ export function WorkClient({
     for (const [projectId, orders] of byProject) {
       const project = projects[projectId];
       if (!project || project.archived) continue;
-      const reasons = attentionForProject(project, orders);
+      const reasons = attentionForProject(project, orders, Date.now(), enrich);
       // ⚠ NOT `if (reasons.length === 0) continue` any more.
       //
       // My Work is a hub for everything you own, not a list of what is on fire
@@ -150,7 +161,7 @@ export function WorkClient({
     for (const o of standalone) {
       // Listed whether or not anything is wrong -- a custom job you own with
       // nothing outstanding is still yours. The scope filter decides.
-      const reasons = attentionFor(o);
+      const reasons = attentionFor(o, enrich(o));
       out.push({
         key: o.id,
         orders: [o],
@@ -162,7 +173,9 @@ export function WorkClient({
     }
 
     return out;
-  }, [allOrders, projects]);
+    // `enrich` is a new function identity each time the map changes, which is
+    // exactly when these reasons need recomputing.
+  }, [allOrders, projects, enrich]);
 
   const rows = useMemo(() => {
     return allEntries
@@ -419,7 +432,7 @@ export function WorkClient({
                     <div className="px-4 pb-3 pl-11 flex flex-col gap-1.5">
                       {e.orders.map((o) => {
                         const accent = STAGE_ACCENT[o.stage] ?? "#8a8a8a";
-                        const own = attentionFor(o);
+                        const own = attentionFor(o, enrich(o));
                         return (
                           <button
                             key={o.id}
