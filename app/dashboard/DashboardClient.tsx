@@ -10,6 +10,7 @@ import {
 } from "@/lib/data";
 import { rollupBackorders, summarizeBackorders, type BackorderSummary } from "@/lib/backorders";
 import { attentionFor, attentionForProject, DUE_SOON_HOURS, type AttentionReason } from "@/lib/attention";
+import { useOrderEnrichment } from "@/lib/useOrderEnrichment";
 import { slaRuleFor, slaAgeHours, hoursInStage, formatStageAge } from "@/lib/sla";
 import { PageHeader } from "@/components/AppShell";
 import { OrderModal } from "@/components/OrderModal";
@@ -128,6 +129,16 @@ function mergeForDisplay(
 
 export function DashboardClient() {
   const { allOrders, projects, orders, customs, samples, warranties, hardware, team } = useStore();
+
+  /**
+   * ⚠ ONE FETCH FOR EVERY LIST ON THIS PAGE. The attention list, the per-type
+   * health table and the healthy count all ask the same question of the same
+   * rows; asking it per list would be three requests for one answer.
+   *
+   * Cards render immediately without it — unknown produces no reason — so the
+   * two join-backed reasons arrive a moment after the page draws.
+   */
+  const enrich = useOrderEnrichment(allOrders);
   const { data: session } = useSession();
   const currentUserId = (session?.user as { id?: string } | undefined)?.id ?? null;
 
@@ -168,7 +179,7 @@ export function DashboardClient() {
     for (const [id, group] of byProject) {
       const project = projects[id];
       if (!project || project.archived) continue;
-      const reasons = attentionForProject(project, group);
+      const reasons = attentionForProject(project, group, Date.now(), enrich);
       if (reasons.length === 0) continue;
       out.push({
         key: id, project, orders: group, reasons,
@@ -179,7 +190,7 @@ export function DashboardClient() {
     }
 
     for (const o of standalone) {
-      const reasons = attentionFor(o);
+      const reasons = attentionFor(o, enrich(o));
       if (reasons.length === 0) continue;
       out.push({
         key: o.id, orders: [o], reasons,
@@ -189,7 +200,9 @@ export function DashboardClient() {
       });
     }
     return out;
-  }, [allOrders, projects]);
+    // `enrich` changes identity when the map arrives, which is exactly when
+    // these reasons need recomputing.
+  }, [allOrders, projects, enrich]);
 
   /**
    * The four tiles.
@@ -321,7 +334,11 @@ export function DashboardClient() {
       const live = rows.filter((o) => !o.archived);
       let breached = 0, due = 0, blocked = 0;
       for (const o of live) {
-        for (const r of attentionFor(o)) {
+        // Only three row-only kinds are tallied below, so enrichment cannot
+        // move these numbers today. Passed anyway: an unenriched call kept
+        // because it happens not to matter is a trap for whoever adds a kind
+        // to this loop.
+        for (const r of attentionFor(o, enrich(o))) {
           if (r.kind === "sla_breached") breached++;
           else if (r.kind === "sla_due_soon") due++;
           else if (r.kind === "blocked_missing_data") blocked++;
@@ -330,11 +347,14 @@ export function DashboardClient() {
       return {
         type, label: TYPE_LABEL[type] ?? type,
         active: live.length,
-        healthy: live.filter((o) => attentionFor(o).length === 0).length,
+        // ⚠ THIS NUMBER MOVES. A cabinet order that cannot leave New is not
+        // healthy; it was counted as healthy only because the reason saying
+        // otherwise was unreachable until now.
+        healthy: live.filter((o) => attentionFor(o, enrich(o)).length === 0).length,
         due, breached, blocked,
       };
     });
-  }, [orders, hardware, samples, customs, warranties]);
+  }, [orders, hardware, samples, customs, warranties, enrich]);
 
   return (
     <>
