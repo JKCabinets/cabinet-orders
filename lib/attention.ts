@@ -1,6 +1,7 @@
 import type { Order, OrderType } from "@/lib/data";
 import { paymentHoldActive, paymentHoldLabel, STAGE_LIST_BY_TYPE } from "@/lib/data";
 import { slaRuleFor, slaTier, slaAgeHours, hoursInStage, formatStageAge } from "@/lib/sla";
+import { requirementsFor, type RequirementEnrichment } from "@/lib/requirements";
 
 /**
  * WHY a row needs someone — one derivation, read by everything.
@@ -55,13 +56,42 @@ export interface AttentionReason {
   detail?: string;
 }
 
-/** Per-order facts that cannot be read off the row. Optional. */
-export interface AttentionEnrichment {
-  /** New → Entered is gated on this, for cabinet flows only. */
-  ackMissing?: boolean;
-  /** At cross dock → Delivered is gated on a signed proof_of_delivery. */
-  receiptMissing?: boolean;
-}
+/**
+ * Per-order facts that cannot be read off the row.
+ *
+ * ⚠ THE SAME SHAPE `POST /api/orders/enrichment` RETURNS, and the same shape
+ * lib/requirements.ts consumes. It used to be `{ ackMissing, receiptMissing }`
+ * -- inverted booleans, one per reason -- which would have made the caller
+ * invert the endpoint's answer. That inversion is not safe: `!ackGreen` is NOT
+ * "acknowledgment missing" for an order that has an attachment, because the
+ * server gate passes on EITHER, and the queue would have sent somebody to
+ * redo work already done.
+ */
+export type AttentionEnrichment = RequirementEnrichment;
+
+/**
+ * Which requirements produce a queue reason, and what it says.
+ *
+ * ⚠ ONE REASON PER GATE, NOT ONE PER MECHANISM. The New gate passes on a green
+ * acknowledgment OR any attachment, so "no acknowledgment and no attachment"
+ * is the single true condition for every vendor. Splitting it by vendor would
+ * put a fourth encoding of "is this Waypoint" into every filter, badge and
+ * queue that reads these reasons -- after hasWaypoint, linesForAckVendor and
+ * the upload route's constant.
+ *
+ * The REMEDY is what varies: upload the .xlsx for Waypoint, attach the
+ * acknowledgment for HCI and J&K. That is display text on one reason.
+ */
+const ENRICHED_REASONS: Record<string, { kind: AttentionKind; label: string }> = {
+  ack_or_attachment: {
+    kind: "ack_missing",
+    label: "Cannot leave New — no acknowledgment and no attachment",
+  },
+  proof_of_delivery: {
+    kind: "receipt_missing",
+    label: "Signed delivery receipt missing",
+  },
+};
 
 /** Is this the first stage of the row's own flow? */
 function isFirstStage(order: Order): boolean {
@@ -103,18 +133,26 @@ export function attentionFor(
   }
 
   // ── Gates that need a join ──────────────────────────────────────────────
-  if (enrich?.ackMissing) {
+  //
+  // ⚠ ASKED OF lib/requirements, NOT DECIDED HERE. The same table the server
+  // gate and sla.ts read, so a queue cannot claim an order is blocked when the
+  // gate would let it through.
+  //
+  // ⚠ `unmet` ONLY. A requirement whose enrichment was never fetched reports
+  // `unknown`, and unknown produces NO reason. A queue saying "acknowledgment
+  // missing" because nobody looked is worse than one saying nothing: it sends
+  // somebody to redo finished work, on every row at once.
+  for (const req of requirementsFor(order)) {
+    if (req.source !== "enrich") continue;
+    const mapped = ENRICHED_REASONS[req.id];
+    if (!mapped) continue;
+    if (req.state(order, enrich) !== "unmet") continue;
     reasons.push({
-      kind: "ack_missing",
+      kind: mapped.kind,
       severity: "high",
-      label: "Manufacturer acknowledgment missing",
-    });
-  }
-  if (enrich?.receiptMissing) {
-    reasons.push({
-      kind: "receipt_missing",
-      severity: "high",
-      label: "Signed delivery receipt missing",
+      label: mapped.label,
+      // What to do about it. Varies by vendor where the reason does not.
+      detail: req.remedy,
     });
   }
 
@@ -199,6 +237,17 @@ export function attentionForProject(
   project: { id: string; claimed_by?: string | null; archived?: boolean },
   groups: Order[],
   now: number = Date.now(),
+  /**
+   * ⚠ ADDED 2026-09-08, AND ITS ABSENCE WAS A REAL GAP. This function used to
+   * call `attentionFor(g, undefined, now)` with `undefined` HARDCODED, so a
+   * caller could fetch enrichment, pass it everywhere it was accepted, and
+   * still see nothing on any screen that renders through a project. That looks
+   * identical to the feature not working.
+   *
+   * A function rather than a value, because a project has many groups and each
+   * needs its own. Matches attentionCounts, which already took this shape.
+   */
+  enrich?: (order: Order) => AttentionEnrichment | undefined,
 ): AttentionReason[] {
   if (project.archived) return [];
 
@@ -222,7 +271,7 @@ export function attentionForProject(
     }
   }
 
-  for (const g of groups) reasons.push(...attentionFor(g, undefined, now));
+  for (const g of groups) reasons.push(...attentionFor(g, enrich?.(g), now));
   return reasons;
 }
 
