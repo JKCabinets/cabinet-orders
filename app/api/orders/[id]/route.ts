@@ -160,7 +160,10 @@ export async function PATCH(
     // ⚠ carrier is here so a CARRIER-ONLY edit can be compared and recorded.
     // Without the stored value the activity block could only see the number
     // change, and correcting a carrier wrote nothing at all.
-    .select("stage, type, payment_status, payment_hold_cleared_for, project_id, tracking_number, carrier")
+    // ⚠ production_start_date is here for the In production GATE below. It has
+    // to be read before the update is applied, because the gate must accept a
+    // request that supplies the date and the stage together.
+    .select("stage, type, payment_status, payment_hold_cleared_for, project_id, tracking_number, carrier, production_start_date")
     .eq("id", id)
     .single();
   if (!currentRow) {
@@ -243,6 +246,36 @@ export async function PATCH(
     if (!(await orderAllVendorsGreen(id)) && (!attachments || attachments.length === 0)) {
       return NextResponse.json(
         { error: "Attach at least one file before marking this order as Entered" },
+        { status: 400 },
+      );
+    }
+  }
+
+  // ── Production dates gate ───────────────────────────────────
+  //
+  // ⚠ THE MANUFACTURER GIVES DATES BEFORE PRODUCTION STARTS, within a day or
+  // two of the order being placed. So a row reaching In production without a
+  // start date is a skipped step, not an honest record of an unknown.
+  //
+  // It is also unrecoverable without a person noticing: `production-complete`
+  // advances on `production_est_finish_date <= today`, so a row that arrives
+  // here dateless can never leave by itself.
+  //
+  // ⚠ ACCEPTS THE DATE IN THE SAME REQUEST. A PATCH carrying both the stage and
+  // the date is exactly what the modal sends when somebody fills the field and
+  // advances in one action; refusing it would make the gate fire on the very
+  // request that satisfies it.
+  //
+  // The AUTO-ADVANCE at the bottom of this file is unaffected: it fires only
+  // when `body.stage === undefined`, so it never reaches this branch.
+  if (body.stage === "In production" && currentStage === "Entered") {
+    const incoming = body.production_start_date;
+    const startDate = incoming !== undefined
+      ? incoming
+      : currentRow.production_start_date;
+    if (!startDate) {
+      return NextResponse.json(
+        { error: "Set a production start date before marking this order In production" },
         { status: 400 },
       );
     }

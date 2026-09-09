@@ -132,7 +132,23 @@ export const REQUIREMENTS: Record<OrderType, Record<string, Requirement[]>> = {
           : Boolean(e.ackGreen) || Boolean(e.hasAttachment),
       ),
     ],
-    "Entered": [],
+    // ⚠ ADDED 2026-09-08, WITH A SERVER GATE TO MATCH. The manufacturer
+    // supplies production dates within a day or two of the order being placed,
+    // well before production begins — so an order sitting at Entered without
+    // them is waiting on somebody here, not on the factory.
+    //
+    // clocks: true, which is a VISIBLE CHANGE: Entered had no clocking
+    // requirement before, so these rows now read as blocked after 24 hours.
+    // That is the point. A row that reaches In production dateless can never
+    // leave, because production-complete advances on the finish date.
+    "Entered": [
+      rowReq(
+        "production_start_date", "a production start date",
+        "Add the production dates from the manufacturer's acknowledgment",
+        (o) => Boolean(o.production_start_date),
+        true,
+      ),
+    ],
     "In production": [
       rowReq(
         "production_dates", "production dates",
