@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Check, Upload } from "lucide-react";
 import { nextStageFor, type Order } from "@/lib/data";
-import { requirementsFor, type RequirementEnrichment, type RequirementState } from "@/lib/requirements";
+import { requirementsFor, dateControlsFor, type RequirementEnrichment, type RequirementState } from "@/lib/requirements";
 
 /**
  * What this row needs before it can move, and the controls that do it.
@@ -88,6 +88,18 @@ export type DateFields = {
 /** Requirements the production-date pair satisfies, at either stage. */
 const PRODUCTION_DATE_IDS = new Set(["production_start_date", "production_dates"]);
 
+/**
+ * ⚠ THE FIELD APPEARS WHERE THE DATE IS THE THING TO TYPE, WHICH IS NOT THE
+ * SAME AS WHERE ONE IS REQUIRED. This asked `outstanding` alone, so a custom
+ * job -- no requirements at all, by decision -- got no field, and the prompt
+ * fell through to a full-width card below the fold. `dateControlsFor` says the
+ * date belongs here; the requirement, if there is one, says whether it is also
+ * a demand. Where there is none the field is captioned as a record, because a
+ * custom job's dates gate nothing and the caption is the only thing keeping
+ * the control honest about that.
+ */
+const RECORD_ONLY_CAPTION = "Recorded for scheduling \u2014 this will not move the order.";
+
 const DATE_INPUT: React.CSSProperties = {
   background: "rgba(255,255,255,0.10)",
   border: "0.5px solid rgba(255,255,255,0.18)",
@@ -124,6 +136,8 @@ interface Props {
   /** PATCHes the row. Setting a start date at Entered auto-advances it. */
   onSaveDates: (patch: DateFields) => Promise<void> | void;
   busy?: boolean;
+  /** First cell of its container: drop the left divider that separates cells. */
+  flush?: boolean;
   /**
    * The tracking field, when the type carries one. Passed in rather than
    * rendered here: ⚠ A TRACKING NUMBER IS WHAT MAKES A GROUP SHIPPED, so the
@@ -133,7 +147,7 @@ interface Props {
 }
 
 export function NextActionPanel({
-  order, enrichment, remedies = {}, overrides = {}, onMove, onSaveDates, busy, trackingSlot,
+  order, enrichment, remedies = {}, overrides = {}, onMove, onSaveDates, busy, flush, trackingSlot,
 }: Props) {
   // ⚠ The modal keys this component on the order id, so switching groups
   // remounts it and these never carry one group's typing into another.
@@ -160,8 +174,19 @@ export function NextActionPanel({
   const blocking = outstanding.filter((r) => r.req.gates === true);
   const ready = blocking.length === 0;
 
-  const needsProdDates = outstanding.some((o) => PRODUCTION_DATE_IDS.has(o.req.id));
-  const needsDeliveryDate = outstanding.some((o) => o.req.id === "delivery_date");
+  const controls = dateControlsFor(order);
+
+  const prodDemanded = outstanding.some((o) => PRODUCTION_DATE_IDS.has(o.req.id));
+  const prodIsRecordOnly = !requirements.some((r) => PRODUCTION_DATE_IDS.has(r.id));
+  const needsProdDates = controls.includes("production")
+    && (prodDemanded
+        || (prodIsRecordOnly
+            && !(order.production_start_date && order.production_est_finish_date)));
+
+  const deliveryDemanded = outstanding.some((o) => o.req.id === "delivery_date");
+  const deliveryIsRecordOnly = !requirements.some((r) => r.id === "delivery_date");
+  const needsDeliveryDate = controls.includes("delivery")
+    && (deliveryDemanded || (deliveryIsRecordOnly && !order.scheduled_delivery_date));
 
   /**
    * ⚠ THE FIELD IS THE ACTION on two transitions, and there the button is
@@ -192,7 +217,7 @@ export function NextActionPanel({
 
   return (
     <div className="px-4 py-3 flex items-start justify-between gap-3 flex-wrap"
-      style={{ borderLeft: HAIRLINE }}>
+      style={flush ? undefined : { borderLeft: HAIRLINE }}>
       {/* Text and checklist on the left, controls on the right -- the shape of
           the mockup and of the cell this replaced. The control column wraps
           under the text when the date fields need the width. */}
@@ -235,6 +260,10 @@ export function NextActionPanel({
             difference between one trip and two. Rendered at In production too,
             for the row that got there by an admin move without them. */}
         {needsProdDates && (
+          <div className="flex flex-col gap-1 items-end">
+            {prodIsRecordOnly && (
+              <span className="text-[10px] text-cream/40 leading-snug">{RECORD_ONLY_CAPTION}</span>
+            )}
           <div className="flex items-center gap-1.5 flex-wrap">
             <input type="date" value={prodStart} onChange={(e) => setProdStart(e.target.value)}
               title="Production starts" style={DATE_INPUT} />
@@ -255,9 +284,14 @@ export function NextActionPanel({
               {saving ? "\u2026" : "Set dates"}
             </button>
           </div>
+          </div>
         )}
 
         {needsDeliveryDate && (
+          <div className="flex flex-col gap-1 items-end">
+            {deliveryIsRecordOnly && (
+              <span className="text-[10px] text-cream/40 leading-snug">{RECORD_ONLY_CAPTION}</span>
+            )}
           <div className="flex items-center gap-1.5">
             <input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)}
               title="Delivery date" style={DATE_INPUT} />
@@ -268,6 +302,7 @@ export function NextActionPanel({
             >
               {saving ? "\u2026" : "Set delivery date"}
             </button>
+          </div>
           </div>
         )}
 
