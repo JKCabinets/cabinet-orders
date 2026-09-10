@@ -6,6 +6,7 @@ import { Upload, Loader2, Check, X, ChevronDown, ChevronRight, AlertTriangle } f
 import type { ReconcileResult } from "@/lib/reconcile";
 import { useToast } from "./Toast";
 import { useAckStatus, invalidateAck } from "@/lib/ackStatus";
+import { invalidateEnrichment } from "@/lib/useOrderEnrichment";
 import { buildDiscrepancyMessage } from "./OrderEntryActions";
 
 export interface AcknowledgmentPanelHandle {
@@ -25,6 +26,15 @@ interface AcknowledgmentPanelProps {
    */
   /** Advance to Entered overriding red discrepancies (manual push). */
   onAdvanceOverride?: () => void;
+  /**
+   * ⚠ The next-action panel already offers the upload for this stage. Set
+   * where lib/requirements lists `ack_or_attachment` for the row -- New, on a
+   * cabinet flow -- so Submit does not render twice on one screen. Past New
+   * the requirement is gone and the Resubmit here is the ONLY way to refresh
+   * a stale acknowledgment, so it stays. The picker itself is always here;
+   * the panel's button opens it through openFilePicker().
+   */
+  uploadOfferedElsewhere?: boolean;
 }
 
 const FIELD_LABEL: Record<string, string> = { name: "Name", address: "Shipping address" };
@@ -42,13 +52,14 @@ function discrepancyCount(r: ReconcileResult): number {
  * mismatches. Reads the shared ack-status cache and refreshes it after each
  * upload so the table row updates in lockstep.
  *
- * When all vendors are green it offers Entry Complete (advance to Entered);
- * when any are red it offers Manual Push Order behind a confirm that lists the
- * discrepancies. Exposes openFilePicker() so the row's Submit can pop the file
- * dialog on open. Only Waypoint reconciliation exists today.
+ * When any vendor is red or stale it offers Manual Push Order behind a confirm
+ * that lists the discrepancies. The advance itself lives in the modal's
+ * next-action panel. Exposes openFilePicker() so the row's Submit and the
+ * panel's Upload acknowledgment can pop the file dialog. Only Waypoint
+ * reconciliation exists today.
  */
 export const AcknowledgmentPanel = forwardRef<AcknowledgmentPanelHandle, AcknowledgmentPanelProps>(
-  function AcknowledgmentPanel({ orderId, orderName, eligible, onAdvanceOverride }, ref) {
+  function AcknowledgmentPanel({ orderId, orderName, eligible, onAdvanceOverride, uploadOfferedElsewhere = false }, ref) {
     const { showToast } = useToast();
     const status = useAckStatus(orderId, eligible);
     const [uploadingVendor, setUploadingVendor] = useState<string | null>(null);
@@ -91,6 +102,7 @@ export const AcknowledgmentPanel = forwardRef<AcknowledgmentPanelHandle, Acknowl
         }
         const verdict: string | undefined = data?.result?.verdict;
         invalidateAck(orderId); // refresh row + modal from the new latest row
+        invalidateEnrichment(); // and the next-action checklist, which reads the batch endpoint
         showToast(
           verdict === "green" ? "Acknowledgment matched" : "Acknowledgment has discrepancies — see details",
           { kind: verdict === "green" ? "success" : "warn" }
@@ -164,6 +176,10 @@ export const AcknowledgmentPanel = forwardRef<AcknowledgmentPanelHandle, Acknowl
                       </div>
                     </div>
 
+                    {/* Hidden where the next-action panel carries the same
+                        control, except mid-upload: the spinner is the only
+                        feedback that the panel's button did anything. */}
+                    {(isUploading || !uploadOfferedElsewhere) && (
                     <button
                       onClick={() => triggerUpload(v)}
                       disabled={isUploading}
@@ -175,6 +191,7 @@ export const AcknowledgmentPanel = forwardRef<AcknowledgmentPanelHandle, Acknowl
                         <><Upload className="w-3 h-3" /> {ack ? "Resubmit" : "Submit"}</>
                       )}
                     </button>
+                    )}
                   </div>
 
                   {ack?.verdict === "red" && (

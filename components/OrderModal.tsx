@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo } from "react";
-import { X, Check, Clock, ChevronRight, Archive, RotateCcw, Trash2, Loader2, Download, AlertTriangle, Upload } from "lucide-react";
+import { X, Check, Clock, ChevronRight, Archive, RotateCcw, Trash2, Loader2, Download } from "lucide-react";
 import clsx from "clsx";
 import { useSession } from "next-auth/react";
 import {
@@ -23,6 +23,9 @@ import { AcknowledgmentPanel, type AcknowledgmentPanelHandle } from "./Acknowled
 import { consumeAckPicker, useAckStatus } from "@/lib/ackStatus";
 import { STAGE_ACCENT } from "@/lib/data";
 import { typeCarriesTracking } from "@/lib/categories";
+import { requirementsFor } from "@/lib/requirements";
+import { useOrderEnrichment } from "@/lib/useOrderEnrichment";
+import { NextActionPanel } from "./NextActionPanel";
 
 interface OrderModalProps {
   /**
@@ -422,39 +425,21 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
   const ackStatus = useAckStatus(liveOrder.id, ackEligible);
 
   /**
-   * Does THIS row's advance depend on an acknowledgment we can reconcile?
-   *
-   * Only at New, only on a cabinet flow, and only when a Waypoint-family vendor
-   * is on the order -- `hasWaypoint` rather than a fourth copy of that regex.
-   * HCI and J&K have no parser, so their orders keep the generic button and the
-   * PDF-attachment gate behind it.
+   * Read by doMoveStage's client copy of the Entered gate, which the admin
+   * rail still reaches. The next-action panel does NOT read this: it asks
+   * lib/requirements through the enrichment below, the same way the work
+   * queue does, so the modal and the queue agree by construction rather than
+   * by coincidence. `ackGates`, `ackCouldGate` and `ackUnknown` -- the
+   * hand-written slot's own copy of the gate -- went with the slot.
    */
-  /**
-   * Could THIS row's advance be gated on an acknowledgment at all? The type
-   * and stage half of the question, separated from the vendor half so the
-   * clauses are written once and `ackUnknown` below cannot drift from
-   * `ackGates`.
-   */
-  const ackCouldGate =
-    liveOrder.stage === "New"
-    && liveOrder.type !== "sample"
-    && liveOrder.type !== "hardware";
-  const ackGates = ackCouldGate && ackStatus.hasWaypoint;
   const ackSatisfied = ackStatus.allGreen;
+
   /**
-   * ⚠ NOT-YET-KNOWN IS NOT NOT-SATISFIED.
-   *
-   * useAckStatus returns EMPTY while a fetch is in flight, and invalidateAck()
-   * puts it back there after every upload. In that window `allGreen` and
-   * `hasWaypoint` are both false, so ackGates flips off and the generic button
-   * appears -- and pressing it would run the attachment gate against an
-   * acknowledgment that is green but not yet loaded.
-   *
-   * Only meaningful where the ack could gate and a fetch was actually started:
-   * when `ackEligible` is false useAckStatus performs no fetch and reports
-   * loading forever, which is not a race.
+   * ⚠ THE SAME HOOK THE WORK QUEUE AND DASHBOARD CALL. One request for every
+   * group of the project; the panel reads the selected one. Refetches when
+   * either upload path calls invalidateEnrichment().
    */
-  const ackUnknown = ackCouldGate && ackEligible && ackStatus.loading;
+  const enrichFor = useOrderEnrichment(projectGroups);
 
   // If the modal was opened via the row Submit/Resubmit, pop the .xlsx picker.
   useEffect(() => {
@@ -1145,131 +1130,65 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                   </p>
                 </div>
 
-                <div className="px-4 py-3 flex items-center justify-between gap-3"
-                  style={{ borderLeft: "0.5px solid rgba(255,255,255,0.10)" }}>
-                  <div className="min-w-0 flex-1">
-                    <p className={LABEL + " mb-1"}>Next action</p>
-                    {/* ⚠ WHEN THE NEXT STAGE IS "Shipped", THE FIELD IS THE
-                        ACTION. A tracking number is what makes a group shipped
-                        -- not a button somebody presses -- so offering a button
-                        here would either bypass the rule or refuse and explain
-                        why. Typing the number does the thing. */}
-                    {/* ⚠ SAY WHAT IS REQUIRED, BEFORE IT IS PRESSED. This read
-                        "Move this to Entered when it is ready" on a row that
-                        could not move: the gate ran on click, failed, and only
-                        then produced a banner. A requirement discovered by
-                        failing is not a requirement anyone was told. */}
-                    {ackGates ? (
-                      <>
-                        <p className="text-[11px] text-cream/65 leading-snug">
-                          Upload the manufacturer acknowledgment before moving to Entered.
-                          An attached file also releases the gate.
-                        </p>
-                        <p
-                          className="text-[11px] mt-1 flex items-center gap-1.5 leading-snug"
-                          style={{ color: ackSatisfied ? "#a0cc7a" : "#e8b56a" }}
-                        >
-                          {ackSatisfied ? (
-                            <><Check className="w-3 h-3 flex-shrink-0" /> Manufacturer acknowledgment matched</>
-                          ) : (
-                            <><AlertTriangle className="w-3 h-3 flex-shrink-0" /> No matched acknowledgment — an attached file also releases this</>
-                          )}
-                        </p>
-                      </>
-                    ) : nextStageFor(liveOrder) === "Shipped" ? (
-                      <p className="text-[11px] text-cream/65 leading-snug">
-                        Enter the tracking number to mark this shipped.
-                      </p>
-                    ) : (
-                      <p className="text-[11px] text-cream/65 leading-snug">
-                        {nextStageFor(liveOrder)
-                          ? <>Move this to <span className="text-cream/90">{nextStageFor(liveOrder)}</span> when it is ready.</>
-                          : "Nothing further \u2014 this is the last stage."}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* ⚠ THE FIELD BELONGS TO THE TYPE, NOT TO ONE STAGE.
-                      It rendered only while `nextStageFor === "Shipped"` -- and
-                      the number is what MAKES the group shipped, so the control
-                      unmounted the instant it succeeded. A number could be
-                      entered once and never afterwards seen, corrected or
-                      cleared.
-
-                      Now it renders wherever the type carries tracking, and the
-                      next-action button renders BESIDE it rather than instead
-                      of it. At New the field is still the only action, because
-                      the number is the action and a button there would either
-                      bypass the rule or refuse and explain why. */}
-                  <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap justify-end">
-                    {typeCarriesTracking(liveOrder.type) && (
-                      <TrackingEntry
-                        order={liveOrder}
-                        highlight={trackingHighlight}
-                        onSaved={(stage) => {
-                          setTrackingHighlight(false);
-                          if (stage) onStageChange(stage as Stage);
-                        }}
-                      />
-                    )}
-                    {/* ⚠ THE EVIDENCE CONTROL, NOT A BUTTON THAT FAILS. A green
-                        acknowledgment is what makes a cabinet group Entered --
-                        same rule as a tracking number making a group Shipped --
-                        so uploading it belongs here, and Move to Entered stays
-                        disabled until the evidence exists.
-
-                        The picker is the panel's; this only opens it, so there
-                        is one upload path rather than two. */}
-                    {ackGates && !ackSatisfied && (
-                      <button
-                        onClick={() => ackPanelRef.current?.openFilePicker()}
-                        title="Upload the manufacturer's .xlsx acknowledgment"
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all flex-shrink-0 bg-white/4 border border-cream/18 text-cream/85 hover:bg-white/8 hover:border-terracotta/40"
-                      >
-                        <Upload className="w-3 h-3" /> Upload acknowledgment
-                      </button>
-                    )}
-                    {ackGates && (
-                      <button
-                        onClick={() => doMoveStage("Entered" as Stage, "")}
-                        disabled={checkingAttachments}
-                        title={ackSatisfied
-                          ? "The acknowledgment matched — move to Entered"
-                          : "No matched acknowledgment — an attached file will also let this through"}
-                        className="px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
-                        style={{
-                          background: "rgba(184,130,106,0.20)",
-                          border: "0.5px solid rgba(184,130,106,0.55)",
-                          color: "#d9a888",
-                        }}
-                      >
-                        {checkingAttachments ? "\u2026" : "Move to Entered"}
-                      </button>
-                    )}
-                    {/* ⚠ SUPPRESSED ON THE ACKNOWLEDGMENT PATH. Rendering both
-                        gave one transition two controls, which is how ENTERED
-                        and Entry Complete ended up on screen together. */}
-                    {!ackGates && nextStageFor(liveOrder) && nextStageFor(liveOrder) !== "Shipped" && (
-                      <button
-                        onClick={() => {
-                          const next = nextStageFor(liveOrder);
-                          // Empty PIN on purpose: this only ever offers the NEXT
-                          // stage, so it is never a backward move.
-                          if (next) doMoveStage(next as Stage, "");
-                        }}
-                        disabled={checkingAttachments || ackUnknown}
-                        className="px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all flex-shrink-0 disabled:opacity-40"
-                        style={{
-                          background: "rgba(184,130,106,0.20)",
-                          border: "0.5px solid rgba(184,130,106,0.55)",
-                          color: "#d9a888",
-                        }}
-                      >
-                        {checkingAttachments ? "\u2026" : nextStageFor(liveOrder)}
-                      </button>
-                    )}
-                  </div>
-                </div>
+                {/* ⚠ GENERATED FROM lib/requirements, NOT WRITTEN PER CASE.
+                    This cell was a hand-written branch per gate -- one shape
+                    for the acknowledgment, one for tracking, one for the rest
+                    -- and each branch was free to disagree with the server
+                    gate it stood in for. It did, twice, on 2026-09-08. See
+                    NextActionPanel's header for the rules it follows. */}
+                <NextActionPanel
+                  key={liveOrder.id}
+                  order={liveOrder}
+                  enrichment={enrichFor(liveOrder)}
+                  remedies={{
+                    // The remedy varies where the requirement does not: the
+                    // .xlsx picker for a Waypoint order, any file for HCI and
+                    // J&K. The pickers are the panels' own, so there is one
+                    // upload path rather than two.
+                    ack_or_attachment: ackStatus.hasWaypoint
+                      ? { label: "Upload acknowledgment",
+                          onClick: () => ackPanelRef.current?.openFilePicker() }
+                      : { label: "Attach a file",
+                          onClick: () => {
+                            setOpenPane("files");
+                            requestAnimationFrame(() => attachmentsRef.current?.openFilePicker());
+                          } },
+                    proof_of_delivery: {
+                      label: "Upload receipt",
+                      onClick: () => {
+                        setOpenPane("files");
+                        requestAnimationFrame(() => attachmentsRef.current?.openReceiptPicker());
+                      },
+                    },
+                  }}
+                  overrides={{
+                    // The same reason-and-activity-row path the refusal
+                    // banner offers. Anyone may override; everyone sees who.
+                    proof_of_delivery: {
+                      label: "Mark delivered anyway",
+                      onClick: () => {
+                        const target = nextStageFor(liveOrder);
+                        if (target) void overrideDelivery(target as Stage);
+                      },
+                    },
+                  }}
+                  // Empty PIN on purpose: this only ever offers the NEXT stage,
+                  // so it is never a backward move. doMoveStage still runs the
+                  // client Entered gate and handles the delivery-proof refusal.
+                  onMove={(stage) => doMoveStage(stage as Stage, "")}
+                  onSaveDates={(patch) => updateOrderDetails(liveOrder.id, patch)}
+                  busy={checkingAttachments}
+                  trackingSlot={typeCarriesTracking(liveOrder.type) && (
+                    <TrackingEntry
+                      order={liveOrder}
+                      highlight={trackingHighlight}
+                      onSaved={(stage) => {
+                        setTrackingHighlight(false);
+                        if (stage) onStageChange(stage as Stage);
+                      }}
+                    />
+                  )}
+                />
 
                 {/* One container, not two. This cell came out of ORDER INFO
                     still wearing that grid's borderTop/borderLeft, nested
@@ -1465,7 +1384,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                 by default: showing it wrongly is cosmetic, hiding it wrongly
                 means a missed manufacturer confirmation. */}
           {liveOrder.type !== "sample" && (
-            <AcknowledgmentPanel ref={ackPanelRef} orderId={liveOrder.id} orderName={liveOrder.name} eligible={ackEligible} onAdvanceOverride={() => { if (liveOrder.stage === "New") moveStage(liveOrder.id, "Entered", currentUserId, undefined, true).then((r) => { if (!r.ok) showToast(r.error ?? "Could not move to Entered", { kind: "error" }); }); }} />
+            <AcknowledgmentPanel ref={ackPanelRef} orderId={liveOrder.id} orderName={liveOrder.name} eligible={ackEligible} uploadOfferedElsewhere={requirementsFor(liveOrder).some((r) => r.id === "ack_or_attachment")} onAdvanceOverride={() => { if (liveOrder.stage === "New") moveStage(liveOrder.id, "Entered", currentUserId, undefined, true).then((r) => { if (!r.ok) showToast(r.error ?? "Could not move to Entered", { kind: "error" }); }); }} />
           )}
           {/* Notes and attachments as three cards in one row, collapsed to a
               summary line. This was two full-height textareas plus the
@@ -1868,8 +1787,8 @@ function QuoteInfoPanel({ notes }: { notes: string }) {
  *
  * Editable production_start_date / production_est_finish_date /
  * scheduled_delivery_date with stage-aware visibility:
- *   - Entered: shows Prod Start + Est Finish editors, prompts user to
- *     set Start (server auto-advances to In production when saved).
+ *   - Entered: shows Prod Start + Est Finish editors once set. FIRST entry
+ *     is the next-action panel's (server auto-advances on the start date).
  *   - In production: both production dates editable. Delivery date
  *     not yet relevant.
  *   - At cross dock + Delivered: production dates locked (display
@@ -1920,6 +1839,15 @@ function DateEditor({
   // that will not happen.
   const autoAdvances = order.type !== "custom";
   const deliveryEditable = hasCrossDock && stage === "At cross dock";
+  // ⚠ THE FIRST ENTRY BELONGS TO THE NEXT-ACTION PANEL. Where lib/requirements
+  // says this stage is waiting on a date, the panel renders the field beside
+  // the move, so the "Set ..." prompt here would be the same control twice --
+  // Garrett's note 2 on 2026-09-08. This card keeps the EDIT of a date already
+  // on the row. Asked of the table rather than of the stage name, so a type
+  // with no requirement (custom) keeps its prompt here.
+  const panelOwnsProd = requirementsFor(order).some(
+    (r) => r.id === "production_start_date" || r.id === "production_dates");
+  const panelOwnsDelivery = requirementsFor(order).some((r) => r.id === "delivery_date");
 
   const [editingProd, setEditingProd] = useState(false);
   const [editingDelivery, setEditingDelivery] = useState(false);
@@ -2053,7 +1981,7 @@ function DateEditor({
             // arrives by a manual advance, and any order moved backward or
             // by admin PIN arrives the same way. All of them landed here
             // with no way to enter dates at all.
-            prodEditable && (
+            prodEditable && !panelOwnsProd && (
               <button
                 onClick={() => setEditingProd(true)}
                 className="w-full rounded-brand px-4 py-3 text-left transition-all bg-terracotta/10 hover:bg-terracotta/15"
@@ -2124,7 +2052,7 @@ function DateEditor({
               )}
             </div>
           ) : (
-            stage === "At cross dock" && (
+            stage === "At cross dock" && !panelOwnsDelivery && (
               <button
                 onClick={() => setEditingDelivery(true)}
                 className="w-full rounded-brand px-4 py-3 text-left transition-all bg-terracotta/10 hover:bg-terracotta/15"
@@ -2140,98 +2068,6 @@ function DateEditor({
             )
           )}
         </>
-      )}
-    </div>
-  );
-}
-
-/**
- * The project's groups, as a selectable strip.
- *
- * Renders nothing for a project of one -- a custom job, a warranty claim, or a
- * Shopify order that happened to contain a single category. A strip with one
- * item is noise.
- *
- * ⚠ A GROUP'S STATUS NEVER DRIVES ANOTHER'S. Cabinets in production alongside
- * samples delivered is a normal state, not a conflict, and nothing here should
- * suggest one group is holding another up. They are separate work with separate
- * claims on genuinely different timelines -- that is the whole reason the
- * project splits into groups at all.
- */
-/**
- * CURRENT STAGE / NEXT ACTION.
- *
- * The rail says where the order IS. This says what to do about it, which is
- * the question somebody opening a modal is actually asking.
- *
- * Driven by nextStageFor() for the SELECTED GROUP's type, so a warranty claim
- * reads "In review" and a hardware group reads "Shipped" rather than a
- * cabinet-shaped next step. A terminal stage has no next action and says so
- * rather than showing a dead button.
- */
-function NextActionCard({
-  order, onAdvance, busy, claimSlot,
-}: {
-  order: Order;
-  onAdvance: () => void;
-  busy: boolean;
-  claimSlot?: React.ReactNode;
-}) {
-  const next = nextStageFor(order);
-  const accent = STAGE_ACCENT[order.stage] ?? "#8a8a8a";
-  const rule = slaRuleFor(order);
-  const hours = rule ? slaAgeHours(order, rule) : hoursInStage(order);
-  const tier = slaTier(order);
-
-  return (
-    <div
-      className="mx-6 mb-5 rounded-brand flex items-stretch"
-      style={{ background: "rgba(255,255,255,0.03)", border: "0.5px solid rgba(255,255,255,0.12)" }}
-    >
-      <div className="flex-1 px-4 py-3">
-        <p className="text-[9px] uppercase tracking-[0.16em] text-cream/40 mb-1.5">Current stage</p>
-        <div className="flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: accent }} />
-          <span className="text-[13px] font-medium" style={{ color: accent }}>{order.stage}</span>
-        </div>
-        <p className="text-[10px] text-cream/45 mt-1">
-          {formatStageAge(hours)} in stage
-          {rule && ` \u00b7 SLA target ${rule.hardHours}h`}
-          {tier === "hard" && <span style={{ color: "#e08585" }}> \u00b7 overdue</span>}
-          {tier === "soft" && <span style={{ color: "#e8b56a" }}> \u00b7 due</span>}
-        </p>
-      </div>
-      <div
-        className="flex-[1.4] px-4 py-3 flex items-center justify-between gap-3"
-        style={{ borderLeft: "0.5px solid rgba(255,255,255,0.10)" }}
-      >
-        <div className="min-w-0">
-          <p className="text-[9px] uppercase tracking-[0.16em] text-cream/40 mb-1.5">Next action</p>
-          <p className="text-[11px] text-cream/65 leading-snug">
-            {next
-              ? <>Move this to <span className="text-cream/85">{next}</span> when it is ready.</>
-              : "Nothing further \u2014 this is the last stage."}
-          </p>
-        </div>
-        {next && (
-          <button
-            onClick={onAdvance}
-            disabled={busy}
-            className="px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all flex-shrink-0 disabled:opacity-40"
-            style={{
-              background: "rgba(184,130,106,0.20)",
-              border: "0.5px solid rgba(184,130,106,0.55)",
-              color: "#d9a888",
-            }}
-          >
-            {busy ? "\u2026" : next}
-          </button>
-        )}
-      </div>
-      {claimSlot && (
-        <div className="px-4 py-3" style={{ borderTop: "0.5px solid rgba(255,255,255,0.10)" }}>
-          {claimSlot}
-        </div>
       )}
     </div>
   );
@@ -2384,6 +2220,19 @@ function TrackingEntry({
   );
 }
 
+/**
+ * The project's groups, as a selectable strip.
+ *
+ * Renders nothing for a project of one -- a custom job, a warranty claim, or a
+ * Shopify order that happened to contain a single category. A strip with one
+ * item is noise.
+ *
+ * ⚠ A GROUP'S STATUS NEVER DRIVES ANOTHER'S. Cabinets in production alongside
+ * samples delivered is a normal state, not a conflict, and nothing here should
+ * suggest one group is holding another up. They are separate work with separate
+ * claims on genuinely different timelines -- that is the whole reason the
+ * project splits into groups at all.
+ */
 function GroupStrip({
   groups, selectedId, onSelect, team,
 }: {

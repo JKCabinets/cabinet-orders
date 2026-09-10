@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from "react";
 import { Paperclip, Upload, X, Download, FileText, Image, File, Loader2, Trash2, FileCheck } from "lucide-react";
 import clsx from "clsx";
+import { invalidateEnrichment } from "@/lib/useOrderEnrichment";
 
 interface Attachment {
   id: number;
@@ -113,6 +114,11 @@ export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPa
     setUploading(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
     if (receiptInputRef.current) receiptInputRef.current.value = "";
+    // The next-action checklist reads the batch enrichment endpoint, which
+    // refetches only when the id list changes. An upload changes the answer
+    // for THIS row -- an attachment satisfies the Entered gate, a receipt the
+    // Delivered gate -- so tell every subscriber to ask again.
+    invalidateEnrichment();
   }
 
   async function handleDownload(attachment: Attachment) {
@@ -138,6 +144,7 @@ export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPa
       await fetch(`/api/orders/attachments/${id}`, { method: "DELETE" });
       setAttachments(prev => prev.filter(a => a.id !== id));
       setConfirmDeleteId(null);
+      invalidateEnrichment(); // removing a receipt reopens the gate
     } catch {
       setError("Delete failed");
     }

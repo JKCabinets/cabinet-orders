@@ -82,6 +82,21 @@ export interface Requirement {
    * Defaults to false, so adding an entry cannot start a clock by accident.
    */
   clocks?: boolean;
+  /**
+   * ⚠ DOES THE SERVER REFUSE THE TRANSITION WITHOUT THIS? Distinct from
+   * `clocks`: a delivery date at At cross dock keeps a clock running and the
+   * PATCH route lets the move through without it; a signed receipt runs no
+   * clock and the route refuses without it. The modal's next-action panel
+   * disables its move button on THESE and only these -- disabling on every
+   * unmet requirement was a client gate stricter than its server, which is
+   * the failure this table exists to end.
+   *
+   * Added 2026-09-09. Descriptive today: the gates in app/api/orders/[id]
+   * are still written by hand and this records which entries they check.
+   * Deriving them from here is the migration OMS-STATE §4 lists as pending.
+   * Defaults to false, so adding an entry cannot claim a gate by accident.
+   */
+  gates?: boolean;
   /** Answer for this row. `enrich` is undefined when nobody fetched it. */
   state: (o: Order, e?: RequirementEnrichment) => RequirementState;
 }
@@ -91,8 +106,9 @@ const rowReq = (
   id: string, label: string, remedy: string,
   met: (o: Order) => boolean,
   clocks: boolean,
+  gates = false,
 ): Requirement => ({
-  id, label, remedy, source: "row", clocks,
+  id, label, remedy, source: "row", clocks, gates,
   state: (o) => (met(o) ? "met" : "unmet"),
 });
 
@@ -100,8 +116,9 @@ const rowReq = (
 const enrichReq = (
   id: string, label: string, remedy: string,
   met: (e: RequirementEnrichment) => boolean | undefined,
+  gates = false,
 ): Requirement => ({
-  id, label, remedy, source: "enrich", clocks: false,
+  id, label, remedy, source: "enrich", clocks: false, gates,
   state: (_o, e) => {
     if (!e) return "unknown";
     const answer = met(e);
@@ -130,6 +147,7 @@ export const REQUIREMENTS: Record<OrderType, Record<string, Requirement[]>> = {
         (e) => (e.ackGreen === undefined && e.hasAttachment === undefined)
           ? undefined
           : Boolean(e.ackGreen) || Boolean(e.hasAttachment),
+        true, // the route refuses New -> Entered without one or the other
       ),
     ],
     // ⚠ ADDED 2026-09-08, WITH A SERVER GATE TO MATCH. The manufacturer
@@ -147,6 +165,7 @@ export const REQUIREMENTS: Record<OrderType, Record<string, Requirement[]>> = {
         "Add the production dates from the manufacturer's acknowledgment",
         (o) => Boolean(o.production_start_date),
         true,
+        true, // the route refuses Entered -> In production without it
       ),
     ],
     "In production": [
@@ -175,6 +194,7 @@ export const REQUIREMENTS: Record<OrderType, Record<string, Requirement[]>> = {
         "proof_of_delivery", "a signed proof of delivery",
         "Attach the signed delivery receipt",
         (e) => e.hasProofOfDelivery,
+        true, // the route refuses At cross dock -> Delivered without it (or a reason)
       ),
     ],
     "Delivered": [],
@@ -188,6 +208,7 @@ export const REQUIREMENTS: Record<OrderType, Record<string, Requirement[]>> = {
         "Enter the tracking number from the manufacturer",
         (o) => Boolean(o.tracking_number),
         true,
+        true, // the route refuses Shipped without one
       ),
     ],
     // With a carrier. No field says when to stop worrying.
@@ -202,6 +223,7 @@ export const REQUIREMENTS: Record<OrderType, Record<string, Requirement[]>> = {
         "Enter the tracking number, or let the Shopify fulfilment supply it",
         (o) => Boolean(o.tracking_number),
         true,
+        true, // the route refuses Shipped without one
       ),
     ],
     "Shipped": [],

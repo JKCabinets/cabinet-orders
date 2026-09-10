@@ -34,10 +34,37 @@ import type { AttentionEnrichment } from "@/lib/attention";
 /** Matches MAX_IDS in the route. Asking for more is refused there. */
 const MAX_IDS = 300;
 
+/**
+ * ⚠ THE KEY BELOW CHANGES ONLY WHEN THE ID LIST DOES, so an upload that
+ * satisfies a join-backed requirement -- an acknowledgment, a signed receipt
+ * -- leaves every subscriber holding the old answer. On a queue that is a
+ * stale badge; in the modal it is a checklist still reading "unmet" beside a
+ * disabled button, on the row the person has just fixed.
+ *
+ * Same shape as invalidateAck in lib/ackStatus: a module-level version that
+ * every mounted hook subscribes to. Bumping it refetches them all. Called by
+ * the two upload paths that can change the answer; a stage move changes the
+ * row, which the requirement reads directly, so it needs nothing here.
+ */
+let version = 0;
+const listeners = new Set<() => void>();
+
+export function invalidateEnrichment(): void {
+  version++;
+  for (const l of listeners) l();
+}
+
 export function useOrderEnrichment(
   orders: Order[],
 ): (order: Order) => AttentionEnrichment | undefined {
   const [map, setMap] = useState<Record<string, AttentionEnrichment>>({});
+  // Re-runs the fetch effect when invalidateEnrichment() fires.
+  const [tick, setTick] = useState(version);
+  useEffect(() => {
+    const l = () => setTick(version);
+    listeners.add(l);
+    return () => { listeners.delete(l); };
+  }, []);
 
   /**
    * ⚠ THE KEY IS THE SORTED ID LIST, NOT THE ARRAY IDENTITY. `allOrders` is a
@@ -90,7 +117,7 @@ export function useOrderEnrichment(
     })();
 
     return () => { cancelled = true; };
-  }, [key]);
+  }, [key, tick]);
 
   return useMemo(() => (order: Order) => map[order.id], [map]);
 }
