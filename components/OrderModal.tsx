@@ -1847,7 +1847,12 @@ function DateEditor({
   // with no requirement (custom) keeps its prompt here.
   const panelOwnsProd = requirementsFor(order).some(
     (r) => r.id === "production_start_date" || r.id === "production_dates");
-  const panelOwnsDelivery = requirementsFor(order).some((r) => r.id === "delivery_date");
+  // Does this row's flow expect a delivery date at all? Where it does, the
+  // next-action panel owns first entry (above) and the copy below can say
+  // the date leads somewhere. Where it does not -- a custom job -- the date
+  // is a record and this card is the only place to put one.
+  const deliveryDateExpected = requirementsFor(order).some((r) => r.id === "delivery_date");
+  const panelOwnsDelivery = deliveryDateExpected;
 
   const [editingProd, setEditingProd] = useState(false);
   const [editingDelivery, setEditingDelivery] = useState(false);
@@ -2062,7 +2067,13 @@ function DateEditor({
                   Set <em className="italic-storm">delivery date</em>
                 </p>
                 <p className="text-[11px] text-cream/55">
-                  Once set, you can confirm delivery from the stage page.
+                  {/* ⚠ IT PROMISED A GATE THAT DOES NOT EXIST HERE. On a custom
+                      job nothing waits on this date: Confirm Delivery is
+                      available with or without it, and saying otherwise is how
+                      somebody concludes the order is stuck. */}
+                  {deliveryDateExpected
+                    ? "Once set, you can confirm delivery from the stage page."
+                    : "Recorded for scheduling \u2014 delivery can be confirmed with or without it."}
                 </p>
               </button>
             )

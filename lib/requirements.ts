@@ -254,6 +254,16 @@ export const REQUIREMENTS: Record<OrderType, Record<string, Requirement[]>> = {
   // ⚠ THE ROUTE AND THE ROW BUTTON BOTH ASK THIS TABLE whether a receipt is
   // needed, so this block is the one place that records which flows Terms
   // 12.3 governs. Adding an entry here is adding a gate there.
+  //
+  // ⚠ CUSTOM HAS NO GATES, PERIOD -- Garrett, 2026-09-09. It is an
+  // organisation tool and nothing in it is a condition of anything. That
+  // covers the UI as well as the routes: no control may WITHHOLD ITSELF
+  // pending a custom job's date, and no copy may say a date unlocks
+  // something. Three did, all at At cross dock -- the row's Confirm Delivery
+  // button, the "Awaiting delivery date" status and the card's "Once set,
+  // you can confirm delivery" -- and all three now ask this table. A demand
+  // nothing enforces is worse than a gate: there is no error to search for,
+  // only a button that never appears.
   custom: {
     "New": [], "In review": [], "Ordered": [],
     "In production": [], "At cross dock": [], "Delivered": [],

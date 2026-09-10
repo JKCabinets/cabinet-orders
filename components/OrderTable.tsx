@@ -12,6 +12,7 @@ import { useStore } from "@/lib/store";
 import { useSession } from "next-auth/react";
 import { formatDateWithYear, parseOrderDate } from "@/lib/dateUtils";
 import { checkAttachmentGate, checkDeliveryProofGate } from "@/lib/stageGates";
+import { requirementsFor } from "@/lib/requirements";
 import { OrderEntryActions } from "./OrderEntryActions";
 import { ArrowUp, ArrowDown, RotateCcw, ChevronRight, X } from "lucide-react";
 import { AvatarWithProfile } from "./AvatarWithProfile";
@@ -773,7 +774,13 @@ function StatusLabel({ order, stage, claimedBy }: {
     if (order.scheduled_delivery_date) {
       return <span className="text-[10px] text-cream/55">Sched {order.scheduled_delivery_date}</span>;
     }
-    return <span className="text-[10px] text-cream/55 italic">Awaiting delivery date</span>;
+    // ⚠ "AWAITING" IS THE MISSING-DATA SLA WORDING, and it belongs only to a
+    // flow that has such a rule. A custom job has none -- nothing was ever
+    // going to advance it on a date -- so this said the system was waiting
+    // on something it does not want. Same question as the button above.
+    return requirementsFor(order).some((r) => r.id === "delivery_date")
+      ? <span className="text-[10px] text-cream/55 italic">Awaiting delivery date</span>
+      : <span className="text-[10px] text-cream/55 italic">No delivery date set</span>;
   }
 
   if (stage === "Delivered") {
@@ -1073,8 +1080,16 @@ function UpdateStatusActions({
 
   // ── At cross dock ──────────────────────────────────────────────────
   if (stage === "At cross dock") {
-    const hasDate = !!order.scheduled_delivery_date;
-    if (hasDate) {
+    // ⚠ ONLY WHERE THE TABLE EXPECTS A DATE. This withheld Confirm Delivery
+    // from every type until one was set -- a client-only rule the server has
+    // never had, and on a CUSTOM job a demand for something that gates
+    // nothing. Custom is an organisation tool: its dates record a phone
+    // call, and a button that will not appear until one is typed makes a
+    // record look like a condition. Asked of lib/requirements, so cabinets
+    // are unchanged -- `order` at this stage carries `delivery_date`.
+    const deliveryDateExpected = requirementsFor(order)
+      .some((r) => r.id === "delivery_date");
+    if (!!order.scheduled_delivery_date || !deliveryDateExpected) {
       return <ConfirmDeliveryActions order={order} mobile={mobile} onOpenModal={onOpenModal} />;
     }
     return (
