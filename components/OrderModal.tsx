@@ -215,7 +215,13 @@ const CELL: React.CSSProperties = {
   borderTop: "0.5px solid rgba(255,255,255,0.08)",
   borderLeft: "0.5px solid rgba(255,255,255,0.08)",
 };
-const LABEL = "text-[10px] uppercase tracking-[0.16em] text-cream/50 mb-1.5";
+// ⚠ 50% ON A DARK PANEL IS A WATERMARK. Every field name in the modal uses
+// this, and under it every value sat at 65% -- so the cards read as a grey
+// wash and the words got lost. The label is still quieter than its value;
+// it is just legible now.
+const LABEL = "text-[10px] uppercase tracking-[0.16em] text-cream/60 mb-1.5";
+/** The value under a LABEL. Bright: it is the fact the label names. */
+const VALUE = "text-[12px] text-cream/90";
 
 // PIN validation lives server-side only. The modal sends whatever the user
 // typed; the server compares against ADMIN_BACKWARD_PIN (constant-time) and
@@ -1213,91 +1219,49 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
               Six cells on a 3-column grid, so the second row fills. The
               4-column version went ragged the moment the claim cell moved out
               of it -- two cells on a row built for four. */}
-          <div className="px-6 py-4">
-            <p className={LABEL}>Order info</p>
-            <div className="grid grid-cols-2 md:grid-cols-3 rounded-brand overflow-hidden"
-              style={{ border: "0.5px solid rgba(255,255,255,0.12)" }}>
-              <div className="px-4 py-3" style={CELL}>
-                <p className={LABEL + " mb-1"}>Source</p>
-                <span className="text-[10px] uppercase tracking-wider px-2 py-px rounded-full font-medium inline-block"
-                  style={
-                    liveOrder.source === "Shopify"
-                      ? { background: "rgba(184,130,106,0.15)", color: "#d9a888", border: "0.5px solid rgba(184,130,106,0.40)" }
-                      : { background: "rgba(145,165,151,0.18)", color: "#b8d0bd", border: "0.5px solid rgba(145,165,151,0.45)" }
-                  }>
-                  {liveOrder.source === "Manual" ? "Custom" : liveOrder.source}
-                </span>
+          {/* ⚠ A 50/50 SPLIT, NOT ONE TABLE. What the order IS on the left --
+              facts that were true when it arrived and never change. What its
+              stages RUN ON on the right -- the live fields somebody acts on.
+              They were six cells of one grid, in which nothing distinguished
+              a PO number from a date the pipeline is waiting for. */}
+          <div className="px-6 py-4 grid grid-cols-1 md:grid-cols-2 gap-2.5">
+            <div className="glass-sage rounded-panel px-4 py-3.5">
+              <p className={LABEL}>Order details</p>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-3 mt-2">
+                <div>
+                  <p className={LABEL + " mb-1"}>Source</p>
+                  <span className="text-[10px] uppercase tracking-wider px-2 py-px rounded-full font-medium inline-block"
+                    style={
+                      liveOrder.source === "Shopify"
+                        ? { background: "rgba(184,130,106,0.15)", color: "#d9a888", border: "0.5px solid rgba(184,130,106,0.40)" }
+                        : { background: "rgba(145,165,151,0.18)", color: "#b8d0bd", border: "0.5px solid rgba(145,165,151,0.45)" }
+                    }>
+                    {liveOrder.source === "Manual" ? "Custom" : liveOrder.source}
+                  </span>
+                </div>
+                <div>
+                  <p className={LABEL + " mb-1"}>Order date</p>
+                  <p className={VALUE}>{liveOrder.date}</p>
+                </div>
+                <div>
+                  {/* The reference a MANUFACTURER sees. Internal -- never shown
+                      to a customer, who knows only the order number. */}
+                  <p className={LABEL + " mb-1"}>PO / Reference</p>
+                  <p className={VALUE + " font-mono truncate"}>{poReference(liveOrder)}</p>
+                </div>
+                <div>
+                  <p className={LABEL + " mb-1"}>Order type</p>
+                  <p className={VALUE}>{GROUP_LABEL[liveOrder.type] ?? liveOrder.type}</p>
+                </div>
               </div>
-              <div className="px-4 py-3" style={CELL}>
-                <p className={LABEL + " mb-1"}>Order date</p>
-                <p className="text-xs text-cream/65">{liveOrder.date}</p>
-              </div>
-              <div className="px-4 py-3" style={CELL}>
-                <p className={LABEL + " mb-1"}>Order type</p>
-                <p className="text-xs text-cream/65">{GROUP_LABEL[liveOrder.type] ?? liveOrder.type}</p>
-              </div>
-              <div className="px-4 py-3" style={CELL}>
-                {/* The reference a MANUFACTURER sees. Internal -- never shown
-                    to a customer, who knows only the order number. */}
-                <p className={LABEL + " mb-1"}>PO / Reference</p>
-                <p className="text-xs font-mono text-cream/65">{poReference(liveOrder)}</p>
-              </div>
-              {/* ⚠ THE LAST TWO CELLS DEPEND ON THE TYPE.
-                  Samples are picked off a shelf and posted; hardware is placed
-                  with a manufacturer who dispatches it. Neither has production
-                  dates, so both cells read "Not set" forever -- two of the six
-                  facts in this panel saying nothing, on the types where the
-                  tracking number IS the fact.
-
-                  TWO CELLS EITHER WAY. This is a 3-column grid and the second
-                  row only fills at six; the 4-column version went ragged the
-                  moment a cell moved out of it. */}
-              {typeCarriesTracking(liveOrder.type) ? (
-                <>
-                  <div className="px-4 py-3" style={CELL}>
-                    <p className={LABEL + " mb-1"}>Tracking number</p>
-                    <p className="text-xs font-mono text-cream/65">
-                      {liveOrder.tracking_number || "Not set"}
-                    </p>
-                  </div>
-                  <div className="px-4 py-3" style={CELL}>
-                    <p className={LABEL + " mb-1"}>Carrier</p>
-                    <p className="text-xs text-cream/65">
-                      {liveOrder.carrier || "Not set"}
-                    </p>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="px-4 py-3" style={CELL}>
-                    {/* Start and estimated finish read as a span, not two facts. */}
-                    <p className={LABEL + " mb-1"}>Production dates</p>
-                    <p className="text-xs text-cream/65">
-                      {liveOrder.production_start_date || liveOrder.production_est_finish_date
-                        ? `${liveOrder.production_start_date || "?"} \u2192 ${liveOrder.production_est_finish_date || "?"}`
-                        : "Not set"}
-                    </p>
-                  </div>
-                  <div className="px-4 py-3" style={CELL}>
-                    {/* Scheduled, not actual. A date the customer has not been
-                        given is not a promise, and this is the internal view. */}
-                    <p className={LABEL + " mb-1"}>Delivery target</p>
-                    <p className="text-xs text-cream/65">
-                      {liveOrder.scheduled_delivery_date || liveOrder.delivery_date || "Not set"}
-                    </p>
-                  </div>
-                </>
-              )}
             </div>
-          </div>
 
-            {/* Production & Delivery Dates — editable from Entered stage forward */}
-            {/* Warranty claims have no production or delivery dates.
-                Standard, sample and custom orders all do -- phrased as
-                "not warranty" so a new type gets this by default. */}
-            {liveOrder.type !== "warranty" && liveOrder.stage !== "New" && (
-              <DateEditor order={liveOrder} updateOrderDetails={updateOrderDetails} />
-            )}
+            <StageInputsCard
+              order={liveOrder}
+              updateOrderDetails={updateOrderDetails}
+              onStageChange={onStageChange}
+            />
+          </div>
 
             {/* Acknowledgments: per-vendor .xlsx reconciliation.
 
@@ -1329,7 +1293,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
               className="glass-sage rounded-panel px-3.5 py-3 text-left transition-all hover:brightness-110"
             >
               <p className={LABEL + " mb-0.5"}>Customer note</p>
-              <p className="text-[11px] text-cream/45 truncate">
+              <p className="text-[11px] text-cream/70 truncate">
                 {notes.trim() ? notes.trim().split("\n")[0] : "No customer note yet"}
               </p>
             </button>
@@ -1344,7 +1308,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                   staff
                 </span>
               </div>
-              <p className="text-[11px] text-cream/45 truncate">
+              <p className="text-[11px] text-cream/70 truncate">
                 {internalNotes.trim() ? internalNotes.trim().split("\n")[0] : "No internal note yet"}
               </p>
             </button>
@@ -1353,7 +1317,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
               className="glass-sage rounded-panel px-3.5 py-3 text-left transition-all hover:brightness-110"
             >
               <p className={LABEL + " mb-0.5"}>Attachments</p>
-              <p className="text-[11px] text-cream/45 truncate">
+              <p className="text-[11px] text-cream/70 truncate">
                 Drawings, receipts, measurements
               </p>
             </button>
@@ -1709,24 +1673,28 @@ function QuoteInfoPanel({ notes }: { notes: string }) {
   );
 }
 
-/* ─── Date editor (inline) ──────────────────────────────────────────────
+/**
+ * What this group's stages run on, and the control that changes it.
  *
- * Editable production_start_date / production_est_finish_date /
- * scheduled_delivery_date with stage-aware visibility:
- *   - Entered: shows Prod Start + Est Finish editors once set. FIRST entry
- *     is the next-action panel's (server auto-advances on the start date).
- *   - In production: both production dates editable. Delivery date
- *     not yet relevant.
- *   - At cross dock + Delivered: production dates locked (display
- *     only) and delivery date editable.
+ * ⚠ ITS CONTENTS VARY BY TYPE BECAUSE ITS JOB DOES. Cabinets and custom jobs
+ * advance on dates; hardware and samples advance on a tracking number. The
+ * section this replaces was called "Production / Delivery" and was written
+ * around the date fields, so it returned NULL for hardware and samples --
+ * the two types where the tracking number is the whole answer.
  *
- * Editing replaces the existing dates; the server PATCHes the new
- * values directly. Clearing the start date is intentionally blocked
- * — once the order is past Entered it shouldn't lose its commit date.
+ * ⚠ "MODIFY", NEVER "+ ADD", AND ALWAYS PRESENT. The prompts here used to
+ * appear only while a field was empty, which meant a date could be entered and
+ * never corrected. First entry belongs to the next-action panel, as part of
+ * advancing the row; this is the record you come back to, and coming back is
+ * the only thing it is for.
+ *
+ * ⚠ THE TRACKING EDITOR IS TrackingEntry, the same component the next-action
+ * slot uses. It owns clearing (a number and its carrier go together), the
+ * advance-on-save, and the re-sync when a Shopify fulfilment writes underneath.
+ * A second implementation here would be a second set of those rules.
  */
-function DateEditor({
-  order,
-  updateOrderDetails,
+function StageInputsCard({
+  order, updateOrderDetails, onStageChange,
 }: {
   order: Order;
   updateOrderDetails: (id: string, details: {
@@ -1734,244 +1702,142 @@ function DateEditor({
     production_est_finish_date?: string | null;
     scheduled_delivery_date?: string | null;
   }) => Promise<void>;
+  onStageChange: (stage: Stage) => void;
 }) {
-  const stage = order.stage;
-  // ⚠ GATE ON THE TYPE'S OWN FLOW, NOT ON THE STAGE NAME.
-  //
-  // A sample runs New -> Entered -> Delivered. It has no In production and no
-  // At cross dock. But these gates only asked "is the stage Entered", so a
-  // sample at Entered was offered production dates -- and saving a start date
-  // AUTO-ADVANCES to In production, a stage the sample rail cannot even draw.
-  //
-  // The server would have accepted it: isStageAllowedForType reads
-  // STAGE_ORDER_BY_TYPE, which maps samples onto all five standard stages for
-  // index arithmetic. STAGE_LIST_BY_TYPE is the flow a row can actually take.
-  // That distinction is exactly what the samples rail was corrected for
-  // earlier; the date editor still had the old assumption.
-  const flow: readonly string[] = STAGE_LIST_BY_TYPE[order.type] ?? [];
-  const hasProduction = flow.includes("In production");
-  const hasCrossDock = flow.includes("At cross dock");
-
-  const showProdDates = hasProduction && (stage === "Entered" || stage === "In production" || stage === "At cross dock" || stage === "Delivered");
-  const showDeliveryDate = hasCrossDock && (stage === "At cross dock" || stage === "Delivered");
-  const prodEditable = hasProduction && (stage === "Entered" || stage === "In production");
-  // Whether saving a start date will MOVE the order.
-  //
-  // For standard and sample rows the server advances Entered -> In
-  // production on save, and the production-complete cron then owns In
-  // production -> At cross dock. Custom orders are hand-driven end to end
-  // and that cron is filtered to exclude them, so their dates are a record,
-  // not a trigger. The copy below has to say so rather than promise a move
-  // that will not happen.
-  const autoAdvances = order.type !== "custom";
-  const deliveryEditable = hasCrossDock && stage === "At cross dock";
-  // ⚠ FIRST ENTRY IS THE NEXT-ACTION PANEL'S, AT EVERY STAGE AND FOR EVERY
-  // FLOW. The panel asks `dateControlsFor`, which answers "is the date the
-  // thing you came here to type" rather than "is it required" -- so it covers
-  // a custom job, which requires nothing and still wants its dates. The two
-  // "Set ..." prompts this card used to show below rendered at exactly those
-  // stages, so they were one control drawn twice with the second copy
-  // full-width and below the fold. They are gone; this card keeps the values
-  // and the Edit control, which is a different job.
-
-  const [editingProd, setEditingProd] = useState(false);
-  const [editingDelivery, setEditingDelivery] = useState(false);
+  const carriesTracking = typeCarriesTracking(order.type);
+  const [editing, setEditing] = useState(false);
   const [prodStart, setProdStart] = useState(order.production_start_date ?? "");
   const [prodFinish, setProdFinish] = useState(order.production_est_finish_date ?? "");
   const [deliveryDate, setDeliveryDate] = useState(order.scheduled_delivery_date ?? "");
   const [saving, setSaving] = useState(false);
 
-  // Reset local state when the order data changes (e.g. after a save)
+  // Re-sync when the row changes underneath: the cron advances rows and a
+  // fulfilment can write dates while this is open.
   useEffect(() => {
     setProdStart(order.production_start_date ?? "");
     setProdFinish(order.production_est_finish_date ?? "");
     setDeliveryDate(order.scheduled_delivery_date ?? "");
   }, [order.production_start_date, order.production_est_finish_date, order.scheduled_delivery_date]);
 
-  async function saveProd() {
-    if (!prodStart) return; // Start date required — setting it triggers auto-advance
+  /**
+   * ⚠ WARRANTY RUNS ON NEITHER. A claim has no production dates and no
+   * delivery target; showing empty ones with a Modify button would invite
+   * somebody to set a field nothing reads.
+   */
+  const isWarranty = order.type === "warranty";
+
+  async function saveDates() {
     setSaving(true);
     try {
       await updateOrderDetails(order.id, {
-        production_start_date: prodStart,
+        production_start_date: prodStart || null,
         production_est_finish_date: prodFinish || null,
+        scheduled_delivery_date: deliveryDate || null,
       });
-      setEditingProd(false);
+      setEditing(false);
     } finally {
       setSaving(false);
     }
   }
 
-  async function saveDelivery() {
-    if (!deliveryDate) return;
-    setSaving(true);
-    try {
-      await updateOrderDetails(order.id, { scheduled_delivery_date: deliveryDate });
-      setEditingDelivery(false);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  const hasAnyDate = !!(order.production_start_date || order.production_est_finish_date || order.scheduled_delivery_date);
-  if (!showProdDates && !showDeliveryDate && !hasAnyDate) return null;
+  const heading = carriesTracking ? "Carrier & tracking" : "Production & delivery";
 
   return (
-    <div className="space-y-2 mb-1">
-      {/* ── Production dates ── */}
-      {showProdDates && (
-        <>
-          {editingProd ? (
-            <div className="rounded-brand p-3" style={{ background: "rgba(200,184,74,0.08)", border: "0.5px solid rgba(200,184,74,0.30)" }}>
-              <div className="flex items-center gap-2 mb-2">
-                <p className="text-[10px] uppercase tracking-[0.13em] text-cream/55 font-medium">Production dates</p>
-                {stage === "Entered" && autoAdvances && (
-                  <span className="text-[9px] text-cream/45 italic">
-                    Setting start date auto-advances to <em className="italic-storm">In production</em>
-                  </span>
-                )}
-              </div>
-              <div className="grid grid-cols-2 gap-2 mb-3">
-                <label className="flex flex-col gap-1">
-                  <span className="text-[9px] uppercase tracking-wider text-cream/55">Start date <span className="text-terracotta">*</span></span>
-                  <input
-                    type="date"
-                    value={prodStart}
-                    onChange={(e) => setProdStart(e.target.value)}
-                    className="rounded-brand px-2.5 py-1.5 text-[12px]"
-                    style={{ background: "rgba(255,255,255,0.06)", border: "0.5px solid rgba(255,255,255,0.18)", color: "#f0ece4", colorScheme: "dark" }}
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-[9px] uppercase tracking-wider text-cream/55">Est. finish</span>
-                  <input
-                    type="date"
-                    value={prodFinish}
-                    onChange={(e) => setProdFinish(e.target.value)}
-                    className="rounded-brand px-2.5 py-1.5 text-[12px]"
-                    style={{ background: "rgba(255,255,255,0.06)", border: "0.5px solid rgba(255,255,255,0.18)", color: "#f0ece4", colorScheme: "dark" }}
-                  />
-                </label>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={saveProd}
-                  disabled={saving || !prodStart}
-                  className="px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30 disabled:opacity-40"
-                >
-                  {saving ? "…" : "Save dates"}
-                </button>
-                <button
-                  onClick={() => {
-                    setProdStart(order.production_start_date ?? "");
-                    setProdFinish(order.production_est_finish_date ?? "");
-                    setEditingProd(false);
-                  }}
-                  className="px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider text-cream/55 hover:text-cream/85"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          ) : (order.production_start_date || order.production_est_finish_date) ? (
-            <div className="grid grid-cols-3 gap-2">
-              {order.production_start_date && (
-                <div className="rounded-brand px-3 py-2" style={{ background: "rgba(200,184,74,0.10)", border: "0.5px solid rgba(200,184,74,0.30)" }}>
-                  <p className="text-[9px] uppercase tracking-[0.13em] mb-0.5 text-cream/45">Prod. Start</p>
-                  <p className="text-[11px] font-medium" style={{ color: "#d4cc70" }}>{order.production_start_date}</p>
-                </div>
-              )}
-              {order.production_est_finish_date && (
-                <div className="rounded-brand px-3 py-2" style={{ background: "rgba(200,184,74,0.10)", border: "0.5px solid rgba(200,184,74,0.30)" }}>
-                  <p className="text-[9px] uppercase tracking-[0.13em] mb-0.5 text-cream/45">Est. Finish</p>
-                  <p className="text-[11px] font-medium" style={{ color: "#d4cc70" }}>{order.production_est_finish_date}</p>
-                </div>
-              )}
-              {prodEditable && (
-                <button
-                  onClick={() => setEditingProd(true)}
-                  className="rounded-brand px-3 py-2 text-[10px] uppercase tracking-wider text-cream/55 hover:text-cream/85 hover:bg-white/4 transition-all"
-                  style={{ border: "0.5px dashed rgba(255,255,255,0.20)" }}
-                >
-                  Edit dates →
-                </button>
-              )}
-            </div>
-          ) : null}
-        </>
+    <div className="glass-sage rounded-panel px-4 py-3.5">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className={LABEL}>{heading}</p>
+          <p className="text-[10px] text-cream/45 -mt-1 mb-1">
+            What this {GROUP_LABEL[order.type]?.toLowerCase() ?? "order"} advances on
+          </p>
+        </div>
+        {!isWarranty && (
+          <button
+            onClick={() => setEditing((v) => !v)}
+            className="text-[10px] uppercase tracking-wider px-3 py-1 rounded-full transition-all flex-shrink-0 bg-white/5 border border-cream/20 text-cream/75 hover:bg-white/10 hover:text-cream"
+          >
+            {editing ? "Done" : "Modify"}
+          </button>
+        )}
+      </div>
+
+      {carriesTracking ? (
+        <div className="grid grid-cols-2 gap-x-4 gap-y-3 mt-2">
+          <div>
+            <p className={LABEL + " mb-1"}>Tracking number</p>
+            <p className={VALUE + " font-mono truncate"}>{order.tracking_number || "Not set"}</p>
+          </div>
+          <div>
+            <p className={LABEL + " mb-1"}>Carrier</p>
+            <p className={VALUE}>{order.carrier || "Not set"}</p>
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-x-4 gap-y-3 mt-2">
+          <div>
+            {/* Start and estimated finish read as a span, not two facts. */}
+            <p className={LABEL + " mb-1"}>Production dates</p>
+            <p className={VALUE}>
+              {order.production_start_date || order.production_est_finish_date
+                ? `${order.production_start_date || "?"} \u2192 ${order.production_est_finish_date || "?"}`
+                : "Not set"}
+            </p>
+          </div>
+          <div>
+            {/* Scheduled, not actual. A date the customer has not been given is
+                not a promise, and this is the internal view. */}
+            <p className={LABEL + " mb-1"}>Delivery target</p>
+            <p className={VALUE}>
+              {order.scheduled_delivery_date || order.delivery_date || "Not set"}
+            </p>
+          </div>
+        </div>
       )}
 
-      {/* ── Delivery date ── */}
-      {showDeliveryDate && (
-        <>
-          {editingDelivery ? (
-            <div className="rounded-brand p-3" style={{ background: "rgba(90,141,184,0.08)", border: "0.5px solid rgba(90,141,184,0.30)" }}>
-              <p className="text-[10px] uppercase tracking-[0.13em] text-cream/55 font-medium mb-2">Delivery date</p>
-              <input
-                type="date"
-                value={deliveryDate}
-                onChange={(e) => setDeliveryDate(e.target.value)}
-                className="rounded-brand px-2.5 py-1.5 text-[12px] mb-3 w-48"
-                style={{ background: "rgba(255,255,255,0.06)", border: "0.5px solid rgba(255,255,255,0.18)", color: "#f0ece4", colorScheme: "dark" }}
-              />
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={saveDelivery}
-                  disabled={saving || !deliveryDate}
-                  className="px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30 disabled:opacity-40"
-                >
-                  {saving ? "…" : "Save"}
-                </button>
-                <button
-                  onClick={() => {
-                    setDeliveryDate(order.scheduled_delivery_date ?? "");
-                    setEditingDelivery(false);
-                  }}
-                  className="px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider text-cream/55 hover:text-cream/85"
-                >
-                  Cancel
-                </button>
-              </div>
+      {editing && !isWarranty && (
+        <div className="mt-3 pt-3" style={{ borderTop: "0.5px solid rgba(255,255,255,0.10)" }}>
+          {carriesTracking ? (
+            <TrackingEntry
+              order={order}
+              onSaved={(stage) => { if (stage) onStageChange(stage as Stage); setEditing(false); }}
+            />
+          ) : (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <input type="date" value={prodStart} onChange={(e) => setProdStart(e.target.value)}
+                title="Production starts" aria-label="Production start date" style={CARD_DATE_INPUT} />
+              <span className="text-cream/30 text-[11px]">&rarr;</span>
+              <input type="date" value={prodFinish} onChange={(e) => setProdFinish(e.target.value)}
+                title="Estimated finish" aria-label="Estimated finish date" style={CARD_DATE_INPUT} />
+              <input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)}
+                title="Delivery target" aria-label="Delivery target" style={CARD_DATE_INPUT} />
+              <button
+                onClick={saveDates}
+                disabled={saving}
+                title="Save the dates on this order"
+                className="text-[10px] uppercase tracking-wider px-3 py-1.5 rounded-full transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30 disabled:opacity-40"
+              >
+                {saving ? "\u2026" : "Save"}
+              </button>
             </div>
-          ) : order.scheduled_delivery_date ? (
-            <div className="grid grid-cols-3 gap-2">
-              <div className="rounded-brand px-3 py-2" style={{ background: "rgba(90,141,184,0.10)", border: "0.5px solid rgba(90,141,184,0.30)" }}>
-                <p className="text-[9px] uppercase tracking-[0.13em] mb-0.5 text-cream/45">Delivery Date</p>
-                <p className="text-[11px] font-medium" style={{ color: "#a8c8e0" }}>{order.scheduled_delivery_date}</p>
-              </div>
-              {deliveryEditable && (
-                <button
-                  onClick={() => setEditingDelivery(true)}
-                  className="rounded-brand px-3 py-2 text-[10px] uppercase tracking-wider text-cream/55 hover:text-cream/85 hover:bg-white/4 transition-all"
-                  style={{ border: "0.5px dashed rgba(255,255,255,0.20)" }}
-                >
-                  Edit date →
-                </button>
-              )}
-            </div>
-          ) : null}
-        </>
+          )}
+        </div>
       )}
     </div>
   );
 }
 
-/**
- * Carrier and tracking number, for the flows that have one.
- *
- * ⚠ SAVING A NUMBER ADVANCES THE GROUP TO "Shipped". The server does that --
- * see trackingTargetStage in lib/categories.ts -- so this component does not
- * move anything itself. One rule, one place: the Shopify fulfilment path takes
- * the same route, which is why a fulfilment and a person typing produce
- * identical results.
- *
- * ⚠ IT DOES NOT MOVE ANYTHING BACKWARD. Clearing a number leaves the stage
- * alone: undoing a stage is a deliberate act with a PIN behind it, not a side
- * effect of correcting a typo.
- *
- * Cabinets never render this. They travel by freight to a cross dock -- there
- * is no number to have, and the route refuses one with a 422.
- */
+const CARD_DATE_INPUT: React.CSSProperties = {
+  background: "rgba(255,255,255,0.10)",
+  border: "0.5px solid rgba(255,255,255,0.18)",
+  borderRadius: "999px",
+  color: "#e8e3da",
+  colorScheme: "dark",
+  fontFamily: "inherit",
+  fontSize: "11px",
+  height: "30px",
+  padding: "0 12px",
+};
+
 function TrackingEntry({
   order, onSaved, highlight = false,
 }: {
