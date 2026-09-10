@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Upload } from "lucide-react";
+import { Calendar, Check, Upload } from "lucide-react";
 import { nextStageFor, type Order } from "@/lib/data";
 import { requirementsFor, dateControlsFor, type RequirementEnrichment, type RequirementState } from "@/lib/requirements";
 
@@ -98,7 +98,10 @@ const PRODUCTION_DATE_IDS = new Set(["production_start_date", "production_dates"
  * custom job's dates gate nothing and the caption is the only thing keeping
  * the control honest about that.
  */
-const RECORD_ONLY_CAPTION = "Recorded for scheduling \u2014 this will not move the order.";
+const RECORD_ONLY_NOTE: Record<string, string> = {
+  production: "Production dates here are a record \u2014 they will not move the order.",
+  delivery: "The delivery date here is a record \u2014 it will not move the order.",
+};
 
 const DATE_INPUT: React.CSSProperties = {
   background: "rgba(255,255,255,0.10)",
@@ -108,10 +111,16 @@ const DATE_INPUT: React.CSSProperties = {
   colorScheme: "dark",
   fontFamily: "inherit",
   fontSize: "11px",
-  padding: "5px 10px",
+  height: "32px",
+  padding: "0 12px",
 };
 
-const PILL = "px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed";
+/**
+ * ⚠ ONE SIZE FOR EVERY CONTROL IN THE SLOT. The date inputs were 5px-padded
+ * boxes sitting beside 6px-padded pills, so no two edges in the row lined up.
+ * Everything here is this height, including the inputs when they open.
+ */
+const PILL = "h-8 px-4 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all flex-shrink-0 whitespace-nowrap inline-flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed";
 const PILL_QUIET = PILL + " bg-white/4 border border-cream/18 text-cream/85 hover:bg-white/8";
 const PILL_MOVE: React.CSSProperties = {
   background: "rgba(184,130,106,0.20)",
@@ -155,10 +164,17 @@ export function NextActionPanel({
   const [prodFinish, setProdFinish] = useState(order.production_est_finish_date ?? "");
   const [deliveryDate, setDeliveryDate] = useState(order.scheduled_delivery_date ?? "");
   const [saving, setSaving] = useState(false);
+  /**
+   * ⚠ THE FIELDS OPEN FROM A BUTTON. Two empty date boxes and an arrow sat in
+   * the row permanently, so the commonest state of the slot -- nothing to type
+   * -- was also its busiest. One button, same size as its neighbours, and the
+   * fields replace the row when it is pressed.
+   */
+  const [openDate, setOpenDate] = useState<null | "production" | "delivery">(null);
 
   async function save(patch: DateFields) {
     setSaving(true);
-    try { await onSaveDates(patch); } finally { setSaving(false); }
+    try { await onSaveDates(patch); setOpenDate(null); } finally { setSaving(false); }
   }
 
   const requirements = requirementsFor(order);
@@ -193,6 +209,10 @@ export function NextActionPanel({
    * withheld rather than disabled -- see the header. Shipped never gets one;
    * Entered gets one only once the date is already on the row.
    */
+  const recordNote = (needsProdDates && prodIsRecordOnly && RECORD_ONLY_NOTE.production)
+    || (needsDeliveryDate && deliveryIsRecordOnly && RECORD_ONLY_NOTE.delivery)
+    || null;
+
   const trackingIsTheAction = next === "Shipped";
   const datesAreTheAction = order.stage === "Entered" && next === "In production";
   const showMoveButton = !!next && !trackingIsTheAction && !(datesAreTheAction && !ready);
@@ -224,6 +244,9 @@ export function NextActionPanel({
       <div className="min-w-0 flex-1">
       <p className={LABEL + " mb-1"}>Next action</p>
       <p className="text-[11px] text-cream/65 leading-snug">{headline}</p>
+      {recordNote && (
+        <p className="text-[10px] text-cream/35 leading-snug mt-0.5">{recordNote}</p>
+      )}
 
       {rows.length > 0 && (
         <ul className="mt-2 space-y-1">
@@ -250,96 +273,63 @@ export function NextActionPanel({
 
       </div>
 
-      <div className="flex items-center gap-1.5 flex-wrap justify-end flex-shrink-0 max-w-full">
-        {trackingSlot}
-
-        {/* ⚠ BOTH DATES, THOUGH ONLY THE START ONE GATES. The start date
-            advances the row; the estimated finish is what `production-complete`
-            later advances ON, so a row saved with only a start date would move
-            to In production and then strand. Asking for both here is the
-            difference between one trip and two. Rendered at In production too,
-            for the row that got there by an admin move without them. */}
-        {needsProdDates && (
-          <div className="flex flex-col gap-1 items-end">
-            {prodIsRecordOnly && (
-              <span className="text-[10px] text-cream/40 leading-snug">{RECORD_ONLY_CAPTION}</span>
-            )}
-          <div className="flex items-center gap-1.5 flex-wrap">
+      {/* ⚠ A COLUMN OF ROWS, NOT ONE WRAPPING ROW. Five controls in a single
+          flex-wrap line broke wherever the width happened to run out, which
+          put the override beside the move on one screen and under an upload
+          button on the next. The move is always last on its row, the override
+          always on the row above it, and the fields take a row of their own
+          while they are open. */}
+      <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+        {openDate === "production" && (
+          <div className="flex items-center gap-1.5">
             <input type="date" value={prodStart} onChange={(e) => setProdStart(e.target.value)}
-              title="Production starts" style={DATE_INPUT} />
+              title="Production starts" aria-label="Production start date" autoFocus style={DATE_INPUT} />
             <span className="text-cream/30 text-[11px]">&rarr;</span>
             <input type="date" value={prodFinish} onChange={(e) => setProdFinish(e.target.value)}
-              title="Estimated finish" style={DATE_INPUT} />
+              title="Estimated finish" aria-label="Estimated finish date" style={DATE_INPUT} />
+            {/* ⚠ BOTH DATES, THOUGH ONLY THE START ONE GATES. The start date
+                advances the row; the estimated finish is what
+                `production-complete` later advances ON, so a row saved with
+                only a start date would move to In production and then strand.
+                Asking for both here is the difference between one trip and
+                two. */}
             <button
               onClick={() => save({ production_start_date: prodStart || null,
                                     production_est_finish_date: prodFinish || null })}
               disabled={saving || !prodStart}
-              title={!prodStart
-                ? "A production start date is what advances the order"
-                : datesAreTheAction
-                  ? "Save the dates and move to In production"
-                  : "Save the production dates"}
+              title={prodStart
+                ? (datesAreTheAction ? "Save the dates and move to In production" : "Save the production dates")
+                : "A production start date is what advances the order"}
               className={PILL_QUIET}
             >
-              {saving ? "\u2026" : "Set dates"}
+              {saving ? "\u2026" : "Save"}
             </button>
-          </div>
+            <button onClick={() => setOpenDate(null)} disabled={saving}
+              className={PILL + " text-cream/45 hover:text-cream/75"}>
+              Cancel
+            </button>
           </div>
         )}
 
-        {needsDeliveryDate && (
-          <div className="flex flex-col gap-1 items-end">
-            {deliveryIsRecordOnly && (
-              <span className="text-[10px] text-cream/40 leading-snug">{RECORD_ONLY_CAPTION}</span>
-            )}
+        {openDate === "delivery" && (
           <div className="flex items-center gap-1.5">
             <input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)}
-              title="Delivery date" style={DATE_INPUT} />
+              title="Delivery date" aria-label="Delivery date" autoFocus style={DATE_INPUT} />
             <button
               onClick={() => save({ scheduled_delivery_date: deliveryDate || null })}
               disabled={saving || !deliveryDate}
               className={PILL_QUIET}
             >
-              {saving ? "\u2026" : "Set delivery date"}
+              {saving ? "\u2026" : "Save"}
             </button>
-          </div>
+            <button onClick={() => setOpenDate(null)} disabled={saving}
+              className={PILL + " text-cream/45 hover:text-cream/75"}>
+              Cancel
+            </button>
           </div>
         )}
 
-        {outstanding.map(({ req }) => {
-          const remedy = remedies[req.id];
-          if (!remedy) return null;
-          return (
-            <button
-              key={req.id}
-              onClick={remedy.onClick}
-              title={req.remedy}
-              className={PILL_QUIET + " flex items-center gap-1.5 hover:border-terracotta/40"}
-            >
-              <Upload className="w-3 h-3" /> {remedy.label}
-            </button>
-          );
-        })}
-
-        {/* ⚠ DISABLED UNTIL EVERY GATING REQUIREMENT IS MET, and every gating
-            requirement is one the SERVER also checks. A button that fails on
-            click is a requirement nobody was told about -- which is how the
-            Entered gate spent a day refusing the request that satisfied it. */}
-        {showMoveButton && (
-          <button
-            onClick={() => onMove(next!)}
-            disabled={busy || !ready}
-            title={ready
-              ? `Move to ${next}`
-              : blocking.map((o) => capitalise(o.req.label)).join(", ") + " outstanding"}
-            className={PILL}
-            style={PILL_MOVE}
-          >
-            {busy ? "\u2026" : `Move to ${next}`}
-          </button>
-        )}
-
-        {/* The override sits AFTER the move it overrides, and only while the
+        {/* The override sits ABOVE the move it overrides, and only while the
             gate is closed. Quiet styling: it is the exception, not the path. */}
         {showMoveButton && !ready && outstanding.map(({ req }) => {
           const override = overrides[req.id];
@@ -355,6 +345,55 @@ export function NextActionPanel({
             </button>
           );
         })}
+
+        <div className="flex items-center gap-1.5 flex-wrap justify-end">
+          {trackingSlot}
+
+          {needsProdDates && openDate !== "production" && (
+            <button onClick={() => setOpenDate("production")} className={PILL_QUIET}>
+              <Calendar className="w-3 h-3" /> Set production dates
+            </button>
+          )}
+
+          {needsDeliveryDate && openDate !== "delivery" && (
+            <button onClick={() => setOpenDate("delivery")} className={PILL_QUIET}>
+              <Calendar className="w-3 h-3" /> Set delivery date
+            </button>
+          )}
+
+          {outstanding.map(({ req }) => {
+            const remedy = remedies[req.id];
+            if (!remedy) return null;
+            return (
+              <button
+                key={req.id}
+                onClick={remedy.onClick}
+                title={req.remedy}
+                className={PILL_QUIET + " hover:border-terracotta/40"}
+              >
+                <Upload className="w-3 h-3" /> {remedy.label}
+              </button>
+            );
+          })}
+
+          {/* ⚠ DISABLED UNTIL EVERY GATING REQUIREMENT IS MET, and every gating
+              requirement is one the SERVER also checks. A button that fails on
+              click is a requirement nobody was told about -- which is how the
+              Entered gate spent a day refusing the request that satisfied it. */}
+          {showMoveButton && (
+            <button
+              onClick={() => onMove(next!)}
+              disabled={busy || !ready}
+              title={ready
+                ? `Move to ${next}`
+                : blocking.map((o) => capitalise(o.req.label)).join(", ") + " outstanding"}
+              className={PILL}
+              style={PILL_MOVE}
+            >
+              {busy ? "\u2026" : `Move to ${next}`}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
