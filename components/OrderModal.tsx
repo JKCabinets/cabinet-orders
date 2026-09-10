@@ -2119,7 +2119,7 @@ function ClaimChip({
 }: {
   claimedBy: string | null;
   team: TeamMember[];
-  currentUserId: string | null;
+  currentUserId: string | null | undefined;
   busy: boolean;
   canClaim: boolean;
   onClaim: () => void;
