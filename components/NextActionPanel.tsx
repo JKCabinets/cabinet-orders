@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Calendar, Check, Upload } from "lucide-react";
+import { Calendar, Check, Send, Upload, Zap } from "lucide-react";
 import { nextStageFor, type Order } from "@/lib/data";
 import { requirementsFor, dateControlsFor, type RequirementEnrichment, type RequirementState } from "@/lib/requirements";
 
@@ -48,7 +48,16 @@ import { requirementsFor, dateControlsFor, type RequirementEnrichment, type Requ
  */
 
 const HAIRLINE = "0.5px solid rgba(255,255,255,0.10)";
-const LABEL = "text-[10px] uppercase tracking-widest text-cream/45";
+/**
+ * ⚠ THE CARD TITLES THE CARD. This was a 10px uppercase tracking-widest label
+ * at 45% opacity -- the treatment of a field name inside a table cell -- on the
+ * one panel of the modal that asks somebody to do something. The checklist and
+ * its instructions sat at 65% and 35% under it, so the whole card read as
+ * caption text and the words got lost. Sizes and weights follow the mockup.
+ */
+const TITLE = "text-[14px] font-medium text-cream";
+const BODY = "text-[12px] text-cream/80 leading-snug";
+const NOTE = "text-[11px] text-cream/50 leading-snug";
 
 /**
  * A control the modal supplies for a requirement, keyed by requirement id.
@@ -120,12 +129,24 @@ const DATE_INPUT: React.CSSProperties = {
  * boxes sitting beside 6px-padded pills, so no two edges in the row lined up.
  * Everything here is this height, including the inputs when they open.
  */
-const PILL = "h-8 px-4 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all flex-shrink-0 whitespace-nowrap inline-flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed";
-const PILL_QUIET = PILL + " bg-white/4 border border-cream/18 text-cream/85 hover:bg-white/8";
+const PILL = "h-9 px-4 rounded-full text-[11px] font-medium transition-all flex-shrink-0 whitespace-nowrap inline-flex items-center justify-center gap-2 disabled:cursor-not-allowed";
+const PILL_QUIET = PILL + " bg-white/4 border border-cream/25 text-cream hover:bg-white/8 disabled:opacity-40";
 const PILL_MOVE: React.CSSProperties = {
-  background: "rgba(184,130,106,0.20)",
-  border: "0.5px solid rgba(184,130,106,0.55)",
-  color: "#d9a888",
+  background: "rgba(184,130,106,0.22)",
+  border: "0.5px solid rgba(184,130,106,0.60)",
+  color: "#e8bfa4",
+};
+
+/**
+ * ⚠ WAITING, NOT BROKEN. `disabled:opacity-40` on a terracotta pill produced a
+ * smear that reads as a rendering fault rather than as a button with a
+ * condition on it. Legible, quiet, and clearly not pressable: a move that is
+ * waiting on a requirement is the normal state and should look like one.
+ */
+const PILL_MOVE_WAITING: React.CSSProperties = {
+  background: "rgba(160,204,122,0.08)",
+  border: "0.5px solid rgba(160,204,122,0.22)",
+  color: "rgba(240,236,228,0.40)",
 };
 
 interface Props {
@@ -236,50 +257,74 @@ export function NextActionPanel({
             + `${blocking.length === 1 ? "is" : "are"} recorded.`;
 
   return (
-    <div className="px-4 py-3 flex items-start justify-between gap-3 flex-wrap"
-      style={flush ? undefined : { borderLeft: HAIRLINE }}>
-      {/* Text and checklist on the left, controls on the right -- the shape of
-          the mockup and of the cell this replaced. The control column wraps
-          under the text when the date fields need the width. */}
-      <div className="min-w-0 flex-1">
-      <p className={LABEL + " mb-1"}>Next action</p>
-      <p className="text-[11px] text-cream/65 leading-snug">{headline}</p>
+    <div className="px-5 py-4" style={flush ? undefined : { borderLeft: HAIRLINE }}>
+      {/* ⚠ THE OVERRIDE LIVES ON THE TITLE ROW, at the far edge, not stacked on
+          the move button. Stacked, the exception had the same size and weight
+          as the path and sat directly on top of it, so the pair read as two
+          equal choices. Up here it is available without being offered. */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+            style={{ background: "rgba(184,130,106,0.18)", border: "0.5px solid rgba(184,130,106,0.40)" }}>
+            <Zap className="w-3.5 h-3.5" style={{ color: "#d9a888" }} />
+          </span>
+          <p className={TITLE}>Next action</p>
+        </div>
+
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {showMoveButton && !ready && outstanding.map(({ req }) => {
+            const override = overrides[req.id];
+            if (!override) return null;
+            return (
+              <button
+                key={"override:" + req.id}
+                onClick={override.onClick}
+                disabled={busy}
+                className={PILL + " bg-white/6 border border-cream/20 text-cream/75 hover:bg-white/10 disabled:opacity-40"}
+              >
+                <Send className="w-3 h-3" /> {override.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <p className={BODY + " mt-2"}>{headline}</p>
       {recordNote && (
-        <p className="text-[10px] text-cream/35 leading-snug mt-0.5">{recordNote}</p>
+        <p className={NOTE + " mt-0.5"}>{recordNote}</p>
       )}
 
-      {rows.length > 0 && (
-        <ul className="mt-2 space-y-1">
+      {/* Checklist left, controls right, bottom-aligned so the move button
+          sits on the same line as the last requirement. */}
+      <div className="mt-3 flex items-end justify-between gap-5 flex-wrap">
+      {rows.length > 0 ? (
+        <ul className="space-y-1.5 min-w-0">
           {rows.map(({ req, state }) => (
-            <li key={req.id} className="flex items-start gap-1.5 text-[11px] leading-snug">
+            <li key={req.id} className="flex items-start gap-2 text-[12px] leading-snug">
               <span
-                className="w-3 h-3 rounded-full flex-shrink-0 mt-[1px] flex items-center justify-center"
+                className="w-3.5 h-3.5 rounded-full flex-shrink-0 mt-[2px] flex items-center justify-center"
                 style={state === "met"
                   ? { background: "rgba(160,204,122,0.20)", border: "0.5px solid #a0cc7a" }
                   : { border: "0.5px solid rgba(232,227,218,0.30)" }}
               >
                 {state === "met" && <Check className="w-2 h-2" style={{ color: "#a0cc7a" }} />}
               </span>
-              <span style={{ color: state === "met" ? "#a0cc7a" : "rgba(232,227,218,0.65)" }}>
+              <span style={{ color: state === "met" ? "#a0cc7a" : "rgba(240,236,228,0.92)" }}>
                 {capitalise(req.label)}
                 {state !== "met" && (
-                  <span className="block text-cream/35">{req.remedy}</span>
+                  <span className={"block " + NOTE}>{req.remedy}</span>
                 )}
               </span>
             </li>
           ))}
         </ul>
-      )}
-
-      </div>
+      ) : <span />}
 
       {/* ⚠ A COLUMN OF ROWS, NOT ONE WRAPPING ROW. Five controls in a single
           flex-wrap line broke wherever the width happened to run out, which
           put the override beside the move on one screen and under an upload
-          button on the next. The move is always last on its row, the override
-          always on the row above it, and the fields take a row of their own
-          while they are open. */}
-      <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+          button on the next. The fields take a row of their own while open. */}
+      <div className="flex flex-col items-end gap-2 flex-shrink-0">
         {openDate === "production" && (
           <div className="flex items-center gap-1.5">
             <input type="date" value={prodStart} onChange={(e) => setProdStart(e.target.value)}
@@ -372,35 +417,20 @@ export function NextActionPanel({
             Entered gate spent a day refusing the request that satisfied it.
           */}
           {showMoveButton && (
-            <div className="flex flex-col items-stretch gap-1.5">
-              {!ready && outstanding.map(({ req }) => {
-                const override = overrides[req.id];
-                if (!override) return null;
-                return (
-                  <button
-                    key={"override:" + req.id}
-                    onClick={override.onClick}
-                    disabled={busy}
-                    className={PILL + " bg-white/6 border border-cream/20 text-cream/75 hover:bg-white/10"}
-                  >
-                    {override.label}
-                  </button>
-                );
-              })}
-              <button
-                onClick={() => onMove(next!)}
-                disabled={busy || !ready}
-                title={ready
-                  ? `Move to ${next}`
-                  : blocking.map((o) => capitalise(o.req.label)).join(", ") + " outstanding"}
-                className={PILL}
-                style={PILL_MOVE}
-              >
-                {busy ? "\u2026" : `Move to ${next}`}
-              </button>
-            </div>
+            <button
+              onClick={() => onMove(next!)}
+              disabled={busy || !ready}
+              title={ready
+                ? `Move to ${next}`
+                : blocking.map((o) => capitalise(o.req.label)).join(", ") + " outstanding"}
+              className={PILL}
+              style={ready ? PILL_MOVE : PILL_MOVE_WAITING}
+            >
+              <Check className="w-3.5 h-3.5" /> {busy ? "\u2026" : `Move to ${next}`}
+            </button>
           )}
         </div>
+      </div>
       </div>
     </div>
   );
