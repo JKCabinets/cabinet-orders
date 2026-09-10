@@ -303,6 +303,46 @@ export function unmetRequirements(
  * reach this -- an enrichment-backed one is `clocks: false` by construction --
  * so it needs no joins and every existing caller keeps working unchanged.
  */
+/**
+ * Which date control belongs in the next-action slot at this stage.
+ *
+ * ⚠ NOT THE SAME QUESTION AS `requirementsFor`, and that is the point.
+ * A requirement is something the row is JUDGED on -- a clock runs, or the
+ * server refuses without it. This is only "if somebody opens this row here,
+ * the date is the thing they came to type". A custom job has no
+ * requirements by decision and still wants its production dates recorded
+ * the moment it reaches In production; conflating the two left it with no
+ * field in the slot at all and a prompt stranded below the fold.
+ *
+ * Keyed by stage but resolved through the row's OWN flow, so a stage name
+ * shared with a future type cannot silently grow a date field -- the shape
+ * that put a custom order into the warranty pipeline.
+ *
+ * ⚠ THE FLOW COMES FROM THIS TABLE, NOT FROM lib/data. REQUIREMENTS is
+ * exhaustive over every (type, stage) -- custom lists all six of its stages
+ * with empty arrays -- and the boot check below fails if it ever stops
+ * being. So `stage in table` answers the flow question without the runtime
+ * import of lib/data this module deliberately does not have; see that
+ * check's own note about staying free of a cycle.
+ *
+ * The Production / Delivery card owns EDITING a date already on the row.
+ * This is first entry only.
+ */
+export type DateControl = "production" | "delivery";
+
+const DATE_CONTROL_BY_STAGE: Record<string, DateControl> = {
+  "Entered": "production",
+  "In production": "production",
+  "At cross dock": "delivery",
+};
+
+export function dateControlsFor(o: Pick<Order, "type" | "stage">): DateControl[] {
+  const table = REQUIREMENTS[o.type as OrderType];
+  if (!table || !(o.stage in table)) return [];
+  const control = DATE_CONTROL_BY_STAGE[o.stage];
+  return control ? [control] : [];
+}
+
 export function clockRunsFor(order: Order): boolean {
   return requirementsFor(order).some(
     (r) => r.clocks === true && r.state(order) === "unmet",

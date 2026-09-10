@@ -921,6 +921,28 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
             <div>
               <div>
             <div className="glass-sage rounded-panel px-4 py-4">
+              {/* ⚠ THE CURRENT STAGE IS THE RAIL'S HEADING, not a cell of its
+                  own below. It had a third of the strip to say in words what
+                  the rail says in pictures directly above it, and the next
+                  action -- the part with the controls -- had to fit in what
+                  was left. Here it costs one line and the Overview fits
+                  without scrolling. */}
+              <div className="flex items-center gap-2 mb-3">
+                <span className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                  style={{ background: STAGE_ACCENT[liveOrder.stage] ?? "#8a8a8a" }} />
+                <span className="text-[13px] font-medium"
+                  style={{ color: STAGE_ACCENT[liveOrder.stage] ?? "#8a8a8a" }}>
+                  {liveOrder.stage}
+                </span>
+                <span className="text-[10px] text-cream/45">
+                  {formatStageAge(
+                    slaRuleFor(liveOrder)
+                      ? slaAgeHours(liveOrder, slaRuleFor(liveOrder)!)
+                      : hoursInStage(liveOrder))} in stage
+                  {slaTier(liveOrder) === "hard" && <span style={{ color: "#e08585" }}> &middot; overdue</span>}
+                  {slaTier(liveOrder) === "soft" && <span style={{ color: "#e8b56a" }}> &middot; due</span>}
+                </span>
+              </div>
               <div className="flex items-start">
                 {stages.map((s, i) => {
                   const isActive = liveOrder.stage === s;
@@ -1109,27 +1131,9 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
               {/* Same frosted treatment as the rail above it. They were a
                   glass card and a flat outline sitting together, which is
                   what made the pair look unrelated. */}
-              <div className="glass-sage rounded-panel overflow-hidden grid grid-cols-1 md:grid-cols-[1fr_1.5fr_auto] items-stretch mt-2.5">
-                <div className="px-4 py-3">
-                  <p className={LABEL + " mb-1"}>Current stage</p>
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                      style={{ background: STAGE_ACCENT[liveOrder.stage] ?? "#8a8a8a" }} />
-                    <span className="text-[13px] font-medium"
-                      style={{ color: STAGE_ACCENT[liveOrder.stage] ?? "#8a8a8a" }}>
-                      {liveOrder.stage}
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-cream/45 mt-1">
-                    {formatStageAge(
-                      slaRuleFor(liveOrder)
-                        ? slaAgeHours(liveOrder, slaRuleFor(liveOrder)!)
-                        : hoursInStage(liveOrder))} in stage
-                    {slaTier(liveOrder) === "hard" && <span style={{ color: "#e08585" }}> &middot; overdue</span>}
-                    {slaTier(liveOrder) === "soft" && <span style={{ color: "#e8b56a" }}> &middot; due</span>}
-                  </p>
-                </div>
-
+              {/* Next action and the claim. The stage moved up into the rail
+                  card, where it is the heading rather than a third column. */}
+              <div className="glass-sage rounded-panel overflow-hidden grid grid-cols-1 md:grid-cols-[1fr_auto] items-stretch mt-2.5">
                 {/* ⚠ GENERATED FROM lib/requirements, NOT WRITTEN PER CASE.
                     This cell was a hand-written branch per gate -- one shape
                     for the acknowledgment, one for tracking, one for the rest
@@ -1138,6 +1142,8 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                     NextActionPanel's header for the rules it follows. */}
                 <NextActionPanel
                   key={liveOrder.id}
+                  // First cell now, so no divider on its left edge.
+                  flush
                   order={liveOrder}
                   enrichment={enrichFor(liveOrder)}
                   remedies={{
@@ -1839,20 +1845,14 @@ function DateEditor({
   // that will not happen.
   const autoAdvances = order.type !== "custom";
   const deliveryEditable = hasCrossDock && stage === "At cross dock";
-  // ⚠ THE FIRST ENTRY BELONGS TO THE NEXT-ACTION PANEL. Where lib/requirements
-  // says this stage is waiting on a date, the panel renders the field beside
-  // the move, so the "Set ..." prompt here would be the same control twice --
-  // Garrett's note 2 on 2026-09-08. This card keeps the EDIT of a date already
-  // on the row. Asked of the table rather than of the stage name, so a type
-  // with no requirement (custom) keeps its prompt here.
-  const panelOwnsProd = requirementsFor(order).some(
-    (r) => r.id === "production_start_date" || r.id === "production_dates");
-  // Does this row's flow expect a delivery date at all? Where it does, the
-  // next-action panel owns first entry (above) and the copy below can say
-  // the date leads somewhere. Where it does not -- a custom job -- the date
-  // is a record and this card is the only place to put one.
-  const deliveryDateExpected = requirementsFor(order).some((r) => r.id === "delivery_date");
-  const panelOwnsDelivery = deliveryDateExpected;
+  // ⚠ FIRST ENTRY IS THE NEXT-ACTION PANEL'S, AT EVERY STAGE AND FOR EVERY
+  // FLOW. The panel asks `dateControlsFor`, which answers "is the date the
+  // thing you came here to type" rather than "is it required" -- so it covers
+  // a custom job, which requires nothing and still wants its dates. The two
+  // "Set ..." prompts this card used to show below rendered at exactly those
+  // stages, so they were one control drawn twice with the second copy
+  // full-width and below the fold. They are gone; this card keeps the values
+  // and the Edit control, which is a different job.
 
   const [editingProd, setEditingProd] = useState(false);
   const [editingDelivery, setEditingDelivery] = useState(false);
@@ -1977,34 +1977,7 @@ function DateEditor({
                 </button>
               )}
             </div>
-          ) : (
-            // No dates set yet — show a single CTA to enter them.
-            //
-            // Gated on prodEditable, NOT on stage === "Entered". A standard
-            // order never reaches In production without dates, because it
-            // gets there BY having a start date set -- but a custom order
-            // arrives by a manual advance, and any order moved backward or
-            // by admin PIN arrives the same way. All of them landed here
-            // with no way to enter dates at all.
-            prodEditable && !panelOwnsProd && (
-              <button
-                onClick={() => setEditingProd(true)}
-                className="w-full rounded-brand px-4 py-3 text-left transition-all bg-terracotta/10 hover:bg-terracotta/15"
-                style={{ border: "0.5px solid rgba(184,130,106,0.40)" }}
-              >
-                <p className="font-display text-[15px] mb-0.5" style={{ color: "#d9a888" }}>
-                  Set production <em className="italic-storm">start date</em>
-                </p>
-                <p className="text-[11px] text-cream/55">
-                  {stage === "Entered" && autoAdvances ? (
-                    <>This will auto-advance the order to <em className="italic-storm">In production</em>.</>
-                  ) : (
-                    <>Recorded for scheduling — this will not move the order.</>
-                  )}
-                </p>
-              </button>
-            )
-          )}
+          ) : null}
         </>
       )}
 
@@ -2056,28 +2029,7 @@ function DateEditor({
                 </button>
               )}
             </div>
-          ) : (
-            stage === "At cross dock" && !panelOwnsDelivery && (
-              <button
-                onClick={() => setEditingDelivery(true)}
-                className="w-full rounded-brand px-4 py-3 text-left transition-all bg-terracotta/10 hover:bg-terracotta/15"
-                style={{ border: "0.5px solid rgba(184,130,106,0.40)" }}
-              >
-                <p className="font-display text-[15px] mb-0.5" style={{ color: "#d9a888" }}>
-                  Set <em className="italic-storm">delivery date</em>
-                </p>
-                <p className="text-[11px] text-cream/55">
-                  {/* ⚠ IT PROMISED A GATE THAT DOES NOT EXIST HERE. On a custom
-                      job nothing waits on this date: Confirm Delivery is
-                      available with or without it, and saying otherwise is how
-                      somebody concludes the order is stuck. */}
-                  {deliveryDateExpected
-                    ? "Once set, you can confirm delivery from the stage page."
-                    : "Recorded for scheduling \u2014 delivery can be confirmed with or without it."}
-                </p>
-              </button>
-            )
-          )}
+          ) : null}
         </>
       )}
     </div>
