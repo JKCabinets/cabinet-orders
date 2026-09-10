@@ -329,24 +329,7 @@ export function NextActionPanel({
           </div>
         )}
 
-        {/* The override sits ABOVE the move it overrides, and only while the
-            gate is closed. Quiet styling: it is the exception, not the path. */}
-        {showMoveButton && !ready && outstanding.map(({ req }) => {
-          const override = overrides[req.id];
-          if (!override) return null;
-          return (
-            <button
-              key={"override:" + req.id}
-              onClick={override.onClick}
-              disabled={busy}
-              className={PILL + " bg-white/6 border border-cream/20 text-cream/75 hover:bg-white/10"}
-            >
-              {override.label}
-            </button>
-          );
-        })}
-
-        <div className="flex items-center gap-1.5 flex-wrap justify-end">
+        <div className="flex items-end gap-1.5 flex-wrap justify-end">
           {trackingSlot}
 
           {needsProdDates && openDate !== "production" && (
@@ -376,22 +359,46 @@ export function NextActionPanel({
             );
           })}
 
-          {/* ⚠ DISABLED UNTIL EVERY GATING REQUIREMENT IS MET, and every gating
-              requirement is one the SERVER also checks. A button that fails on
-              click is a requirement nobody was told about -- which is how the
-              Entered gate spent a day refusing the request that satisfied it. */}
+          {/*
+            ⚠ ONE STRETCHED COLUMN, so the override and the move share an edge
+            and a width. Right-aligning two pills of different label lengths
+            left a ragged step: `items-stretch` sizes both to the wider, which
+            is the move button, and the override sits directly on top of the
+            thing it overrides.
+
+            ⚠ DISABLED UNTIL EVERY GATING REQUIREMENT IS MET, and every gating
+            requirement is one the SERVER also checks. A button that fails on
+            click is a requirement nobody was told about -- which is how the
+            Entered gate spent a day refusing the request that satisfied it.
+          */}
           {showMoveButton && (
-            <button
-              onClick={() => onMove(next!)}
-              disabled={busy || !ready}
-              title={ready
-                ? `Move to ${next}`
-                : blocking.map((o) => capitalise(o.req.label)).join(", ") + " outstanding"}
-              className={PILL}
-              style={PILL_MOVE}
-            >
-              {busy ? "\u2026" : `Move to ${next}`}
-            </button>
+            <div className="flex flex-col items-stretch gap-1.5">
+              {!ready && outstanding.map(({ req }) => {
+                const override = overrides[req.id];
+                if (!override) return null;
+                return (
+                  <button
+                    key={"override:" + req.id}
+                    onClick={override.onClick}
+                    disabled={busy}
+                    className={PILL + " bg-white/6 border border-cream/20 text-cream/75 hover:bg-white/10"}
+                  >
+                    {override.label}
+                  </button>
+                );
+              })}
+              <button
+                onClick={() => onMove(next!)}
+                disabled={busy || !ready}
+                title={ready
+                  ? `Move to ${next}`
+                  : blocking.map((o) => capitalise(o.req.label)).join(", ") + " outstanding"}
+                className={PILL}
+                style={PILL_MOVE}
+              >
+                {busy ? "\u2026" : `Move to ${next}`}
+              </button>
+            </div>
           )}
         </div>
       </div>

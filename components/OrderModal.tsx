@@ -750,22 +750,25 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                 </span>
               );
             })()}
-            <span
-              className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full"
-              style={{
-                background: "rgba(255,255,255,0.05)",
-                color: "rgba(232,227,218,0.55)",
-                border: "0.5px solid rgba(255,255,255,0.14)",
-              }}
-            >
-              {/* ⚠ Read the RESOLVED owner. Reading the raw column here is
-                  why the header said UNCLAIMED while the Team Member cell four
-                  sections below showed the owner's name and avatar, on the same
-                  row, at the same moment. */}
-              {resolvedClaimedBy
-                ? (team.find((m) => m.id === resolvedClaimedBy)?.name ?? "Claimed")
-                : "Unclaimed"}
-            </span>
+            {/* ⚠ THE CHIP IS THE CONTROL NOW. It read the resolved owner and
+                said so, while the Team Member cell in the pipeline strip said
+                the same thing again and was the only one you could act on.
+                One fact, one place, and it is the place the eye goes first. */}
+            <ClaimChip
+              claimedBy={resolvedClaimedBy}
+              team={team}
+              currentUserId={currentUserId}
+              busy={claimBusy}
+              /* ⚠ A PURCHASE CAN BE CLAIMED AT ANY STAGE; a standalone row --
+                 a custom job, a warranty claim -- only at its first, because
+                 past that it is being worked by whoever moved it. Same rule
+                 the strip cell carried, moved with it rather than rewritten. */
+              canClaim={liveOrder.project_id
+                ? true
+                : (liveOrder.stage === "New" || liveOrder.stage === "New claim")}
+              onClaim={() => handleClaim(currentUserId ?? null)}
+              onRelease={() => handleClaim(null)}
+            />
             </div>
             {isCompleted && (
               <button
@@ -1115,7 +1118,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                     onClick={() => void overrideDelivery(deliveryGate)}
                     className="px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-white/6 border border-cream/20 text-cream/75 hover:bg-white/10"
                   >
-                    Mark delivered anyway
+                    Manual Push
                   </button>
                   <button
                     onClick={() => setDeliveryGate(null)}
@@ -1131,9 +1134,11 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
               {/* Same frosted treatment as the rail above it. They were a
                   glass card and a flat outline sitting together, which is
                   what made the pair look unrelated. */}
-              {/* Next action and the claim. The stage moved up into the rail
-                  card, where it is the heading rather than a third column. */}
-              <div className="glass-sage rounded-panel overflow-hidden grid grid-cols-1 md:grid-cols-[1fr_auto] items-stretch mt-2.5">
+              {/* ⚠ THE WHOLE WIDTH, ONE CELL. The stage moved up into the rail
+                  card as its heading and the claim moved up to the header, so
+                  what is left is the next action -- which is the part with the
+                  controls, and was the part being squeezed. */}
+              <div className="glass-sage rounded-panel overflow-hidden mt-2.5">
                 {/* ⚠ GENERATED FROM lib/requirements, NOT WRITTEN PER CASE.
                     This cell was a hand-written branch per gate -- one shape
                     for the acknowledgment, one for tracking, one for the rest
@@ -1171,7 +1176,11 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                     // The same reason-and-activity-row path the refusal
                     // banner offers. Anyone may override; everyone sees who.
                     proof_of_delivery: {
-                      label: "Mark delivered anyway",
+                      // ⚠ THE NAME THE STAGE PAGE USES. The row action has been
+                      // Manual Push since it existed; this invented a second
+                      // name for the same override, same reason field, same
+                      // activity row.
+                      label: "Manual Push",
                       onClick: () => {
                         const target = nextStageFor(liveOrder);
                         if (target) void overrideDelivery(target as Stage);
@@ -1196,95 +1205,6 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                   )}
                 />
 
-                {/* One container, not two. This cell came out of ORDER INFO
-                    still wearing that grid's borderTop/borderLeft, nested
-                    inside the slot's own div -- the inset box that made it
-                    read as a mistake. */}
-                <div className="px-4 py-3 min-w-[190px] flex flex-col justify-center"
-                  style={{ borderLeft: "0.5px solid rgba(255,255,255,0.10)" }}>
-                {(() => {
-                  // Stage-aware ownership:
-                  //   New / New claim: claimed_by is the source of truth.
-                  //     An order rolled back to New is unclaimed until
-                  //     someone picks it up again — entered_by is kept
-                  //     in the DB for audit but hidden here.
-                  //   Later stages: entered_by takes precedence.
-                  const isNewStage = liveOrder.stage === "New" || liveOrder.stage === "New claim";
-                  // ⚠ THE CLAIM COMES FROM THE PROJECT for a Shopify group.
-                  // orders.claimed_by is null on those rows since the claim
-                  // moved up, so reading it here showed every purchase as
-                  // unclaimed however clearly it was owned.
-                  // Hoisted to component scope on 2026-08-27 as
-                  // `resolvedClaimedBy`, because the AcknowledgmentPanel's
-                  // eligibility check was reading the raw column and hiding
-                  // itself on every owned Shopify group.
-                  const claimedBy = resolvedClaimedBy;
-                  const ownerName = isNewStage
-                    ? claimedBy
-                    : liveOrder.entered_by ?? claimedBy;
-                  // ownerName is a team_members.id; look up by id, render m.name
-                  const ownerMember = ownerName ? team.find(m => m.id === ownerName) : null;
-                  const isClaimedByMe = !!currentUserId && claimedBy === currentUserId;
-                  const isClaimedByOther = !!claimedBy && !isClaimedByMe;
-                  // ⚠ A PURCHASE CAN BE CLAIMED AT ANY STAGE.
-                  //
-                  // This was New-only, because ownership after that was tracked
-                  // by entered_by. That reasoning belonged to per-group claims:
-                  // a group past New had been worked, so its claim was spent.
-                  // A PURCHASE is owned for its whole life -- somebody is the
-                  // contact until it ships -- so the control stays available.
-                  //
-                  // Standalone rows keep the old rule: a custom job or a
-                  // warranty claim past its first stage is being worked by
-                  // whoever moved it.
-                  const showClaimUi = liveOrder.project_id ? true : isNewStage;
-                  return (
-                    <>
-                      <div className="flex items-center justify-between gap-2">
-                        <p className={LABEL}>Team member</p>
-                        {showClaimUi && (
-                          isClaimedByMe ? (
-                            <button
-                              type="button"
-                              onClick={() => handleClaim(null)}
-                              disabled={claimBusy}
-                              className="text-[10px] uppercase tracking-wider text-cream/55 hover:text-cream transition-colors disabled:opacity-40"
-                            >
-                              {claimBusy ? "..." : "Release"}
-                            </button>
-                          ) : isClaimedByOther ? (
-                            <span className="text-[10px] uppercase tracking-wider text-amber-300/70" title={`Claimed by ${ownerMember?.name ?? claimedBy}`}>
-                              Locked
-                            </span>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleClaim(currentUserId ?? null)}
-                              disabled={claimBusy || !currentUserId}
-                              className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30 transition-all disabled:opacity-40"
-                            >
-                              {claimBusy ? "..." : "Claim"}
-                            </button>
-                          )
-                        )}
-                      </div>
-                      <div className="mt-1">
-                        {!ownerName ? (
-                          <p className="text-xs text-cream/35 italic">unclaimed</p>
-                        ) : ownerMember ? (
-                          <div className="flex items-center gap-2">
-                            <AvatarWithProfile member={ownerMember} size="sm" />
-                            <span className="text-xs text-cream/65">{ownerMember.name}</span>
-                          </div>
-                        ) : (
-                          // Fallback when the team row isn\'t loaded yet
-                          <span className="text-xs text-cream/65">{ownerName}</span>
-                        )}
-                      </div>
-                    </>
-                  );
-                })()}
-                </div>
               </div>
             </div>
           </div>
@@ -2180,6 +2100,75 @@ function TrackingEntry({
         {saving ? "\u2026" : clearing ? "Clear" : willAdvance ? "Ship" : "Save"}
       </button>
     </div>
+  );
+}
+
+/**
+ * Claim, release, or locked -- as one pill in the header.
+ *
+ * ⚠ THE OWNER COMES IN RESOLVED. For a Shopify group the claim lives on the
+ * PROJECT and `orders.claimed_by` is null, so a component that read the row
+ * would show every owned purchase as unclaimed. It takes the answer rather
+ * than working it out, which is also why it needs no store access.
+ *
+ * Locked rather than a disabled Claim: a claim held by somebody else is not a
+ * button you may press later, it is a fact about who owns the work.
+ */
+function ClaimChip({
+  claimedBy, team, currentUserId, busy, canClaim, onClaim, onRelease,
+}: {
+  claimedBy: string | null;
+  team: TeamMember[];
+  currentUserId: string | null;
+  busy: boolean;
+  canClaim: boolean;
+  onClaim: () => void;
+  onRelease: () => void;
+}) {
+  const member = claimedBy ? team.find((m) => m.id === claimedBy) ?? null : null;
+  const mine = !!currentUserId && claimedBy === currentUserId;
+  const theirs = !!claimedBy && !mine;
+
+  const SHELL = "flex items-center gap-2 pl-1 pr-1 py-1 rounded-full";
+  const SHELL_STYLE: React.CSSProperties = {
+    background: "rgba(255,255,255,0.05)",
+    border: "0.5px solid rgba(255,255,255,0.14)",
+  };
+  const ACTION = "text-[10px] uppercase tracking-wider px-2.5 py-1 rounded-full transition-all disabled:opacity-40";
+
+  return (
+    <span className={SHELL} style={SHELL_STYLE}>
+      {member ? (
+        <span className="flex items-center gap-1.5 pl-1">
+          <AvatarWithProfile member={member} size="xs" />
+          <span className="text-[11px] text-cream/75">{member.name}</span>
+        </span>
+      ) : (
+        <span className="text-[10px] uppercase tracking-wider text-cream/45 pl-2.5">
+          {claimedBy ? "Claimed" : "Unclaimed"}
+        </span>
+      )}
+
+      {mine && canClaim && (
+        <button type="button" onClick={onRelease} disabled={busy}
+          className={ACTION + " text-cream/55 hover:text-cream hover:bg-white/8"}>
+          {busy ? "\u2026" : "Release"}
+        </button>
+      )}
+      {theirs && (
+        <span className={ACTION + " text-amber-300/70"}
+          title={`Claimed by ${member?.name ?? claimedBy}`}>
+          Locked
+        </span>
+      )}
+      {!claimedBy && canClaim && (
+        <button type="button" onClick={onClaim} disabled={busy || !currentUserId}
+          title={currentUserId ? "Claim this" : "Sign in to claim"}
+          className={ACTION + " bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30"}>
+          {busy ? "\u2026" : "Claim"}
+        </button>
+      )}
+    </span>
   );
 }
 
