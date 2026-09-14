@@ -237,18 +237,34 @@ export async function PATCH(
   // "JK Cabinets 2 You" vendor, so there is no manufacturer
   // acknowledgment to attach. Keyed on the type read from the DB, not on
   // anything the client sends. Samples still have to be claimed.
+  //
+  // ⚠ THE OVERRIDE IS A REASON, NOT A FLAG, and it is read only when the
+  // check has actually failed. `&& !body.override_ack` sat in this
+  // condition, so an override skipped the gate outright: a row whose
+  // acknowledgment was green recorded a bypass of a check that would have
+  // passed, and a row without one recorded nothing at all. Same contract as
+  // the delivery-proof override below -- refused without a reason, written
+  // to the activity trail with the name of whoever gave it.
+  let ackOverrideReason: string | null = null;
   if (body.stage === "Entered" && currentStage === "New"
-      && currentType !== "sample" && !body.override_ack) {
+      && currentType !== "sample") {
     const { data: attachments } = await supabase
       .from("order_attachments")
       .select("id")
       .eq("order_id", id)
       .limit(1);
     if (!(await orderAllVendorsGreen(id)) && (!attachments || attachments.length === 0)) {
-      return NextResponse.json(
-        { error: "Attach at least one file before marking this order as Entered" },
-        { status: 400 },
-      );
+      const reason =
+        typeof body.override_ack === "string"
+          ? cleanInput(body.override_ack).trim().slice(0, 300)
+          : "";
+      if (!reason) {
+        return NextResponse.json(
+          { error: "Attach at least one file before marking this order as Entered" },
+          { status: 400 },
+        );
+      }
+      ackOverrideReason = reason;
     }
   }
 
@@ -749,6 +765,14 @@ export async function PATCH(
     await supabase.from("order_activity").insert({
       order_id: id,
       text: `Payment hold (${holdStatus}) acknowledged by ${auth.session.user.name ?? auth.session.user.username} — ${paymentHoldAck}`,
+      time: today,
+    });
+  }
+
+  if (ackOverrideReason) {
+    await supabase.from("order_activity").insert({
+      order_id: id,
+      text: `Acknowledgment gate overridden by ${auth.session.user.name ?? auth.session.user.username} — ${ackOverrideReason}`,
       time: today,
     });
   }

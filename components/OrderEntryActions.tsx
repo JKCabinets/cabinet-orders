@@ -41,9 +41,17 @@ const PILL =
  * Row actions for a claimed standard Shopify order in New: drives the
  * acknowledgment entry flow. No ack yet → Submit order (opens the modal, which
  * auto-opens the .xlsx picker). All green → Entry Complete (advances to
- * Entered). Any red → Manual Push Order (confirm dialog listing the
- * discrepancies, then advances with override). Custom/Manual orders never
- * render this — they keep the legacy Mark Entered button.
+ * Entered). Any red → Resubmit (opens the modal on the picker).
+ * Custom/Manual orders never render this — they keep the legacy Mark Entered
+ * button.
+ *
+ * ⚠ NOTHING HERE OVERRIDES THE ACKNOWLEDGMENT GATE. Manual Push moved to
+ * AcknowledgmentPanel on 2026-08-27; this comment went on describing it, and
+ * `advance()` went on carrying an override argument that its one caller always
+ * set to false. Entry Complete runs when every vendor is GREEN -- the gate
+ * passing, not being bypassed -- so there is nothing to override and no reason
+ * to record. `buildDiscrepancyMessage` still lives here because the panel
+ * imports it for that confirm.
  */
 export function OrderEntryActions({
   order,
@@ -61,10 +69,10 @@ export function OrderEntryActions({
   const status = useAckStatus(order.id, true);
   const [busy, setBusy] = useState(false);
 
-  async function advance(override: boolean) {
+  async function advance() {
     setBusy(true);
     try {
-      const res = await moveStage(order.id, "Entered", currentUserId, undefined, override);
+      const res = await moveStage(order.id, "Entered", currentUserId);
       if (!res.ok) {
         showToast(res.error ?? "Could not move order to Entered", { kind: "error" });
       }
@@ -74,7 +82,7 @@ export function OrderEntryActions({
   }
 
   function onEntryComplete() {
-    void advance(false);
+    void advance();
   }
 
   if (status.loading) {

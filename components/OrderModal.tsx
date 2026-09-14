@@ -523,6 +523,34 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
    * override, everyone can see who did and why. That is why this asks rather
    * than offering a plain confirm.
    */
+  /**
+   * ⚠ THE REASON IS THE POINT. This used to send `override_ack: true` and
+   * the row moved with nothing in the trail to say the acknowledgment check
+   * had been skipped. Same prompt-and-record shape as overrideDelivery
+   * below, because it is the same kind of act.
+   *
+   * The panel's own confirm has already listed the discrepancies; this asks
+   * what the person knows that the reconciliation does not.
+   */
+  async function overrideAckAdvance() {
+    if (liveOrder.stage !== "New") return;
+    const reason = window.prompt(
+      "The manufacturer acknowledgment has not been reconciled.\n\n"
+      + "Move this to Entered anyway? Give a reason — it goes on the order's "
+      + "activity trail with your name.",
+    );
+    if (!reason || !reason.trim()) return;
+    const res = await moveStage(
+      liveOrder.id, "Entered" as Stage, currentUserId, "", reason.trim(),
+    );
+    if (res.ok) {
+      showToast("Moved to Entered — override recorded", { kind: "success" });
+      onStageChange("Entered" as Stage);
+    } else {
+      showToast(res.error ?? "Could not move to Entered", { kind: "error" });
+    }
+  }
+
   async function overrideDelivery(stage: Stage) {
     const reason = window.prompt(
       "No signed delivery receipt is attached.\n\n"
@@ -532,7 +560,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
     if (!reason || !reason.trim()) return;
     setDeliveryGate(null);
     const res = await moveStage(
-      liveOrder.id, stage, currentUserId, "", false, reason.trim(),
+      liveOrder.id, stage, currentUserId, "", undefined, reason.trim(),
     );
     if (res.ok) {
       showToast("Marked delivered — override recorded", { kind: "success" });
@@ -1290,7 +1318,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                 by default: showing it wrongly is cosmetic, hiding it wrongly
                 means a missed manufacturer confirmation. */}
           {liveOrder.type !== "sample" && (
-            <AcknowledgmentPanel ref={ackPanelRef} orderId={liveOrder.id} orderName={liveOrder.name} eligible={ackEligible} uploadOfferedElsewhere={requirementsFor(liveOrder).some((r) => r.id === "ack_or_attachment")} onAdvanceOverride={() => { if (liveOrder.stage === "New") moveStage(liveOrder.id, "Entered", currentUserId, undefined, true).then((r) => { if (!r.ok) showToast(r.error ?? "Could not move to Entered", { kind: "error" }); }); }} />
+            <AcknowledgmentPanel ref={ackPanelRef} orderId={liveOrder.id} orderName={liveOrder.name} eligible={ackEligible} uploadOfferedElsewhere={requirementsFor(liveOrder).some((r) => r.id === "ack_or_attachment")} onAdvanceOverride={() => { void overrideAckAdvance(); }} />
           )}
           {/* Notes and attachments as three cards in one row, collapsed to a
               summary line. This was two full-height textareas plus the

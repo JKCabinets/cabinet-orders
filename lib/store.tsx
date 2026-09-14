@@ -36,7 +36,10 @@ interface StoreCtx {
   onlineUsers: string[];
   loading: boolean;
   addOrder: (o: Partial<Order> & { type: OrderType }) => Promise<void>;
-  moveStage: (id: string, stage: Stage, enteredByName?: string, adminPin?: string, overrideAck?: boolean, overrideDeliveryProof?: string) => Promise<{ ok: boolean; pinRequired?: boolean; error?: string }>;
+  /** `overrideAck` is the REASON for skipping the acknowledgment gate, not a
+   *  flag: the route refuses an empty one and writes it to the activity
+   *  trail. Same contract as `overrideDeliveryProof`. */
+  moveStage: (id: string, stage: Stage, enteredByName?: string, adminPin?: string, overrideAck?: string, overrideDeliveryProof?: string) => Promise<{ ok: boolean; pinRequired?: boolean; error?: string }>;
   updateNotes: (id: string, notes: string) => Promise<void>;
   updateInternalNotes: (id: string, internal_notes: string) => Promise<void>;
   /** Groups whose PROJECT is archived are NOT in `allOrders`. This is. */
@@ -369,7 +372,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     stage: Stage,
     enteredByName?: string,
     adminPin?: string,
-    overrideAck?: boolean,
+    overrideAck?: string,
     /** Reason for bypassing the delivery-proof gate. Required by the
      *  server when no receipt is attached; recorded in order_activity. */
     overrideDeliveryProof?: string,
@@ -442,7 +445,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({
           stage,
           ...(adminPin ? { admin_pin: adminPin } : {}),
-          ...(overrideAck ? { override_ack: true } : {}),
+          ...(overrideAck ? { override_ack: overrideAck } : {}),
           ...(overrideDeliveryProof ? { override_delivery_proof: overrideDeliveryProof } : {}),
         }),
       });
