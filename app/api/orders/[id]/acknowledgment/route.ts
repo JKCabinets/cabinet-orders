@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, rateLimitOr429 } from "@/lib/auth";
+import { requireAuth, requireOrderClaim, rateLimitOr429 } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import { type SkuItem } from "@/lib/skuDecoder";
 import { linesForAckVendor, ackFingerprint } from "@/lib/ackFingerprint";
@@ -154,6 +154,13 @@ export async function POST(
   if (orderErr || !order) {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
   }
+
+  // ⚠ THE ACKNOWLEDGMENT IS WHAT MOVES A CABINET ORDER OUT OF New, so this
+  // upload is a stage action and belongs behind the same claim. Reachable
+  // from the row as well as the modal, which is why a non-owner used to be
+  // able to submit against work somebody else had picked up.
+  const claimGate = await requireOrderClaim(id, session, "Acknowledgment submitted");
+  if (claimGate instanceof NextResponse) return claimGate;
 
   // ── Filter the order's lines to the Waypoint family ─────────────────────
   // Post-fix orders store the full composite, whose 3-part door+color shape

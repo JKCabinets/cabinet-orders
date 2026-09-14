@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, rateLimitOr429 } from "@/lib/auth";
+import { requireAuth, requireOrderClaim, rateLimitOr429 } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 
 // GET /api/orders/attachments/[id] — get signed download URL
@@ -55,6 +55,13 @@ export async function DELETE(
     return NextResponse.json({ error: "Attachment not found" }, { status: 404 });
   }
 
+  // ⚠ GATED LIKE AN UPLOAD, not more strictly. Removing a signed receipt
+  // from another member's claimed row is precisely the crossed-wires case
+  // claims exist for; a second, stricter rule here would be a second thing
+  // to keep in sync for no gain.
+  const claimGate = await requireOrderClaim(attachment.order_id, auth.session, "Attachment deleted");
+  if (claimGate instanceof NextResponse) return claimGate;
+
   // Delete from storage (best effort — if it fails we still remove the DB
   // row so the UI doesn't keep showing a phantom attachment)
   await supabase.storage.from("order-attachments").remove([attachment.file_path]);
@@ -64,8 +71,9 @@ export async function DELETE(
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   // Audit-log every deletion. Useful when an attachment goes missing and we
-  // need to know who removed it (the UI doesn't currently restrict deletes
-  // by ownership, so accountability matters here).
+  // need to know who removed it. Deletes ARE restricted by ownership now
+  // (see the claim gate above), but that answers WHETHER and this answers
+  // WHO -- including for the owner, whom the gate lets through.
   try {
     await supabase.from("audit_log").insert({
       event: "attachment_deleted",

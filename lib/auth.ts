@@ -34,6 +34,81 @@ export async function requireAuth(): Promise<{ session: AuthSession } | NextResp
   return { session };
 }
 
+/**
+ * Who owns this order, resolved THROUGH THE PROJECT for a Shopify group.
+ *
+ * ⚠ `orders.claimed_by` IS NULL ON EVERY PROJECT-LINKED ROW since the claim
+ * moved up on 2026-08-25. A check reading it raw finds no owner on any
+ * Shopify purchase and therefore enforces nothing on the type with the most
+ * hands on it. Mirrors `resolvedClaimedBy` in components/OrderModal.
+ */
+export async function claimOwnerOf(
+  row: { project_id?: string | null; claimed_by?: string | null },
+): Promise<string | null> {
+  if (!row.project_id) return row.claimed_by ?? null;
+  const { data: project } = await supabase
+    .from("projects")
+    .select("claimed_by")
+    .eq("id", row.project_id)
+    .single();
+  return project?.claimed_by ?? null;
+}
+
+/**
+ * May this session change this order?
+ *
+ *   unclaimed          -> yes. Claiming is how you take a row, and requiring
+ *                        a claim before any edit would make every first
+ *                        touch a two-step on a queue full of unpicked work.
+ *   claimed by you     -> yes.
+ *   claimed by another -> 409 `claimed_by_other`.
+ *   ...unless admin    -> yes, AND written to the activity trail.
+ *
+ * ⚠ THIS GUARD HAS A SIDE EFFECT, ON PURPOSE. An admin acting over somebody
+ * else's claim has to reach the trail every single time; four callers each
+ * remembering to write that row is four chances to forget, and the one that
+ * forgets is indistinguishable from a normal edit afterwards. The caller
+ * still gets `{ override }` back if it wants to say something in the UI.
+ *
+ * Returns a NextResponse to return as-is, or `{ override }` to continue.
+ */
+export async function requireOrderClaim(
+  orderId: string,
+  session: AuthSession,
+  action = "Edited",
+): Promise<{ override: boolean } | NextResponse> {
+  const { data: row } = await supabase
+    .from("orders")
+    .select("id, project_id, claimed_by")
+    .eq("id", orderId)
+    .single();
+  if (!row) {
+    return NextResponse.json({ error: "Order not found" }, { status: 404 });
+  }
+
+  const owner = await claimOwnerOf(row);
+  if (!owner || owner === session.user.id) return { override: false };
+
+  if (session.user.role !== "admin") {
+    return NextResponse.json(
+      {
+        error: "claimed_by_other",
+        claimed_by: owner,
+        message: "This order is claimed by someone else. Ask them to release it, or have an admin make the change.",
+      },
+      { status: 409 },
+    );
+  }
+
+  const who = session.user.name ?? session.user.username;
+  await supabase.from("order_activity").insert({
+    order_id: orderId,
+    text: `${action} by ${who} (admin) while claimed by another member`,
+    time: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+  });
+  return { override: true };
+}
+
 export async function requireAdmin(): Promise<{ session: AuthSession } | NextResponse> {
   const result = await requireAuth();
   if (result instanceof NextResponse) return result;

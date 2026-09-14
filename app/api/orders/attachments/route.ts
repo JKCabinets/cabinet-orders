@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, cleanInput, rateLimitOr429 } from "@/lib/auth";
+import { requireAuth, requireOrderClaim, cleanInput, rateLimitOr429 } from "@/lib/auth";
 import { SNIFF_BYTES, sniffMagicBytes, safeContentType } from "@/lib/fileValidation";
 import { supabase } from "@/lib/supabase";
 
@@ -120,6 +120,13 @@ export async function POST(req: NextRequest) {
   if (orderErr || !order) {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
   }
+
+  // ⚠ AN UPLOAD IS A STAGE ACTION IN EVERYTHING BUT NAME. An attachment is
+  // what satisfies the Entered gate, so uploading to somebody else's
+  // claimed order is the duplicated work claims exist to prevent -- the
+  // stage gate refused it from the modal while this route accepted it.
+  const claimGate = await requireOrderClaim(orderId, auth.session, "Attachment added");
+  if (claimGate instanceof NextResponse) return claimGate;
 
   // Sanitize the display filename ONCE, then use the same value for the
   // storage key and the DB row. Previously the route stored `file.name`
