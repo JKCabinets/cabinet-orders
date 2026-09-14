@@ -885,6 +885,8 @@ function UpdateStatusActions({
   onOpenModal?: (o: Order, reason?: "needs-attachment" | "needs-tracking") => void;
 }) {
   const { currentUserId, claimedBy, claimOrder, moveStage, archiveOrder, busy, withBusy } = useRowActions(order);
+  // For naming the owner in the locked tooltip above.
+  const { team } = useStore();
 
   // ── Flow guard ──────────────────────────────────────────────────────
   // `stage` describes the TABLE, not this row. Branching on it blindly
@@ -915,6 +917,33 @@ function UpdateStatusActions({
   if (stage === "Archived") return null;
   if (!rowFlow.includes(order.stage)) return null;
   stage = order.stage;
+
+  // ⚠ SOMEBODY ELSE'S CLAIM ENDS THE ACTION COLUMN, AT EVERY STAGE.
+  // This test used to live inside the `New` and `New claim` branches only,
+  // so a claimed row was protected until the moment somebody started working
+  // it and was open to everyone from Entered onward -- exactly backwards.
+  // An unstarted row is cheap to duplicate; a row halfway through production
+  // is not.
+  //
+  // The server refuses these anyway (409 `claimed_by_other`), so what this
+  // removes is a column of buttons that fail on click. It is NOT the
+  // enforcement -- app/api/orders/[id] is.
+  //
+  // ⚠ NO ADMIN BYPASS HERE. Admins are exempt on the server and have the
+  // "Edit order" unlock in the modal, which is per-order and resets when the
+  // modal moves on. A live bypass in a list row would make overriding a
+  // colleague's claim reflexive, which is the thing that toggle exists to
+  // prevent. An admin who needs to act opens the row.
+  const lockedByOtherMember =
+    !!claimedBy && !!currentUserId && claimedBy !== currentUserId;
+  if (lockedByOtherMember) {
+    return (
+      <span className="text-[10px] text-cream/30 italic"
+        title={`Claimed by ${team.find((m) => m.id === claimedBy)?.name ?? "another member"}`}>
+        &mdash;
+      </span>
+    );
+  }
 
   // Custom orders share the TAIL of the standard flow (In production ->
   // At cross dock -> Delivered) and those branches below are correct for
@@ -973,13 +1002,8 @@ function UpdateStatusActions({
 
   // ── New ─────────────────────────────────────────────────────────────
   if (stage === "New") {
+    // The claimed-by-other case is handled above, for every stage.
     const isClaimedByMe = !!currentUserId && claimedBy === currentUserId;
-    const isClaimedByOther = !!claimedBy && !isClaimedByMe;
-
-    if (isClaimedByOther) {
-      // No action available — claimed by someone else
-      return <span className="text-[10px] text-cream/30 italic">—</span>;
-    }
     if (isClaimedByMe) {
       return (
         <div className="flex items-center gap-1.5">
@@ -1121,11 +1145,8 @@ function UpdateStatusActions({
   // Warranty has its own pipeline: New claim → In review → Parts ordered
   // → Shipped → Resolved. No production/delivery date gates apply.
   if (stage === "New claim" && order.type === "warranty") {
+    // The claimed-by-other case is handled above, for every stage.
     const isClaimedByMe = !!currentUserId && claimedBy === currentUserId;
-    const isClaimedByOther = !!claimedBy && !isClaimedByMe;
-    if (isClaimedByOther) {
-      return <span className="text-[10px] text-cream/30 italic">—</span>;
-    }
     if (isClaimedByMe) {
       return (
         <div className="flex items-center gap-1.5">
