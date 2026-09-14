@@ -1010,35 +1010,105 @@ export async function POST(req: NextRequest) {
     const { data: project } = await supabase
       .from("projects").select("id").eq("shopify_id", shopifyId).maybeSingle();
 
-    if (project) {
-      const { data: groups } = await supabase
-        .from("orders").select("id").eq("project_id", project.id);
-      const ids = (groups ?? []).map(g => g.id);
-
-      if (ids.length > 0) {
-        // EVERY foreign key on these tables is NO ACTION, so children must go
-        // first or the delete is REJECTED outright. The previous version
-        // cleared only order_activity -- which meant any order carrying a
-        // manufacturer acknowledgment, i.e. every order past Entered, would
-        // 500 here. Latent only because nothing had been cancelled since
-        // acknowledgments started existing.
-        //
-        // NOTE: deleting order_attachments rows leaves their storage objects
-        // behind, since file_path carries no foreign key. Deliberate for now --
-        // silently destroying a customer's uploaded files on a Shopify cancel
-        // is a decision, not an implementation detail.
-        await supabase.from("order_activity").delete().in("order_id", ids);
-        await supabase.from("order_acknowledgments").delete().in("order_id", ids);
-        await supabase.from("order_attachments").delete().in("order_id", ids);
-        await supabase.from("damage_reports").delete().in("order_id", ids);
-        await supabase.from("orders").delete().in("id", ids);
-      }
-
-      await supabase.from("projects").delete().eq("id", project.id);
-      logWebhook("removed", {
-        order_id: project.id, shopify_id: shopifyId, topic, groups: ids.length,
-      });
+    // ⚠ A DELETION WE CANNOT MATCH USED TO VANISH. `if (project)` had no else,
+    // so an unknown shopify_id returned 200 and logged nothing at all -- the
+    // same silence as a delete that failed.
+    if (!project) {
+      logWebhook("delete_no_project", { shopify_id: shopifyId, topic });
+      return NextResponse.json({ received: true, skipped: "no_matching_project" });
     }
+
+    const { data: groups } = await supabase
+      .from("orders").select("id").eq("project_id", project.id);
+    const ids = (groups ?? []).map(g => g.id);
+
+    // ⚠ WARRANTY CLAIMS HOLD THE ONE NO ACTION EDGE LEFT.
+    // `orders.about_order_id -> orders` is NO ACTION, and a claim is
+    // standalone -- it has no project_id, so it is never among `ids` and never
+    // gets cleared. Postgres rejects the orders delete, the projects delete
+    // fails behind it, and before this commit both errors were discarded and
+    // the handler logged "removed". SHO-1051 sat in the OMS through two
+    // deletions that way.
+    //
+    // Refused rather than resolved: nulling about_order_id orphans the claim
+    // and deleting it destroys real work because somebody tidied up Shopify.
+    // A warranty claim is evidence and should outlive the purchase record, so
+    // a person decides. 200 rather than 5xx because retrying cannot clear a
+    // claim -- Shopify would just redeliver this forever.
+    if (ids.length > 0) {
+      const { data: referrers } = await supabase
+        .from("orders").select("id, type").in("about_order_id", ids);
+      const blocking = (referrers ?? []).filter(r => !ids.includes(r.id));
+      if (blocking.length > 0) {
+        logWebhook("delete_blocked", {
+          order_id: project.id, shopify_id: shopifyId, topic,
+          blocked_by: blocking.map(r => r.id),
+        });
+        return NextResponse.json({
+          received: true,
+          skipped: "blocked_by_references",
+          blocked_by: blocking.map(r => r.id),
+        });
+      }
+    }
+
+    if (ids.length > 0) {
+      // ⚠ THESE FOUR ARE BELT TO CASCADE'S BRACES, NOT THE LOAD-BEARING STEP.
+      // The comment here used to say every foreign key on these tables was
+      // NO ACTION and that children therefore had to go first. They are all
+      // CASCADE today -- damage_reports, order_acknowledgments, order_activity
+      // and order_attachments -- and that stale claim is what sent the
+      // 2026-09-14 investigation hunting a child table when the blocker was
+      // `orders.about_order_id`. Kept because they are harmless and explicit;
+      // the comment is what needed fixing.
+      //
+      // NOTE: deleting order_attachments rows leaves their storage objects
+      // behind, since file_path carries no foreign key. Deliberate for now --
+      // silently destroying a customer's uploaded files on a Shopify cancel
+      // is a decision, not an implementation detail.
+      //
+      // ⚠ EVERY ERROR IS CHECKED AND RETURNED. Six of these discarded their
+      // error, so a rejected delete was indistinguishable from a completed
+      // one. A 5xx here is correct: these failures ARE retryable, unlike the
+      // warranty case above.
+      for (const step of [
+        { table: "order_activity", column: "order_id" },
+        { table: "order_acknowledgments", column: "order_id" },
+        { table: "order_attachments", column: "order_id" },
+        { table: "damage_reports", column: "order_id" },
+        { table: "orders", column: "id" },
+      ]) {
+        const { error: delError } = await supabase
+          .from(step.table).delete().in(step.column, ids);
+        if (delError) {
+          logWebhook("delete_failed", {
+            order_id: project.id, shopify_id: shopifyId, topic,
+            table: step.table, message: delError.message,
+          });
+          return NextResponse.json(
+            { error: "delete_failed", table: step.table, message: delError.message },
+            { status: 500 },
+          );
+        }
+      }
+    }
+
+    const { error: projectError } = await supabase
+      .from("projects").delete().eq("id", project.id);
+    if (projectError) {
+      logWebhook("delete_failed", {
+        order_id: project.id, shopify_id: shopifyId, topic,
+        table: "projects", message: projectError.message,
+      });
+      return NextResponse.json(
+        { error: "delete_failed", table: "projects", message: projectError.message },
+        { status: 500 },
+      );
+    }
+
+    logWebhook("removed", {
+      order_id: project.id, shopify_id: shopifyId, topic, groups: ids.length,
+    });
   }
 
   return NextResponse.json({ received: true });
