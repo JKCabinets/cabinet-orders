@@ -295,6 +295,17 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
   const currentUserDisplayName = sessUser?.name ?? undefined;
   // Admin gate for the Re-decode action (route enforces it server-side too).
   const isAdmin = team.find((m) => m.id === currentUserId)?.role === "admin";
+
+  /**
+   * ⚠ MIRRORS THE SERVER GATE in app/api/orders/[id], including its
+   * resolution through the project -- see `resolvedClaimedBy`. Unclaimed is
+   * open: claiming is how you take a row.
+   *
+   * This hides actions the server would refuse. It is NOT the enforcement;
+   * the route is. Anything gated only here would be a rule that looks
+   * enforced and is not.
+   */
+  const [adminEditing, setAdminEditing] = useState(false);
   const [notes, setNotes] = useState(order.notes);
   const [notesChanged, setNotesChanged] = useState(false);
   const [internalNotes, setInternalNotes] = useState(order.internal_notes ?? "");
@@ -438,6 +449,20 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
    * The subscription is a shared module-level cache, so the modal and the panel
    * (and the table row) all read one fetch. A second subscriber costs nothing.
    */
+  // ⚠ PER ORDER, AND DECLARED HERE BECAUSE `liveOrder` IS. This sat beside
+  // the useState 120 lines above, where liveOrder does not exist yet. There
+  // is no early return between the two, so the hook order is identical
+  // either way. Switching groups in the strip points this modal at another
+  // row; an unlock that survived the switch would be an unlock nobody asked
+  // for on the row they landed on.
+  useEffect(() => { setAdminEditing(false); }, [liveOrder.id]);
+
+  const claimLockedByOther =
+    !!resolvedClaimedBy && !!currentUserId && resolvedClaimedBy !== currentUserId;
+  const claimOwnerName =
+    team.find((m) => m.id === resolvedClaimedBy)?.name ?? "another member";
+  const canEdit = !claimLockedByOther || (isAdmin && adminEditing);
+
   const ackEligible = liveOrder.stage !== "New" || !!resolvedClaimedBy;
   const ackStatus = useAckStatus(liveOrder.id, ackEligible);
 
@@ -814,6 +839,20 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
               onClaim={() => handleClaim(currentUserId ?? null)}
               onRelease={() => handleClaim(null)}
             />
+            {claimLockedByOther && isAdmin && (
+              <button
+                onClick={() => setAdminEditing((v) => !v)}
+                title={adminEditing
+                  ? `Stop editing \u2014 ${claimOwnerName} holds this claim`
+                  : `${claimOwnerName} holds this claim. Editing anyway is recorded on the activity trail.`}
+                className="text-[10px] uppercase tracking-wider px-3 py-1.5 rounded-full transition-all flex-shrink-0"
+                style={adminEditing
+                  ? { background: "rgba(184,130,106,0.22)", border: "0.5px solid rgba(184,130,106,0.60)", color: "#e8bfa4" }
+                  : { background: "rgba(255,255,255,0.05)", border: "0.5px solid rgba(255,255,255,0.18)", color: "rgba(232,227,218,0.70)" }}
+              >
+                {adminEditing ? "Editing" : "Edit order"}
+              </button>
+            )}
             </div>
             {isCompleted && (
               <button
@@ -1194,6 +1233,9 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                   key={liveOrder.id}
                   // First cell now, so no divider on its left edge.
                   flush
+                  readOnly={!canEdit}
+                  lockedNote={`Claimed by ${claimOwnerName}. Ask them to release it`
+                    + `${isAdmin ? ", or use Edit order above" : ""}.`}
                   order={liveOrder}
                   enrichment={enrichFor(liveOrder)}
                   remedies={{
@@ -1304,6 +1346,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
               order={liveOrder}
               updateOrderDetails={updateOrderDetails}
               onStageChange={onStageChange}
+              canEdit={canEdit}
             />
           </div>
 
@@ -1738,7 +1781,7 @@ function QuoteInfoPanel({ notes }: { notes: string }) {
  * A second implementation here would be a second set of those rules.
  */
 function StageInputsCard({
-  order, updateOrderDetails, onStageChange,
+  order, updateOrderDetails, onStageChange, canEdit = true,
 }: {
   order: Order;
   updateOrderDetails: (id: string, details: {
@@ -1747,6 +1790,8 @@ function StageInputsCard({
     scheduled_delivery_date?: string | null;
   }) => Promise<void>;
   onStageChange: (stage: Stage) => void;
+  /** False when another member holds the claim. The fields still show. */
+  canEdit?: boolean;
 }) {
   const carriesTracking = typeCarriesTracking(order.type);
   const [editing, setEditing] = useState(false);
@@ -1807,7 +1852,7 @@ function StageInputsCard({
             </p>
           </div>
         </div>
-        {!isWarranty && (
+        {!isWarranty && canEdit && (
           <button
             onClick={() => setEditing((v) => !v)}
             className="text-[10px] uppercase tracking-wider px-3 py-1 rounded-full transition-all flex-shrink-0 bg-white/5 border border-cream/20 text-cream/75 hover:bg-white/10 hover:text-cream"
@@ -1850,7 +1895,7 @@ function StageInputsCard({
         </div>
       )}
 
-      {editing && !isWarranty && (
+      {editing && !isWarranty && canEdit && (
         <div className="mt-3 pt-3" style={{ borderTop: "0.5px solid rgba(255,255,255,0.10)" }}>
           {carriesTracking ? (
             <TrackingEntry

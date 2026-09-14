@@ -166,6 +166,18 @@ interface Props {
   /** PATCHes the row. Setting a start date at Entered auto-advances it. */
   onSaveDates: (patch: DateFields) => Promise<void> | void;
   busy?: boolean;
+  /**
+   * Somebody else holds the claim and the viewer is not an admin, so the server
+   * will refuse every one of these actions with 409 `claimed_by_other`.
+   *
+   * ⚠ THE CHECKLIST STILL RENDERS. Read-only is not blank: knowing what this
+   * row is waiting on is exactly what a person who cannot act on it needs, so
+   * they can tell the owner rather than open a second copy of the work. Only
+   * the controls go.
+   */
+  readOnly?: boolean;
+  /** Why the controls are absent. Shown in their place. */
+  lockedNote?: string;
   /** First cell of its container: drop the left divider that separates cells. */
   flush?: boolean;
   /**
@@ -177,7 +189,8 @@ interface Props {
 }
 
 export function NextActionPanel({
-  order, enrichment, remedies = {}, overrides = {}, onMove, onSaveDates, busy, flush, trackingSlot,
+  order, enrichment, remedies = {}, overrides = {}, onMove, onSaveDates, busy,
+  readOnly = false, lockedNote, flush, trackingSlot,
 }: Props) {
   // ⚠ The modal keys this component on the order id, so switching groups
   // remounts it and these never carry one group's typing into another.
@@ -272,7 +285,7 @@ export function NextActionPanel({
         </div>
 
         <div className="flex items-center gap-1.5 flex-shrink-0">
-          {showMoveButton && !ready && outstanding.map(({ req }) => {
+          {!readOnly && showMoveButton && !ready && outstanding.map(({ req }) => {
             const override = overrides[req.id];
             if (!override) return null;
             return (
@@ -320,6 +333,10 @@ export function NextActionPanel({
         </ul>
       ) : <span />}
 
+      {readOnly ? (
+        <p className={NOTE + " flex-shrink-0 text-right max-w-[16rem]"}>{lockedNote}</p>
+      ) : (
+      <>
       {/* ⚠ A COLUMN OF ROWS, NOT ONE WRAPPING ROW. Five controls in a single
           flex-wrap line broke wherever the width happened to run out, which
           put the override beside the move on one screen and under an upload
@@ -431,6 +448,8 @@ export function NextActionPanel({
           )}
         </div>
       </div>
+      </>
+      )}
       </div>
     </div>
   );
