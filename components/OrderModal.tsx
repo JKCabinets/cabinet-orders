@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo } from "react";
-import { X, Check, Clock, ChevronRight, Archive, RotateCcw, Trash2, Loader2, Download } from "lucide-react";
+import { X, Check, Clock, ChevronRight, Archive, RotateCcw, Trash2, Loader2, Download, FileText, Truck } from "lucide-react";
 import clsx from "clsx";
 import { useSession } from "next-auth/react";
 import {
@@ -222,6 +222,17 @@ const CELL: React.CSSProperties = {
 const LABEL = "text-[10px] uppercase tracking-[0.16em] text-cream/60 mb-1.5";
 /** The value under a LABEL. Bright: it is the fact the label names. */
 const VALUE = "text-[12px] text-cream/90";
+
+/**
+ * The badge beside a card heading. One definition, because two cards sitting
+ * side by side with badges half a shade apart is worse than neither having
+ * one. Matches the next-action panel's.
+ */
+const CARD_BADGE = "w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0";
+const CARD_BADGE_STYLE: React.CSSProperties = {
+  background: "rgba(184,130,106,0.18)",
+  border: "0.5px solid rgba(184,130,106,0.40)",
+};
 
 // PIN validation lives server-side only. The modal sends whatever the user
 // typed; the server compares against ADMIN_BACKWARD_PIN (constant-time) and
@@ -1226,7 +1237,12 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
               a PO number from a date the pipeline is waiting for. */}
           <div className="px-6 py-4 grid grid-cols-1 md:grid-cols-2 gap-2.5">
             <div className="glass-sage rounded-panel px-4 py-3.5">
-              <p className={LABEL}>Order details</p>
+              <div className="flex items-center gap-2.5 mb-2">
+                <span className={CARD_BADGE} style={CARD_BADGE_STYLE}>
+                  <FileText className="w-3.5 h-3.5" style={{ color: "#d9a888" }} />
+                </span>
+                <p className={LABEL + " mb-0"}>Order details</p>
+              </div>
               <div className="grid grid-cols-2 gap-x-4 gap-y-3 mt-2">
                 <div>
                   <p className={LABEL + " mb-1"}>Source</p>
@@ -1745,11 +1761,23 @@ function StageInputsCard({
   return (
     <div className="glass-sage rounded-panel px-4 py-3.5">
       <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className={LABEL}>{heading}</p>
-          <p className="text-[10px] text-cream/45 -mt-1 mb-1">
-            What this {GROUP_LABEL[order.type]?.toLowerCase() ?? "order"} advances on
-          </p>
+        <div className="flex items-start gap-2.5 min-w-0">
+          <span className={CARD_BADGE} style={CARD_BADGE_STYLE}>
+            <Truck className="w-3.5 h-3.5" style={{ color: "#d9a888" }} />
+          </span>
+          <div className="min-w-0">
+            <p className={LABEL + " mb-0"}>{heading}</p>
+            {/* ⚠ TRUE IN EACH CASE, not one sentence bent to fit three. A
+                custom job advances on NOTHING -- its dates are a record, which
+                is why the requirement table leaves custom empty -- so the
+                stock "what this advances on" was false precisely where
+                somebody might act on it. */}
+            <p className="text-[10px] text-cream/45">
+              {order.type === "custom"
+                ? "Recorded for scheduling \u2014 nothing advances on these"
+                : "What this group's stages run on"}
+            </p>
+          </div>
         </div>
         {!isWarranty && (
           <button
