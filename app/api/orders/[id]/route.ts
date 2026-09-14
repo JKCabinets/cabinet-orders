@@ -164,7 +164,9 @@ export async function PATCH(
     // ⚠ production_start_date is here for the In production GATE below. It has
     // to be read before the update is applied, because the gate must accept a
     // request that supplies the date and the stage together.
-    .select("stage, type, payment_status, payment_hold_cleared_for, project_id, tracking_number, carrier, production_start_date")
+    // ⚠ claimed_by is here for the ownership gate below. Null on every
+    // project-linked row -- see the resolution there.
+    .select("stage, type, payment_status, payment_hold_cleared_for, project_id, tracking_number, carrier, production_start_date, claimed_by")
     .eq("id", id)
     .single();
   if (!currentRow) {
@@ -174,6 +176,52 @@ export async function PATCH(
   // The row's type decides WHICH stage ordering applies. Stage names are
   // shared across flows now, so every stage comparison below needs it.
   const currentType: string = currentRow.type ?? "order";
+
+  // ── Ownership gate ────────────────────────────────────────────────────
+  //
+  // ⚠ A CLAIM HOLDS HERE OR IT HOLDS NOWHERE. It was displayed in three
+  // places and checked in none, so the feature that exists to stop two
+  // people working the same order stopped nobody. Everything below this
+  // point mutates the row, so the gate sits above all of it rather than on
+  // the stage move alone -- a second person retyping the dates or the
+  // tracking number is the same duplicated work as a second person moving
+  // the stage.
+  //
+  // ⚠ RESOLVED THROUGH THE PROJECT. `orders.claimed_by` is null on every
+  // project-linked row since the claim moved up on 2026-08-25. Reading it
+  // raw would find no owner on any Shopify purchase and enforce nothing on
+  // exactly the type that has the most hands on it.
+  let claimOwner: string | null = currentRow.claimed_by ?? null;
+  if (currentRow.project_id) {
+    const { data: proj } = await supabase
+      .from("projects")
+      .select("claimed_by")
+      .eq("id", currentRow.project_id)
+      .single();
+    claimOwner = proj?.claimed_by ?? null;
+  }
+
+  const actorId = auth.session.user.id;
+  const actorName = auth.session.user.name ?? auth.session.user.username;
+  // ⚠ UNCLAIMED IS OPEN. Claiming is how you take a row; requiring a claim
+  // before any edit would make every first touch a two-step, and the queue
+  // is full of rows nobody has picked up yet.
+  let claimOverride = false;
+  if (claimOwner && claimOwner !== actorId) {
+    if (auth.session.user.role !== "admin") {
+      return NextResponse.json(
+        {
+          error: "claimed_by_other",
+          claimed_by: claimOwner,
+          message: "This order is claimed by someone else. Ask them to release it, or have an admin make the change.",
+        },
+        { status: 409 },
+      );
+    }
+    // An admin may proceed, and the owner finds out how. Unlogged authority
+    // over somebody else's work is the shape `override_ack` had.
+    claimOverride = true;
+  }
 
   // ── Stage validation & backward-PIN gate ──────────────────────────────
   // Mirrors `/api/orders/bulk` — the single-order PATCH previously accepted
@@ -765,6 +813,14 @@ export async function PATCH(
     await supabase.from("order_activity").insert({
       order_id: id,
       text: `Payment hold (${holdStatus}) acknowledged by ${auth.session.user.name ?? auth.session.user.username} — ${paymentHoldAck}`,
+      time: today,
+    });
+  }
+
+  if (claimOverride) {
+    await supabase.from("order_activity").insert({
+      order_id: id,
+      text: `Edited by ${actorName} (admin) while claimed by another member`,
       time: today,
     });
   }
