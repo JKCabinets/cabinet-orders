@@ -527,6 +527,29 @@ nothing on success, so silence is not a result.
 6. **`orders.date` and `order_activity.time` are display strings, not ISO**, so
    they still read "Sep 14" while every real date column now reads MM/DD/YYYY.
    Fixing that means changing what is written at ingest.
+7. **`fieldsToClearOnBackwardMove` is the last consumer not deriving from
+   `lib/requirements`.** The PATCH gates were migrated 2026-09-15; this one was
+   left because it is a behaviour change rather than a refactor — what a
+   backward move clears is a decision, not a restatement of what a stage needs.
+   Argue it on its own, and enumerate before and after like the gates were.
+8. **Mockup parity is not finished.** Two structural differences remain between
+   the deployed modal and the mockups: Next Action is a cell in a strip rather
+   than a full-width band under the rail, and the mockup repeats the primary
+   action in a sticky footer. Both are changes to the Overview's layout rather
+   than to any panel, so they want their own commit. Everything else from the
+   mockups — the split row, the card badges, the type scale, the control
+   sizing, the claim chip — is done.
+9. **`~/cron-jobs/cron.log` holds 196 non-zero `rc` runs and nobody has looked
+   at how many are recent.** Most will be the 64-day outage and the six-day
+   monitoring failure, both long closed. Worth one pass to confirm nothing is
+   failing now:
+
+   ```bash
+   grep -E "rc=(22|[1-9])" ~/cron-jobs/cron.log | tail -10
+   grep "2026-09" ~/cron-jobs/cron.log | grep -cE "rc=(22|[1-9])"
+   ```
+
+   Zero on the second command means it is all history.
 
 ---
 
