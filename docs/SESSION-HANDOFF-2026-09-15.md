@@ -1,4 +1,8 @@
-# SESSION HANDOFF — 2026-09-14
+# SESSION HANDOFF — 2026-09-15
+
+Covers work from 2026-09-09 through 2026-09-15. Where a date is given below
+it is the date of the **decision**, taken from the commit trail; the
+conversation that produced it may have run across a day boundary.
 
 Successor to `docs/SESSION-HANDOFF-2026-09-08.md`.
 
@@ -83,7 +87,7 @@ incomplete.
 
 ### 3. "No gates" extends to the UI, not just the routes
 
-Garrett, 2026-09-14: **custom has no gates, period — it is an organisation tool.**
+Garrett, 2026-09-10: **custom has no gates, period — it is an organisation tool.**
 
 That covers the interface as well as the API. No control may withhold itself
 pending a custom job's date, and no copy may say a date unlocks a step. Three
@@ -160,22 +164,59 @@ along.
 override skipped the check entirely — a row whose acknowledgment was green
 recorded a bypass of a check that would have passed. The check runs first now.
 
-### 7. Claims are enforced — server first
+### 7. Claims are enforced — server first, everywhere
 
-`app/api/orders/[id]/route.ts` refuses mutations to a row claimed by somebody
-else with 409 `claimed_by_other`. Unclaimed is open (claiming is how you take a
-row). Admins may proceed and it is written to the activity trail.
+**`requireOrderClaim(orderId, session, action?)` in `lib/auth.ts` is the single
+answer.** Four routes call it: PATCH, attachment upload, attachment delete,
+acknowledgment upload.
 
-⚠ **Ownership resolves through the project.** `orders.claimed_by` is null on
+    unclaimed          -> allowed. Claiming is how you take a row, and requiring
+                          a claim before any edit would make every first touch a
+                          two-step on a queue full of unpicked work.
+    claimed by you     -> allowed.
+    claimed by another -> 409 `claimed_by_other`.
+    ...unless admin    -> allowed, AND written to the activity trail.
+
+⚠ **THE GUARD LOGS ITS OWN OVERRIDE.** A side effect in a guard is unusual and
+deliberate: an admin acting over somebody's claim must reach the trail every
+time, and four callers each remembering to write that row is four chances to
+forget — and the one that forgets is indistinguishable from a normal edit
+afterwards. The `action` parameter is the verb, so the trail reads
+"Acknowledgment submitted by … (admin) while claimed by another member".
+
+⚠ **THE PATCH ROUTE WAS REFACTORED ONTO IT, not left alone.** It held the only
+copy. Leaving one hand-written implementation beside three helper callers is
+exactly how the client and server gates drifted apart on 09-08.
+
+⚠ **OWNERSHIP RESOLVES THROUGH THE PROJECT.** `orders.claimed_by` is null on
 every project-linked row since the claim moved up on 2026-08-25, so a check
 reading it raw finds no owner on any Shopify purchase and enforces nothing on
-the type with the most hands on it.
+the type with the most hands on it. `claimOwnerOf` does this once.
 
-The modal hides what the server would refuse, and admins get an explicit **Edit
-order** toggle that resets when the modal points at a different group. The UI is
-the courtesy; **the route is the enforcement.** Read-only is not blank — the
-checklist and stage still render, because somebody who cannot act on a row still
-needs to see what it is waiting on.
+⚠ **ADMIN EXEMPTION IS SERVER-SIDE AND UNCONDITIONAL. THE "EDIT ORDER" TOGGLE
+IS NOT ENFORCEMENT.** This surprised Garrett on 09-15 and will surprise the next
+person harder. An admin's request succeeds whether or not the toggle has been
+pressed; the toggle exists so that stepping into somebody else's work is a
+*second, deliberate act* in the UI rather than a reflex, and it resets when the
+modal points at a different group. Do not "fix" the server to require it —
+an admin acting through the API, a script, or a stale tab must still be able to
+act, and must still be logged.
+
+**Where the UI follows:** the modal (next-action panel, stage-inputs card,
+acknowledgment panel) hides controls a non-owner cannot use; the table's action
+column refuses at every stage. Read-only is never blank — the checklist, stage,
+dates and vendor reconciliation still render, because somebody who cannot act
+still needs to see what the row is waiting on. That is how they tell the owner
+instead of starting a second copy, which is the entire point of claims.
+
+⚠ **NO ADMIN BYPASS IN THE TABLE**, deliberately. A live bypass in a list row
+would make overriding a colleague's claim reflexive. An admin who needs to act
+opens the row.
+
+⚠ The table's check previously existed on **two branches out of twenty** —
+`New` and `New claim`. A claimed row was protected until the moment somebody
+started working it and open to everyone from Entered onward, which is backwards:
+an unstarted row is cheap to duplicate, a row halfway through production is not.
 
 ### 8. Realtime on `projects`
 
@@ -183,7 +224,9 @@ The publication carried `orders` and `team_members` but not `projects`. Since
 the claim lives on the project, **a claim taken by one person reached nobody
 else's screen until they refreshed** — which defeats the entire purpose of
 claims. The subscription in `lib/store.tsx` had been correct the whole time and
-had nothing to receive. Recorded as `migrations/2026-09-14-realtime-projects.sql`.
+had nothing to receive. Recorded as `migrations/2026-09-14-realtime-projects.sql` — the filename is a
+day early and stays that way, because renaming an applied migration is worse
+than a filename that is off by one.
 
 ### 9. The Shopify deletion webhook
 
@@ -218,39 +261,43 @@ Shopify order was already gone.
 |---|---|
 | Custom exempt from the receipt gate | Terms 12.3 is a Shopify-checkout agreement and does not reach custom jobs. The gate was enforcing the wrong document. |
 | Custom has no gates at all, UI included | It is an organisation tool. A demand nothing enforces is worse than a gate. |
-| Cabinet delivery date stays a client-side nudge | Garrett, 09-14: effectively gated because the row withholds Confirm Delivery until a date is entered. Not a server rule. |
+| Cabinet delivery date stays a client-side nudge | Garrett, 09-10: effectively gated because the row withholds Confirm Delivery until a date is entered. Not a server rule. |
 | Warranty claims cannot be raised against custom jobs | Our warranty process is a Terms process — the 48-hour window, the conditions precedent, the evidence rules all derive from the checkout agreement a custom customer never accepted. The claim modal's picker already excludes custom; **that exclusion is correct and should say why.** Not yet recorded in the picker — see open items. |
 | A warranty claim blocks deletion rather than being resolved | The claim is evidence; it should outlive the purchase record, and a person should decide. |
+| Admin exemption is server-side and unconditional | The "Edit order" toggle is deliberateness in the UI, not enforcement. An admin acting through the API or a stale tab must still be able to act — and must still be logged. |
+| Attachment DELETE gated the same as upload, not more strictly | Removing a signed receipt from another member's claimed row is precisely the crossed-wires case claims exist for. A second, stricter rule is a second thing to keep in sync for no gain. |
 | Manual Push, not "Mark delivered anyway" | The stage page has always called it Manual Push. Two names for one action is how somebody concludes there are two. |
 
 ---
 
 ## Open — not done, deliberately
 
-1. **Upload routes are not claim-gated.** Attachments and acknowledgments POST
-   to their own routes, which commit 7 did not cover. The buttons are still
-   offered on a claimed row **on purpose** — hiding them would make a UI-only
-   rule, which is the thing that pair of commits exists to stop being. Gate the
-   routes, then hide the buttons.
-2. **`OrderTable` row actions are still live for non-owners** and now fail with
-   a 409 toast. Needs `isAdmin` plumbed into that component; it has
-   `currentUserId` but no notion of role.
-3. **`order_activity` and `order_attachments` do not publish over realtime.**
+1. **`order_activity` and `order_attachments` do not publish over realtime.**
    Adding them to the publication alone would broadcast to no listener — the
    client has no subscription for them. Code first, then the publication.
-4. **Rail timestamps** (mockup 2) need a real per-transition time. The activity
+2. **Rail timestamps** (mockup 2) need a real per-transition time. The activity
    trail's `time` is a display string from `toLocaleDateString` — `"Aug 24"`,
    no clock time. Either the PATCH route starts writing a real timestamp per
    transition (better, and useful beyond the rail) or the rail shows dates only.
    Garrett is content to defer this.
-5. **The remaining PATCH gates** are still hand-written: acknowledgment,
-   production start date, tracking.
-6. **The warranty-vs-custom exclusion is not yet documented in the picker.**
+3. **The remaining PATCH gates** are still hand-written: acknowledgment,
+   production start date, tracking. The delivery-proof gate shows the shape.
+4. **The warranty-vs-custom exclusion is not documented in the picker.**
    Decision is made (see table); the comment and doc line are not written.
-7. **No `webhook_events` table.** Webhook outcomes go to `console.warn` only,
-   readable via `docker logs`. Three separate diagnoses today needed those logs.
-   A persisted table would have made the 1051 investigation minutes instead of
-   an hour.
+5. **No `webhook_events` table.** Webhook outcomes go to `console.warn` only,
+   readable via `docker logs`. Three separate diagnoses on 09-15 needed those
+   logs, and the deletion bug survived two attempts partly because nothing
+   persisted the outcome.
+6. **Orphaned claims are unchecked.** `projects.claimed_by` holds two id formats
+   (`"1"` and `"member-…"`). Any project holding an id that no longer matches a
+   `team_members.id` locks every non-admin out of it permanently, with the chip
+   reading "Claimed" and no name. Worth a periodic check:
+
+   ```sql
+   select p.id, p.claimed_by from projects p
+   left join team_members t on t.id = p.claimed_by
+   where p.claimed_by is not null and t.id is null;
+   ```
 
 ---
 
@@ -285,6 +332,17 @@ the build.
 every component it imports. Three failures today were symbol *availability* in
 that file — a prop type too narrow, a `useEffect` referencing a `const` declared
 110 lines below it. Be slower about anchor placement there specifically.
+
+**⚠ A patch must not check for the symbol it removes.** One script's
+prerequisite looked for `claimOverride` — the very thing it deleted — so its
+second run refused its own work. Prerequisite checks should accept either state:
+the marker it needs, *or* the marker it leaves behind.
+
+**⚠ Post-condition counts are guesses until measured.** Nearly every patch in
+this session failed its own post-conditions on the first run because an
+identifier appeared in a doc comment, twice in one condition, or twice on an
+import line (`import { X } from "./X"`). That is the check working. Measure,
+then set the number — never relax the check to make it pass.
 
 **⚠ Verify the deployed image, every time:**
 
@@ -323,6 +381,9 @@ patch_entry_actions_override.py
 patch_claim_enforced_server.py
 patch_claim_lock_modal.py
 patch_webhook_delete_errors.py
+patch_claim_lock_table.py
+patch_claim_guard_uploads.py
+patch_claim_lock_ack_panel.py
 ```
 
 ⚠ A prerequisite check keyed on a **CSS class** rather than on an interface once
