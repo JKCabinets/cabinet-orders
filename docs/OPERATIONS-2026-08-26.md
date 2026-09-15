@@ -1,6 +1,10 @@
 # JK Cabinets — Operations & Systems Reference
 
-**As of 2026-08-26 · supersedes OPERATIONS-2026-08-18.md**
+**As of 2026-09-15 · supersedes OPERATIONS-2026-08-18.md**
+
+⚠ **AMENDED 2026-09-15.** The `override_ack` inconsistency in §10 is closed,
+the warranty-vs-custom question in §12 is decided, §9 carries two new
+incidents, and archiving has a stated rule. Corrections are inline.
 
 ⚠ **AMENDED 2026-08-26.** Corrections are marked inline. The largest are: the
 customer-facing stage table is now keyed on `(type, stage)`; a checkout splits
@@ -410,6 +414,11 @@ the reason — previously `curl -f` discarded it and logged only `error: 500`.
 
 ## Still not monitored
 
+- ⚠ **Deletions in Shopify.** `webhook-health` reconciles in one direction
+  only — orders Shopify has that the OMS lacks. An order the OMS holds that
+  Shopify has deleted is invisible to it, because a poll of current orders
+  never notices an absence. Deletions depend entirely on the webhook
+  arriving, which on 2026-09-15 it did while achieving nothing. See §9.
 - **Refunds.** `payment_status` updates within seconds and now blocks forward
   movement, but nothing alerts — somebody has to open the order. Worth
   revisiting once order volume is real.
@@ -518,6 +527,42 @@ removing it needs Plus, as do custom sidebar apps.
 ---
 
 # 9. Incident history
+
+**⚠ Deletion webhook reported success while deleting nothing (2026-09-15).**
+SHO-1051 was deleted in Shopify, and the handler logged
+`{"outcome":"removed","groups":2}` on `orders/cancelled` AND again on
+`orders/delete` — twice — while the rows stayed. Six `.delete()` calls
+discarded their errors and the success log ran unconditionally, so Shopify
+got a 200 and never retried.
+
+The blocker was `orders.about_order_id → orders`, the one `NO ACTION`
+foreign key left on these tables: a warranty claim about `SHO-1051-CAB`. A
+claim is standalone, so it is never among the group ids being deleted and
+never gets cleared; Postgres rejected the orders delete and the projects
+delete failed behind it.
+
+⚠ **A stale comment sent the investigation to the wrong table first.** It
+claimed every foreign key on those tables was `NO ACTION`; they are all
+`CASCADE`. → **Produced three things:** every delete checks its error and
+returns 500 so Shopify retries; a deletion blocked by a warranty claim is
+**refused and named** rather than resolved, because a claim is evidence and
+should outlive the purchase record; and `webhook_events`, so the next one is
+diagnosable after a deploy.
+
+⚠ **Nothing reconciles deletions.** `webhook-health` catches orders Shopify
+has that the OMS lacks. The reverse — a row we hold that Shopify deleted —
+is invisible to it, because a poll of current orders never notices an
+absence. Deletions depend entirely on the webhook arriving.
+
+**⚠ An order vanished from one list and not another (2026-09-15).**
+SHO-1052 was archived as a project AND as two individual groups, then
+restored as a project. The projects hub reads `projects.archived`; the
+cabinet-orders list reads `orders.archived`. Restoring cleared only the
+first, so the order showed in one place and not the other, with the activity
+trail asserting "Project restored" on both groups. Fixed by hand:
+`update orders set archived = false where project_id = 'SHO-1052';`
+→ **Produced the rule that a project is the only truth for archiving** —
+§10, and the enforcement is outstanding.
 
 **⚠ `projects` readable and writable by the public anon key (2026-08-25 →
 2026-09-01).** `projects` was the only table in the database with RLS
@@ -668,12 +713,31 @@ legitimate is sitting there with no dates, because then nothing can advance it.
 **New measures from the order date**, so a bounced order cannot look newer than
 it is.
 
-**The delivery gate has an override, and the override needs a reason.** A gate
-that can strand a genuinely delivered order gets routed around. The control is
-not permission — anyone may override — it is accountability. ⚠ **This is true of
-the delivery gate and NOT of `override_ack` on `New → Entered`**, which is
-client-supplied, unlogged and has no role check. That inconsistency is
-known-wrong, not a second policy.
+**Every override needs a reason, and every override is logged.** A gate that
+can strand a genuinely delivered order gets routed around. The control is not
+permission — anyone may override — it is accountability. ✅ **The
+`override_ack` inconsistency is CLOSED (2026-09-15):** it was a bare boolean
+that wrote nothing, and now takes a reason, refuses an empty one, and writes
+`Acknowledgment gate overridden by <name> — <reason>` to the trail. Both
+overrides are called **Manual Push**, which is what the stage page has always
+called the row action; the modal had invented a second name for the same act.
+
+**A PROJECT IS THE UNIT OF ARCHIVING** (2026-09-15). Archive a purchase and
+every group goes with it; restore it and every group comes back. It is not
+possible — by intent — to archive one group of a purchase on its own, and
+archiving is refused until every group has reached the last stage of its own
+flow, unless the purchase is refunded. Standalone rows, having no project,
+are archived individually. ⚠ **The rule is stated and not yet enforced:**
+the order-level archive path still writes a duplicate flag, which is how
+SHO-1052 disappeared from one list while showing in another. See §9.
+
+**A claim is enforced, and admins are exempt but logged** (2026-09-15).
+Someone else's claimed order refuses every edit — stage moves, dates,
+tracking, notes, attachment uploads and deletions, acknowledgment uploads.
+Unclaimed is open, because claiming is how you take a row. An admin may act
+regardless and it lands on the activity trail; the modal's "Edit order"
+toggle makes that a deliberate second act rather than a reflex, but it is a
+UI convention and **not** the enforcement.
 
 **Public form submissions land in staging tables, not `orders`** — except
 quotes, above. Direct public writes would start SLA clocks on bot submissions.
@@ -733,8 +797,11 @@ recovery story.
   request is buffered before the app sees it, which matters for the planned
   60 MB claims uploads.
 - **Container logs rotate at 10 MB** and are **not shipped anywhere**. That is
-  where `[shopify-webhook]` and `[ack-reject]` land; a container replacement
-  loses them.
+  where `[ack-reject]` lands; a container replacement loses them. ✅ **Webhook
+  outcomes are no longer only here** — since 2026-09-15 every `logWebhook`
+  call also writes a `webhook_events` row, which survives a deploy. The
+  console line stays, because it is what you can read during a deploy or when
+  the database is the broken thing.
 - **Kamal keeps 5 old containers** — the practical rollback window.
 
 ## Backup and recovery
@@ -859,14 +926,20 @@ so the first one to fail takes the rest with it.
 
 ## Important
 
-- **⚠ Can a warranty claim be raised against a CUSTOM job, and if so whose
-  terms govern it?** Raised 2026-09-09 when the receipt gate was taken off
-  custom jobs, because they are outside our Terms. The claim modal's order
-  picker currently excludes custom as a target. If the answer is no, that
-  exclusion is already correct and should say why; if yes, it needs
-  revisiting -- and the warranty flow's customer-facing copy, the 48-hour
-  window and the reporting conditions all assume our Terms. Garrett's call.
-  **Do not change the picker either way without asking.**
+- **✅ A warranty claim CANNOT be raised against a custom job.** Decided
+  2026-09-15. Our warranty process is a Terms process: the 48-hour reporting
+  window, the conditions precedent and the evidence requirements all derive
+  from the Shopify-checkout agreement, which a custom customer never
+  accepted. A defect on a custom job is remedied under that customer's own
+  contract and purchase order, which may set entirely different obligations
+  — running it through our flow would apply the wrong document, exactly as
+  the receipt gate did before 2026-09-10. It would also create a claim with
+  no project, which the claim model assumes.
+
+  The claim modal's order picker already excludes custom, so **the behaviour
+  is correct and needs no change** — but the exclusion does not say why, and
+  an unexplained exclusion reads as an oversight. Adding that comment is the
+  only outstanding work.
 - **⚠ Do the project money totals include line-item ADD-ONS?** Shopify line
   items carry `_apo_options` and `_apo_addons` from the options app, and the
   order inspected on 2026-08-27 had `_apo_addons: "23.89"` on a single line.
