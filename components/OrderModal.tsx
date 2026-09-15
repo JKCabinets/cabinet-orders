@@ -1361,7 +1361,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                 by default: showing it wrongly is cosmetic, hiding it wrongly
                 means a missed manufacturer confirmation. */}
           {liveOrder.type !== "sample" && (
-            <AcknowledgmentPanel ref={ackPanelRef} orderId={liveOrder.id} orderName={liveOrder.name} eligible={ackEligible} uploadOfferedElsewhere={requirementsFor(liveOrder).some((r) => r.id === "ack_or_attachment")} onAdvanceOverride={() => { void overrideAckAdvance(); }} />
+            <AcknowledgmentPanel ref={ackPanelRef} orderId={liveOrder.id} orderName={liveOrder.name} eligible={ackEligible} uploadOfferedElsewhere={requirementsFor(liveOrder).some((r) => r.id === "ack_or_attachment")} onAdvanceOverride={() => { void overrideAckAdvance(); }} canAct={canEdit} lockedNote={`Claimed by ${claimOwnerName}. Ask them to release it` + `${isAdmin ? ", or use Edit order above" : ""}.`} />
           )}
           {/* Notes and attachments as three cards in one row, collapsed to a
               summary line. This was two full-height textareas plus the

@@ -35,6 +35,21 @@ interface AcknowledgmentPanelProps {
    * the panel's button opens it through openFilePicker().
    */
   uploadOfferedElsewhere?: boolean;
+  /**
+   * False when another member holds the claim and the viewer has not
+   * unlocked the order. Every write this panel can make -- the per-vendor
+   * upload and the Manual Push -- is refused by the server in that state
+   * (409 `claimed_by_other`), so offering them produces a button that
+   * fails on click.
+   *
+   * ⚠ THE RECONCILIATION STILL RENDERS. Vendor rows, statuses and
+   * discrepancies are exactly what somebody who cannot act needs to see:
+   * it is how they tell the owner rather than starting a second copy of
+   * the work. Only the controls go.
+   */
+  canAct?: boolean;
+  /** Whose claim it is, named where the buttons were. */
+  lockedNote?: string;
 }
 
 const FIELD_LABEL: Record<string, string> = { name: "Name", address: "Shipping address" };
@@ -59,7 +74,10 @@ function discrepancyCount(r: ReconcileResult): number {
  * reconciliation exists today.
  */
 export const AcknowledgmentPanel = forwardRef<AcknowledgmentPanelHandle, AcknowledgmentPanelProps>(
-  function AcknowledgmentPanel({ orderId, orderName, eligible, onAdvanceOverride, uploadOfferedElsewhere = false }, ref) {
+  function AcknowledgmentPanel({
+    orderId, orderName, eligible, onAdvanceOverride,
+    uploadOfferedElsewhere = false, canAct = true, lockedNote,
+  }, ref) {
     const { showToast } = useToast();
     const status = useAckStatus(orderId, eligible);
     const [uploadingVendor, setUploadingVendor] = useState<string | null>(null);
@@ -179,7 +197,7 @@ export const AcknowledgmentPanel = forwardRef<AcknowledgmentPanelHandle, Acknowl
                     {/* Hidden where the next-action panel carries the same
                         control, except mid-upload: the spinner is the only
                         feedback that the panel's button did anything. */}
-                    {(isUploading || !uploadOfferedElsewhere) && (
+                    {canAct && (isUploading || !uploadOfferedElsewhere) && (
                     <button
                       onClick={() => triggerUpload(v)}
                       disabled={isUploading}
@@ -246,7 +264,13 @@ export const AcknowledgmentPanel = forwardRef<AcknowledgmentPanelHandle, Acknowl
             {/* ⚠ anyStale IS HERE ON PURPOSE. Gated on anyRed alone, a stale
                 green rendered NEITHER button -- allGreen false, anyRed false --
                 leaving a blocked order with no override and no explanation. */}
-            {!status.allGreen && (status.anyRed || status.anyStale) && (
+            {/* ⚠ HIDDEN, NOT DISABLED. A greyed-out Manual Push beside a red
+                discrepancy sends somebody hunting for why; naming the owner
+                answers the question the button would have raised. */}
+            {!canAct && (
+              <p className="mt-1 text-[11px] text-cream/45 leading-snug">{lockedNote}</p>
+            )}
+            {canAct && !status.allGreen && (status.anyRed || status.anyStale) && (
               <button
                 onClick={handleManualPush}
                 disabled={pushing}
