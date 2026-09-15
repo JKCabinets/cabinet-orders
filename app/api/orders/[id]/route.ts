@@ -7,7 +7,7 @@ import { ALLOWED_STAGES, isStageAllowedForType, isBackwardsMove, verifyAdminPin,
 import { isPaymentHoldStatus, paymentHoldLabel, parseMoney, isStageOfferedForType, type OrderType, type Stage } from "@/lib/data";
 import { trackingTargetStage, categoryHasTracking, type OrderCategory } from "@/lib/categories";
 import { orderAllVendorsGreen } from "@/lib/acknowledgments";
-import { requirementsFor } from "@/lib/requirements";
+import { requirementsFor, typeEverRequires } from "@/lib/requirements";
 
 /** Push order updates back to Shopify */
 async function syncToShopify(
@@ -260,9 +260,21 @@ export async function PATCH(
   // passed, and a row without one recorded nothing at all. Same contract as
   // the delivery-proof override below -- refused without a reason, written
   // to the activity trail with the name of whoever gave it.
+  //
+  // ⚠ ASKED OF lib/requirements, NOT OF A TYPE LIST. This read
+  // `currentType !== "sample"`, which could never fire: New -> Entered
+  // exists only in the cabinets flow, because no other type has an Entered
+  // stage. A clause that reads as a rule and decides nothing is how the
+  // delivery gate ended up enforcing the wrong document against custom.
+  //
+  // The current stage is the right question here: this gate is about
+  // leaving New, not about reaching Entered from anywhere.
+  const ackRequired = requirementsFor({
+    type: currentType as OrderType, stage: currentStage as Stage,
+  }).some((r) => r.id === "ack_or_attachment");
+
   let ackOverrideReason: string | null = null;
-  if (body.stage === "Entered" && currentStage === "New"
-      && currentType !== "sample") {
+  if (body.stage === "Entered" && ackRequired) {
     const { data: attachments } = await supabase
       .from("order_attachments")
       .select("id")
@@ -300,7 +312,17 @@ export async function PATCH(
   //
   // The AUTO-ADVANCE at the bottom of this file is unaffected: it fires only
   // when `body.stage === undefined`, so it never reaches this branch.
-  if (body.stage === "In production" && currentStage === "Entered") {
+  //
+  // ⚠ THE TABLE DECIDES WHETHER, THE BODY DECIDES WHETHER THIS REQUEST
+  // SATISFIES IT. `requirementsFor` answers from the stored row, and the
+  // modal sends the date and the stage in one PATCH -- so deriving the
+  // whole check would refuse the request that satisfies it. `gates` is
+  // descriptive: it cannot express "and the request may supply it".
+  const startDateRequired = requirementsFor({
+    type: currentType as OrderType, stage: currentStage as Stage,
+  }).some((r) => r.id === "production_start_date");
+
+  if (body.stage === "In production" && startDateRequired) {
     const incoming = body.production_start_date;
     const startDate = incoming !== undefined
       ? incoming
@@ -361,7 +383,16 @@ export async function PATCH(
   // one would make it a claim nobody can check -- and the public lookup reads
   // this to answer "where are my samples", so an unevidenced Shipped becomes a
   // wrong answer given to a customer.
-  if (body.stage === "Shipped" && categoryHasTracking(currentType as OrderCategory)) {
+  //
+  // ⚠ TYPE-LEVEL, NOT STAGE-LEVEL. The table lists `tracking_number` at the
+  // stage BEFORE Shipped (sample @ New, hardware @ Ordered), because
+  // requirementsFor answers what the CURRENT stage is waiting on. This gate
+  // applies whichever direction you come from -- see the comment above --
+  // so a current-stage question would stop requiring the number on a
+  // backward admin move from Delivered, which is precisely when somebody is
+  // fixing a mistake and it matters. Matches categoryHasTracking on all
+  // five types; enumerated 2026-09-15.
+  if (body.stage === "Shipped" && typeEverRequires(currentType as OrderType, "tracking_number")) {
     const incoming = typeof body.tracking_number === "string"
       ? cleanInput(body.tracking_number).trim()
       : "";

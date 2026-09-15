@@ -343,6 +343,32 @@ export function dateControlsFor(o: Pick<Order, "type" | "stage">): DateControl[]
   return control ? [control] : [];
 }
 
+/**
+ * Does this TYPE require `id` at any stage of its flow?
+ *
+ * ⚠ A DIFFERENT QUESTION FROM `requirementsFor`, and the difference is the
+ * whole reason this exists. `requirementsFor` answers "what is the CURRENT
+ * stage waiting on", which is what a checklist wants. Some gates are
+ * direction-independent -- the tracking gate applies to a move INTO Shipped
+ * whichever stage it comes from, including a backward admin move -- and
+ * asking those a current-stage question silently narrows them.
+ *
+ * Concretely: `tracking_number` is listed at sample @ New and hardware @
+ * Ordered, the stages BEFORE Shipped. A gate keyed on the current stage
+ * would stop requiring it when moving Delivered -> Shipped, which is
+ * exactly when somebody is correcting a mistake and the number matters.
+ *
+ * ⚠ READS THE TABLE'S OWN KEYS, not lib/data. REQUIREMENTS is exhaustive
+ * over every (type, stage) -- the boot check below fails if it stops being
+ * -- so this needs no runtime import of the stage list. See that check's
+ * note about staying free of a cycle.
+ */
+export function typeEverRequires(type: OrderType, id: string): boolean {
+  const table = REQUIREMENTS[type];
+  if (!table) return false;
+  return Object.values(table).some((reqs) => reqs.some((r) => r.id === id));
+}
+
 export function clockRunsFor(order: Order): boolean {
   return requirementsFor(order).some(
     (r) => r.clocks === true && r.state(order) === "unmet",
