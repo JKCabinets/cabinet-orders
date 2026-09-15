@@ -24,6 +24,7 @@ import { consumeAckPicker, useAckStatus } from "@/lib/ackStatus";
 import { STAGE_ACCENT } from "@/lib/data";
 import { typeCarriesTracking } from "@/lib/categories";
 import { requirementsFor } from "@/lib/requirements";
+import { formatMDY } from "@/lib/dates";
 import { useOrderEnrichment } from "@/lib/useOrderEnrichment";
 import { NextActionPanel } from "./NextActionPanel";
 
@@ -1880,7 +1881,7 @@ function StageInputsCard({
             <p className={LABEL + " mb-1"}>Production dates</p>
             <p className={VALUE}>
               {order.production_start_date || order.production_est_finish_date
-                ? `${order.production_start_date || "?"} \u2192 ${order.production_est_finish_date || "?"}`
+                ? `${formatMDY(order.production_start_date) || "?"} \u2192 ${formatMDY(order.production_est_finish_date) || "?"}`
                 : "Not set"}
             </p>
           </div>
@@ -1889,7 +1890,7 @@ function StageInputsCard({
                 not a promise, and this is the internal view. */}
             <p className={LABEL + " mb-1"}>Delivery target</p>
             <p className={VALUE}>
-              {order.scheduled_delivery_date || order.delivery_date || "Not set"}
+              {formatMDY(order.scheduled_delivery_date || order.delivery_date) || "Not set"}
             </p>
           </div>
         </div>

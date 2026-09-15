@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyCronAuth } from "@/lib/cronAuth";
 import { supabase } from "@/lib/supabase";
 import { syncStageToShopify } from "@/lib/shopifyStageSync";
+import { PRODUCTION_COMPLETE_TYPES } from "@/lib/autoAdvance";
 
 export async function GET(req: NextRequest) {
   if (!verifyCronAuth(req)) {
@@ -30,7 +31,11 @@ export async function GET(req: NextRequest) {
     //
     // A denylist would automate the NEXT type added without anyone
     // choosing to, which is exactly how custom orders ended up here.
-    .in("type", ["order", "sample"])
+    // ⚠ THE LIST MOVED TO lib/autoAdvance, because the modal now tells
+    // people this run will advance their order and has to be reading the
+    // same rule. Two copies would let the UI promise an automatic move on
+    // a row this query never returns -- and somebody would wait for it.
+    .in("type", [...PRODUCTION_COMPLETE_TYPES])
     .lte("production_est_finish_date", today)
     .not("production_est_finish_date", "is", null);
 

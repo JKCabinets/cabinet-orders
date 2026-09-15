@@ -4,6 +4,8 @@ import { useState } from "react";
 import { Calendar, Check, Send, Upload, Zap } from "lucide-react";
 import { nextStageFor, type Order } from "@/lib/data";
 import { requirementsFor, dateControlsFor, type RequirementEnrichment, type RequirementState } from "@/lib/requirements";
+import { productionAutoAdvance } from "@/lib/autoAdvance";
+import { formatMDY } from "@/lib/dates";
 
 /**
  * What this row needs before it can move, and the controls that do it.
@@ -247,6 +249,14 @@ export function NextActionPanel({
     || (needsDeliveryDate && deliveryIsRecordOnly && RECORD_ONLY_NOTE.delivery)
     || null;
 
+  /**
+   * ⚠ THIS STAGE MOVES ITSELF, so the move button is an EARLY push rather
+   * than the only way forward. Null unless the cron will actually act --
+   * see lib/autoAdvance -- because a row with no estimated finish date
+   * sits here indefinitely and must not be told otherwise.
+   */
+  const autoAdvance = productionAutoAdvance(order);
+
   const trackingIsTheAction = next === "Shipped";
   const datesAreTheAction = order.stage === "Entered" && next === "In production";
   const showMoveButton = !!next && !trackingIsTheAction && !(datesAreTheAction && !ready);
@@ -265,7 +275,9 @@ export function NextActionPanel({
       : datesAreTheAction && !ready
         ? "Set the production dates to move this to In production."
         : ready
-          ? `Ready to move to ${next}.`
+          ? (autoAdvance
+              ? `Moves to ${autoAdvance.to} on ${formatMDY(autoAdvance.on)}, when production ends.`
+              : `Ready to move to ${next}.`)
           : `Move to ${next} once ${listOf(blocking.map((o) => o.req.label))} `
             + `${blocking.length === 1 ? "is" : "are"} recorded.`;
 
@@ -437,13 +449,20 @@ export function NextActionPanel({
             <button
               onClick={() => onMove(next!)}
               disabled={busy || !ready}
-              title={ready
-                ? `Move to ${next}`
-                : blocking.map((o) => capitalise(o.req.label)).join(", ") + " outstanding"}
+              title={!ready
+                ? blocking.map((o) => capitalise(o.req.label)).join(", ") + " outstanding"
+                : autoAdvance
+                  ? `Move to ${autoAdvance.to} now, rather than waiting for ${formatMDY(autoAdvance.on)}`
+                  : `Move to ${next}`}
               className={PILL}
               style={ready ? PILL_MOVE : PILL_MOVE_WAITING}
             >
-              <Check className="w-3.5 h-3.5" /> {busy ? "\u2026" : `Move to ${next}`}
+              {/* ⚠ "Manual Push" ONLY WHERE SOMETHING AUTOMATIC IS BEING
+                  pre-empted. Elsewhere this button is the only way the row
+                  moves, and calling that a push would imply a normal path
+                  that does not exist. */}
+              <Check className="w-3.5 h-3.5" />{" "}
+              {busy ? "\u2026" : autoAdvance ? "Manual Push" : `Move to ${next}`}
             </button>
           )}
         </div>
