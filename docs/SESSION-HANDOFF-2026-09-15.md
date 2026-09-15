@@ -253,6 +253,101 @@ purchase record. Returns 200 (retrying cannot clear a claim) with
 SHO-1051 was cleaned up by hand; it could not be re-triggered because the
 Shopify order was already gone.
 
+### 10. The gates migration is finished
+
+All four stage gates now derive from `lib/requirements`. OMS-STATE §4 can be
+closed. Verified by enumerating every (type, from-stage) pair: **69 of 69
+identical.**
+
+⚠ **THE ack GATE'S TYPE LIST WAS DEAD WEIGHT.** `currentType !== "sample"` could
+never fire — `New → Entered` exists only in the cabinets flow, because no other
+type has an Entered stage at all. It read as a rule and decided nothing.
+
+⚠ **THE TRACKING GATE IS DERIVED AT THE TYPE LEVEL, NOT THE STAGE LEVEL.** The
+table lists `tracking_number` at the stage BEFORE Shipped (sample @ New,
+hardware @ Ordered) because `requirementsFor` answers "what is the CURRENT stage
+waiting on". That gate applies *whichever direction you come from*, so a
+current-stage question would silently stop requiring the number on a backward
+admin move from Delivered — exactly when somebody is fixing a mistake and it
+matters. `typeEverRequires` asks the type-level question instead.
+
+⚠ **`gates` IS DESCRIPTIVE, NOT EXECUTABLE.** The production gate still reads
+the request body: `requirementsFor` answers from the STORED row, but the modal
+sends the date and the stage in one PATCH, so deriving the whole check would
+refuse the very request that satisfies it. The table can say a requirement
+blocks a transition; it cannot say "and the request itself may supply it". Do
+not try to finish the job by making the route fully table-driven.
+
+### 11. In production names its own automatic move; dates read MM/DD/YYYY
+
+A cabinets row In production with an estimated finish date moves itself —
+`production-complete` advances anything whose finish date has arrived. The panel
+said nothing about that, so the button looked like the only way forward and a
+waiting row looked stalled. It now names the date, and the button reads **Manual
+Push**, because pressing it takes the transition early rather than waiting.
+
+⚠ **THE PROMISE IS ONLY MADE WHERE THE CRON WILL KEEP IT.** `lib/autoAdvance.ts`
+holds the cron's own rule and BOTH import it: stage In production, not archived,
+type on the ALLOWLIST, and a finish date actually set. Without the finish date
+the cron's query never matches and the row sits there indefinitely, so the old
+wording stays. A UI promising an automatic move on a row nothing is watching is
+worse than silence — somebody waits for it.
+
+⚠ **`formatMDY` PARSES THE STRING, IT DOES NOT USE `new Date()`.** These are
+DATE columns: `new Date("2026-09-16")` is UTC midnight, which in Phoenix is 5pm
+on the 15th, so every date would render a day early and look like a data bug.
+Anything that is not plain ISO is returned untouched — `orders.date` and
+`order_activity.time` are stored as DISPLAY strings ("Sep 14"), and reformatting
+those means changing what is written at ingest, not the renderer.
+
+### 12. Webhook outcomes persist
+
+`logWebhook` wrote to `console.warn` and nowhere else, in a container replaced on
+every deploy. That is how the SHO-1051 deletion bug survived two attempts: the
+only evidence was log lines one more deploy would have erased. Every call site
+now also writes a row to `webhook_events` (migration
+`2026-09-15-webhook-events.sql`).
+
+⚠ **THE INSERT IS NOT AWAITED, AND FALLS BACK TO stderr.** A handler must not
+fail or slow because logging failed — Shopify retries on a non-2xx, so a logging
+error would become a redelivery loop for a webhook that already did its work.
+This runs in a long-lived container, so the promise settles after the response.
+A log table that quietly stops recording would be the same shape as the bug it
+replaces, hence the console fallback.
+
+---
+
+## Health and cron — already investigated, do not redo
+
+⚠ **`webhook-health` IS A RECONCILIATION, NOT A HEARTBEAT, AND ITS FILE EXPLAINS
+WHY.** An earlier version asked "do the webhook subscriptions exist?" and was
+wrong in BOTH directions — green on 2026-08-20 while ingestion was completely
+dead, and it would have gone red forever once obsolete subscriptions were
+removed. It now asks the only question that matters: Shopify is the source of
+truth for what orders exist, do we have them? **Read that file before touching
+anything in this area.** On 2026-09-15 it was green hourly: `missing_count: 0`,
+with `ORDERS_UPDATED` and `ORDERS_DELETE` both subscribed.
+
+⚠ **IT CANNOT SEE THE REVERSE.** It catches orders Shopify has that we lack. An
+order WE have that Shopify has deleted is invisible to it — a poll of current
+orders never notices an absence — so deletions depend entirely on the webhook
+arriving. That is the 1051 shape. `webhook_events` now records deliveries, but
+nothing reconciles deletions. Whether to add that is an open question.
+
+⚠ **THERE IS NO delivery-complete CRON, AND THAT IS DELIBERATE.** Removed in
+`2b479e6`: "delivery is human-confirmed". Same principle as fulfilment syncing to
+Shipped rather than Delivered — a machine cannot know the customer has it. The
+crontab kept the comment header after the job was deleted, which looks like a
+lost job and is not.
+
+⚠ **`~/cron-jobs/run-cron.sh` HAS TWICE HAD THE FAILURE THIS CODEBASE KEEPS
+HAVING.** `|| true` swallowed a persistent HTTP 400 so the dead-man's switch was
+dead for six days while every layer reported success; and `curl -f` discarded
+the response body, so a failing health check logged "error: 500" and threw away
+the route's own explanation of which order was missing. Both are fixed and
+commented. Cron output goes to `~/cron-jobs/cron.log` — the script prints
+nothing on success, so silence is not a result.
+
 ---
 
 ## Decisions — keep the reasoning, not just the outcome
@@ -276,28 +371,26 @@ Shopify order was already gone.
    Adding them to the publication alone would broadcast to no listener — the
    client has no subscription for them. Code first, then the publication.
 2. **Rail timestamps** (mockup 2) need a real per-transition time. The activity
-   trail's `time` is a display string from `toLocaleDateString` — `"Aug 24"`,
-   no clock time. Either the PATCH route starts writing a real timestamp per
-   transition (better, and useful beyond the rail) or the rail shows dates only.
-   Garrett is content to defer this.
-3. **The remaining PATCH gates** are still hand-written: acknowledgment,
-   production start date, tracking. The delivery-proof gate shows the shape.
-4. **The warranty-vs-custom exclusion is not documented in the picker.**
+   trail's `time` is a display string — `"Aug 24"`, no clock time. Either the
+   PATCH route starts writing a real timestamp per transition (better, and
+   useful beyond the rail) or the rail shows dates only. Deferred by Garrett.
+3. **The warranty-vs-custom exclusion is not documented in the picker.**
    Decision is made (see table); the comment and doc line are not written.
-5. **No `webhook_events` table.** Webhook outcomes go to `console.warn` only,
-   readable via `docker logs`. Three separate diagnoses on 09-15 needed those
-   logs, and the deletion bug survived two attempts partly because nothing
-   persisted the outcome.
-6. **Orphaned claims are unchecked.** `projects.claimed_by` holds two id formats
+4. **Orphaned claims are unchecked.** `projects.claimed_by` holds two id formats
    (`"1"` and `"member-…"`). Any project holding an id that no longer matches a
    `team_members.id` locks every non-admin out of it permanently, with the chip
-   reading "Claimed" and no name. Worth a periodic check:
+   reading "Claimed" and no name:
 
    ```sql
    select p.id, p.claimed_by from projects p
    left join team_members t on t.id = p.claimed_by
    where p.claimed_by is not null and t.id is null;
    ```
+
+5. **Nothing reconciles deletions** — see the health-and-cron section above.
+6. **`orders.date` and `order_activity.time` are display strings, not ISO**, so
+   they still read "Sep 14" while every real date column now reads MM/DD/YYYY.
+   Fixing that means changing what is written at ingest.
 
 ---
 
@@ -384,6 +477,9 @@ patch_webhook_delete_errors.py
 patch_claim_lock_table.py
 patch_claim_guard_uploads.py
 patch_claim_lock_ack_panel.py
+patch_gates_from_table.py
+patch_auto_advance_and_dates.py
+patch_webhook_events_table.py
 ```
 
 ⚠ A prerequisite check keyed on a **CSS class** rather than on an interface once
