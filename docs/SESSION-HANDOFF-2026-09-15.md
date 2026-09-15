@@ -315,6 +315,40 @@ This runs in a long-lived container, so the promise settles after the response.
 A log table that quietly stops recording would be the same shape as the bug it
 replaces, hence the console fallback.
 
+### 13. The activity trail arrives live
+
+`order_activity` now publishes and `useRealtimeActivity` appends new entries
+into the order they belong to. The store's own comment had named this gap: a row
+the server wrote still needed a refetch, so a colleague's stage move, an admin
+override or a cron advance reached nobody's open tab.
+
+⚠ **INSERTS ONLY.** Nothing in the app updates or deletes an activity row — it
+is append-only by design — so handling those events would imply they can happen.
+
+⚠ **DEDUPED AGAINST THE OPTIMISTIC APPEND**, matched on text AND time. `time` is
+a DAY string, so two identical texts on one day collapse to one in the display.
+Dropping the optimistic append instead would put a round-trip in front of every
+action's feedback.
+
+### 14. The durable docs caught up
+
+`OMS-STATE` and `OPERATIONS` were a week behind, and the worst of it was
+describing fixed bugs as known-wrong — a reader budgets time for those.
+`OMS-STATE` gained the requirement model's three questions, the closed gates
+migration, claim enforcement, the archiving rule, a new §5 for realtime
+(Monitoring moved to §6) and `webhook_events`. `OPERATIONS` gained the closed
+override inconsistency, the archiving and claim rules in §10, the answered
+warranty question in §12, and both 2026-09-15 incidents in §9.
+
+⚠ **A SECOND READ-THROUGH FOUND FOUR THINGS THE FIRST PASS MISSED**, including
+one stale since 2026-09-08: `OMS-STATE` still called the loose Entered gate "an
+open question in OPERATIONS §12" when §12 had recorded it as decided. Do the
+second pass.
+
+⚠ **DATE DISCREPANCY, KNOWN AND LEFT.** The custom decisions read 2026-09-09 in
+both docs and in `lib/requirements.ts`; the commit trail dates them 09-10.
+Cosmetic, and correcting it means touching deployed code comments.
+
 ---
 
 ## Health and cron — already investigated, do not redo
@@ -357,7 +391,7 @@ nothing on success, so silence is not a result.
 | Custom exempt from the receipt gate | Terms 12.3 is a Shopify-checkout agreement and does not reach custom jobs. The gate was enforcing the wrong document. |
 | Custom has no gates at all, UI included | It is an organisation tool. A demand nothing enforces is worse than a gate. |
 | Cabinet delivery date stays a client-side nudge | Garrett, 09-10: effectively gated because the row withholds Confirm Delivery until a date is entered. Not a server rule. |
-| Warranty claims cannot be raised against custom jobs | Our warranty process is a Terms process — the 48-hour window, the conditions precedent, the evidence rules all derive from the checkout agreement a custom customer never accepted. The claim modal's picker already excludes custom; **that exclusion is correct and should say why.** Not yet recorded in the picker — see open items. |
+| Warranty claims cannot be raised against custom jobs — **decided by Garrett 2026-09-15** | Our warranty process is a Terms process — the 48-hour window, the conditions precedent, the evidence rules all derive from the checkout agreement a custom customer never accepted. It would also create a claim with no project, which the claim model assumes. The picker already excludes custom, so the behaviour is correct; only the comment saying why is missing. Recorded in OPERATIONS §12. |
 | A warranty claim blocks deletion rather than being resolved | The claim is evidence; it should outlive the purchase record, and a person should decide. |
 | Admin exemption is server-side and unconditional | The "Edit order" toggle is deliberateness in the UI, not enforcement. An admin acting through the API or a stale tab must still be able to act — and must still be logged. |
 | Attachment DELETE gated the same as upload, not more strictly | Removing a signed receipt from another member's claimed row is precisely the crossed-wires case claims exist for. A second, stricter rule is a second thing to keep in sync for no gain. |
@@ -400,15 +434,21 @@ nothing on success, so silence is not a result.
    project is refunded. Do not rebuild it.
 
 
-1. **`order_activity` and `order_attachments` do not publish over realtime.**
-   Adding them to the publication alone would broadcast to no listener — the
-   client has no subscription for them. Code first, then the publication.
+1. **`order_attachments` does not publish over realtime.** `order_activity`
+   now does (see below). Attachments are harder: the store holds no attachment
+   state and `AttachmentsPanel` fetches its own list per modal, so a change
+   event has two consumers and nowhere to merge into. **Follow
+   `lib/ackStatus.ts`** — module-level cache, per-order subscriber sets, an
+   `invalidate` that refetches and notifies every mounted view. Then the client
+   change, then the publication. Adding the table alone broadcasts to nobody and
+   looks like a fix.
 2. **Rail timestamps** (mockup 2) need a real per-transition time. The activity
    trail's `time` is a display string — `"Aug 24"`, no clock time. Either the
    PATCH route starts writing a real timestamp per transition (better, and
    useful beyond the rail) or the rail shows dates only. Deferred by Garrett.
 3. **The warranty-vs-custom exclusion is not documented in the picker.**
-   Decision is made (see table); the comment and doc line are not written.
+   Decided and recorded in OPERATIONS §12; the picker's own comment is still
+   missing, and an unexplained exclusion reads as an oversight.
 4. **Orphaned claims are unchecked.** `projects.claimed_by` holds two id formats
    (`"1"` and `"member-…"`). Any project holding an id that no longer matches a
    `team_members.id` locks every non-admin out of it permanently, with the chip
@@ -513,6 +553,8 @@ patch_claim_lock_ack_panel.py
 patch_gates_from_table.py
 patch_auto_advance_and_dates.py
 patch_webhook_events_table.py
+patch_realtime_activity.py
+patch_docs_2026_09_15.py
 ```
 
 ⚠ A prerequisite check keyed on a **CSS class** rather than on an interface once
