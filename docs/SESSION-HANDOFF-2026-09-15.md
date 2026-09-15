@@ -367,6 +367,39 @@ nothing on success, so silence is not a result.
 
 ## Open — not done, deliberately
 
+0. **PROJECTS HOLD THE TRUTH FOR ARCHIVING — decided 2026-09-15, not yet built.**
+
+   `app/api/projects/[id]/route.ts` already documents this: "The GROUPS ARE NOT
+   TOUCHED. `orders.archived` stays false on project-linked rows; a group is
+   hidden because its project is archived... Writing both would be two copies of
+   one fact." It is right, and nothing enforces it — `PATCH /api/orders/[id]`
+   with `{archived: true}` sets the duplicate flag on a project-linked row
+   happily, and `/api/orders/bulk` does too.
+
+   That is how SHO-1052 vanished: the project was archived AND the groups were
+   archived individually. Restoring the project cleared the only flag that route
+   owns, both groups kept `archived = true`, and the order stayed invisible in
+   cabinet orders while showing in the projects hub. Fixed by hand:
+   `update orders set archived = false where project_id = 'SHO-1052';`
+
+   **Garrett's rule:** a project is the unit of archiving. Archive the project
+   and both groups go with it; restore the project and both come back. It should
+   not be possible to archive one group of a purchase on its own.
+
+   The change:
+   - `PATCH /api/orders/[id]` refuses `archived` when `project_id` is set, and
+     says to use the project endpoint. Standalone rows — custom jobs, warranty
+     claims, which have no project — keep order-level archiving.
+   - `/api/orders/bulk` archive action: same refusal, or it is the bypass.
+   - The Archive / Restore controls in `OrderModal` and `OrderTable` stop
+     offering it for project-linked rows.
+
+   ⚠ **RULE 3 IS ALREADY DONE.** "Block archiving until every part is in its
+   last stage" is enforced in the projects route today: it refuses with
+   `not_complete` and names the unfinished groups by id and stage, unless the
+   project is refunded. Do not rebuild it.
+
+
 1. **`order_activity` and `order_attachments` do not publish over realtime.**
    Adding them to the publication alone would broadcast to no listener — the
    client has no subscription for them. Code first, then the publication.
