@@ -41,6 +41,69 @@ That last one happened **four times today**, and it is the thing to watch for:
 
 ---
 
+## ⚠ The standard: no quick fixes
+
+**Neither the OMS nor the storefront is live.** There is no customer to
+inconvenience and no pressure to patch around anything, so the right thing is
+always to fix the cause. A workaround shipped now is a workaround that outlives
+the reason for it — and this codebase already carries the scars of that: a stage
+rule written twice, a dead component left in place for a year, a comment about
+foreign keys that was wrong and sent an investigation to the wrong table.
+
+What this means concretely, and what it cost when ignored:
+
+- **Delete dead code, do not leave it unrendered.** `DateEditor` and
+  `NextActionCard` were both removed rather than orphaned. A guard whose answer
+  is always the same, or a component nobody renders, reads as live to the next
+  person.
+- **Fix the cause, not the symptom.** The webhook logged `removed` while
+  deleting nothing; the fix was error checking on every delete, not special-casing
+  SHO-1051.
+- **Enforce on the server; the UI follows.** A rule that lives only in a
+  component is a rule anyone with the API can ignore. Claims were enforced in
+  the route BEFORE the buttons were hidden, deliberately and in that order.
+- **Correct stale comments in place.** They cost more than missing ones, because
+  they are trusted.
+- **Say when something is not done.** Three commits today deliberately left a
+  hole open — upload routes ungated until their routes enforced it, attachments
+  absent from the realtime publication — because a half-enforced rule that looks
+  whole is worse than a stated gap.
+
+If a change seems to need a shortcut, that is the signal to ask rather than take
+it.
+
+---
+
+## Pulling files
+
+⚠ **Whole files, always.** Every session that worked from a grep or a snippet
+lost time to it — including one that changed a shared signature after auditing
+only the callers it happened to hold, and broke the build on a file that was
+never pulled.
+
+Garrett runs these from Git Bash on Windows, **not** from an ssh session on the
+box. Two commands: check the sizes, then pull.
+
+```bash
+cd /c/Users/garre/Downloads
+ssh garrett@5.78.220.153 "cd ~/cabinet-orders && wc -l PATH [PATH...]"
+ssh garrett@5.78.220.153 "cd ~/cabinet-orders && tar -czf - PATH [PATH...]" > pullN.tar.gz
+```
+
+Then extract and **check the line counts against the `wc -l` output** before
+reading — a truncated extraction reads like a file with something missing.
+
+- **Quote paths containing brackets:** `'app/api/orders/[id]/route.ts'`.
+- **Never leave a placeholder** like `YOUR_HOST` in a command. Derive it, or ask.
+- **The tarballs land in Downloads, not the repo.** Run from the local shell; a
+  redirect typed inside an ssh session writes a broken archive into the repo
+  root, where it joins every `kamal deploy` build context.
+- **Before changing a shared signature, find every caller ON THE BOX:**
+  `git grep -n "functionName(" -- '*.ts' '*.tsx'`. Auditing the files you hold
+  is not auditing the callers.
+
+---
+
 ## What shipped
 
 ### 1. The requirement table is the record of which flows Terms 12.3 governs
