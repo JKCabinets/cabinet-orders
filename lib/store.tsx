@@ -12,7 +12,7 @@ import {
   type Project,
 } from "./data";
 import { fieldsToClearOnBackwardMove } from "./stageLogic";
-import { useRealtimeOrders, useRealtimeProjects } from "./useRealtimeOrders";
+import { useRealtimeOrders, useRealtimeProjects, useRealtimeActivity } from "./useRealtimeOrders";
 import { usePresence } from "./usePresence";
 
 interface StoreCtx {
@@ -303,6 +303,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // Realtime on projects. Merged into the keyed map rather than an array
   // so an UPDATE is one assignment -- with the project embedded on every
   // group instead, a refund would have to patch each copy.
+  /**
+   * ⚠ THE OTHER HALF OF THE MERGE ABOVE. That one stops a live order update
+   * BLANKING the trail; this one makes new entries actually arrive. Its
+   * comment named this gap and it is now closed.
+   *
+   * ⚠ DEDUPED AGAINST THE OPTIMISTIC APPEND. moveStage and friends push an
+   * entry locally before the round-trip, so without this the actor sees
+   * their own action twice. Matched on text AND time -- `time` is a DAY
+   * string, so two identical texts on one day collapse to one. Entry texts
+   * carry a stage and an actor name, which makes that unlikely; the
+   * alternative, dropping the optimistic append, would put a round-trip in
+   * front of every action's feedback.
+   */
+  useRealtimeActivity({
+    onEntry: (orderId, entry) => {
+      setRawOrders((prev) => prev.map((o) => {
+        if (o.id !== orderId) return o;
+        const already = o.activity.some(
+          (a) => a.text === entry.text && a.time === entry.time,
+        );
+        return already ? o : { ...o, activity: [...o.activity, entry] };
+      }));
+    },
+  });
+
   useRealtimeProjects({
     onUpsert: (row) => {
       const p = row as unknown as Project;

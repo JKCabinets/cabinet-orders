@@ -137,6 +137,82 @@ export function useRealtimeOrders(handlers: RealtimeOrdersHandlers) {
  * tables have independent lifecycles, and one failing to subscribe should not
  * take the other down with it.
  */
+interface RealtimeActivityHandlers {
+  /**
+   * A new trail entry, with the order it belongs to.
+   *
+   * ⚠ INSERT ONLY. Nothing in the app updates or deletes an activity row --
+   * it is an append-only record by design -- so there is no update or
+   * delete handler here. Adding one would imply those events can happen.
+   */
+  onEntry: (orderId: string, entry: { text: string; time: string }) => void;
+}
+
+/**
+ * The same subscription, for `order_activity`.
+ *
+ * ⚠ WHY THIS EXISTS. The trail only ever arrived by refetch -- see the
+ * merge in store.tsx, whose comment has said so since the realtime payload
+ * was found to blank it. A stage move by a colleague, an admin override or
+ * a cron advance wrote a row that nobody's open tab ever showed.
+ *
+ * It matters more since the overrides added on 2026-09-15 began recording
+ * themselves there: writing a record nobody sees is not accountability.
+ *
+ * Its own channel, like projects: independent lifecycles, and one failing
+ * to subscribe should not take the others down.
+ */
+export function useRealtimeActivity(handlers: RealtimeActivityHandlers) {
+  const { status } = useSession();
+  const handlersRef = useRef(handlers);
+  useEffect(() => { handlersRef.current = handlers; }, [handlers]);
+
+  useEffect(() => {
+    if (status !== "authenticated") return;
+
+    let cancelled = false;
+    let channel: RealtimeChannel | null = null;
+
+    (async () => {
+      try {
+        const client = await getRealtimeClient();
+        if (cancelled) return;
+
+        channel = client
+          .channel("order-activity-realtime")
+          .on(
+            "postgres_changes",
+            { event: "INSERT", schema: "public", table: "order_activity" },
+            (payload) => {
+              try {
+                const row = payload.new as {
+                  order_id?: string; text?: string; time?: string;
+                };
+                // A row missing either field cannot be displayed, and a
+                // half-rendered entry is worse than none.
+                if (!row?.order_id || !row.text) return;
+                handlersRef.current.onEntry(row.order_id, {
+                  text: row.text, time: row.time ?? "",
+                });
+              } catch (err) {
+                console.warn("[realtime] activity handler failed", err);
+              }
+            },
+          )
+          .subscribe();
+      } catch (err) {
+        // Best-effort, same as the others: the trail still loads by REST.
+        console.warn("[realtime] could not subscribe to order_activity", err);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (channel) void channel.unsubscribe();
+    };
+  }, [status]);
+}
+
 export function useRealtimeProjects(handlers: RealtimeProjectsHandlers) {
   const { status } = useSession();
   const handlersRef = useRef(handlers);
