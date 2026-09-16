@@ -809,7 +809,11 @@ export async function POST(req: NextRequest) {
 
       // Project-level: money and payment status. Refreshing these is what
       // stops a later refund leaving a stale total inflating the month
-      // forever, and what lets the payment hold see the current status.
+      // forever, and -- since 2026-09-16 -- what the payment hold reads: the
+      // hold, its acknowledgement, the refund banner and the
+      // production-complete cron all resolve through the project
+      // (paymentRecordOf in lib/data). Until then they read the group copy
+      // written in the loop below.
       await supabase.from("projects").update({
         ship_to: shipTo,
         customer_phone: customerPhone,
@@ -900,6 +904,10 @@ export async function POST(req: NextRequest) {
           customer_phone: customerPhone,
           customer_email: customerEmail,
           delivery_method: deliveryMethod,
+          // ⚠ A SECOND COPY, AND NOTHING READS IT (2026-09-16). The project's
+          // payment_status above is the one the hold uses. Still written so
+          // removing it can be its own change: stop this write, null the
+          // existing values, then add a CHECK like the one on total_price.
           payment_status: payload.financial_status ?? null,
         };
 

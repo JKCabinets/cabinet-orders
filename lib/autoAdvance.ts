@@ -17,11 +17,47 @@
  * as standard -- though it is inert today: their flow is New -> Shipped ->
  * Delivered and never reaches In production at all.
  *
- * No imports on purpose: the cron is server-side, the panel is a client
- * component, and lib/requirements deliberately carries no runtime dependency on
- * lib/data. A leaf module can be read from all three.
+ * ⚠ IT IMPORTS lib/data NOW (2026-09-16), for paymentRecordOf and
+ * paymentHoldActive. It was import-free so the cron and the client panel could
+ * both read it; lib/data has no imports of its own, so that still holds. Nothing
+ * in lib/requirements imports this file.
  */
+import { paymentHoldActive, paymentRecordOf, type PaymentFields } from "./data";
+
 export const PRODUCTION_COMPLETE_TYPES: readonly string[] = ["order", "sample"];
+
+/** Why an otherwise-ready row will NOT be advanced. */
+export type ProductionAdvanceSkip = "purchase_archived" | "payment_hold" | "project_unavailable";
+
+/**
+ * Whether the PURCHASE stops a row that otherwise qualifies.
+ *
+ * ⚠ ADDED 2026-09-16 (handoff item 16). The cron read neither of these:
+ *
+ *   payment_hold        A refund blocks forward movement (OPERATIONS §10), and
+ *                       PATCH has enforced that since 08-20 -- but the cron is a
+ *                       forward move too, and it pushes the stage to Shopify.
+ *                       A refunded order waiting In production needs a person,
+ *                       which is correct: a refund is an ending and somebody
+ *                       should decide. The work queue already surfaces it.
+ *   purchase_archived   `orders.archived` is false on every project-linked row
+ *                       by design, so the cron's own filter never saw an
+ *                       archived purchase. Only a refunded purchase can be
+ *                       archived with a group still In production, so the hold
+ *                       usually catches it first; this is not left to that.
+ *   project_unavailable A project-linked row whose project was not supplied.
+ *                       Not advancing is the safe reading of "unknown".
+ */
+export function productionAutoAdvanceSkip(
+  order: PaymentFields & { project_id?: string | null },
+  project: (PaymentFields & { archived?: boolean | null }) | null,
+): ProductionAdvanceSkip | null {
+  if (order.project_id && !project) return "project_unavailable";
+  if (project?.archived) return "purchase_archived";
+  const record = paymentRecordOf(order, project);
+  if (record && paymentHoldActive(record)) return "payment_hold";
+  return null;
+}
 
 /** The stage production-complete advances a finished row to. */
 export const PRODUCTION_COMPLETE_TARGET = "At cross dock";
@@ -34,15 +70,24 @@ export const PRODUCTION_COMPLETE_TARGET = "At cross dock";
  * In production forever -- which is why the next-action panel keeps asking for
  * both dates rather than just the start one.
  */
-export function productionAutoAdvance(order: {
-  type?: string | null;
-  stage?: string | null;
-  archived?: boolean | null;
-  production_est_finish_date?: string | null;
-}): { on: string; to: string } | null {
+export function productionAutoAdvance(
+  order: PaymentFields & {
+    type?: string | null;
+    stage?: string | null;
+    archived?: boolean | null;
+    project_id?: string | null;
+    production_est_finish_date?: string | null;
+  },
+  /**
+   * The row's project, or null for a standalone row. REQUIRED, so a caller
+   * cannot promise an advance without having asked the purchase.
+   */
+  project: (PaymentFields & { archived?: boolean | null }) | null,
+): { on: string; to: string } | null {
   if (order.stage !== "In production") return null;
   if (order.archived) return null;
   if (!order.type || !PRODUCTION_COMPLETE_TYPES.includes(order.type)) return null;
   if (!order.production_est_finish_date) return null;
+  if (productionAutoAdvanceSkip(order, project)) return null;
   return { on: order.production_est_finish_date, to: PRODUCTION_COMPLETE_TARGET };
 }

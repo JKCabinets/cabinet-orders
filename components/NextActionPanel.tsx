@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Calendar, Check, Send, Upload, Zap } from "lucide-react";
-import { nextStageFor, type Order } from "@/lib/data";
+import { nextStageFor, type Order, type PaymentFields } from "@/lib/data";
 import { requirementsFor, dateControlsFor, type RequirementEnrichment, type RequirementState } from "@/lib/requirements";
 import { productionAutoAdvance } from "@/lib/autoAdvance";
 import { formatMDY } from "@/lib/dates";
@@ -153,6 +153,13 @@ const PILL_MOVE_WAITING: React.CSSProperties = {
 
 interface Props {
   order: Order;
+  /**
+   * The row's project, or null for a standalone row. REQUIRED: whether this
+   * row moves on its own depends on the PURCHASE -- a refunded or archived one
+   * is not advanced by the cron -- so the promise below cannot be made without
+   * it. See productionAutoAdvanceSkip.
+   */
+  project: (PaymentFields & { archived?: boolean | null }) | null;
   /** From useOrderEnrichment, so the modal and the queue cannot disagree. */
   enrichment?: RequirementEnrichment;
   /** Upload-style remedies, one per requirement id that has one. */
@@ -191,7 +198,7 @@ interface Props {
 }
 
 export function NextActionPanel({
-  order, enrichment, remedies = {}, overrides = {}, onMove, onSaveDates, busy,
+  order, project, enrichment, remedies = {}, overrides = {}, onMove, onSaveDates, busy,
   readOnly = false, lockedNote, flush, trackingSlot,
 }: Props) {
   // ⚠ The modal keys this component on the order id, so switching groups
@@ -255,7 +262,7 @@ export function NextActionPanel({
    * see lib/autoAdvance -- because a row with no estimated finish date
    * sits here indefinitely and must not be told otherwise.
    */
-  const autoAdvance = productionAutoAdvance(order);
+  const autoAdvance = productionAutoAdvance(order, project);
 
   const trackingIsTheAction = next === "Shipped";
   const datesAreTheAction = order.stage === "Entered" && next === "In production";

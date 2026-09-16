@@ -8,7 +8,7 @@ import { useSession } from "next-auth/react";
 import {
   Order, OrderType, Stage, TeamMember,
   Member, Source, ORDER_STAGES, WARRANTY_STAGES, AvatarColor, Role,
-  ID_PREFIX_BY_TYPE, ORDER_TYPES, shapeOrder,
+  ID_PREFIX_BY_TYPE, ORDER_TYPES, shapeOrder, withPurchasePayment,
   type Project,
 } from "./data";
 import { fieldsToClearOnBackwardMove } from "./stageLogic";
@@ -260,12 +260,29 @@ export function StoreProvider({ children }: { children: ReactNode }) {
    * `allOrdersIncludingArchived` is the escape hatch, named so that seeing
    * archived work has to be asked for.
    */
+  /**
+   * Every row with its payment fields resolved through its PROJECT.
+   *
+   * ⚠ RESOLVED HERE, ONCE (2026-09-16), for the same reason archived purchases
+   * are hidden here once. The payment pill, the refund banner and the work
+   * queue's hold reason all read `order.payment_status`; resolving it in each
+   * would be three copies of "whose status is this". See paymentRecordOf.
+   *
+   * The array keeps its identity when no row changed, so consumers memoised on
+   * `allOrders` do not recompute because a project was merely re-sent.
+   */
+  const resolvedOrders = useMemo(() => {
+    const next = rawOrders.map(o =>
+      withPurchasePayment(o, o.project_id ? projects[o.project_id] : undefined));
+    return next.every((o, i) => o === rawOrders[i]) ? rawOrders : next;
+  }, [rawOrders, projects]);
+
   const allOrders = useMemo(() => {
     const archivedProjects = new Set(
       Object.values(projects).filter(p => p.archived).map(p => p.id));
-    if (archivedProjects.size === 0) return rawOrders;
-    return rawOrders.filter(o => !o.project_id || !archivedProjects.has(o.project_id));
-  }, [rawOrders, projects]);
+    if (archivedProjects.size === 0) return resolvedOrders;
+    return resolvedOrders.filter(o => !o.project_id || !archivedProjects.has(o.project_id));
+  }, [resolvedOrders, projects]);
 
   const orders     = useMemo(() => allOrders.filter(o => o.type === "order"),    [allOrders]);
   const warranties = useMemo(() => allOrders.filter(o => o.type === "warranty"), [allOrders]);
@@ -930,7 +947,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   return (
     <Store.Provider value={{
-      allOrders, allOrdersIncludingArchived: rawOrders,
+      allOrders, allOrdersIncludingArchived: resolvedOrders,
       orders, warranties, samples, customs, hardware, projects, team, onlineUsers, loading,
       addOrder, moveStage, updateNotes, updateInternalNotes, updateOrderDetails, archiveProject, claimProject, archiveOrder, unarchiveOrder, deleteOrder, bulkAction,
       claimOrder, addTeamMember, updateTeamMember, deactivateTeamMember, deleteTeamMember,

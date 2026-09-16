@@ -1271,6 +1271,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                   lockedNote={`Claimed by ${claimOwnerName}. Ask them to release it`
                     + `${isAdmin ? ", or use Edit order above" : ""}.`}
                   order={liveOrder}
+                  project={liveOrder.project_id ? (projects[liveOrder.project_id] ?? null) : null}
                   enrichment={enrichFor(liveOrder)}
                   remedies={{
                     // The remedy varies where the requirement does not: the

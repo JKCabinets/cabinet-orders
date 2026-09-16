@@ -420,9 +420,10 @@ the reason — previously `curl -f` discarded it and logged only `error: 500`.
   Shopify has deleted is invisible to it, because a poll of current orders
   never notices an absence. Deletions depend entirely on the webhook
   arriving, which on 2026-09-15 it did while achieving nothing. See §9.
-- **Refunds.** `payment_status` updates within seconds and now blocks forward
-  movement, but nothing alerts — somebody has to open the order. Worth
-  revisiting once order volume is real.
+- **Refunds.** `payment_status` updates within seconds and blocks forward
+  movement — including the overnight production run, since 2026-09-16 — and a
+  held order shows in the work queue as "Refund acknowledgment required".
+  Nothing alerts outside the app. Worth revisiting once order volume is real.
 - Email send failures (once notifications exist)
 - Credential expiry — all of §5
 - The `jk-sku-builder` application
@@ -779,7 +780,10 @@ counterpart.
 **A refund blocks forward movement but not backward.** A refunded order usually
 needs walking *back*; blocking that would strand it exactly when someone is
 undoing the damage. Acknowledgement is per-status rather than a boolean, so
-clearing a partial refund cannot pre-clear a later full one.
+clearing a partial refund cannot pre-clear a later full one. One acknowledgement
+covers the whole purchase (2026-09-16); it used to be needed once per group. The
+overnight production run honours the hold too: a refunded order waits In
+production until somebody decides, because a refund is an ending.
 
 **No consolidation of the current service list.** Reviewed 2026-08-19: eleven
 services is lean for what this does, and the two genuine candidates (Upstash

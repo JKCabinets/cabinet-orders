@@ -311,6 +311,12 @@ export interface Order {
   // Shopify counterpart. This comment predates the `type` discriminator and
   // does NOT refer to type === "custom" -- a custom order may or may not
   // have a payment status depending on how it was raised.
+  //
+  // ⚠ ON THE CLIENT THIS IS THE PURCHASE'S STATUS for a project-linked row:
+  // the store resolves it, and the two acknowledgement fields below, through
+  // the project (withPurchasePayment). The column on a Shopify group is a
+  // second copy the webhook still writes and nothing should read -- see
+  // paymentRecordOf.
   payment_status?: string | null;
   /**
    * Which payment_status value was acknowledged, letting this order move
@@ -507,6 +513,72 @@ export function paymentHoldActive(order: {
   const status = String(order.payment_status ?? "").trim().toLowerCase();
   if (!isPaymentHoldStatus(status)) return false;
   return String(order.payment_hold_cleared_for ?? "").trim().toLowerCase() !== status;
+}
+
+/** The payment fields a hold reads: the status, and which status was acknowledged. */
+export type PaymentFields = {
+  payment_status?: string | null;
+  payment_hold_cleared_for?: string | null;
+  payment_hold_cleared_at?: string | null;
+};
+
+/**
+ * The record that holds a row's MONEY: its PROJECT when it has one, the row
+ * itself when it is standalone.
+ *
+ * ⚠ ONE PLACE ANSWERS "WHOSE PAYMENT STATUS" (2026-09-16). A Shopify checkout's
+ * money lives on the project -- orders_total_price_standalone_only forbids a
+ * total on a project-linked row -- and its payment status belongs with it.
+ * Every hold check read the GROUP's copy instead, which the webhook keeps equal
+ * to the project's by a second, unchecked write, and the acknowledgement was
+ * stored per group, so a two-group refund had to be acknowledged twice. The
+ * hold, its acknowledgement, the refund banner, the work queue and the
+ * production-complete cron all resolve through this now. Custom jobs and
+ * warranty claims keep their money on the row.
+ *
+ * Null means a project-linked row whose project is not known. What that means
+ * is the caller's call: the PATCH route refuses, the cron skips, the client
+ * keeps showing the row until the project loads.
+ */
+export function paymentRecordOf(
+  order: PaymentFields & { project_id?: string | null },
+  project: PaymentFields | null | undefined,
+): PaymentFields | null {
+  if (!order.project_id) return order;
+  return project ?? null;
+}
+
+/**
+ * A row with its payment fields taken from the record that holds its money.
+ *
+ * The store resolves every row through this ONCE, the way `allOrders` hides
+ * archived purchases once, so the payment pill, the refund banner and the work
+ * queue's hold reason read the purchase's status without each resolving it.
+ *
+ * Returns the SAME object when nothing differs -- a standalone row, a project
+ * not loaded yet, or copies that agree -- so rows keep their identity and
+ * nothing downstream recomputes for no reason.
+ */
+export function withPurchasePayment<T extends PaymentFields & { project_id?: string | null }>(
+  order: T,
+  project: PaymentFields | null | undefined,
+): T {
+  const record = paymentRecordOf(order, project);
+  if (!record || record === order) return order;
+  const status = record.payment_status ?? null;
+  const clearedFor = record.payment_hold_cleared_for ?? null;
+  const clearedAt = record.payment_hold_cleared_at ?? null;
+  if ((order.payment_status ?? null) === status
+      && (order.payment_hold_cleared_for ?? null) === clearedFor
+      && (order.payment_hold_cleared_at ?? null) === clearedAt) {
+    return order;
+  }
+  return {
+    ...order,
+    payment_status: status,
+    payment_hold_cleared_for: clearedFor,
+    payment_hold_cleared_at: clearedAt,
+  };
 }
 
 /**

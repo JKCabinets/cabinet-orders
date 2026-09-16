@@ -4,7 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { getShopifyToken } from "@/lib/shopify";
 import { mergeTags } from "@/lib/shopifyStageSync";
 import { ALLOWED_STAGES, isStageAllowedForType, isBackwardsMove, verifyAdminPin, fieldsToClearOnBackwardMove, describeFieldsCleared } from "@/lib/stageGuards";
-import { isPaymentHoldStatus, paymentHoldLabel, parseMoney, isStageOfferedForType, type OrderType, type Stage } from "@/lib/data";
+import { isPaymentHoldStatus, paymentHoldLabel, paymentRecordOf, parseMoney, isStageOfferedForType, type OrderType, type Stage } from "@/lib/data";
 import { trackingTargetStage, categoryHasTracking, type OrderCategory } from "@/lib/categories";
 import { orderAllVendorsGreen } from "@/lib/acknowledgments";
 import { requirementsFor, typeEverRequires } from "@/lib/requirements";
@@ -390,8 +390,37 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
   //
   // The acknowledgement records WHICH status was cleared, so clearing
   // partially_refunded does not pre-clear a later full refund.
-  const holdStatus = String(currentRow.payment_status ?? "");
-  const holdCleared = String(currentRow.payment_hold_cleared_for ?? "");
+  //
+  // ⚠ READ FROM THE PURCHASE, NOT THE GROUP (2026-09-16). A Shopify checkout's
+  // payment status and its acknowledgement live on the PROJECT. This read the
+  // group's copy -- kept equal to the project's only by a second, unchecked
+  // webhook write -- and stored the acknowledgement per group, so a two-group
+  // refund had to be acknowledged twice. See paymentRecordOf.
+  //
+  // If the project cannot be read, the request is refused outright: going
+  // ahead on a possibly-refunded order because a read failed is the one
+  // outcome this block exists to prevent.
+  let purchase: { payment_status: string | null; payment_hold_cleared_for: string | null } | null = null;
+  if (currentRow.project_id) {
+    const { data: projectRow, error: projectError } = await supabase
+      .from("projects")
+      .select("payment_status, payment_hold_cleared_for")
+      .eq("id", currentRow.project_id)
+      .single();
+    if (projectError || !projectRow) {
+      return NextResponse.json(
+        {
+          error: "payment_status_unavailable",
+          message: "Could not read this order's payment status, so nothing was changed. Try again.",
+        },
+        { status: 500 },
+      );
+    }
+    purchase = projectRow;
+  }
+  const money = paymentRecordOf(currentRow, purchase) ?? {};
+  const holdStatus = String(money.payment_status ?? "");
+  const holdCleared = String(money.payment_hold_cleared_for ?? "");
   const holdActive =
     isPaymentHoldStatus(holdStatus)
     && holdCleared.trim().toLowerCase() !== holdStatus.trim().toLowerCase();
@@ -848,10 +877,18 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
   // Its own write and its own activity row: acknowledging a refund is an
   // event in itself, and may happen without any stage change at all.
   if (paymentHoldAck) {
-    await supabase.from("orders").update({
+    // ⚠ ON THE RECORD THAT HOLDS THE MONEY: the project for a Shopify group,
+    // so one acknowledgement covers every group of the purchase. The activity
+    // row below still goes on the group it was made from.
+    const cleared = {
       payment_hold_cleared_for: holdStatus,
       payment_hold_cleared_at: new Date().toISOString(),
-    }).eq("id", id);
+    };
+    if (currentRow.project_id) {
+      await supabase.from("projects").update(cleared).eq("id", currentRow.project_id);
+    } else {
+      await supabase.from("orders").update(cleared).eq("id", id);
+    }
     await supabase.from("order_activity").insert({
       order_id: id,
       text: `Payment hold (${holdStatus}) acknowledged by ${auth.session.user.name ?? auth.session.user.username} — ${paymentHoldAck}`,

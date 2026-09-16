@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyCronAuth } from "@/lib/cronAuth";
 import { supabase } from "@/lib/supabase";
 import { syncStageToShopify } from "@/lib/shopifyStageSync";
-import { PRODUCTION_COMPLETE_TYPES } from "@/lib/autoAdvance";
+import { PRODUCTION_COMPLETE_TYPES, productionAutoAdvanceSkip, type ProductionAdvanceSkip } from "@/lib/autoAdvance";
 
 export async function GET(req: NextRequest) {
   if (!verifyCronAuth(req)) {
@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
 
   const { data: orders, error } = await supabase
     .from("orders")
-    .select("id, name, shopify_id, production_est_finish_date")
+    .select("id, name, shopify_id, production_est_finish_date, project_id, payment_status, payment_hold_cleared_for")
     .eq("stage", "In production")
     .eq("archived", false)
     // ALLOWLIST, deliberately -- not .neq("type", "custom").
@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
     //
     // Samples are listed because they are Shopify orders with Shopify
     // payment, same as standard -- though the entry is inert today, since
-    // their flow is New -> Entered -> Delivered and never reaches this
+    // their flow is New -> Shipped -> Delivered and never reaches this
     // stage at all.
     //
     // A denylist would automate the NEXT type added without anyone
@@ -47,6 +47,32 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: true, advanced: 0, message: "No orders ready to advance" });
   }
 
+  // ⚠ THE PURCHASE DECIDES, NOT THE GROUP (2026-09-16, handoff item 16). A
+  // refunded purchase, or an archived one, is not advanced -- see
+  // productionAutoAdvanceSkip, which the modal's "moves on its own" promise
+  // reads too. If the projects cannot be read, NOTHING is advanced: moving an
+  // order and pushing its stage to Shopify without knowing whether it was
+  // refunded is worse than moving it tomorrow. Non-2xx, so the dead-man's
+  // switch reports it.
+  type PurchaseRow = {
+    id: string; archived: boolean | null;
+    payment_status: string | null; payment_hold_cleared_for: string | null;
+  };
+  const projectIds = [...new Set(
+    orders.map((o: { project_id?: string | null }) => o.project_id)
+      .filter((p: string | null | undefined): p is string => !!p))];
+  const projectsById = new Map<string, PurchaseRow>();
+  if (projectIds.length > 0) {
+    const { data: projectRows, error: projectError } = await supabase
+      .from("projects")
+      .select("id, archived, payment_status, payment_hold_cleared_for")
+      .in("id", projectIds);
+    if (projectError) {
+      return NextResponse.json({ error: projectError.message }, { status: 500 });
+    }
+    for (const p of (projectRows ?? []) as PurchaseRow[]) projectsById.set(p.id, p);
+  }
+
   const todayLabel = new Date().toLocaleDateString("en-US", {
     month: "short", day: "numeric", timeZone: "America/Phoenix",
   });
@@ -55,7 +81,18 @@ export async function GET(req: NextRequest) {
 
   const failures: { id: string; reason: string }[] = [];
 
+  // Reported, not silent: cron.log shows which order waited and why. The work
+  // queue surfaces a held order as "Refund acknowledgment required" too.
+  const skipped: { id: string; reason: ProductionAdvanceSkip }[] = [];
+
   for (const order of orders) {
+    const project = order.project_id ? (projectsById.get(order.project_id) ?? null) : null;
+    const skip = productionAutoAdvanceSkip(order, project);
+    if (skip) {
+      skipped.push({ id: order.id, reason: skip });
+      continue;
+    }
+
     // ⚠ THE UPDATE'S ERROR WAS DISCARDED. A failed write still wrote the
     // activity row saying the order had advanced, and still counted toward
     // the reported total -- so the one record that would reveal the failure
@@ -109,6 +146,7 @@ export async function GET(req: NextRequest) {
     ok: true,
     advanced: results.length,
     ...(failures.length > 0 ? { failed: failures.length, failures } : {}),
+    ...(skipped.length > 0 ? { skipped: skipped.length, skips: skipped } : {}),
     orders: results,
   });
 }

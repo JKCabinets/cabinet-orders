@@ -469,6 +469,10 @@ nothing on success, so silence is not a result.
 | Undone fields are derived from the optimistic update, not listed | A hand-kept list of what `moveStage` writes is a second copy of the update; the first field added to one and not the other would stop being reverted with no error. |
 | The admin-override row is written by a wrapper on 2xx, not by the guard | The guard wrote it before callers validated anything. Moving refusals above the guard relies on four routes keeping their order right and does nothing for failed writes. A required log that only the wrapper can create keeps "nobody has to remember" at compile time. |
 | The override row follows the edit's own rows | It is written after the handler returns. On the trail it now comes after what it describes, which reads naturally; before, it preceded an edit that might not happen. |
+| Payment status and its acknowledgement resolve through the project | Money lives on the project by design. Refreshing both copies on every update was the alternative, and it keeps the duplicate this whole session removed. |
+| The client resolves payment once, in the store | Same reason archived purchases are hidden there once: the pill, the banner and the work queue each resolving "whose status" would be three copies of one rule. |
+| The overnight run honours the refund hold | §10 is a business rule, not a route rule. A refunded order advanced overnight pushes a stage to Shopify; one waiting In production needs a person, which is correct. |
+| The group copy is removed in a second commit | That change nulls data and adds a constraint, which needs its own verification, and it is only safe once nothing reads the copy — which the first commit makes true. |
 
 ---
 
@@ -694,14 +698,45 @@ nothing on success, so silence is not a result.
     custom job, one cabinet group and one sample group, each linked as the
     model says. Whether OPERATIONS §12's historic backfill runs through this
     importer is unverified.
-16. **Server readers of `orders.archived` do not consult the project.**
-    `production-complete` filters `.eq("archived", false)`, and
-    `lib/autoAdvance.ts` returns early on `order.archived`. On a
-    project-linked group that flag is always false, so neither excludes a
-    group whose PROJECT is archived — a refunded purchase archived with its
-    cabinets still In production and a finish date set would, on the face of
-    it, be advanced overnight. Seen in grep lines only; read both files
-    before deciding.
+16. ✅ **The overnight production run ignored the purchase — fixed 2026-09-16
+    (commit 1 of 2).** `production-complete` and `productionAutoAdvance` read
+    only the group's own `archived`, always false on a project-linked row, and
+    neither read the refund hold at all — a refund blocks forward movement
+    (OPERATIONS §10) and the cron is a forward move that pushes a stage to
+    Shopify. Investigating it found that every hold check read the GROUP's copy
+    of `payment_status`, and the acknowledgement was stored per group.
+
+    ⚠ **THE HOLD WAS NOT DEAD, as was first believed.** The `orders/updated`
+    handler writes `payment_status` onto every group as well as the project
+    (webhook lines 889–946). Confirmed live on 2026-09-16: a note edited in
+    Shopify reached both SHO-1052 groups and the project in one event, and a
+    group row set to `refunded` by hand returned `409 payment_hold`. The real
+    defects were two copies kept equal by two unchecked writes, a per-group
+    acknowledgement, and a cron that read neither the hold nor the project.
+
+    **Built** (`patch_payment_through_project.py`): `paymentRecordOf` in
+    `lib/data` resolves payment through the project. PATCH reads the project and
+    writes the acknowledgement there, refusing with `payment_status_unavailable`
+    if the project cannot be read. The store resolves every row once, so the
+    refund banner, the work queue and the payment pill follow.
+    `productionAutoAdvanceSkip` is the one rule the cron and the modal's promise
+    share: refunded, archived or unreadable purchases are not advanced, and the
+    cron reports what it skipped. No group-level acknowledgements existed, so
+    there was no data to lift.
+
+    **Proved by enumeration**, real files before and after: PATCH 192 cases —
+    standalone identical; project-linked identical to the old route with the
+    group copy set equal to the project's, the acknowledgement written to the
+    project instead; an unreadable project refused with nothing written. Cron
+    over 469 rows — exactly the old advanced set minus 115 skips (42 payment
+    hold, 72 archived purchase, 1 missing project), and nothing advanced when
+    the projects cannot be read. `productionAutoAdvance` 2,736 cases; the work
+    queue's hold reason 78 cases; the real store resolving rows, hiding archived
+    purchases and keeping row identity as before.
+
+    **Not in this commit:** `teams-digest` still counts the groups of archived
+    purchases (inert while `TEAMS_WEBHOOK_URL` is empty), and the group copy
+    itself — item 19.
 17. **Reactivating a team member says it worked before it has.**
     `app/admin/team/page.tsx:214` calls `updateTeamMember(member.id,
     { active: true })` without awaiting it and shows "… reactivated" straight
@@ -714,6 +749,14 @@ nothing on success, so silence is not a result.
     route added `timeZone: "America/Phoenix"` because without it every row
     written after 5 pm Phoenix is dated tomorrow. One date expression, shared,
     is the fix — not a third copy.
+19. **Remove the group copy of the payment fields (item 16, commit 2).**
+    Nothing depends on `orders.payment_status` or `payment_hold_cleared_for/at`
+    on a project-linked row since `patch_payment_through_project.py`; the store
+    shows the group copy only until the project loads. Stop the webhook writing
+    it in the group loop and at ingest, point `backfill-payment-status` at the
+    project, null the existing values, then add a CHECK in the form of
+    `orders_total_price_standalone_only`. The columns stay for custom jobs and
+    warranty claims, whose money is on the row.
 
 ---
 
@@ -821,6 +864,8 @@ patch_store_revert_one_record.py
 patch_docs_store_revert.py
 patch_claim_override_on_success.py
 patch_docs_claim_override.py
+patch_payment_through_project.py
+patch_docs_payment_through_project.py
 ```
 
 ⚠ A prerequisite check keyed on a **CSS class** rather than on an interface once
