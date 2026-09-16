@@ -6,12 +6,21 @@ import { getShopifyToken, isValidShopifyDomain } from "@/lib/shopify";
 /**
  * POST /api/admin/backfill-payment-status
  *
- * One-time backfill: walks every Shopify order in our DB that's missing
- * a payment_status, fetches the current financial_status from Shopify,
- * and writes it back.
+ * One-time backfill: walks every Shopify PROJECT in our DB that's missing a
+ * payment_status, fetches the current financial_status from Shopify, and
+ * writes it back.
+ *
+ * ⚠ PROJECTS, NOT ORDERS (2026-09-16). A Shopify checkout's payment status
+ * lives on its project, and orders_payment_standalone_only forbids it on a
+ * project-linked `orders` row. This walked `orders` and wrote each group, so
+ * after the group copy was removed it would have selected every group that
+ * carries the checkout's shopify_id, failed to write any of them, and reported
+ * the same rows as remaining forever. Custom jobs and warranty claims have no
+ * Shopify counterpart and were never in scope. A pre-project Shopify row with
+ * no project (handoff item 15) is not backfilled by this route any more.
  *
  * Safe to run repeatedly:
- *   - Targets only rows where payment_status IS NULL, so completed work
+ *   - Targets only projects where payment_status IS NULL, so completed work
  *     isn't redone.
  *   - Each request processes a bounded batch (default 50). The response
  *     reports remaining count so the caller (or admin UI) can re-hit
@@ -45,11 +54,11 @@ export async function POST(req: NextRequest) {
   const requestedBatch = Number(body.batch_size ?? DEFAULT_BATCH);
   const batchSize = Math.min(Math.max(1, requestedBatch), MAX_BATCH);
 
-  // ── Find orders that still need backfilling ─────────────────────────
-  // We target: Shopify-sourced orders, NOT archived (no point), with
-  // a non-null shopify_id and a NULL payment_status.
+  // ── Find projects that still need backfilling ───────────────────────
+  // We target: Shopify-sourced projects with a non-null shopify_id and a
+  // NULL payment_status.
   const { data: rows, error: queryError } = await supabase
-    .from("orders")
+    .from("projects")
     .select("id, shopify_id")
     .eq("source", "Shopify")
     .not("shopify_id", "is", null)
@@ -60,26 +69,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: queryError.message }, { status: 500 });
   }
 
-  const orders = (rows ?? []) as Array<{ id: string; shopify_id: string }>;
+  const projects = (rows ?? []) as Array<{ id: string; shopify_id: string }>;
 
   // Also report total remaining so the caller knows how many batches
   // are left. This is a separate count query so the limit doesn't
   // bound it.
   const { count: remainingTotal } = await supabase
-    .from("orders")
+    .from("projects")
     .select("id", { count: "exact", head: true })
     .eq("source", "Shopify")
     .not("shopify_id", "is", null)
     .is("payment_status", null);
 
-  if (orders.length === 0) {
+  if (projects.length === 0) {
     return NextResponse.json({
       ok: true,
       batch_size: 0,
       updated: 0,
       errors: [],
       remaining: 0,
-      message: "Nothing to backfill — every Shopify order already has a payment_status.",
+      message: "Nothing to backfill — every Shopify project already has a payment_status.",
     });
   }
 
@@ -94,13 +103,13 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const ids = orders.map(o => o.shopify_id).join(",");
+  const ids = projects.map(p => p.shopify_id).join(",");
   // `status=any` includes cancelled / archived orders; we want them
-  // because our DB may already have them as `archived = true`.
+  // because a project may already be archived here.
   // Field-restrict to just what we need to keep the response tiny.
   const url =
     `https://${domain}/admin/api/2024-01/orders.json` +
-    `?ids=${encodeURIComponent(ids)}&status=any&limit=${orders.length}&fields=id,financial_status`;
+    `?ids=${encodeURIComponent(ids)}&status=any&limit=${projects.length}&fields=id,financial_status`;
 
   let shopifyOrders: Array<{ id: number | string; financial_status: string | null }> = [];
   try {
@@ -132,11 +141,11 @@ export async function POST(req: NextRequest) {
     byShopifyId.set(String(so.id), so.financial_status);
   }
 
-  // ── Update each matching row ────────────────────────────────────────
+  // ── Update each matching project ────────────────────────────────────
   let updated = 0;
   const errors: Array<{ id: string; error: string }> = [];
 
-  for (const row of orders) {
+  for (const row of projects) {
     const financialStatus = byShopifyId.get(row.shopify_id);
     if (financialStatus === undefined) {
       // Shopify didn't return this order — likely deleted on their end.
@@ -144,7 +153,7 @@ export async function POST(req: NextRequest) {
       // we don't loop on it forever. Using "unknown" is safer than
       // leaving it null.
       const { error: updateError } = await supabase
-        .from("orders")
+        .from("projects")
         .update({ payment_status: "unknown" })
         .eq("id", row.id);
       if (updateError) {
@@ -157,7 +166,7 @@ export async function POST(req: NextRequest) {
 
     const value = financialStatus ?? "unknown";
     const { error: updateError } = await supabase
-      .from("orders")
+      .from("projects")
       .update({ payment_status: value })
       .eq("id", row.id);
     if (updateError) {
@@ -167,17 +176,17 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const remainingAfter = Math.max(0, (remainingTotal ?? orders.length) - updated);
+  const remainingAfter = Math.max(0, (remainingTotal ?? projects.length) - updated);
 
   return NextResponse.json({
     ok: true,
-    batch_size: orders.length,
+    batch_size: projects.length,
     updated,
     errors,
     remaining: remainingAfter,
     message:
       remainingAfter > 0
-        ? `Processed ${updated} of ${orders.length}. ${remainingAfter} orders still need backfilling — run again.`
-        : `Done. Backfilled ${updated} orders.`,
+        ? `Processed ${updated} of ${projects.length}. ${remainingAfter} projects still need backfilling — run again.`
+        : `Done. Backfilled ${updated} projects.`,
   });
 }

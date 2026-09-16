@@ -731,8 +731,8 @@ archiving is refused until every group has reached the last stage of its own
 flow, unless the purchase is refunded. Standalone rows, having no project,
 are archived individually. ✅ **Enforced 2026-09-16:** the order-level
 archive routes refuse a group that belongs to a purchase and name the
-purchase to archive instead, and no screen offers to archive one group on
-its own. Before that, the order-level path wrote a duplicate flag, which is
+purchase to archive instead, no screen offers to archive one group on its
+own, and the database refuses it outright. Before that, the order-level path wrote a duplicate flag, which is
 how SHO-1052 disappeared from one list while showing in another. See §9.
 
 **A claim is enforced, and admins are exempt but logged** (2026-09-15).

@@ -473,6 +473,9 @@ nothing on success, so silence is not a result.
 | The client resolves payment once, in the store | Same reason archived purchases are hidden there once: the pill, the banner and the work queue each resolving "whose status" would be three copies of one rule. |
 | The overnight run honours the refund hold | §10 is a business rule, not a route rule. A refunded order advanced overnight pushes a stage to Shopify; one waiting In production needs a person, which is correct. |
 | The group copy is removed in a second commit | That change nulls data and adds a constraint, which needs its own verification, and it is only safe once nothing reads the copy — which the first commit makes true. |
+| The payment constraint covers all three fields | A status and its acknowledgement are one fact. An acknowledgement left on a group would compare against a status that lives somewhere else. |
+| The code is deployed before the migration runs | Until the webhook stops writing the group copy, the constraint fails every group update and every new checkout's group insert. Demonstrated against PostgreSQL. |
+| The archiving constraint shipped with the payment one | Same table, same form, same migration — and the routes' refusal alone left every other writer able to recreate the SHO-1052 state. |
 
 ---
 
@@ -633,14 +636,11 @@ nothing on success, so silence is not a result.
     the old code's whenever its snapshot worked; success identical; every
     refusal undone to the exact prior record, with concurrent writes left
     standing.
-11. **No database constraint backs the archiving rule.** The two order routes
-    refuse; a webhook, an import, a script or the SQL editor can still set
-    `orders.archived` on a project-linked row. Proposed:
+11. ✅ **The database backs the archiving rule — 2026-09-16.**
     `orders_archived_standalone_only CHECK ((archived = false) OR (project_id IS NULL))`,
-    the same form as `orders_total_price_standalone_only`, with the route
-    checks kept so a caller gets a 422 that explains itself rather than a 500
-    naming a constraint. Undecided. It would apply cleanly: on 2026-09-15 no
-    project-linked row had `archived = true`.
+    the same form as `orders_total_price_standalone_only`, added by the item 19
+    migration. The route checks stay, so a caller gets a 422 that explains
+    itself rather than a 500 naming a constraint.
 12. ✅ **Phantom admin-override rows — fixed 2026-09-16.** `requireOrderClaim`
     wrote "… by X (admin) while claimed by another member" before the caller
     validated anything. Not just PATCH: all four callers could stop after it —
@@ -749,14 +749,34 @@ nothing on success, so silence is not a result.
     route added `timeZone: "America/Phoenix"` because without it every row
     written after 5 pm Phoenix is dated tomorrow. One date expression, shared,
     is the fix — not a third copy.
-19. **Remove the group copy of the payment fields (item 16, commit 2).**
-    Nothing depends on `orders.payment_status` or `payment_hold_cleared_for/at`
-    on a project-linked row since `patch_payment_through_project.py`; the store
-    shows the group copy only until the project loads. Stop the webhook writing
-    it in the group loop and at ingest, point `backfill-payment-status` at the
-    project, null the existing values, then add a CHECK in the form of
-    `orders_total_price_standalone_only`. The columns stay for custom jobs and
-    warranty claims, whose money is on the row.
+19. ✅ **The group copy of the payment fields is gone — 2026-09-16 (item 16,
+    commit 2).** `patch_payment_group_copy_removed.py`: the webhook stops
+    writing `payment_status` onto groups, at ingest and on `orders/updated`;
+    `backfill-payment-status` walks and writes projects (a project-less
+    Shopify row, item 15's shape, is no longer backfilled); and
+    `migrations/2026-09-16-orders-standalone-payment-and-archive.sql` blanks the
+    three payment fields on project-linked rows and adds
+    `orders_payment_standalone_only` and `orders_archived_standalone_only`, in
+    one transaction. The columns stay for custom jobs and warranty claims.
+
+    ⚠ **CODE FIRST, THEN THE MIGRATION.** While the webhook still writes the
+    group copy, the constraint makes every group update fail — notes, SKUs,
+    tracking — and a new checkout's group insert fail and take its project
+    with it. Checked beforehand: no trigger or function touches these columns
+    (only `orders_updated_at` and `trg_orders_bump_stage_entered_at` exist), 2
+    group rows carried a status, none an acknowledgement, none `archived`.
+
+    **Proved against real PostgreSQL**, running the migration file verbatim on
+    production-shaped data: the group copy blanked and standalone rows
+    untouched; a second run changes nothing; afterwards the OLD webhook's group
+    update and insert are refused by `orders_payment_standalone_only` while the
+    NEW ones succeed; an acknowledgement on a group is refused and on a
+    standalone row accepted; archiving a group is refused, restoring one and
+    archiving a standalone row accepted; a stage move still runs its trigger.
+    With a project-linked archived row present, the migration fails and the
+    blanking rolls back with it — all or nothing. The backfill route, run
+    before and after against a recording database, moved from writing a group
+    and a project-less row to writing only projects.
 
 ---
 
@@ -866,6 +886,8 @@ patch_claim_override_on_success.py
 patch_docs_claim_override.py
 patch_payment_through_project.py
 patch_docs_payment_through_project.py
+patch_payment_group_copy_removed.py
+patch_docs_payment_group_copy_removed.py
 ```
 
 ⚠ A prerequisite check keyed on a **CSS class** rather than on an interface once

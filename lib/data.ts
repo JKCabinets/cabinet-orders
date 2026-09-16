@@ -314,8 +314,8 @@ export interface Order {
   //
   // ⚠ ON THE CLIENT THIS IS THE PURCHASE'S STATUS for a project-linked row:
   // the store resolves it, and the two acknowledgement fields below, through
-  // the project (withPurchasePayment). The column on a Shopify group is a
-  // second copy the webhook still writes and nothing should read -- see
+  // the project (withPurchasePayment). On a Shopify group the column is NULL,
+  // enforced by orders_payment_standalone_only (2026-09-16) -- see
   // paymentRecordOf.
   payment_status?: string | null;
   /**
@@ -529,8 +529,9 @@ export type PaymentFields = {
  * ⚠ ONE PLACE ANSWERS "WHOSE PAYMENT STATUS" (2026-09-16). A Shopify checkout's
  * money lives on the project -- orders_total_price_standalone_only forbids a
  * total on a project-linked row -- and its payment status belongs with it.
- * Every hold check read the GROUP's copy instead, which the webhook keeps equal
- * to the project's by a second, unchecked write, and the acknowledgement was
+ * Every hold check read the GROUP's copy instead, which the webhook kept equal
+ * to the project's by a second, unchecked write -- removed the same day, and
+ * forbidden by orders_payment_standalone_only -- and the acknowledgement was
  * stored per group, so a two-group refund had to be acknowledged twice. The
  * hold, its acknowledgement, the refund banner, the work queue and the
  * production-complete cron all resolve through this now. Custom jobs and
@@ -555,9 +556,9 @@ export function paymentRecordOf(
  * archived purchases once, so the payment pill, the refund banner and the work
  * queue's hold reason read the purchase's status without each resolving it.
  *
- * Returns the SAME object when nothing differs -- a standalone row, a project
- * not loaded yet, or copies that agree -- so rows keep their identity and
- * nothing downstream recomputes for no reason.
+ * Returns the SAME object when nothing differs -- a standalone row, or a
+ * project not loaded yet. A Shopify group carries no payment fields of its own,
+ * so once its project is loaded it is usually a new object.
  */
 export function withPurchasePayment<T extends PaymentFields & { project_id?: string | null }>(
   order: T,
@@ -859,8 +860,10 @@ export interface Project {
  * keep order-level archiving, and this is the one question that separates
  * them.
  *
- * ⚠ THIS IS NOT THE ENFORCEMENT. PATCH /api/orders/[id] and /api/orders/bulk
- * refuse `archived` on a project-linked row. This exists so that no control
+ * ⚠ THIS IS NOT THE ENFORCEMENT. The database is, through
+ * orders_archived_standalone_only (2026-09-16), and PATCH /api/orders/[id] and
+ * /api/orders/bulk refuse `archived` on a project-linked row first, with a 422
+ * that explains itself. This exists so that no control
  * offers what the server will refuse, and so that every archive control asks
  * the same question rather than each deciding for itself.
  */

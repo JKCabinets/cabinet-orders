@@ -268,8 +268,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
    * queue's hold reason all read `order.payment_status`; resolving it in each
    * would be three copies of "whose status is this". See paymentRecordOf.
    *
-   * The array keeps its identity when no row changed, so consumers memoised on
-   * `allOrders` do not recompute because a project was merely re-sent.
+   * A Shopify group carries no payment fields of its own (2026-09-16), so its
+   * resolved row is a new object whenever its project changes. Consumers key on
+   * ids, not on this array's identity (useOrderEnrichment says why), so that
+   * costs a recompute, never a refetch.
    */
   const resolvedOrders = useMemo(() => {
     const next = rawOrders.map(o =>

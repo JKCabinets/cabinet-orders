@@ -728,7 +728,9 @@ export async function POST(req: NextRequest) {
         customer_phone: customerPhone,
         customer_email: customerEmail,
         delivery_method: deliveryMethod,
-        payment_status: payload.financial_status ?? null,
+        // ⚠ NO payment_status (2026-09-16). A Shopify group's payment lives on
+        // its project, inserted above; orders_payment_standalone_only rejects
+        // it here, and a rejected group insert takes the whole checkout with it.
         created_at: nowIso,
         stage_entered_at: nowIso,
       };
@@ -812,8 +814,8 @@ export async function POST(req: NextRequest) {
       // forever, and -- since 2026-09-16 -- what the payment hold reads: the
       // hold, its acknowledgement, the refund banner and the
       // production-complete cron all resolve through the project
-      // (paymentRecordOf in lib/data). Until then they read the group copy
-      // written in the loop below.
+      // (paymentRecordOf in lib/data). The groups carry no copy:
+      // orders_payment_standalone_only forbids one.
       await supabase.from("projects").update({
         ship_to: shipTo,
         customer_phone: customerPhone,
@@ -904,11 +906,10 @@ export async function POST(req: NextRequest) {
           customer_phone: customerPhone,
           customer_email: customerEmail,
           delivery_method: deliveryMethod,
-          // ⚠ A SECOND COPY, AND NOTHING READS IT (2026-09-16). The project's
-          // payment_status above is the one the hold uses. Still written so
-          // removing it can be its own change: stop this write, null the
-          // existing values, then add a CHECK like the one on total_price.
-          payment_status: payload.financial_status ?? null,
+          // ⚠ NO payment_status (2026-09-16). It lives on the project, updated
+          // above, and orders_payment_standalone_only rejects it on a group --
+          // one field here would fail this whole update, notes and SKUs and
+          // all, with nothing checking the error.
         };
 
         // A fulfilment is authoritative only for what WE ship. Samples ship
