@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, requireOrderClaim, cleanInput, rateLimitOr429 } from "@/lib/auth";
+import { requireAuth, requireOrderClaim, withClaimOverrideLog, type ClaimOverrideLog, cleanInput, rateLimitOr429 } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import { getShopifyToken } from "@/lib/shopify";
 import { mergeTags } from "@/lib/shopifyStageSync";
@@ -132,7 +132,10 @@ export async function GET(
   return NextResponse.json({ data: shaped });
 }
 
-export async function PATCH(
+// ⚠ WRAPPED so an admin's override of a claim reaches the trail only if this
+// request succeeds. See ClaimOverrideLog in lib/auth.
+export const PATCH = withClaimOverrideLog(async function PATCH(
+  overrides: ClaimOverrideLog,
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -193,11 +196,12 @@ export async function PATCH(
   // -- keep order-level archiving. Same split, and the same shape of refusal,
   // as total_price further down.
   //
-  // ⚠ ABOVE THE OWNERSHIP GATE, ON PURPOSE. requireOrderClaim writes an
-  // activity row when an admin acts over somebody else's claim, so a refusal
-  // placed after it would leave "Edited by X (admin) while claimed by another
-  // member" on the trail for an edit that never happened. This is a statement
-  // about the row, not about who is asking, so it is asked first.
+  // ABOVE THE OWNERSHIP GATE because this is a statement about the row, not
+  // about who is asking. It was also placed here, on 2026-09-16, because the
+  // gate then wrote its admin-override row immediately and a refusal below it
+  // left that row behind. The gate now only records the override and
+  // withClaimOverrideLog writes it on success, so placement no longer matters
+  // for the trail -- see ClaimOverrideLog in lib/auth.
   if (body.archived !== undefined) {
     if (typeof body.archived !== "boolean") {
       return NextResponse.json({ error: "archived (boolean) required" }, { status: 422 });
@@ -219,14 +223,15 @@ export async function PATCH(
   // ⚠ ONE IMPLEMENTATION, IN lib/auth. This was written out here first and
   // was the only copy; three upload routes then needed the same rule.
   // Leaving this one hand-written while they used a helper is how the
-  // client and server gates drifted apart on 09-08. The helper also writes
-  // the admin-override activity row, which is why nothing below does.
+  // client and server gates drifted apart on 09-08. The helper also records
+  // the admin override, which is why nothing below writes one; the PATCH
+  // wrapper writes it only if this request ends in a 2xx.
   //
   // Everything past this point mutates the row, so the gate sits above all
   // of it rather than on the stage move alone -- a second person retyping
   // the dates or the tracking number is the same duplicated work as a
   // second person moving the stage.
-  const claimGate = await requireOrderClaim(id, auth.session);
+  const claimGate = await requireOrderClaim(id, auth.session, overrides);
   if (claimGate instanceof NextResponse) return claimGate;
 
   // ── Stage validation & backward-PIN gate ──────────────────────────────
@@ -912,7 +917,7 @@ export async function PATCH(
   }
 
   return NextResponse.json({ ok: true, data: { stage: finalStage } });
-}
+});
 
 /**
  * DELETE an order.

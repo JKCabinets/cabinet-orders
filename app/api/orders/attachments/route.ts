@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, requireOrderClaim, cleanInput, rateLimitOr429 } from "@/lib/auth";
+import { requireAuth, requireOrderClaim, withClaimOverrideLog, type ClaimOverrideLog, cleanInput, rateLimitOr429 } from "@/lib/auth";
 import { SNIFF_BYTES, sniffMagicBytes, safeContentType } from "@/lib/fileValidation";
 import { supabase } from "@/lib/supabase";
 
@@ -59,7 +59,12 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ data });
 }
 
-export async function POST(req: NextRequest) {
+// ⚠ WRAPPED so an admin's override of a claim reaches the trail only if the
+// upload succeeds. See ClaimOverrideLog in lib/auth.
+export const POST = withClaimOverrideLog(async function POST(
+  overrides: ClaimOverrideLog,
+  req: NextRequest,
+) {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
   // Lower limit on uploads than reads — each upload writes to storage AND
@@ -125,7 +130,7 @@ export async function POST(req: NextRequest) {
   // what satisfies the Entered gate, so uploading to somebody else's
   // claimed order is the duplicated work claims exist to prevent -- the
   // stage gate refused it from the modal while this route accepted it.
-  const claimGate = await requireOrderClaim(orderId, auth.session, "Attachment added");
+  const claimGate = await requireOrderClaim(orderId, auth.session, overrides, "Attachment added");
   if (claimGate instanceof NextResponse) return claimGate;
 
   // Sanitize the display filename ONCE, then use the same value for the
@@ -188,4 +193,4 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({ data: attachment }, { status: 201 });
-}
+});

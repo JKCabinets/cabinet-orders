@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, requireOrderClaim, rateLimitOr429 } from "@/lib/auth";
+import { requireAuth, requireOrderClaim, withClaimOverrideLog, type ClaimOverrideLog, rateLimitOr429 } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import { type SkuItem } from "@/lib/skuDecoder";
 import { linesForAckVendor, ackFingerprint } from "@/lib/ackFingerprint";
@@ -55,7 +55,10 @@ function logAckReject(
   }));
 }
 
-export async function POST(
+// ⚠ WRAPPED so an admin's override of a claim reaches the trail only if the
+// acknowledgment is saved. See ClaimOverrideLog in lib/auth.
+export const POST = withClaimOverrideLog(async function POST(
+  overrides: ClaimOverrideLog,
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -159,7 +162,7 @@ export async function POST(
   // upload is a stage action and belongs behind the same claim. Reachable
   // from the row as well as the modal, which is why a non-owner used to be
   // able to submit against work somebody else had picked up.
-  const claimGate = await requireOrderClaim(id, session, "Acknowledgment submitted");
+  const claimGate = await requireOrderClaim(id, session, overrides, "Acknowledgment submitted");
   if (claimGate instanceof NextResponse) return claimGate;
 
   // ── Filter the order's lines to the Waypoint family ─────────────────────
@@ -231,4 +234,4 @@ export async function POST(
     waypoint_line_count: ackLines.length,
     total_line_count: skuItems.length,
   });
-}
+});

@@ -55,6 +55,61 @@ export async function claimOwnerOf(
 }
 
 /**
+ * Admin overrides of a claim, recorded during ONE request and written only if
+ * that request succeeds.
+ *
+ * ⚠ WHY THE ROW IS NO LONGER WRITTEN IN THE GUARD. requireOrderClaim used to
+ * insert it the moment it let an admin through. Every caller can still stop
+ * after that -- PATCH /api/orders/[id] has eleven refusals below its guard,
+ * and all four callers can fail a write -- and each of those left "Edited by X
+ * (admin) while claimed by another member" on the trail for an edit that never
+ * happened. Fixed 2026-09-16 (handoff item 12).
+ *
+ * ⚠ WHY A WRAPPER, NOT A SECOND CALL. The guard wrote the row itself so that
+ * four callers would not each have to remember to. A "now record it" call after
+ * the write would bring that back. Instead the log exists only inside
+ * withClaimOverrideLog, and requireOrderClaim REQUIRES one: a route that is not
+ * wrapped has nothing to pass, and tsc refuses it.
+ *
+ * Written after the handler returns, so on the trail the override row follows
+ * the route's own rows for the same edit rather than preceding them.
+ */
+export type ClaimOverrideLog = { readonly kind: "claim-override-log" };
+
+type OverrideRow = { order_id: string; text: string; time: string };
+
+// Module-private. Only withClaimOverrideLog creates an entry and only it reads
+// one back, so a route can neither flush early nor hand the guard a recorder
+// that silently drops rows.
+const pendingOverrides = new WeakMap<ClaimOverrideLog, OverrideRow[]>();
+
+/**
+ * Wrap a route handler that calls requireOrderClaim.
+ *
+ * The handler receives the log as its FIRST argument and the route's own
+ * arguments after it; the function returned has exactly the route's
+ * signature, so `export const POST = withClaimOverrideLog(...)` is a normal
+ * Next.js handler.
+ */
+export function withClaimOverrideLog<Args extends unknown[], R extends Response>(
+  handler: (overrides: ClaimOverrideLog, ...args: Args) => Promise<R>,
+): (...args: Args) => Promise<R> {
+  return async (...args: Args): Promise<R> => {
+    const overrides: ClaimOverrideLog = Object.freeze({ kind: "claim-override-log" as const });
+    pendingOverrides.set(overrides, []);
+    const res = await handler(overrides, ...args);
+    // 2xx only. A refusal, a 500 from a failed write, or a thrown error means
+    // the edit did not happen, so neither does its override row.
+    if (res.status >= 200 && res.status < 300) {
+      for (const row of pendingOverrides.get(overrides) ?? []) {
+        await supabase.from("order_activity").insert(row);
+      }
+    }
+    return res;
+  };
+}
+
+/**
  * May this session change this order?
  *
  *   unclaimed          -> yes. Claiming is how you take a row, and requiring
@@ -62,21 +117,28 @@ export async function claimOwnerOf(
  *                        touch a two-step on a queue full of unpicked work.
  *   claimed by you     -> yes.
  *   claimed by another -> 409 `claimed_by_other`.
- *   ...unless admin    -> yes, AND written to the activity trail.
+ *   ...unless admin    -> yes, AND recorded for the activity trail -- written
+ *                        by withClaimOverrideLog if, and only if, the request
+ *                        succeeds. See ClaimOverrideLog.
  *
- * ⚠ THIS GUARD HAS A SIDE EFFECT, ON PURPOSE. An admin acting over somebody
- * else's claim has to reach the trail every single time; four callers each
- * remembering to write that row is four chances to forget, and the one that
- * forgets is indistinguishable from a normal edit afterwards. The caller
- * still gets `{ override }` back if it wants to say something in the UI.
+ * ⚠ `overrides` IS REQUIRED, ON PURPOSE. It is what makes an unwrapped caller
+ * a compile error rather than an override that never reaches the trail. The
+ * caller still gets `{ override }` back if it wants to say something in the UI.
  *
  * Returns a NextResponse to return as-is, or `{ override }` to continue.
  */
 export async function requireOrderClaim(
   orderId: string,
   session: AuthSession,
+  overrides: ClaimOverrideLog,
   action = "Edited",
 ): Promise<{ override: boolean } | NextResponse> {
+  const pending = pendingOverrides.get(overrides);
+  if (!pending) {
+    // Not made by withClaimOverrideLog. Thrown rather than tolerated: the
+    // alternative is an admin override that silently never reaches the trail.
+    throw new Error("requireOrderClaim: `overrides` must come from withClaimOverrideLog");
+  }
   const { data: row } = await supabase
     .from("orders")
     .select("id, project_id, claimed_by")
@@ -101,7 +163,7 @@ export async function requireOrderClaim(
   }
 
   const who = session.user.name ?? session.user.username;
-  await supabase.from("order_activity").insert({
+  pending.push({
     order_id: orderId,
     text: `${action} by ${who} (admin) while claimed by another member`,
     time: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" }),

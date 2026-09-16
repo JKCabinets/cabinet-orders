@@ -229,23 +229,27 @@ recorded a bypass of a check that would have passed. The check runs first now.
 
 ### 7. Claims are enforced — server first, everywhere
 
-**`requireOrderClaim(orderId, session, action?)` in `lib/auth.ts` is the single
-answer.** Four routes call it: PATCH, attachment upload, attachment delete,
-acknowledgment upload.
+**`requireOrderClaim(orderId, session, overrides, action?)` in `lib/auth.ts` is
+the single answer.** Four routes call it: PATCH, attachment upload, attachment
+delete, acknowledgment upload.
 
     unclaimed          -> allowed. Claiming is how you take a row, and requiring
                           a claim before any edit would make every first touch a
                           two-step on a queue full of unpicked work.
     claimed by you     -> allowed.
     claimed by another -> 409 `claimed_by_other`.
-    ...unless admin    -> allowed, AND written to the activity trail.
+    ...unless admin    -> allowed, AND recorded for the activity trail.
 
-⚠ **THE GUARD LOGS ITS OWN OVERRIDE.** A side effect in a guard is unusual and
-deliberate: an admin acting over somebody's claim must reach the trail every
-time, and four callers each remembering to write that row is four chances to
-forget — and the one that forgets is indistinguishable from a normal edit
-afterwards. The `action` parameter is the verb, so the trail reads
-"Acknowledgment submitted by … (admin) while claimed by another member".
+⚠ **THE OVERRIDE REACHES THE TRAIL ONLY IF THE REQUEST SUCCEEDS** (item 12,
+2026-09-16). Originally the guard inserted the row itself, so that four callers
+would not each have to remember to — but it did so before the caller had
+validated anything, and every refusal or failed write after the guard left a
+row for an edit that never happened. It now records the override on a
+`ClaimOverrideLog`; `withClaimOverrideLog` wraps each route handler and writes
+the row on a 2xx. The guard requires the log and only the wrapper can make one,
+so the original property holds at compile time. The `action` parameter is still
+the verb, so the trail reads "Acknowledgment submitted by … (admin) while
+claimed by another member".
 
 ⚠ **THE PATCH ROUTE WAS REFACTORED ONTO IT, not left alone.** It held the only
 copy. Leaving one hand-written implementation beside three helper callers is
@@ -463,6 +467,8 @@ nothing on success, so silence is not a result.
 | `/api/orders/archive` deleted, not given a refusal | Nothing had called it since the initial commit. A refusal added to a dead route is a guard nobody reaches, and it keeps a path that reads as live. |
 | The store undoes one record, not a snapshot of the array | A snapshot taken inside a setState updater is filled in only when React runs the updater, so restoring it undoes other rows' changes that landed meanwhile, or blanks the board if the refusal beats the render. `moveStage` and `updateTeamMember` both did (item 10). |
 | Undone fields are derived from the optimistic update, not listed | A hand-kept list of what `moveStage` writes is a second copy of the update; the first field added to one and not the other would stop being reverted with no error. |
+| The admin-override row is written by a wrapper on 2xx, not by the guard | The guard wrote it before callers validated anything. Moving refusals above the guard relies on four routes keeping their order right and does nothing for failed writes. A required log that only the wrapper can create keeps "nobody has to remember" at compile time. |
+| The override row follows the edit's own rows | It is written after the handler returns. On the trail it now comes after what it describes, which reads naturally; before, it preceded an edit that might not happen. |
 
 ---
 
@@ -503,8 +509,9 @@ nothing on success, so silence is not a result.
    **Built** (`patch_archive_project_truth.py`):
    - `PATCH /api/orders/[id]` refuses `archived` in either direction on a
      project-linked row — 422 `archived_not_allowed`, naming the project —
-     and refuses a non-boolean `archived` on any row. **Above the claim
-     guard**, so the refusal cannot leave a phantom admin-override row.
+     and refuses a non-boolean `archived` on any row. Above the claim guard,
+     which at the time also kept it from leaving a phantom admin-override row;
+     item 12 has since made that placement irrelevant to the trail.
    - `/api/orders/bulk` refuses each project-linked row first, before the
      permission and no-op checks, in the route's existing per-row shape.
    - `/api/orders/archive` **deleted**. `SECURITY.md`, the only thing that
@@ -630,15 +637,36 @@ nothing on success, so silence is not a result.
     checks kept so a caller gets a 422 that explains itself rather than a 500
     naming a constraint. Undecided. It would apply cleanly: on 2026-09-15 no
     project-linked row had `archived = true`.
-12. **Every refusal in `PATCH /api/orders/[id]` below the claim guard records
-    a phantom admin edit.** `requireOrderClaim` writes "Edited by X (admin)
-    while claimed by another member" before the route validates anything, so
-    an admin request over a claim that is then refused — `stage_not_in_flow`,
-    `admin_pin_required`, the acknowledgment, production-date, payment-hold,
-    tracking and delivery-proof gates, `total_price_not_allowed` — leaves that
-    row on the trail for an edit that never happened. OMS-STATE §3 promises
-    that nothing is claimed that did not happen. The archive refusal was put
-    above the guard for this reason; the others were not moved.
+12. ✅ **Phantom admin-override rows — fixed 2026-09-16.** `requireOrderClaim`
+    wrote "… by X (admin) while claimed by another member" before the caller
+    validated anything. Not just PATCH: all four callers could stop after it —
+    PATCH with eleven refusals and a failed update, attachment upload with a
+    failed storage write or row insert, attachment delete with a failed
+    delete, acknowledgment upload with a failed insert.
+
+    **Option A — move the refusals above the guard — was rejected.** Eleven
+    reordered blocks in PATCH, each route keeping its order right forever; a
+    member on somebody else's claim told to fix the tracking number before
+    being told the row is claimed; and nothing for the failed writes.
+
+    **Built (option B, `patch_claim_override_on_success.py`):** the guard
+    records the override on a `ClaimOverrideLog` and `withClaimOverrideLog`,
+    wrapping each of the four handlers, writes it only on a 2xx. The guard
+    requires the log and only the wrapper creates one, so an unwrapped caller
+    fails `tsc` — verified: restoring one route's old call in a patched tree
+    gives TS2345.
+
+    **Proved by enumeration** over all four routes, real route files and
+    `lib/auth.ts`, before and after, 432 cases (admin and member × unclaimed,
+    own and other's claim × project-linked and standalone × every outcome the
+    stubs reach): responses identical in every case; writes identical except
+    40 phantom override rows removed from failed requests and 24 override rows
+    moved to after the edit's own writes on success. PATCH outcomes exercised
+    for an admin over a claim: success, invalid stage, `stage_not_in_flow`,
+    `admin_pin_required`, `payment_hold`, `total_price_not_allowed`, a bad
+    total and a failed update. The attachment, production-date, tracking and
+    delivery-proof gates were not reachable through the stubs; the wrapper
+    keys on the response status, not on which refusal produced it.
 13. **`/orders/archived` can never show a row.** It is archive mode for
     cabinets only, cabinet groups are always project-linked, and a
     project-linked row can no longer be archived on its own. OrderTable's
@@ -674,6 +702,18 @@ nothing on success, so silence is not a result.
     cabinets still In production and a finish date set would, on the face of
     it, be advanced overnight. Seen in grep lines only; read both files
     before deciding.
+17. **Reactivating a team member says it worked before it has.**
+    `app/admin/team/page.tsx:214` calls `updateTeamMember(member.id,
+    { active: true })` without awaiting it and shows "… reactivated" straight
+    away, so a rejected change still reports success. The store now reverts
+    it correctly (item 10); the page just never looks at the answer. Seen in a
+    grep line only.
+18. **Activity rows are dated on the server's clock, not Phoenix time.** The
+    PATCH route's `today` and the claim-override row both use
+    `toLocaleDateString("en-US", { month, day })` with no `timeZone`. The bulk
+    route added `timeZone: "America/Phoenix"` because without it every row
+    written after 5 pm Phoenix is dated tomorrow. One date expression, shared,
+    is the fix — not a third copy.
 
 ---
 
@@ -779,6 +819,8 @@ patch_archive_project_truth.py
 patch_docs_archive_enforced.py
 patch_store_revert_one_record.py
 patch_docs_store_revert.py
+patch_claim_override_on_success.py
+patch_docs_claim_override.py
 ```
 
 ⚠ A prerequisite check keyed on a **CSS class** rather than on an interface once

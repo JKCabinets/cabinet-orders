@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, requireOrderClaim, rateLimitOr429 } from "@/lib/auth";
+import { requireAuth, requireOrderClaim, withClaimOverrideLog, type ClaimOverrideLog, rateLimitOr429 } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 
 // GET /api/orders/attachments/[id] — get signed download URL
@@ -32,7 +32,10 @@ export async function GET(
 }
 
 // DELETE /api/orders/attachments/[id] — delete attachment
-export async function DELETE(
+// ⚠ WRAPPED so an admin's override of a claim reaches the trail only if the
+// delete succeeds. See ClaimOverrideLog in lib/auth.
+export const DELETE = withClaimOverrideLog(async function DELETE(
+  overrides: ClaimOverrideLog,
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -59,7 +62,7 @@ export async function DELETE(
   // from another member's claimed row is precisely the crossed-wires case
   // claims exist for; a second, stricter rule here would be a second thing
   // to keep in sync for no gain.
-  const claimGate = await requireOrderClaim(attachment.order_id, auth.session, "Attachment deleted");
+  const claimGate = await requireOrderClaim(attachment.order_id, auth.session, overrides, "Attachment deleted");
   if (claimGate instanceof NextResponse) return claimGate;
 
   // Delete from storage (best effort — if it fails we still remove the DB
@@ -88,4 +91,4 @@ export async function DELETE(
   } catch { /* non-critical */ }
 
   return NextResponse.json({ ok: true });
-}
+});

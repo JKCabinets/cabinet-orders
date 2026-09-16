@@ -738,7 +738,9 @@ how SHO-1052 disappeared from one list while showing in another. See §9.
 Someone else's claimed order refuses every edit — stage moves, dates,
 tracking, notes, attachment uploads and deletions, acknowledgment uploads.
 Unclaimed is open, because claiming is how you take a row. An admin may act
-regardless and it lands on the activity trail; the modal's "Edit order"
+regardless and it lands on the activity trail — once the change actually goes
+through; an attempt that is refused or fails records nothing (2026-09-16). The
+modal's "Edit order"
 toggle makes that a deliberate second act rather than a reflex, but it is a
 UI convention and **not** the enforcement.
 
