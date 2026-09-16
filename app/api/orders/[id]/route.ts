@@ -175,6 +175,45 @@ export async function PATCH(
   // shared across flows now, so every stage comparison below needs it.
   const currentType: string = currentRow.type ?? "order";
 
+  // ── Archiving: the project is the only truth ──────────────────────────
+  //
+  // ⚠ A PROJECT-LINKED ROW IS NEVER ARCHIVED ON ITS OWN (decided 2026-09-15).
+  // A purchase is archived through PATCH /api/projects/[id], which leaves
+  // `orders.archived` false on every group and hides them by lookup. This
+  // route used to set the group flag happily, so SHO-1052 was archived as a
+  // project AND as two groups; restoring the project cleared only the flag
+  // that route owns, and the order stayed invisible in cabinet orders while
+  // showing in the projects hub.
+  //
+  // Refused in BOTH directions. A restore sent for a group is the same second
+  // copy of the fact, and accepting it as a harmless no-op would report a
+  // success for something that was never allowed.
+  //
+  // Standalone rows -- custom jobs and warranty claims, which have no project
+  // -- keep order-level archiving. Same split, and the same shape of refusal,
+  // as total_price further down.
+  //
+  // ⚠ ABOVE THE OWNERSHIP GATE, ON PURPOSE. requireOrderClaim writes an
+  // activity row when an admin acts over somebody else's claim, so a refusal
+  // placed after it would leave "Edited by X (admin) while claimed by another
+  // member" on the trail for an edit that never happened. This is a statement
+  // about the row, not about who is asking, so it is asked first.
+  if (body.archived !== undefined) {
+    if (typeof body.archived !== "boolean") {
+      return NextResponse.json({ error: "archived (boolean) required" }, { status: 422 });
+    }
+    if (currentRow.project_id) {
+      return NextResponse.json(
+        {
+          error: "archived_not_allowed",
+          project_id: currentRow.project_id,
+          message: `This order is part of ${currentRow.project_id}. Archive or restore the project instead -- every order in it goes together.`,
+        },
+        { status: 422 },
+      );
+    }
+  }
+
   // ── Ownership gate ────────────────────────────────────────────────────
   //
   // ⚠ ONE IMPLEMENTATION, IN lib/auth. This was written out here first and

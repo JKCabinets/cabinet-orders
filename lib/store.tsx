@@ -15,6 +15,15 @@ import { fieldsToClearOnBackwardMove } from "./stageLogic";
 import { useRealtimeOrders, useRealtimeProjects, useRealtimeActivity } from "./useRealtimeOrders";
 import { usePresence } from "./usePresence";
 
+/** What archiveOrder and unarchiveOrder resolve with. */
+export interface ArchiveResult {
+  ok: boolean;
+  /** The server's error code, or "network_error". */
+  error?: string;
+  /** The server's own sentence, when it sent one. Meant for a toast. */
+  message?: string;
+}
+
 interface StoreCtx {
   /**
    * Every row of the `orders` table, regardless of type. A consumer that
@@ -47,8 +56,13 @@ interface StoreCtx {
   archiveProject: (id: string, archived: boolean) => Promise<{ ok: boolean; message?: string }>;
   /** Claim or release a whole purchase. Resolves with who holds it. */
   claimProject: (id: string, claim: boolean) => Promise<{ ok: boolean; claimedBy: string | null; reason?: string }>;
-  archiveOrder: (id: string) => Promise<void>;
-  unarchiveOrder: (id: string) => Promise<void>;
+  /**
+   * Archive or restore ONE standalone row. A refusal has already been reverted
+   * locally by the time this resolves. Project-linked groups are archived with
+   * their purchase, through `archiveProject`.
+   */
+  archiveOrder: (id: string) => Promise<ArchiveResult>;
+  unarchiveOrder: (id: string) => Promise<ArchiveResult>;
   deleteOrder: (id: string) => Promise<void>;
   bulkAction: (
     ids: string[],
@@ -578,23 +592,79 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return { ok: false, message: err?.message ?? err?.error ?? "Could not archive this project." };
   }, []);
 
-  const archiveOrder = useCallback(async (id: string) => {
-    const t = today();
-    const update = (list: Order[]) => list.map(o =>
-      o.id === id ? { ...o, archived: true, activity: [...o.activity, { text: "Moved to archive", time: t }] } : o
-    );
-    setRawOrders(prev => update(prev));
-    await apiCall(`/api/orders/${id}`, "PATCH", { archived: true });
+  /**
+   * Archive or restore one STANDALONE row.
+   *
+   * ⚠ A REFUSAL IS REVERTED AND REPORTED. This used to apply the change
+   * locally, await the PATCH and discard the result. A refused archive --
+   * somebody else's claim, or since 2026-09-15 a project-linked group --
+   * wrote nothing on the server, so no realtime event came back to correct
+   * it, and the row stayed gone from the board until a refresh: the SHO-1052
+   * symptom, produced entirely in the browser.
+   *
+   * ⚠ IT REVERTS THE ONE ROW, NOT A SNAPSHOT OF THE ARRAY. A snapshot taken
+   * inside a setState updater is only filled in if React runs the updater on
+   * the spot, and React skips that whenever this component has had a state
+   * update since it last rendered for some other reason -- for the store,
+   * often. The snapshot is then still empty when the refusal comes back, and
+   * restoring it blanks every row. Demonstrated 2026-09-15 against this file
+   * under React 19; moveStage above has that defect (handoff, open items).
+   *
+   * This undoes only what the call did: the flag goes back to its value
+   * before the call, and the call's own activity entry is removed. Other
+   * fields -- including any realtime write that landed meanwhile -- are left
+   * as they are.
+   *
+   * ⚠ NO CLIENT COPY OF THE PROJECT RULE HERE. The server refuses and this
+   * reports it; the controls ask archivesAsOrder so they never offer it. A
+   * copy in the store would be a third thing to keep in step.
+   */
+  const setOrderArchived = useCallback(async (
+    id: string,
+    archived: boolean,
+  ): Promise<ArchiveResult> => {
+    const entry = {
+      text: archived ? "Moved to archive" : "Restored from archive",
+      time: today(),
+    };
+    let previous: boolean | undefined;
+    setRawOrders(prev => prev.map(o => {
+      if (o.id !== id) return o;
+      previous = o.archived;
+      return { ...o, archived, activity: [...o.activity, entry] };
+    }));
+    const revert = () => setRawOrders(prev => prev.map(o =>
+      o.id === id && o.activity.includes(entry)
+        ? { ...o, archived: previous ?? !archived, activity: o.activity.filter(a => a !== entry) }
+        : o));
+
+    let res: Response;
+    try {
+      res = await fetch(`/api/orders/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ archived }),
+      });
+    } catch {
+      revert();
+      return { ok: false, error: "network_error" };
+    }
+    if (res.ok) return { ok: true };
+
+    revert();
+    let payload: { error?: string; message?: string } = {};
+    try { payload = await res.json(); } catch { /* not JSON */ }
+    return {
+      ok: false,
+      error: payload.error ?? `HTTP ${res.status}`,
+      message: payload.message,
+    };
   }, []);
 
-  const unarchiveOrder = useCallback(async (id: string) => {
-    const t = today();
-    const update = (list: Order[]) => list.map(o =>
-      o.id === id ? { ...o, archived: false, activity: [...o.activity, { text: "Restored from archive", time: t }] } : o
-    );
-    setRawOrders(prev => update(prev));
-    await apiCall(`/api/orders/${id}`, "PATCH", { archived: false });
-  }, []);
+  const archiveOrder = useCallback(
+    (id: string) => setOrderArchived(id, true), [setOrderArchived]);
+  const unarchiveOrder = useCallback(
+    (id: string) => setOrderArchived(id, false), [setOrderArchived]);
 
   const updateOrderDetails = useCallback(async (id: string, details: { door_style?: string; color?: string; sku_items?: { sku: string; quantity: number; description?: string }[]; production_start_date?: string | null; production_est_finish_date?: string | null; scheduled_delivery_date?: string | null }) => {
     const update = (list: Order[]) => list.map(o => o.id === id ? { ...o, ...details } : o);

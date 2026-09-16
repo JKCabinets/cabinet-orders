@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { Archive, Loader2, X, AlertCircle, Trash2 } from "lucide-react";
-import { Order, displayOrderNumber } from "@/lib/data";
+import { Order, displayOrderNumber, archivesAsOrder } from "@/lib/data";
 import { useStore } from "@/lib/store";
 import { useSession } from "next-auth/react";
 
@@ -48,6 +48,13 @@ export function BulkActionBar({ selectedOrders, onClear, onDone }: BulkActionBar
   // action that will fail per row -- but the server check is the real one.
   const allCustom = count > 0 && selectedOrders.every(o => o.type === "custom");
   const canDelete = isAdmin && allCustom;
+
+  // ⚠ ARCHIVE IS STANDALONE ROWS ONLY (2026-09-15), the way delete is custom
+  // rows only. A project-linked group is archived with its purchase on
+  // /projects, and the server refuses it row by row -- so on the cabinet,
+  // sample and hardware hubs this button could only ever report every row
+  // skipped. Absent rather than offered; the server check is the real one.
+  const canArchive = count > 0 && selectedOrders.every((o) => archivesAsOrder(o));
 
   useEffect(() => {
     if (confirming?.kind === "delete") {
@@ -123,16 +130,27 @@ export function BulkActionBar({ selectedOrders, onClear, onDone }: BulkActionBar
           </span>
         </div>
 
-        {/* Archive */}
-        <button
-          onClick={() => setConfirming({ kind: "archive" })}
-          disabled={working}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all disabled:opacity-50 bg-white/6 border border-cream/15 text-cream/85 hover:bg-white/10"
-          title="Archive all selected orders"
-        >
-          <Archive className="w-3 h-3" />
-          Archive
-        </button>
+        {/* Archive -- standalone rows only */}
+        {canArchive && (
+          <button
+            onClick={() => setConfirming({ kind: "archive" })}
+            disabled={working}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all disabled:opacity-50 bg-white/6 border border-cream/15 text-cream/85 hover:bg-white/10"
+            title="Archive all selected orders"
+          >
+            <Archive className="w-3 h-3" />
+            Archive
+          </button>
+        )}
+
+        {/* ⚠ A BAR WITH NO ACTIONS SAYS WHY. On the Shopify hubs neither
+            action applies, and a selection that offers nothing reads as
+            broken. */}
+        {!canArchive && !canDelete && (
+          <span className="text-[11px] pl-1 text-cream/55">
+            Archived with their purchase, on Projects
+          </span>
+        )}
 
         {/* Delete — admin only, custom rows only */}
         {canDelete && (

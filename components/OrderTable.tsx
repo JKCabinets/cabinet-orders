@@ -5,7 +5,7 @@ import clsx from "clsx";
 import {
   Order, Stage, Project, OrderType, STAGE_LIST_BY_TYPE,
   AVATAR_COLOR_STYLES, getBackorderStatus, nextStageFor, displayOrderNumber,
-  STAGE_ACCENT,
+  STAGE_ACCENT, archivesAsOrder,
 } from "@/lib/data";
 import { STAGE_ORDER_BY_TYPE, ORDER_STAGE_ORDER } from "@/lib/stageLogic";
 import { useStore } from "@/lib/store";
@@ -644,7 +644,11 @@ function ownerOf(order: Order, projects: Record<string, Project>): string | null
 
 function useRowActions(order: Order) {
   const { data: session } = useSession();
-  const { claimOrder: rawClaimOrder, moveStage, archiveOrder, unarchiveOrder, team, projects } = useStore();
+  const {
+    claimOrder: rawClaimOrder, moveStage,
+    archiveOrder: rawArchiveOrder, unarchiveOrder: rawUnarchiveOrder,
+    team, projects,
+  } = useStore();
   const { showToast } = useToast();
   // We use session.user.id (team_members.id, the IMMUTABLE surrogate key)
   // for ownership comparisons — it survives both display-name and
@@ -698,6 +702,27 @@ function useRowActions(order: Order) {
       return { ok: false, claimedBy, reason: "project_owned" as const };
     }
     return claimOrder(id, target);
+  }
+
+  /**
+   * Archive or restore, with a refusal said out loud.
+   *
+   * The store reverts a refused change and returns the server's reason; this
+   * turns it into a toast, the way claimOrder above does for a claim
+   * conflict. Without it the row reappears with no explanation, which reads
+   * as a broken button. The branches below only render these for rows
+   * archivesAsOrder accepts and the viewer can act on, so a refusal here
+   * means the view was stale.
+   */
+  async function archiveOrder(id: string) {
+    const result = await rawArchiveOrder(id);
+    if (!result.ok) showToast(result.message ?? "Could not archive this order", { kind: "error" });
+    return result;
+  }
+  async function unarchiveOrder(id: string) {
+    const result = await rawUnarchiveOrder(id);
+    if (!result.ok) showToast(result.message ?? "Could not restore this order", { kind: "error" });
+    return result;
   }
 
   return {
@@ -1129,6 +1154,12 @@ function UpdateStatusActions({
 
   // ── Delivered ──────────────────────────────────────────────────────
   if (stage === "Delivered") {
+    // ⚠ A PROJECT-LINKED GROUP HAS NO ACTION HERE. Its purchase is archived as
+    // a whole from /projects, once every group has reached the end of its own
+    // flow; an Archive button on one group is how SHO-1052 was archived twice
+    // over. Of the types that end at Delivered, only a custom job is
+    // standalone.
+    if (!archivesAsOrder(order)) return null;
     return (
       <button
         onClick={() => withBusy(() => archiveOrder(order.id))}

@@ -1,5 +1,14 @@
 # Security patch summary
 
+> ⚠ **HISTORICAL RECORD of the May 2026 patch set — not a description of the
+> current system.** Several files named below have since changed or gone:
+> `middleware.ts` is now `proxy.ts`; `lib/auth.ts` no longer HTML-encodes on
+> write (see the comment on `cleanInput`); the `delivery-complete` cron was
+> removed in `2b479e6`; and `app/api/orders/archive/route.ts` was deleted on
+> 2026-09-15 — nothing had called it since the initial commit, and it was an
+> order-level archive path the project archiving rule does not allow. What
+> the system is today lives in `docs/OMS-STATE-*.md`.
+
 Each finding below maps to a CWE from the security scan, the root cause in the
 codebase, and the file(s) changed. All 18 patched files preserve their original
 paths under `cabinet-orders-security-patches/` — drop them in over the

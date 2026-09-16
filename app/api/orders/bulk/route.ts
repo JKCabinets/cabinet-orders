@@ -26,7 +26,9 @@ import { supabase } from "@/lib/supabase";
  * at a time, through PATCH /api/orders/[id], which has all of the above.
  *
  * What remains:
- *   archive  — reversible, permission-checked, any type.
+ *   archive  — reversible, permission-checked, STANDALONE ROWS ONLY (custom
+ *              jobs, warranty claims). A project-linked group is archived
+ *              with its project, through PATCH /api/projects/[id].
  *   delete   — DESTRUCTIVE, admin only, CUSTOM ROWS ONLY.
  *
  * Custom jobs are contract work tracked here for organisation; they carry no
@@ -145,6 +147,23 @@ export async function POST(req: NextRequest) {
 
     // ── Archive ─────────────────────────────────────────────────────────────
     if (action === "archive" && targetArchived !== null) {
+      // ⚠ PROJECT-LINKED ROWS ARE REFUSED, AND FIRST (decided 2026-09-15). A
+      // purchase is archived as a whole through PATCH /api/projects/[id], and
+      // `orders.archived` stays false on its groups. Without this, bulk was
+      // the bypass for the same refusal in PATCH /api/orders/[id].
+      //
+      // Before the permission checks, so the reason given is the real one --
+      // nobody may archive a group on its own, admin or not -- and before the
+      // no-op check, so a restore sent for a group already false is refused
+      // rather than reported as a success it was never allowed to be.
+      if (order.project_id) {
+        results.push({
+          id, ok: false,
+          error: `archived_not_allowed: ${id} is part of ${order.project_id} -- archive or restore the project instead`,
+        });
+        continue;
+      }
+
       if (!isAdmin) {
         if (order.source !== "Manual") {
           results.push({ id, ok: false, error: "forbidden: only admins can archive non-manual orders" });

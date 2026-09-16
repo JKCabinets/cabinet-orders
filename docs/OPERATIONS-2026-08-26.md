@@ -4,7 +4,8 @@
 
 ⚠ **AMENDED 2026-09-15.** The `override_ack` inconsistency in §10 is closed,
 the warranty-vs-custom question in §12 is decided, §9 carries two new
-incidents, and archiving has a stated rule. Corrections are inline.
+incidents, and archiving has a stated rule, now enforced. Corrections are
+inline.
 
 ⚠ **AMENDED 2026-08-26.** Corrections are marked inline. The largest are: the
 customer-facing stage table is now keyed on `(type, stage)`; a checkout splits
@@ -562,7 +563,7 @@ first, so the order showed in one place and not the other, with the activity
 trail asserting "Project restored" on both groups. Fixed by hand:
 `update orders set archived = false where project_id = 'SHO-1052';`
 → **Produced the rule that a project is the only truth for archiving** —
-§10, and the enforcement is outstanding.
+§10, enforced the same day.
 
 **⚠ `projects` readable and writable by the public anon key (2026-08-25 →
 2026-09-01).** `projects` was the only table in the database with RLS
@@ -727,9 +728,11 @@ every group goes with it; restore it and every group comes back. It is not
 possible — by intent — to archive one group of a purchase on its own, and
 archiving is refused until every group has reached the last stage of its own
 flow, unless the purchase is refunded. Standalone rows, having no project,
-are archived individually. ⚠ **The rule is stated and not yet enforced:**
-the order-level archive path still writes a duplicate flag, which is how
-SHO-1052 disappeared from one list while showing in another. See §9.
+are archived individually. ✅ **Enforced 2026-09-15:** the order-level
+archive routes refuse a group that belongs to a purchase and name the
+purchase to archive instead, and no screen offers to archive one group on
+its own. Before that, the order-level path wrote a duplicate flag, which is
+how SHO-1052 disappeared from one list while showing in another. See §9.
 
 **A claim is enforced, and admins are exempt but logged** (2026-09-15).
 Someone else's claimed order refuses every edit — stage moves, dates,

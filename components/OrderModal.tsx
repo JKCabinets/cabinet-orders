@@ -8,7 +8,7 @@ import {
   Order, Stage, ORDER_STAGES, STAGE_LIST_BY_TYPE,
   AVATAR_COLOR_STYLES,
   isPaymentHoldStatus, paymentHoldActive, paymentHoldLabel,
-  displayOrderNumber, nextStageFor, poReference,
+  displayOrderNumber, nextStageFor, poReference, archivesAsOrder,
   type TeamMember,
 } from "@/lib/data";
 import { slaRuleFor, slaAgeHours, hoursInStage, slaTier, formatStageAge } from "@/lib/sla";
@@ -246,6 +246,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
   const { showToast } = useToast();
   const [claimBusy, setClaimBusy] = useState(false);
   const [reDecodeBusy, setReDecodeBusy] = useState(false);
+  const [archiveBusy, setArchiveBusy] = useState(false);
 
   // Wrap claimOrder with the same conflict-toast UX used in OrderTable.
   // Returns void; busy state is set/unset around the call so the button
@@ -746,12 +747,34 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
     onClose();
   }
 
-  function handleArchive() {
-    if (liveOrder.archived) {
-      unarchiveOrder(liveOrder.id);
-    } else {
-      archiveOrder(liveOrder.id);
-      onClose();
+  /**
+   * Archive or restore THIS row on its own -- offered only for a standalone
+   * row the viewer can act on (see the button).
+   *
+   * ⚠ WAITS FOR THE ANSWER BEFORE CLOSING. This closed the modal the moment it
+   * fired, so a refusal had nowhere to be said: the row simply came back on
+   * the board with no explanation. The store reverts a refusal and returns
+   * the server's reason, and the modal stays open to show it.
+   */
+  async function handleArchive() {
+    if (archiveBusy) return;
+    const restoring = !!liveOrder.archived;
+    setArchiveBusy(true);
+    try {
+      const result = restoring
+        ? await unarchiveOrder(liveOrder.id)
+        : await archiveOrder(liveOrder.id);
+      if (!result.ok) {
+        showToast(
+          result.message
+            ?? (restoring ? "Could not restore this order" : "Could not archive this order"),
+          { kind: "error" },
+        );
+        return;
+      }
+      if (!restoring) onClose();
+    } finally {
+      setArchiveBusy(false);
     }
   }
 
@@ -855,13 +878,23 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
               </button>
             )}
             </div>
-            {isCompleted && (
+            {/* ⚠ STANDALONE ROWS ONLY. A project-linked group is archived with
+                its purchase, on /projects -- offering it here is how SHO-1052
+                was archived twice over. And only where the viewer can act:
+                somebody else's claim refuses this server-side, and the table
+                already withholds its archive buttons from those rows. */}
+            {isCompleted && archivesAsOrder(liveOrder) && canEdit && (
               <button
-                onClick={handleArchive}
+                onClick={() => { void handleArchive(); }}
+                disabled={archiveBusy}
                 title={liveOrder.archived ? "Restore" : "Archive"}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider transition-all bg-white/8 border border-white/15 text-cream/70 hover:bg-white/12 hover:text-cream"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider transition-all bg-white/8 border border-white/15 text-cream/70 hover:bg-white/12 hover:text-cream disabled:opacity-50"
               >
-                {liveOrder.archived ? <><RotateCcw className="w-3 h-3" /> Restore</> : <><Archive className="w-3 h-3" /> Archive</>}
+                {archiveBusy
+                  ? <Loader2 className="w-3 h-3 animate-spin" />
+                  : liveOrder.archived
+                    ? <><RotateCcw className="w-3 h-3" /> Restore</>
+                    : <><Archive className="w-3 h-3" /> Archive</>}
               </button>
             )}
             {liveOrder.source === "Manual" && (

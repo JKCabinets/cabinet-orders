@@ -321,8 +321,15 @@ export interface Order {
   payment_hold_cleared_for?: string | null;
   payment_hold_cleared_at?: string | null;
   /**
-   * The purchase this group belongs to. NULL only for warranty rows,
-   * which are ABOUT a purchase rather than part of one.
+   * The purchase this group belongs to. NULL on STANDALONE rows only --
+   * custom jobs and warranty claims. A warranty claim is ABOUT a purchase
+   * rather than part of one; a custom job runs on its own contract and has
+   * been standalone since 2026-08-24-custom-orders-standalone.sql.
+   *
+   * ⚠ CORRECTED 2026-09-15. This said "NULL only for warranty rows", which
+   * stopped being true when custom jobs left the project model. The archiving
+   * rule keys on this column (see archivesAsOrder), so the stale version
+   * described that rule wrongly to anybody who read it.
    *
    * ⚠ This is the customer-facing ORDER NUMBER. `id` is the internal
    * group handle (SHO-1048-CAB). Never show `id` to a customer -- use
@@ -744,7 +751,7 @@ export interface Project {
   /**
    * Archived as a whole PURCHASE. Groups in `orders` are hidden by lookup on
    * this, never by their own archived flag -- that column is for standalone
-   * rows (custom jobs) only.
+   * rows only: custom jobs AND warranty claims. See archivesAsOrder.
    *
    * ⚠ The column shipped in 2026-08-25-project-archive.sql and this
    * declaration did not: the field existed in the database and in the PATCH
@@ -763,6 +770,30 @@ export interface Project {
    */
   claimed_by?: string | null;
   claimed_at?: string | null;
+}
+
+/**
+ * Is this row archived ON ITS OWN, rather than with a project?
+ *
+ * ⚠ A PROJECT IS THE UNIT OF ARCHIVING (decided 2026-09-15). Archive a
+ * purchase and every group goes with it; restore it and every group comes
+ * back. It is not possible, by intent, to archive one group of a purchase on
+ * its own. `orders.archived` stays false on every project-linked row, and a
+ * group is hidden by lookup on `projects.archived` -- two flags carrying one
+ * fact is how SHO-1052 vanished from cabinet orders while still showing in
+ * the projects hub.
+ *
+ * Standalone rows -- custom jobs and warranty claims, which have no project --
+ * keep order-level archiving, and this is the one question that separates
+ * them.
+ *
+ * ⚠ THIS IS NOT THE ENFORCEMENT. PATCH /api/orders/[id] and /api/orders/bulk
+ * refuse `archived` on a project-linked row. This exists so that no control
+ * offers what the server will refuse, and so that every archive control asks
+ * the same question rather than each deciding for itself.
+ */
+export function archivesAsOrder(order: Pick<Order, "project_id">): boolean {
+  return !order.project_id;
 }
 
 /**

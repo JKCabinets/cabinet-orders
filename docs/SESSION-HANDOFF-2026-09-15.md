@@ -459,19 +459,22 @@ nothing on success, so silence is not a result.
 | Admin exemption is server-side and unconditional | The "Edit order" toggle is deliberateness in the UI, not enforcement. An admin acting through the API or a stale tab must still be able to act — and must still be logged. |
 | Attachment DELETE gated the same as upload, not more strictly | Removing a signed receipt from another member's claimed row is precisely the crossed-wires case claims exist for. A second, stricter rule is a second thing to keep in sync for no gain. |
 | Manual Push, not "Mark delivered anyway" | The stage page has always called it Manual Push. Two names for one action is how somebody concludes there are two. |
+| A group-level archive request is refused in both directions | A restore sent for a group is the same second copy of the fact. Accepting it as a harmless no-op would report a success for something that was never allowed. |
+| `/api/orders/archive` deleted, not given a refusal | Nothing had called it since the initial commit. A refusal added to a dead route is a guard nobody reaches, and it keeps a path that reads as live. |
+| The store reverts one row, not a snapshot of the array | A snapshot taken inside a setState updater is still empty whenever React defers the updater, and restoring it blanks the board. Demonstrated on `moveStage` (item 10). |
 
 ---
 
 ## Open — not done, deliberately
 
-0. **PROJECTS HOLD THE TRUTH FOR ARCHIVING — decided 2026-09-15, not yet built.**
+0. ✅ **PROJECTS HOLD THE TRUTH FOR ARCHIVING — decided and built 2026-09-15.**
 
    `app/api/projects/[id]/route.ts` already documents this: "The GROUPS ARE NOT
    TOUCHED. `orders.archived` stays false on project-linked rows; a group is
    hidden because its project is archived... Writing both would be two copies of
-   one fact." It is right, and nothing enforces it — `PATCH /api/orders/[id]`
-   with `{archived: true}` sets the duplicate flag on a project-linked row
-   happily, and `/api/orders/bulk` does too.
+   one fact." It was right, and until this was built nothing enforced it —
+   `PATCH /api/orders/[id]` with `{archived: true}` set the duplicate flag on
+   a project-linked row happily, and `/api/orders/bulk` did too.
 
    That is how SHO-1052 vanished: the project was archived AND the groups were
    archived individually. Restoring the project cleared the only flag that route
@@ -495,6 +498,46 @@ nothing on success, so silence is not a result.
    last stage" is enforced in the projects route today: it refuses with
    `not_complete` and names the unfinished groups by id and stage, unless the
    project is refunded. Do not rebuild it.
+
+   **Built** (`patch_archive_project_truth.py`):
+   - `PATCH /api/orders/[id]` refuses `archived` in either direction on a
+     project-linked row — 422 `archived_not_allowed`, naming the project —
+     and refuses a non-boolean `archived` on any row. **Above the claim
+     guard**, so the refusal cannot leave a phantom admin-override row.
+   - `/api/orders/bulk` refuses each project-linked row first, before the
+     permission and no-op checks, in the route's existing per-row shape.
+   - `/api/orders/archive` **deleted**. `SECURITY.md`, the only thing that
+     named it, is marked as a historical record.
+   - `archivesAsOrder` in `lib/data` is the one client question. The modal
+     button, the table's Delivered action and the bulk bar ask it; the modal
+     button also requires `canEdit`, matching the table. A bulk selection
+     with no applicable action says why instead of showing an empty bar.
+   - The store's `archiveOrder`/`unarchiveOrder` revert a refusal on the one
+     row and return it, and every caller toasts it. They used to discard it.
+     The modal now waits for the answer before closing.
+   - Two stale comments in `lib/data.ts` on the fields the rule keys on:
+     `project_id` is null for custom jobs too, and order-level archiving
+     covers warranty claims too.
+
+   **Proved by enumeration**, compiling the real files before and after with
+   identical stubs, under React 19:
+   - PATCH: 960 cases. 480 identical; the other 480 are exactly the requests
+     carrying `archived` on a project-linked row or a non-boolean `archived`,
+     each now a 422 with no write. Before, a project-linked request wrote
+     `orders.archived` unless a member ran into somebody else's claim, and an
+     admin acting over a claim left an override row on the trail as well.
+   - Bulk: 12 requests over 49 ids, each identical to "before, with every
+     project-linked row refused and its write and activity row removed".
+   - OrderTable: 1,656 renders. 1,592 identical; 64 lose only Archive Order,
+     all on project-linked rows.
+   - OrderModal: 644 renders. 90 lose the archive button — 70 project-linked,
+     20 claim-locked with Edit order off. Every other button identical.
+   - BulkActionBar: 60 renders, all as specified.
+   - Store: 80 scenarios — success, 409, 422, non-JSON 500, network failure,
+     with and without a queued or concurrent realtime write. Same request
+     byte for byte; success identical; every failure undone exactly.
+
+   **Not built:** a database constraint (item 11).
 
 
 1. **`order_attachments` does not publish over realtime.** `order_activity`
@@ -550,6 +593,72 @@ nothing on success, so silence is not a result.
    ```
 
    Zero on the second command means it is all history.
+10. **`moveStage` blanks the board when the server refuses a move.** It
+    snapshots `rawOrders` inside a setState updater and reads the snapshot on
+    the next line. React runs that updater on the spot only when the store
+    has had no state update since it last rendered for some other reason;
+    otherwise the snapshot is still `[]`. Then `targetOrder` is undefined, so
+    the local backward-move clearing never mirrors, and any refusal —
+    `tracking_required`, `delivery_proof_required`, `claimed_by_other`,
+    `admin_pin_required` — runs `setRawOrders([])` and empties every list
+    until a reload. Intermittent in the app, because it depends on what
+    rendered last. **Demonstrated 2026-09-15** against the real
+    `lib/store.tsx` under React 19: two rows in, one refused move, zero rows
+    left, with or without a realtime update queued. The store's archive
+    functions were written to revert one row for this reason. Fix
+    `moveStage` the same way, in its own commit, enumerated.
+11. **No database constraint backs the archiving rule.** The two order routes
+    refuse; a webhook, an import, a script or the SQL editor can still set
+    `orders.archived` on a project-linked row. Proposed:
+    `orders_archived_standalone_only CHECK ((archived = false) OR (project_id IS NULL))`,
+    the same form as `orders_total_price_standalone_only`, with the route
+    checks kept so a caller gets a 422 that explains itself rather than a 500
+    naming a constraint. Undecided. It would apply cleanly: on 2026-09-15 no
+    project-linked row had `archived = true`.
+12. **Every refusal in `PATCH /api/orders/[id]` below the claim guard records
+    a phantom admin edit.** `requireOrderClaim` writes "Edited by X (admin)
+    while claimed by another member" before the route validates anything, so
+    an admin request over a claim that is then refused — `stage_not_in_flow`,
+    `admin_pin_required`, the acknowledgment, production-date, payment-hold,
+    tracking and delivery-proof gates, `total_price_not_allowed` — leaves that
+    row on the trail for an edit that never happened. OMS-STATE §3 promises
+    that nothing is claimed that did not happen. The archive refusal was put
+    above the guard for this reason; the others were not moved.
+13. **`/orders/archived` can never show a row.** It is archive mode for
+    cabinets only, cabinet groups are always project-linked, and a
+    project-linked row can no longer be archived on its own. OrderTable's
+    `"Archived"` branches — the Restore button, the status label, the hidden
+    column and its colSpan arithmetic — are dead with it, unless something
+    outside the files read on 2026-09-15 passes `stage="Archived"` to the
+    table; `git grep` for that first. Remove them together, in their own
+    commit, enumerated.
+14. **Dead code and stale text found on the way, not touched:**
+    - `app/sla/SLAClient.tsx`: `OverdueStageBlock`, `OverdueRow`,
+      `StageAgingRow` and `BarRow` are defined and never rendered, and
+      `archiveOrder` and `moveStage` are destructured and never used. The SLA
+      page's Archive button lives in that dead code.
+    - `app/api/orders/bulk/route.ts:244` says every child foreign key is
+      `NO ACTION` (verified 2026-08-20). §9 of this file says they are all
+      `CASCADE` now — the same stale comment that sent SHO-1051 to the wrong
+      table.
+    - `components/BulkActionBar.tsx:232` warns that deleting a custom job also
+      removes its project. Custom jobs have no project.
+15. **`/api/shopify/orders` inserts cabinet rows with no project.** Called
+    from `app/admin/shopify/page.tsx:69`, which was not read. It writes one
+    `type: "order"` row per Shopify order and no `project_id` — the shape from
+    before projects existed — and the archiving rule would treat such a row
+    as standalone. None exist: on 2026-09-15 `orders` held three rows, one
+    custom job, one cabinet group and one sample group, each linked as the
+    model says. Whether OPERATIONS §12's historic backfill runs through this
+    importer is unverified.
+16. **Server readers of `orders.archived` do not consult the project.**
+    `production-complete` filters `.eq("archived", false)`, and
+    `lib/autoAdvance.ts` returns early on `order.archived`. On a
+    project-linked group that flag is always false, so neither excludes a
+    group whose PROJECT is archived — a refunded purchase archived with its
+    cabinets still In production and a finish date set would, on the face of
+    it, be advanced overnight. Seen in grep lines only; read both files
+    before deciding.
 
 ---
 
@@ -641,6 +750,8 @@ patch_auto_advance_and_dates.py
 patch_webhook_events_table.py
 patch_realtime_activity.py
 patch_docs_2026_09_15.py
+patch_archive_project_truth.py
+patch_docs_archive_enforced.py
 ```
 
 ⚠ A prerequisite check keyed on a **CSS class** rather than on an interface once
