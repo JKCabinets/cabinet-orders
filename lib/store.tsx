@@ -151,6 +151,51 @@ function mergeFetched(
   return next;
 }
 
+/**
+ * Undo ONE optimistic write on ONE record, field by field.
+ *
+ * `before` and `after` are the record as the optimistic update found it and as
+ * it left it. A field counts as this call's change when the two differ, and it
+ * goes back only if `current` still holds the value this call wrote -- so a
+ * realtime row or a later local edit that has touched the field since is left
+ * standing. A key the update ADDED is removed again rather than left behind as
+ * `undefined`.
+ *
+ * ⚠ WHY NOT RESTORE A SNAPSHOT OF THE ARRAY. moveStage and updateTeamMember
+ * did, and took the snapshot inside a setState updater. React runs an updater
+ * on the spot only when the component has no update still pending from its
+ * last render; otherwise it runs it at the next render. So the snapshot was:
+ *
+ *   · EMPTY on the line after dispatching -- which is where moveStage looked
+ *     the row up to mirror the backward-move clearing, so on a store that had
+ *     updated recently the mirror silently never happened;
+ *   · the WHOLE ARRAY AS OF THAT RENDER by the time a refusal came back -- so
+ *     restoring it undid every change to every other row that had landed
+ *     while the request was out, a colleague's realtime edit included;
+ *   · still EMPTY if the refusal beat the render, blanking every list.
+ *
+ * All three demonstrated 2026-09-16 against this file under React 19. The
+ * third needs a response faster than React's next render, which a real
+ * network does not give; the first two need nothing unusual.
+ *
+ * ⚠ THE FIELDS ARE DERIVED, NOT LISTED. A hand-kept list of "what moveStage
+ * writes" is a second copy of the update, and the first field added to one and
+ * not the other would stop being reverted without any error.
+ */
+function undoFields<T extends object>(current: T, before: T, after: T): T {
+  const c = current as unknown as Record<string, unknown>;
+  const b = before as unknown as Record<string, unknown>;
+  const a = after as unknown as Record<string, unknown>;
+  const next: Record<string, unknown> = { ...c };
+  for (const key of Object.keys(a)) {
+    if (key in b && b[key] === a[key]) continue;  // this call did not change it
+    if (c[key] !== a[key]) continue;              // written again since
+    if (key in b) next[key] = b[key];
+    else delete next[key];
+  }
+  return next as unknown as T;
+}
+
 function shapeTeamMember(raw: Record<string, unknown>): TeamMember {
   // Map snake_case DB columns to camelCase TS fields. The raw object
   // might come from either:
@@ -416,29 +461,32 @@ export function StoreProvider({ children }: { children: ReactNode }) {
      *  server when no receipt is attached; recorded in order_activity. */
     overrideDeliveryProof?: string,
   ): Promise<{ ok: boolean; pinRequired?: boolean; error?: string }> => {
-    const t = today();
+    // ⚠ NO SNAPSHOT OF THE ARRAY (open item 10, fixed 2026-09-16).
+    //
+    // This took `allBefore` inside a setState updater and read it on the next
+    // line, where it was usually still `[]` -- see undoFields for why. So the
+    // backward-move clearing below looked the row up in an empty array and
+    // never mirrored: stale dates and tracking numbers stayed on screen until
+    // realtime replaced the row. And a refusal restored the array as it stood
+    // at the next render, undoing any other order's change that had arrived
+    // while the request was out.
+    //
+    // The row is now read INSIDE the updater, where it is guaranteed current,
+    // and a refusal undoes this one row with undoFields. `before` and `after`
+    // are read only inside the revert's own updater, which React always runs
+    // after the optimistic one -- never on the line after dispatching.
+    const entry = { text: `Moved to "${stage}"`, time: today() };
+    let before: Order | undefined;
+    let after: Order | undefined;
 
-    // Snapshot the orders BEFORE the optimistic update so we can revert
-    // exactly if the server rejects. We snapshot from the setter callback
-    // (rather than the closed-over `orders`) to be sure we capture the
-    // freshest state — older versions of this code lost concurrent
-    // updates that landed between render and the click.
-    let allBefore: Order[] = [];
-    setRawOrders(prev => { allBefore = prev; return prev; });
-
-    // Compute the local clear-fields mirror of what the server will do on
-    // a backward move. Without this, the UI would briefly show stale dates
-    // until the next data refresh pulled them back as null.
-    const targetOrder = allBefore.find(o => o.id === id);
-    // Pass the row's type. Stage names are shared across flows now, so
-    // resolving "Delivered" blind would use the ORDER index for a custom
-    // order and clear the wrong fields.
-    const cleared = targetOrder
-      ? fieldsToClearOnBackwardMove(targetOrder.stage, stage, targetOrder.type)
-      : null;
-
-    const update = (list: Order[]) => list.map(o =>
-      o.id === id ? {
+    setRawOrders(prev => prev.map(o => {
+      if (o.id !== id) return o;
+      // Pass the row's type. Stage names are shared across flows, so
+      // resolving "Delivered" blind would use the ORDER index for a custom
+      // order and clear the wrong fields.
+      const cleared = fieldsToClearOnBackwardMove(o.stage, stage, o.type);
+      before = o;
+      after = {
         ...o,
         stage,
         claimed_by: stage !== "New" ? null : o.claimed_by,
@@ -468,10 +516,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           cleared && "tracking_number" in cleared ? null : o.tracking_number,
         carrier:
           cleared && "carrier" in cleared ? null : o.carrier,
-        activity: [...o.activity, { text: `Moved to "${stage}"`, time: t }]
-      } : o
-    );
-    setRawOrders(prev => update(prev));
+        activity: [...o.activity, entry],
+      };
+      return after;
+    }));
+
+    const revert = () => setRawOrders(prev => prev.map(o => {
+      if (o.id !== id || !before || !after) return o;
+      const undone = undoFields(o, before, after);
+      // Remove this call's own entry by identity, even if a realtime activity
+      // row has since replaced the array undoFields would otherwise restore.
+      return { ...undone, activity: undone.activity.filter(a => a !== entry) };
+    }));
 
     // Use fetch directly here (not the generic apiCall) so we can read the
     // 403 body and surface `admin_pin_required` to the caller — apiCall
@@ -489,18 +545,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }),
       });
     } catch {
-      // Network error — revert the optimistic update so the UI doesn't lie
+      // Network error -- undo the optimistic update so the UI doesn't lie
       // about state we never persisted.
-      setRawOrders(allBefore);
+      revert();
       return { ok: false, error: "network_error" };
     }
 
     if (res.ok) return { ok: true };
 
-    // Server rejected — revert everything we did optimistically. Without
-    // this, the order appears moved for a few seconds and then snaps back
-    // when the next data refresh pulls the true state from the server.
-    setRawOrders(allBefore);
+    // Server refused -- undo this row. Without it the order appears moved
+    // until something refetches, and a refusal nobody sees undone reads as
+    // the move having worked.
+    revert();
 
     // Parse the error body so callers can branch on `admin_pin_required`.
     let payload: { error?: string; message?: string } = {};
@@ -597,18 +653,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
    *
    * ⚠ A REFUSAL IS REVERTED AND REPORTED. This used to apply the change
    * locally, await the PATCH and discard the result. A refused archive --
-   * somebody else's claim, or since 2026-09-15 a project-linked group --
+   * somebody else's claim, or since 2026-09-16 a project-linked group --
    * wrote nothing on the server, so no realtime event came back to correct
    * it, and the row stayed gone from the board until a refresh: the SHO-1052
    * symptom, produced entirely in the browser.
    *
    * ⚠ IT REVERTS THE ONE ROW, NOT A SNAPSHOT OF THE ARRAY. A snapshot taken
-   * inside a setState updater is only filled in if React runs the updater on
-   * the spot, and React skips that whenever this component has had a state
-   * update since it last rendered for some other reason -- for the store,
-   * often. The snapshot is then still empty when the refusal comes back, and
-   * restoring it blanks every row. Demonstrated 2026-09-15 against this file
-   * under React 19; moveStage above has that defect (handoff, open items).
+   * inside a setState updater is filled in only when React gets round to
+   * running the updater, so restoring one undoes other rows' changes that
+   * landed meanwhile -- or, if the refusal beats the render, blanks every
+   * row. moveStage and updateTeamMember did exactly that until 2026-09-16.
+   * See undoFields.
    *
    * This undoes only what the call did: the flag goes back to its value
    * before the call, and the call's own activity entry is removed. Other
@@ -792,10 +847,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const updateTeamMember = useCallback(async (id: string, updates: Partial<TeamMember> & { password?: string }): Promise<{ ok: boolean; error?: string }> => {
-    // Snapshot prior state so we can roll back the optimistic update if
-    // the server rejects the change (e.g. weak password -> 422).
-    let prevSnapshot: TeamMember[] = [];
-    setTeam(prev => { prevSnapshot = prev; return prev.map(m => m.id === id ? { ...m, ...updates } : m); });
+    // ⚠ NO SNAPSHOT OF THE ARRAY (fixed 2026-09-16). `prevSnapshot` was taken
+    // inside a setState updater, so a rejected change -- a weak password is a
+    // 422 -- restored the team as it stood at the next render, undoing
+    // anything else changed since, or `[]` if the rejection came back first.
+    // Same defect as moveStage; see undoFields.
+    let before: TeamMember | undefined;
+    let after: TeamMember | undefined;
+    setTeam(prev => prev.map(m => {
+      if (m.id !== id) return m;
+      before = m;
+      after = { ...m, ...updates };
+      return after;
+    }));
     const res = await apiCall(`/api/team/${id}`, "PATCH", {
       name: updates.name, username: updates.username, initials: updates.initials,
       role: updates.role, avatarColor: updates.avatarColor,
@@ -803,8 +867,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     });
     // apiCall returns { __error } on failure, or the parsed body on success.
     if (res?.__error) {
-      // Roll back the optimistic change and report the real error.
-      setTeam(prevSnapshot);
+      // Undo this member's optimistic change and report the real error.
+      setTeam(prev => prev.map(m =>
+        m.id === id && before && after ? undoFields(m, before, after) : m));
       return { ok: false, error: res.__error };
     }
     // Reconcile against the server's authoritative state.

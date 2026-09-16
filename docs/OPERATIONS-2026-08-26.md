@@ -563,7 +563,7 @@ first, so the order showed in one place and not the other, with the activity
 trail asserting "Project restored" on both groups. Fixed by hand:
 `update orders set archived = false where project_id = 'SHO-1052';`
 → **Produced the rule that a project is the only truth for archiving** —
-§10, enforced the same day.
+§10, enforced the next day.
 
 **⚠ `projects` readable and writable by the public anon key (2026-08-25 →
 2026-09-01).** `projects` was the only table in the database with RLS
@@ -728,7 +728,7 @@ every group goes with it; restore it and every group comes back. It is not
 possible — by intent — to archive one group of a purchase on its own, and
 archiving is refused until every group has reached the last stage of its own
 flow, unless the purchase is refunded. Standalone rows, having no project,
-are archived individually. ✅ **Enforced 2026-09-15:** the order-level
+are archived individually. ✅ **Enforced 2026-09-16:** the order-level
 archive routes refuse a group that belongs to a purchase and name the
 purchase to archive instead, and no screen offers to archive one group on
 its own. Before that, the order-level path wrote a duplicate flag, which is

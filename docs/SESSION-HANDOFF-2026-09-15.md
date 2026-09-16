@@ -1,6 +1,6 @@
 # SESSION HANDOFF — 2026-09-15
 
-Covers work from 2026-09-09 through 2026-09-15. Where a date is given below
+Covers work from 2026-09-09 through 2026-09-16. Where a date is given below
 it is the date of the **decision**, taken from the commit trail; the
 conversation that produced it may have run across a day boundary.
 
@@ -461,13 +461,14 @@ nothing on success, so silence is not a result.
 | Manual Push, not "Mark delivered anyway" | The stage page has always called it Manual Push. Two names for one action is how somebody concludes there are two. |
 | A group-level archive request is refused in both directions | A restore sent for a group is the same second copy of the fact. Accepting it as a harmless no-op would report a success for something that was never allowed. |
 | `/api/orders/archive` deleted, not given a refusal | Nothing had called it since the initial commit. A refusal added to a dead route is a guard nobody reaches, and it keeps a path that reads as live. |
-| The store reverts one row, not a snapshot of the array | A snapshot taken inside a setState updater is still empty whenever React defers the updater, and restoring it blanks the board. Demonstrated on `moveStage` (item 10). |
+| The store undoes one record, not a snapshot of the array | A snapshot taken inside a setState updater is filled in only when React runs the updater, so restoring it undoes other rows' changes that landed meanwhile, or blanks the board if the refusal beats the render. `moveStage` and `updateTeamMember` both did (item 10). |
+| Undone fields are derived from the optimistic update, not listed | A hand-kept list of what `moveStage` writes is a second copy of the update; the first field added to one and not the other would stop being reverted with no error. |
 
 ---
 
 ## Open — not done, deliberately
 
-0. ✅ **PROJECTS HOLD THE TRUTH FOR ARCHIVING — decided and built 2026-09-15.**
+0. ✅ **PROJECTS HOLD THE TRUTH FOR ARCHIVING — decided 2026-09-15, deployed 2026-09-16 as `76115c7`.**
 
    `app/api/projects/[id]/route.ts` already documents this: "The GROUPS ARE NOT
    TOUCHED. `orders.archived` stays false on project-linked rows; a group is
@@ -593,20 +594,34 @@ nothing on success, so silence is not a result.
    ```
 
    Zero on the second command means it is all history.
-10. **`moveStage` blanks the board when the server refuses a move.** It
-    snapshots `rawOrders` inside a setState updater and reads the snapshot on
-    the next line. React runs that updater on the spot only when the store
-    has had no state update since it last rendered for some other reason;
-    otherwise the snapshot is still `[]`. Then `targetOrder` is undefined, so
-    the local backward-move clearing never mirrors, and any refusal —
-    `tracking_required`, `delivery_proof_required`, `claimed_by_other`,
-    `admin_pin_required` — runs `setRawOrders([])` and empties every list
-    until a reload. Intermittent in the app, because it depends on what
-    rendered last. **Demonstrated 2026-09-15** against the real
-    `lib/store.tsx` under React 19: two rows in, one refused move, zero rows
-    left, with or without a realtime update queued. The store's archive
-    functions were written to revert one row for this reason. Fix
-    `moveStage` the same way, in its own commit, enumerated.
+10. ✅ **`moveStage` restored a stale snapshot on a refusal — fixed 2026-09-16.**
+    ⚠ **CORRECTED.** This item first said a refused move empties every list
+    until a reload. That was measured with the refusal arriving before React
+    rendered, which a real network does not do. Re-tested under real
+    scheduling, against the real `lib/store.tsx` under React 19, the defect
+    was three things:
+    - **The backward-move clearing never mirrored** on a store that had
+      updated recently. `moveStage` looked its row up in a snapshot taken
+      inside a setState updater, which React had not run yet, so it was
+      still `[]`. 180 of 1,044 such scenarios produced a different optimistic
+      row from the one the code intended — every one a backward move on a
+      flow that clears.
+    - **A refusal undid other rows' changes.** By the time the answer came
+      back the updater had run, so the snapshot was the array as of that
+      render; restoring it reverted anything that landed while the request
+      was out, a colleague's realtime edit included. 464 of 464 scenarios
+      with a concurrent write.
+    - **Only if the refusal beat React's next render** did it restore `[]`.
+    `updateTeamMember` had the same shape. Both now undo one record, field by
+    field (`undoFields`), and `moveStage` computes its clearing inside the
+    updater, from the row as it actually is (`patch_store_revert_one_record.py`).
+    **Proved** over 2,088 `moveStage` scenarios — every type, every from/to
+    pair in its flow, five server answers, a clean and a recently-updated
+    store, with and without a concurrent write — and 30 `updateTeamMember`
+    scenarios: requests and results identical; the optimistic row equal to
+    the old code's whenever its snapshot worked; success identical; every
+    refusal undone to the exact prior record, with concurrent writes left
+    standing.
 11. **No database constraint backs the archiving rule.** The two order routes
     refuse; a webhook, an import, a script or the SQL editor can still set
     `orders.archived` on a project-linked row. Proposed:
@@ -705,13 +720,23 @@ identifier appeared in a doc comment, twice in one condition, or twice on an
 import line (`import { X } from "./X"`). That is the check working. Measure,
 then set the number — never relax the check to make it pass.
 
-**⚠ Verify the deployed image, every time:**
+**⚠ Verify the deployed image, every time — from inside the repo:**
 
 ```bash
-HEAD_FULL=$(git rev-parse HEAD)
-docker ps --filter label=service=cabinet-orders --format '{{.Image}}' | grep -q "$HEAD_FULL" \
-  && echo "DEPLOYED" || echo "MISMATCH"
+cd ~/cabinet-orders \
+  && HEAD_FULL=$(git rev-parse HEAD) \
+  && test -n "$HEAD_FULL" \
+  && git log -1 --format='HEAD %H %s' \
+  && docker ps --filter label=service=cabinet-orders --format 'IMAGE {{.Image}}' \
+  && docker ps --filter label=service=cabinet-orders --format '{{.Image}}' | grep -qF "$HEAD_FULL" \
+  && echo "DEPLOYED" || echo "MISMATCH (or a step above failed)"
 ```
+
+⚠ **AN EMPTY HEAD PASSED THE OLD CHECK.** Run outside the repo, `git
+rev-parse` fails, `HEAD_FULL` is empty, and `grep -q ""` matches every line: on
+2026-09-16 it printed DEPLOYED while the running image was five commits behind
+and nothing had been deployed. `test -n` refuses the empty value, and the printed
+HEAD and IMAGE lines let a person see what was compared.
 
 ---
 
@@ -752,6 +777,8 @@ patch_realtime_activity.py
 patch_docs_2026_09_15.py
 patch_archive_project_truth.py
 patch_docs_archive_enforced.py
+patch_store_revert_one_record.py
+patch_docs_store_revert.py
 ```
 
 ⚠ A prerequisite check keyed on a **CSS class** rather than on an interface once
