@@ -853,8 +853,28 @@ nothing on success, so silence is not a result.
        label, the hidden column and its colSpan arithmetic. Nothing reaches any
        of it now. Removing it is its own commit, enumerated over every render
        case, because the colSpan arithmetic is shared with the live paths.
-    4. The stripped-down modal, asking the same question the server answers.
-       ⚠ Until it exists, `/archive` opens the ORDINARY modal: its controls are
+    4a. ✅ **The panels take a `readOnly` prop** (`patch_panels_read_only.py`,
+       2026-09-16). `AttachmentsPanel`, `AcknowledgmentPanel` and
+       `DamageReportPanel` each carry their own write controls, so gating them
+       from the modal alone would leave a button alive one file deeper.
+       Defaults to false, so nothing changes until 4b passes it.
+       `OrderDetails` already had the prop.
+
+       In `readOnly`: attachments keep the list, the names, the sizes and
+       Download, and lose upload, receipt upload, the drop zone and delete;
+       damage reports keep the list and expansion and lose Report damage and
+       the status buttons; the acknowledgment folds into the `canAct` gate it
+       already had, which covers submit, resubmit and Manual Push in one
+       answer. **Proved by rendering:** the default renders are identical to
+       before, and in `readOnly` the attachments panel keeps exactly one
+       control — Download — and no inputs at all. The acknowledgment panel's
+       fold is typechecked rather than rendered; its gate is the existing one.
+    4b. **The modal itself**, still open: compute the same question the server
+       asks (the predicate moves to `lib/data` so both sides read one
+       implementation), remove every write control, pass `readOnly` to the four
+       panels, and add two lines to the header — who handled the order, and
+       that it was archived on a date with restore as the way back.
+       ⚠ Until then, `/archive` opens the ORDINARY modal: its controls are
        refused by the server (409 `archived_read_only`), so they fail loudly
        rather than silently.
 21. **The registry token expires, and the deploy path around it is easy to
@@ -990,6 +1010,8 @@ patch_archived_read_only.py
 patch_docs_archived_read_only.py
 patch_archive_section.py
 patch_docs_archive_section.py
+patch_panels_read_only.py
+patch_docs_panels_read_only.py
 ```
 
 ⚠ A prerequisite check keyed on a **CSS class** rather than on an interface once

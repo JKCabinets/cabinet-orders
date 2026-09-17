@@ -27,6 +27,14 @@ interface AcknowledgmentPanelProps {
   /** Advance to Entered overriding red discrepancies (manual push). */
   onAdvanceOverride?: () => void;
   /**
+   * Show the acknowledgment and its discrepancies, offer nothing. Set for an
+   * ARCHIVED row. It folds into `canAct` below rather than adding a second
+   * gate, so submit, resubmit and Manual Push all follow one answer.
+   *
+   * Defaults to false, so every existing caller is unchanged.
+   */
+  readOnly?: boolean;
+  /**
    * ⚠ The next-action panel already offers the upload for this stage. Set
    * where lib/requirements lists `ack_or_attachment` for the row -- New, on a
    * cabinet flow -- so Submit does not render twice on one screen. Past New
@@ -76,8 +84,13 @@ function discrepancyCount(r: ReconcileResult): number {
 export const AcknowledgmentPanel = forwardRef<AcknowledgmentPanelHandle, AcknowledgmentPanelProps>(
   function AcknowledgmentPanel({
     orderId, orderName, eligible, onAdvanceOverride,
-    uploadOfferedElsewhere = false, canAct = true, lockedNote,
+    uploadOfferedElsewhere = false, canAct: canActProp = true, lockedNote,
+    readOnly = false,
   }, ref) {
+    // ⚠ ONE GATE, NOT TWO. readOnly folds into canAct so submit, resubmit and
+    // Manual Push all follow a single answer -- a second condition beside it is
+    // how one of the three ends up still offered.
+    const canAct = canActProp && !readOnly;
     const { showToast } = useToast();
     const status = useAckStatus(orderId, eligible);
     const [uploadingVendor, setUploadingVendor] = useState<string | null>(null);

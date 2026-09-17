@@ -48,6 +48,14 @@ interface DamageReportPanelProps {
   orderName?: string;
   /** Logged-in team member's name — used as the email signature. */
   reporterName?: string;
+  /**
+   * Show the reports, offer nothing. Set for an ARCHIVED row: reporting new
+   * damage against archived work, or changing an old report's status, is an
+   * edit to history. Reading the reports is not.
+   *
+   * Defaults to false, so every existing caller is unchanged.
+   */
+  readOnly?: boolean;
 }
 
 export function DamageReportPanel({
@@ -55,6 +63,7 @@ export function DamageReportPanel({
   orderSkus = [],
   orderName,
   reporterName,
+  readOnly = false,
 }: DamageReportPanelProps) {
   const [reports, setReports] = useState<DamageReport[]>([]);
   const [loading, setLoading] = useState(true);
@@ -155,12 +164,14 @@ export function DamageReportPanel({
             </span>
           )}
         </div>
-        <button
-          onClick={() => setShowForm(v => !v)}
-          className="flex items-center gap-1 text-[11px] text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] transition-colors"
-        >
-          <Plus className="w-3 h-3" /> Report damage
-        </button>
+        {!readOnly && (
+          <button
+            onClick={() => setShowForm(v => !v)}
+            className="flex items-center gap-1 text-[11px] text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] transition-colors"
+          >
+            <Plus className="w-3 h-3" /> Report damage
+          </button>
+        )}
       </div>
 
       {/* New report form */}
@@ -237,10 +248,14 @@ export function DamageReportPanel({
       {loading ? (
         <p className="text-[11px] text-[rgba(232,227,218,0.30)] text-center py-3">Loading...</p>
       ) : reports.length === 0 ? (
+        readOnly ? (
+          <p className="text-[11px] text-[rgba(232,227,218,0.30)] text-center py-3">No damage reports.</p>
+        ) : (
         <button onClick={() => setShowForm(true)}
           className="w-full border border-dashed border-[rgba(255,255,255,0.10)] rounded-lg py-3 text-[11px] text-[rgba(232,227,218,0.30)] hover:text-[rgba(232,227,218,0.50)] hover:border-[rgba(86,100,72,0.55)] transition-colors flex items-center justify-center gap-1.5">
           <AlertTriangle className="w-3.5 h-3.5" /> No damage reports
         </button>
+        )
       ) : (
         <div className="flex flex-col gap-2">
           {reports.map(r => (
@@ -286,7 +301,7 @@ export function DamageReportPanel({
                       <p className="text-[11px] text-[rgba(232,227,218,0.50)]">{r.cause}</p>
                     </div>
                   )}
-                  <div>
+                  <div className={readOnly ? "hidden" : undefined}>
                     <p className="text-[10px] uppercase tracking-widest text-[rgba(232,227,218,0.30)] mb-1.5">Update status</p>
                     <div className="flex gap-1.5">
                       {(["open", "in_progress", "resolved"] as const).map(s => (

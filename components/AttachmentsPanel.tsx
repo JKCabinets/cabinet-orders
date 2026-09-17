@@ -24,6 +24,14 @@ interface Attachment {
 
 interface AttachmentsPanelProps {
   orderId: string;
+  /**
+   * Show the files, offer nothing. Set for an ARCHIVED row, where every write
+   * route refuses anyway (409 `archived_read_only`) -- the list, the names, the
+   * dates and the downloads stay, because reading is what the archive is for.
+   *
+   * Defaults to false, so every existing caller is unchanged.
+   */
+  readOnly?: boolean;
 }
 
 /**
@@ -52,7 +60,7 @@ function FileIcon({ type }: { type: string }) {
 }
 
 export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPanelProps>(
-  function AttachmentsPanel({ orderId }, ref) {
+  function AttachmentsPanel({ orderId, readOnly = false }, ref) {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -156,6 +164,7 @@ export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPa
         <p className="text-[10px] uppercase tracking-[0.16em] text-cream/50 font-medium">
           Attachments {attachments.length > 0 && <span className="text-cream/65 ml-1">({attachments.length})</span>}
         </p>
+        {!readOnly && (
         <div className="flex items-center gap-1.5">
           <button
             onClick={() => receiptInputRef.current?.click()}
@@ -177,6 +186,9 @@ export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPa
             )}
           </button>
         </div>
+        )}
+        {!readOnly && (
+        <>
         <input
           ref={fileInputRef}
           type="file"
@@ -193,6 +205,8 @@ export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPa
           onChange={(e) => handleUpload(e, "proof_of_delivery")}
           accept="image/*,.pdf"
         />
+        </>
+        )}
       </div>
 
       {error && (
@@ -207,6 +221,9 @@ export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPa
           <Loader2 className="w-4 h-4 animate-spin text-[rgba(232,227,218,0.30)]" />
         </div>
       ) : attachments.length === 0 ? (
+        readOnly ? (
+          <p className="text-[11px] text-[rgba(232,227,218,0.30)] py-3">No files on this order.</p>
+        ) : (
         <button
           onClick={() => fileInputRef.current?.click()}
           className="w-full border border-dashed border-[rgba(255,255,255,0.10)] rounded-lg py-4 flex flex-col items-center gap-1.5 hover:border-[rgba(86,100,72,0.55)] transition-colors group"
@@ -217,6 +234,7 @@ export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPa
           </span>
           <span className="text-[10px] text-[#3e3e3e]">PDF, images, docs up to 20MB</span>
         </button>
+        )
       ) : (
         <div className="flex flex-col gap-1.5">
           {attachments.map((att) => (
@@ -254,13 +272,15 @@ export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPa
                     >
                       {downloadingId === att.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
                     </button>
-                    <button
-                      onClick={() => setConfirmDeleteId(att.id)}
-                      title="Delete"
-                      className="p-1 text-[rgba(232,227,218,0.50)] hover:text-red-400 transition-colors"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
+                    {!readOnly && (
+                      <button
+                        onClick={() => setConfirmDeleteId(att.id)}
+                        title="Delete"
+                        className="p-1 text-[rgba(232,227,218,0.50)] hover:text-red-400 transition-colors"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    )}
                   </>
                 )}
               </div>
