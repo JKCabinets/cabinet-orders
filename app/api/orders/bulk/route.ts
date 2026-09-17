@@ -259,10 +259,19 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Children in FK order. Every one of these constraints is NO ACTION
-      // (verified 2026-08-20), so the parent delete is REJECTED outright while
-      // any child still points at it -- order_acknowledgments in particular,
-      // which an earlier version of the webhook cancel path forgot.
+      // Children, deleted first. ⚠ CORRECTED 2026-09-16: this said every one of
+      // these constraints was NO ACTION, so the parent delete would be rejected
+      // while any child still pointed at it. Read from the database that day,
+      // all four are CASCADE: damage_reports, order_acknowledgments,
+      // order_activity and order_attachments all go with the row.
+      //
+      // The two NO ACTION edges left are `orders.about_order_id -> orders` (a
+      // warranty claim about this order blocks deleting it, which is the point)
+      // and `orders.project_id -> projects`.
+      //
+      // These deletes stay: they are what makes the failure REPORTABLE per row
+      // rather than a constraint error on the parent, and they are what removes
+      // the rows when the storage delete above has already succeeded.
       let childFailed = false;
       for (const table of ["order_activity", "order_acknowledgments",
                            "order_attachments", "damage_reports"]) {

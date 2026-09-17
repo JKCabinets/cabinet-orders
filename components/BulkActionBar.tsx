@@ -229,8 +229,8 @@ export function BulkActionBar({ selectedOrders, onClear, onDone }: BulkActionBar
               >
                 <AlertCircle className="w-3.5 h-3.5 mt-px flex-shrink-0" style={{ color: "#e08585" }} />
                 <span className="text-[11px]" style={{ color: "rgba(232,170,170,0.95)" }}>
-                  Files are deleted from storage as well as the record. A job whose
-                  project has no other work left removes that project too.
+                  Files are deleted from storage as well as the record. Activity,
+                  acknowledgments, attachments and damage reports go with it.
                 </span>
               </div>
             )}

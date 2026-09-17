@@ -690,7 +690,29 @@ nothing on success, so silence is not a result.
     OrderTable's `"Archived"` branches — the Restore button, the status label,
     the hidden column, its colSpan arithmetic and the stage colour — plus the
     restore wrapper in `useRowActions` and the icon import it used.
-14. **Dead code and stale text found on the way, not touched:**
+14. ✅ **Dead code and stale text — cleared 2026-09-16**
+    (`patch_dead_code_and_stale_comments.py`).
+    - `app/sla/SLAClient.tsx`: `StageAgingRow`, `OverdueStageBlock`,
+      `OverdueRow` and `BarRow` deleted — 384 lines that nothing rendered and
+      nothing could, since none was exported — along with the `archiveOrder`
+      and `moveStage` destructures and the five imports only they used. ⚠ The
+      SLA page's "Archive" button lived in there, and a search for archive
+      controls on 2026-09-16 counted this page as a live surface because of it.
+      Dead code answers searches.
+    - `app/api/orders/bulk/route.ts`: the foreign-key comment was wrong. **Read
+      from the database 2026-09-16:** `damage_reports`,
+      `order_acknowledgments`, `order_activity` and `order_attachments` all
+      CASCADE from `orders`; the only NO ACTION edges are
+      `orders.about_order_id -> orders` (a warranty claim blocks deleting the
+      order it is about) and `orders.project_id -> projects`. The child deletes
+      stay: they are what makes a failure reportable per row.
+    - `components/BulkActionBar.tsx`: the delete warning said a job's project
+      goes too. A custom job has no project; it now names what actually goes.
+
+    **Proved by rendering:** the SLA page and the bulk bar, before and after,
+    identical in every case (the bulk bar with the warning text normalised).
+
+    What it replaced, for the record:
     - `app/sla/SLAClient.tsx`: `OverdueStageBlock`, `OverdueRow`,
       `StageAgingRow` and `BarRow` are defined and never rendered, and
       `archiveOrder` and `moveStage` are destructured and never used. The SLA
@@ -1033,6 +1055,8 @@ patch_modal_read_only.py
 patch_docs_modal_read_only.py
 patch_delete_archive_mode.py
 patch_docs_delete_archive_mode.py
+patch_dead_code_and_stale_comments.py
+patch_docs_dead_code.py
 ```
 
 ⚠ A prerequisite check keyed on a **CSS class** rather than on an interface once
