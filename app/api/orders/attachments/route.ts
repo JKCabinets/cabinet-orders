@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, requireOrderClaim, withClaimOverrideLog, type ClaimOverrideLog, cleanInput, rateLimitOr429 } from "@/lib/auth";
+import { purchaseOf, archivedVia, archivedReadOnly } from "@/lib/archived";
 import { SNIFF_BYTES, sniffMagicBytes, safeContentType } from "@/lib/fileValidation";
 import { supabase } from "@/lib/supabase";
 
@@ -119,12 +120,20 @@ export const POST = withClaimOverrideLog(async function POST(
   // order_attachments table.
   const { data: order, error: orderErr } = await supabase
     .from("orders")
-    .select("id")
+    .select("id, archived, project_id")
     .eq("id", orderId)
     .single();
   if (orderErr || !order) {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
   }
+
+  // ⚠ ARCHIVED IS READ-ONLY (2026-09-16). An upload is a stage action in
+  // everything but name -- see the claim note below -- so it is exactly the
+  // kind of edit the archive does not take.
+  const purchase = await purchaseOf(order);
+  if (purchase instanceof NextResponse) return purchase;
+  const archivedState = archivedVia(order, purchase);
+  if (archivedState) return archivedReadOnly(order, archivedState);
 
   // ⚠ AN UPLOAD IS A STAGE ACTION IN EVERYTHING BUT NAME. An attachment is
   // what satisfies the Entered gate, so uploading to somebody else's

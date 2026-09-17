@@ -479,6 +479,8 @@ nothing on success, so silence is not a result.
 | `archived_at` is cleared on restore | It then means "non-null exactly while archived", which is one fact rather than two that can disagree. When something was archived previously is in the activity trail. |
 | This migration runs BEFORE its deploy | The reverse of the payment one: the code writes the column, so the column has to exist first. A column nothing writes yet changes nothing. |
 | The archive is its own section, not part of the projects hub | The projects hub is where active work lives. History that is browsed and restored is a different job, and mixing them makes one screen answer two questions. |
+| An archived row accepts exactly one request: its own restore | A whitelist of editable fields would grow with every new field and fail open on the one somebody forgot. "Nothing but the way out" cannot drift. |
+| Deleting an archived row is refused too | The archive is the record of work that happened, and delete is the most final edit of all. Restore, then delete: two deliberate steps instead of one irreversible one. |
 | `.kamal/secrets` stays tracked, and stays a loader | It holds no values, and tracking it is what recovered the 2026-08-03 config damage. Untracking it removed a safety net to solve a problem that did not exist. |
 | The registry credential stays a classic PAT for now | GHCR's support for fine-grained tokens is unreliable, and a failed deploy is the wrong moment to discover that. Moving the build to Actions is the real answer and deserves its own decision. |
 | `kamal secrets print` before any deploy that follows a secrets change | Both of 2026-09-16's failed deploys would have been caught by it: one name reading EMPTY, in a list of twenty. |
@@ -722,7 +724,8 @@ nothing on success, so silence is not a result.
 
     **Built** (`patch_payment_through_project.py`): `paymentRecordOf` in
     `lib/data` resolves payment through the project. PATCH reads the project and
-    writes the acknowledgement there, refusing with `payment_status_unavailable`
+    writes the acknowledgement there, refusing with `purchase_unavailable`
+    (named `payment_status_unavailable` until step 2 of item 20)
     if the project cannot be read. The store resolves every row once, so the
     refund banner, the work queue and the payment pill follow.
     `productionAutoAdvanceSkip` is the one rule the cron and the modal's promise
@@ -802,13 +805,29 @@ nothing on success, so silence is not a result.
     Steps, each its own commit:
     1. ✅ `archived_at` (`patch_archived_at.py`, 2026-09-16) — the archive
        sorts by when something went in, which nothing recorded.
-    2. **An archived row is read-only, on the server.** Nothing enforces that
-       today: PATCH, bulk, both attachment routes and the acknowledgment route
-       all write to an archived row, so a stale tab or a script can still move
-       an archived custom job's stage. The modal can only hide controls; the
-       route is what makes read-only a fact. ⚠ The webhook and the crons must
-       stay exempt — Shopify keeps sending updates for an archived purchase —
-       so the rule is "no human edits", not "no writes".
+    2. ✅ **An archived row is read-only, on the server**
+       (`patch_archived_read_only.py`, 2026-09-16). `lib/archived.ts` answers
+       "archived on its own, or through its purchase", and six write paths ask
+       it: PATCH, DELETE, the bulk delete path, both attachment routes and the
+       acknowledgment upload, each refusing with 409 `archived_read_only`. The
+       one request an archived row accepts is its own restore — PATCH
+       `{archived: false}` and nothing else, on a standalone row. A group whose
+       purchase is archived is refused even that; the projects route restores
+       the purchase. The webhook and the crons never come through these routes,
+       so Shopify's updates for an archived purchase keep landing.
+
+       **Proved by enumeration**, 52 cases over the six routes before and
+       after: 35 identical when nothing is archived, 17 newly refused, none
+       unexpected. Restore still works; a restore carrying any other field does
+       not; bulk archive and restore are untouched while bulk delete refuses
+       and still writes its audit row; on a project-linked group the archiving
+       rule answers first with its better message.
+
+       ⚠ **One contract change:** PATCH now reads the purchase ONCE, at the top,
+       for both this rule and the payment hold, and an unreadable purchase is
+       refused there — 500 `purchase_unavailable`, renamed from
+       `payment_status_unavailable` in item 16 and now raised before the
+       ownership gate rather than after it.
     3. The section itself, with the four tabs and the Sidebar pointing at it.
     4. The stripped-down modal, asking the same question the server answers.
 21. **The registry token expires, and the deploy path around it is easy to
@@ -940,6 +959,8 @@ patch_docs_payment_group_copy_removed.py
 patch_archived_at.py
 patch_docs_archived_at.py
 patch_docs_registry_and_loader.py
+patch_archived_read_only.py
+patch_docs_archived_read_only.py
 ```
 
 ⚠ A prerequisite check keyed on a **CSS class** rather than on an interface once

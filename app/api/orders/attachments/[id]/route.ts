@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, requireOrderClaim, withClaimOverrideLog, type ClaimOverrideLog, rateLimitOr429 } from "@/lib/auth";
+import { purchaseOf, archivedVia, archivedReadOnly } from "@/lib/archived";
 import { supabase } from "@/lib/supabase";
 
 // GET /api/orders/attachments/[id] — get signed download URL
@@ -56,6 +57,22 @@ export const DELETE = withClaimOverrideLog(async function DELETE(
 
   if (fetchError || !attachment) {
     return NextResponse.json({ error: "Attachment not found" }, { status: 404 });
+  }
+
+  // ⚠ ARCHIVED IS READ-ONLY (2026-09-16). Removing a receipt from archived
+  // work is editing the record of what happened. The row is loaded here only
+  // for that question -- everything else this route needs is on the
+  // attachment.
+  const { data: order } = await supabase
+    .from("orders")
+    .select("id, archived, project_id")
+    .eq("id", attachment.order_id)
+    .single();
+  if (order) {
+    const purchase = await purchaseOf(order);
+    if (purchase instanceof NextResponse) return purchase;
+    const archivedState = archivedVia(order, purchase);
+    if (archivedState) return archivedReadOnly(order, archivedState);
   }
 
   // ⚠ GATED LIKE AN UPLOAD, not more strictly. Removing a signed receipt

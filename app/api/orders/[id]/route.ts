@@ -5,6 +5,7 @@ import { getShopifyToken } from "@/lib/shopify";
 import { mergeTags } from "@/lib/shopifyStageSync";
 import { ALLOWED_STAGES, isStageAllowedForType, isBackwardsMove, verifyAdminPin, fieldsToClearOnBackwardMove, describeFieldsCleared } from "@/lib/stageGuards";
 import { isPaymentHoldStatus, paymentHoldLabel, paymentRecordOf, parseMoney, isStageOfferedForType, type OrderType, type Stage } from "@/lib/data";
+import { purchaseOf, archivedVia, archivedReadOnly } from "@/lib/archived";
 import { trackingTargetStage, categoryHasTracking, type OrderCategory } from "@/lib/categories";
 import { orderAllVendorsGreen } from "@/lib/acknowledgments";
 import { requirementsFor, typeEverRequires } from "@/lib/requirements";
@@ -167,7 +168,7 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
     // ⚠ production_start_date is here for the In production GATE below. It has
     // to be read before the update is applied, because the gate must accept a
     // request that supplies the date and the stage together.
-    .select("stage, type, payment_status, payment_hold_cleared_for, project_id, tracking_number, carrier, production_start_date")
+    .select("stage, type, archived, payment_status, payment_hold_cleared_for, project_id, tracking_number, carrier, production_start_date")
     .eq("id", id)
     .single();
   if (!currentRow) {
@@ -177,6 +178,13 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
   // The row's type decides WHICH stage ordering applies. Stage names are
   // shared across flows now, so every stage comparison below needs it.
   const currentType: string = currentRow.type ?? "order";
+
+  // ⚠ ONE READ OF THE PURCHASE, USED TWICE: the archived rule below, and the
+  // payment hold further down. It moved up here from the hold block on
+  // 2026-09-16 so the archived rule could ask it without a second query. A
+  // purchase that cannot be read refuses the request -- see purchaseOf.
+  const purchase = await purchaseOf(currentRow);
+  if (purchase instanceof NextResponse) return purchase;
 
   // ── Archiving: the project is the only truth ──────────────────────────
   //
@@ -216,6 +224,26 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
         { status: 422 },
       );
     }
+  }
+
+  // ── An archived row is read-only ──────────────────────────────────────
+  //
+  // ⚠ THE ONE REQUEST AN ARCHIVED ROW ACCEPTS IS ITS OWN RESTORE: `{archived:
+  // false}` and nothing else. Anything else -- a stage move, dates, notes, a
+  // tracking number, an acknowledgement of a refund -- is refused, whoever is
+  // asking. A group whose PURCHASE is archived is refused outright, restore
+  // included: that goes through PATCH /api/projects/[id], and the block above
+  // has already said so in better words.
+  //
+  // Above the ownership gate, like the archiving rule: a statement about the
+  // row, not about who is asking.
+  const archivedState = archivedVia(currentRow, purchase);
+  if (archivedState) {
+    const restoringThisRow =
+      archivedState === "row"
+      && body.archived === false
+      && Object.keys(body).length === 1;
+    if (!restoringThisRow) return archivedReadOnly(currentRow, archivedState);
   }
 
   // ── Ownership gate ────────────────────────────────────────────────────
@@ -397,27 +425,9 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
   // webhook write -- and stored the acknowledgement per group, so a two-group
   // refund had to be acknowledged twice. See paymentRecordOf.
   //
-  // If the project cannot be read, the request is refused outright: going
-  // ahead on a possibly-refunded order because a read failed is the one
-  // outcome this block exists to prevent.
-  let purchase: { payment_status: string | null; payment_hold_cleared_for: string | null } | null = null;
-  if (currentRow.project_id) {
-    const { data: projectRow, error: projectError } = await supabase
-      .from("projects")
-      .select("payment_status, payment_hold_cleared_for")
-      .eq("id", currentRow.project_id)
-      .single();
-    if (projectError || !projectRow) {
-      return NextResponse.json(
-        {
-          error: "payment_status_unavailable",
-          message: "Could not read this order's payment status, so nothing was changed. Try again.",
-        },
-        { status: 500 },
-      );
-    }
-    purchase = projectRow;
-  }
+  // The purchase was read at the top of the route and refused there if it
+  // could not be, so a possibly-refunded order is never edited because a read
+  // failed. It is the same record the archived rule above asks.
   const money = paymentRecordOf(currentRow, purchase) ?? {};
   const holdStatus = String(money.payment_status ?? "");
   const holdCleared = String(money.payment_hold_cleared_for ?? "");
@@ -980,11 +990,20 @@ export async function DELETE(
 
   const { data: order } = await supabase
     .from("orders")
-    .select("source, created_by")
+    .select("source, created_by, archived, project_id")
     .eq("id", id)
     .single();
 
   if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 });
+
+  // ⚠ ARCHIVED IS READ-ONLY, AND DELETE IS THE MOST FINAL EDIT OF ALL. The
+  // archive is the history; deleting out of it removes the record of work that
+  // happened. Restore it first, then delete -- two deliberate steps rather
+  // than one irreversible one.
+  const deletePurchase = await purchaseOf(order);
+  if (deletePurchase instanceof NextResponse) return deletePurchase;
+  const deleteArchived = archivedVia(order, deletePurchase);
+  if (deleteArchived) return archivedReadOnly(order, deleteArchived);
 
   const isAdmin = auth.session.user.role === "admin";
 

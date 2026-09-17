@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, requireOrderClaim, withClaimOverrideLog, type ClaimOverrideLog, rateLimitOr429 } from "@/lib/auth";
+import { purchaseOf, archivedVia, archivedReadOnly } from "@/lib/archived";
 import { supabase } from "@/lib/supabase";
 import { type SkuItem } from "@/lib/skuDecoder";
 import { linesForAckVendor, ackFingerprint } from "@/lib/ackFingerprint";
@@ -151,12 +152,20 @@ export const POST = withClaimOverrideLog(async function POST(
   // ── Fetch the order named by the URL ────────────────────────────────────
   const { data: order, error: orderErr } = await supabase
     .from("orders")
-    .select("id, name, ship_to, sku_items")
+    .select("id, name, ship_to, sku_items, archived, project_id")
     .eq("id", id)
     .single();
   if (orderErr || !order) {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
   }
+
+  // ⚠ ARCHIVED IS READ-ONLY (2026-09-16). An acknowledgment is what moves a
+  // cabinet order out of New; submitting one against archived work is a stage
+  // action on history.
+  const purchase = await purchaseOf(order);
+  if (purchase instanceof NextResponse) return purchase;
+  const archivedState = archivedVia(order, purchase);
+  if (archivedState) return archivedReadOnly(order, archivedState);
 
   // ⚠ THE ACKNOWLEDGMENT IS WHAT MOVES A CABINET ORDER OUT OF New, so this
   // upload is a stage action and belongs behind the same claim. Reachable

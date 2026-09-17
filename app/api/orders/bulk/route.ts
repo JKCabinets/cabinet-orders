@@ -235,6 +235,18 @@ export async function POST(req: NextRequest) {
         results.push({ id, ok: false, error: `failed to list attachments: ${attErr.message}` });
         continue;
       }
+      // ⚠ ARCHIVED IS READ-ONLY (2026-09-16). Restore it first, then delete.
+      // Only custom rows reach here -- the branch above refuses every other
+      // type -- and a custom row is standalone, so its own flag is the whole
+      // answer; there is no purchase to ask.
+      if (order.archived) {
+        results.push({
+          id, ok: false,
+          error: "archived_read_only: restore it before deleting",
+        });
+        continue;
+      }
+
       const paths = (attachments ?? [])
         .map(a => a.file_path as string)
         .filter(Boolean);

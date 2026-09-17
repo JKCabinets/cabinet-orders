@@ -790,6 +790,13 @@ purchase to archive instead, no screen offers to archive one group on its
 own, and the database refuses it outright. Before that, the order-level path wrote a duplicate flag, which is
 how SHO-1052 disappeared from one list while showing in another. See §9.
 
+**Archived work cannot be edited** (2026-09-16). Stage moves, dates, notes,
+attachments, acknowledgments and deletion are all refused on anything archived,
+whether it is a custom job or a whole purchase. Restore it first and the work is
+editable again, at exactly the stage it stopped at. Updates Shopify sends for an
+archived purchase still land — that is their record keeping current, not
+somebody editing history.
+
 **A claim is enforced, and admins are exempt but logged** (2026-09-15).
 Someone else's claimed order refuses every edit — stage moves, dates,
 tracking, notes, attachment uploads and deletions, acknowledgment uploads.
