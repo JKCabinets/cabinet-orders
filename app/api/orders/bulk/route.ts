@@ -181,7 +181,13 @@ export async function POST(req: NextRequest) {
       }
 
       const { error: updateError } = await supabase
-        .from("orders").update({ archived: targetArchived }).eq("id", id);
+        .from("orders")
+        // archived_at travels with archived -- see the projects route.
+        .update({
+          archived: targetArchived,
+          archived_at: targetArchived ? new Date().toISOString() : null,
+        })
+        .eq("id", id);
       if (updateError) {
         results.push({ id, ok: false, error: updateError.message });
         continue;

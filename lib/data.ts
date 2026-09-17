@@ -280,6 +280,14 @@ export interface Order {
   internal_notes?: string;
   activity: ActivityEntry[];
   archived?: boolean;
+  /**
+   * WHEN this row was archived, cleared on restore -- non-null exactly while
+   * `archived` is true. The Archive section sorts on it. Null on a row archived
+   * before the column existed (2026-09-16); there were none.
+   *
+   * A project-linked row has neither: its PURCHASE carries both.
+   */
+  archived_at?: string | null;
   // Order details
   door_style?: string;
   color?: string;
@@ -439,6 +447,7 @@ export function shapeOrder(raw: Record<string, unknown>): Order {
     notes: (raw.notes as string) ?? "",
     internal_notes: (raw.internal_notes as string) ?? "",
     archived: (raw.archived as boolean) ?? false,
+    archived_at: (raw.archived_at as string | null) ?? null,
     activity: (raw.activity as { text: string; time: string }[]) ?? [],
     door_style: (raw.door_style as string) ?? "",
     color: (raw.color as string) ?? "",
@@ -833,6 +842,11 @@ export interface Project {
    * addOrder payload whitelist, and now this.
    */
   archived?: boolean;
+  /**
+   * WHEN this purchase was archived, cleared on restore -- non-null exactly
+   * while `archived` is true. The Archive section sorts on it.
+   */
+  archived_at?: string | null;
   /**
    * ONE owner for the whole purchase.
    *

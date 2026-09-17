@@ -610,7 +610,12 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
   if (body.stage === "Entered")    updates.entered_by = auth.session.user.id;  // team_members.id
   if (body.notes !== undefined)    updates.notes      = cleanInput(body.notes as string);
   if (body.internal_notes !== undefined) updates.internal_notes = cleanInput(body.internal_notes as string);
-  if (body.archived !== undefined) updates.archived   = body.archived;
+  // archived_at travels with archived -- see the projects route. Only a
+  // standalone row reaches here; the block above refuses a project-linked one.
+  if (body.archived !== undefined) {
+    updates.archived    = body.archived;
+    updates.archived_at = body.archived ? new Date().toISOString() : null;
+  }
   if (body.member)                 updates.member     = body.member;
   if (body.door_style !== undefined) updates.door_style = cleanInput(body.door_style as string);
   if (body.color !== undefined)    updates.color      = cleanInput(body.color as string);

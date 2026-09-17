@@ -117,9 +117,17 @@ export async function PATCH(
     }
   }
 
+  // ⚠ archived_at IS SET AND CLEARED TOGETHER WITH archived (2026-09-16), so
+  // it is non-null exactly while a purchase is archived. The Archive section
+  // orders by it; re-archiving overwrites it, and the activity trail keeps
+  // every earlier one.
   const { data: updated, error: uErr } = await supabase
     .from("projects")
-    .update({ archived, updated_at: new Date().toISOString() })
+    .update({
+      archived,
+      archived_at: archived ? new Date().toISOString() : null,
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", id)
     .select()
     .single();

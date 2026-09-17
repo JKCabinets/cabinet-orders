@@ -476,6 +476,9 @@ nothing on success, so silence is not a result.
 | The payment constraint covers all three fields | A status and its acknowledgement are one fact. An acknowledgement left on a group would compare against a status that lives somewhere else. |
 | The code is deployed before the migration runs | Until the webhook stops writing the group copy, the constraint fails every group update and every new checkout's group insert. Demonstrated against PostgreSQL. |
 | The archiving constraint shipped with the payment one | Same table, same form, same migration — and the routes' refusal alone left every other writer able to recreate the SHO-1052 state. |
+| `archived_at` is cleared on restore | It then means "non-null exactly while archived", which is one fact rather than two that can disagree. When something was archived previously is in the activity trail. |
+| This migration runs BEFORE its deploy | The reverse of the payment one: the code writes the column, so the column has to exist first. A column nothing writes yet changes nothing. |
+| The archive is its own section, not part of the projects hub | The projects hub is where active work lives. History that is browsed and restored is a different job, and mixing them makes one screen answer two questions. |
 
 ---
 
@@ -777,6 +780,34 @@ nothing on success, so silence is not a result.
     blanking rolls back with it — all or nothing. The backfill route, run
     before and after against a recording database, moved from writing a group
     and a project-less row to writing only projects.
+20. **The Archive as its own section** (decided 2026-09-16, in progress). The
+    projects hub is an ACTIVE-work hub; the archive is history and belongs
+    somewhere else. Four tabs — All, Shopify Orders, Custom Orders, Warranty
+    Orders — one line per archived PURCHASE showing its parts and the stage
+    each stopped at, and one line per archived custom job or warranty claim.
+    Restore puts a whole purchase back, at the stages its parts were already
+    at; archiving never moved a stage, so this is the existing behaviour, not a
+    new rule. An archived row opens a STRIPPED-DOWN modal: details, activity
+    and attachments, no controls.
+
+    Why a new table rather than OrderTable: that component renders order rows
+    with claim chips and stage actions, and an archive line is a purchase with
+    its parts. Item 13's deletion — the dead `/orders/archived` slug, the hub's
+    `archive` prop and OrderTable's `"Archived"` branches — happens as part of
+    this rather than on its own.
+
+    Steps, each its own commit:
+    1. ✅ `archived_at` (`patch_archived_at.py`, 2026-09-16) — the archive
+       sorts by when something went in, which nothing recorded.
+    2. **An archived row is read-only, on the server.** Nothing enforces that
+       today: PATCH, bulk, both attachment routes and the acknowledgment route
+       all write to an archived row, so a stale tab or a script can still move
+       an archived custom job's stage. The modal can only hide controls; the
+       route is what makes read-only a fact. ⚠ The webhook and the crons must
+       stay exempt — Shopify keeps sending updates for an archived purchase —
+       so the rule is "no human edits", not "no writes".
+    3. The section itself, with the four tabs and the Sidebar pointing at it.
+    4. The stripped-down modal, asking the same question the server answers.
 
 ---
 
@@ -888,6 +919,8 @@ patch_payment_through_project.py
 patch_docs_payment_through_project.py
 patch_payment_group_copy_removed.py
 patch_docs_payment_group_copy_removed.py
+patch_archived_at.py
+patch_docs_archived_at.py
 ```
 
 ⚠ A prerequisite check keyed on a **CSS class** rather than on an interface once
