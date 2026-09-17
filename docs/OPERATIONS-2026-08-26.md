@@ -299,7 +299,7 @@ Also held, not in use by these systems: `jkkitchencabinets2you.com`,
 | Credential | Lives in | Expiry | Symptom when it dies |
 |---|---|---|---|
 | **Microsoft Graph client secret** | Entra → `.env.kamal` | ⚠ **RECORD THE DATE** — max 24 months | Customer notifications silently stop |
-| **GHCR token** (GitHub PAT) | `KAMAL_REGISTRY_PASSWORD` | Set at creation; expired 2026-08-18 | `kamal deploy` → **`denied: denied`** at docker login |
+| **GHCR token** (GitHub PAT, classic) | `.env.kamal` | Set at creation; expired 2026-08-18 **and again 2026-09-16** | `kamal deploy` → **`denied: denied`** at docker login |
 | **`SHOPIFY_WEBHOOK_SECRET`** | `.env.kamal` | No expiry | Webhook HMAC fails closed — **orders stop ingesting** |
 | **`SHOPIFY_WEBHOOK_SECRET_FALLBACK`** | `.env.kamal` | Empty when idle | Rotation slot — see below |
 | **`SHOPIFY_CLIENT_ID` / `_SECRET`** | `.env.kamal` | — | Shopify API calls fail; stage sync stops |
@@ -351,10 +351,51 @@ awk -F= '/^SOME_KEY=/{print length($2)}' .env.kamal
 **The safe direction:** declared in `deploy.yml` but MISSING from
 `.kamal/secrets` fails loudly with `Kamal::ConfigurationError`.
 
+## ⚠ `.kamal/secrets` is a LOADER, not a secret store
+
+Every line is a command substitution that reads one value out of `.env.kamal`:
+
+```
+KAMAL_REGISTRY_PASSWORD=$(grep '^KAMAL_REGISTRY_PASSWORD=' .env.kamal | cut -d '=' -f 2-)
+```
+
+Which is why:
+
+- **It is tracked in git ON PURPOSE**, and holds no values on any commit —
+  checked across all of them on 2026-09-16. `.env.kamal` is the file with the
+  values, and it is gitignored. Tracking the loader is what let
+  `git reset --hard` recover the 2026-08-03 config damage. **Do not untrack
+  it.** It was untracked on 2026-09-16 on a mistaken "secrets are in git"
+  reading, and put back the same evening.
+- **A line must keep that form.** Replacing one with a literal, or with a bare
+  `$KAMAL_REGISTRY_PASSWORD` that nothing exports, breaks that one value and
+  nothing else — the other nineteen keep working, so the failure looks like a
+  credential problem rather than an edit. Both happened on 2026-09-16.
+- **A new secret needs the line here AND the value in `.env.kamal` AND the
+  name in `config/deploy.yml`.** Three places; §5 above lists what each one
+  failing looks like.
+
+**Check resolution before deploying, after any change to either file:**
+
+```bash
+kamal secrets print 2>&1 | awk -F= '/^[A-Z_]+=/ { v=substr($0, index($0,"=")+1); print (v=="" ? "EMPTY " : "set   ") $1 }'
+```
+
+Names and set/empty, never values. Only `SHOPIFY_WEBHOOK_SECRET_FALLBACK`,
+`QUOTE_WEBHOOK_SECRET` and `TEAMS_WEBHOOK_URL` are empty by design. This is the
+check that would have caught both of 2026-09-16's failed deploys before they ran.
+
 ## Reading a failed deploy
 
 - **`Get "https://ghcr.io/v2/": EOF`** — transient. Retry.
-- **`denied: denied`** — the GHCR credential expired.
+- **`denied: denied`** — the GHCR credential is expired, revoked, or the
+  account lost write access to the package. Replace the token in `.env.kamal`,
+  then `printf '%s' "$TOKEN" | docker login ghcr.io -u JKCabinets
+  --password-stdin` to confirm GHCR accepts it before deploying. Classic PAT
+  with `write:packages` and `read:packages`; fine-grained tokens are unreliable
+  against GHCR.
+- **`flag needs an argument: 'p' in -p`** — the credential resolved to EMPTY.
+  The token is fine; the LOADER LINE is broken. See the loader section above.
 - **`Kamal::ConfigurationError`** — a declared secret is missing.
 - ⚠ **`grep -c 'ERROR (SSHKit'` reports ZERO on a config error.** Use
   **`grep -cE 'ERROR \('`**.
@@ -661,6 +702,20 @@ truth.
 **Three things this produced:** webhook outcome logging; the reconciliation
 health check; and the knowledge that Shopify's admin UI hides app-created
 subscriptions.
+
+**GHCR token expiry, second time (2026-09-16).** `kamal deploy` failed at
+`docker login` with `denied: denied`, exactly as on 2026-08-18: nothing built,
+nothing pushed, production untouched. Replacing the token took minutes; what
+cost an hour was the diagnosis around it. `.kamal/secrets` was read as holding
+secrets because it was tracked in git, and untracked — but it is a loader whose
+lines fetch from `.env.kamal`, and it has never held a value on any commit, so
+nothing was ever exposed and no rotation was needed. Two rewrites of the
+registry line then broke it twice: first a literal token in a references-only
+file, then a bare `$KAMAL_REGISTRY_PASSWORD` that nothing exports, which
+produced `flag needs an argument: 'p'`. Restored with
+`git checkout 0424889 -- .kamal/secrets`. → **Produced the loader section in
+§5, the two new deploy symptoms, and the rule that `kamal secrets print` is
+checked before any deploy that follows a secrets change.**
 
 **⚠ Six-day monitoring outage (2026-08-20 → 2026-08-26).** Three healthchecks.io
 ping URLs were pasted carrying angle brackets — `<https://hc-ping.com/uuid>` —

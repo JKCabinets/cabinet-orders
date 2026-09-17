@@ -479,6 +479,9 @@ nothing on success, so silence is not a result.
 | `archived_at` is cleared on restore | It then means "non-null exactly while archived", which is one fact rather than two that can disagree. When something was archived previously is in the activity trail. |
 | This migration runs BEFORE its deploy | The reverse of the payment one: the code writes the column, so the column has to exist first. A column nothing writes yet changes nothing. |
 | The archive is its own section, not part of the projects hub | The projects hub is where active work lives. History that is browsed and restored is a different job, and mixing them makes one screen answer two questions. |
+| `.kamal/secrets` stays tracked, and stays a loader | It holds no values, and tracking it is what recovered the 2026-08-03 config damage. Untracking it removed a safety net to solve a problem that did not exist. |
+| The registry credential stays a classic PAT for now | GHCR's support for fine-grained tokens is unreliable, and a failed deploy is the wrong moment to discover that. Moving the build to Actions is the real answer and deserves its own decision. |
+| `kamal secrets print` before any deploy that follows a secrets change | Both of 2026-09-16's failed deploys would have been caught by it: one name reading EMPTY, in a list of twenty. |
 
 ---
 
@@ -808,6 +811,21 @@ nothing on success, so silence is not a result.
        so the rule is "no human edits", not "no writes".
     3. The section itself, with the four tabs and the Sidebar pointing at it.
     4. The stripped-down modal, asking the same question the server answers.
+21. **The registry token expires, and the deploy path around it is easy to
+    break.** It went on 2026-09-16, the second time after 2026-08-18, and
+    `kamal deploy` failed at `docker login` with `denied: denied` — nothing
+    built, nothing pushed, production untouched. Written up in OPERATIONS §5
+    (the loader section) and §9. What is still open:
+    - **Record the new token's expiry** somewhere with a reminder. This is the
+      second time it has been found by a failed deploy.
+    - **Or move the image build into GitHub Actions** with the automatic
+      `GITHUB_TOKEN`, leaving the box to pull only. That removes the write
+      credential from the box, and it is a real change to the pipeline:
+      builds stop happening on the box. Its own decision, not a deploy-day fix.
+    - ⚠ **`.kamal/secrets` is a loader and is tracked deliberately.** It holds
+      no values, on any commit. It was untracked that evening on a mistaken
+      reading and restored the same evening; the file's own `.gitignore`
+      comment already said to keep it.
 
 ---
 
@@ -921,6 +939,7 @@ patch_payment_group_copy_removed.py
 patch_docs_payment_group_copy_removed.py
 patch_archived_at.py
 patch_docs_archived_at.py
+patch_docs_registry_and_loader.py
 ```
 
 ⚠ A prerequisite check keyed on a **CSS class** rather than on an interface once
