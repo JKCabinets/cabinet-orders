@@ -179,7 +179,8 @@ export function Sidebar({ open, onClose }: SidebarProps) {
    */
   const archivedCount =
     Object.values(projects).filter(p => p.archived).length
-    + customs.filter(o => o.archived).length;
+    + customs.filter(o => o.archived).length
+    + warranties.filter(o => o.archived).length;
 
   const [ordersOpen, setOrdersOpen] = useState(true);
   const [overviewOpen, setOverviewOpen] = useState(true);
@@ -314,11 +315,12 @@ export function Sidebar({ open, onClose }: SidebarProps) {
             >
               <NavItem href="/sla" icon={<LineChart className="w-3.5 h-3.5" />} label="SLA & Exceptions" count={slaCount} pathname={pathname} />
               <NavItem href="/calendar" icon={<Calendar className="w-3.5 h-3.5" />} label="Calendar" pathname={pathname} />
-              {/* Archived PROJECTS, not archived order rows -- archiving moved
-                  up to the purchase, so /orders/archived would show an empty
-                  list forever. */}
+              {/* ⚠ ITS OWN SECTION SINCE 2026-09-16. Archived purchases and
+                  archived standalone rows are two different shapes, and the
+                  projects hub -- where this used to point -- is for active
+                  work. The count above is what /archive lists. */}
               <NavItem
-                href="/projects?filter=archived"
+                href="/archive"
                 icon={<Archive className="w-3.5 h-3.5" />}
                 label="Archive"
                 count={archivedCount}

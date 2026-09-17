@@ -479,6 +479,8 @@ nothing on success, so silence is not a result.
 | `archived_at` is cleared on restore | It then means "non-null exactly while archived", which is one fact rather than two that can disagree. When something was archived previously is in the activity trail. |
 | This migration runs BEFORE its deploy | The reverse of the payment one: the code writes the column, so the column has to exist first. A column nothing writes yet changes nothing. |
 | The archive is its own section, not part of the projects hub | The projects hub is where active work lives. History that is browsed and restored is a different job, and mixing them makes one screen answer two questions. |
+| The archive is one line per purchase, not per group | A customer bought one thing; the groups exist so the backend can track parts that move at different speeds. History is the customer's view, and restoring one part was never possible anyway. |
+| The archive gets its own table, not OrderTable | OrderTable renders order rows with claim chips and stage actions. An archive line is a purchase with its parts, and it offers exactly one action. |
 | An archived row accepts exactly one request: its own restore | A whitelist of editable fields would grow with every new field and fail open on the one somebody forgot. "Nothing but the way out" cannot drift. |
 | Deleting an archived row is refused too | The archive is the record of work that happened, and delete is the most final edit of all. Restore, then delete: two deliberate steps instead of one irreversible one. |
 | `.kamal/secrets` stays tracked, and stays a loader | It holds no values, and tracking it is what recovered the 2026-08-03 config damage. Untracking it removed a safety net to solve a problem that did not exist. |
@@ -828,8 +830,33 @@ nothing on success, so silence is not a result.
        refused there — 500 `purchase_unavailable`, renamed from
        `payment_status_unavailable` in item 16 and now raised before the
        ownership gate rather than after it.
-    3. The section itself, with the four tabs and the Sidebar pointing at it.
+    3. ✅ **The section itself** (`patch_archive_section.py`, 2026-09-16).
+       `/archive` with the four tabs, one line per archived purchase showing its
+       parts and the stage each stopped at, one per archived standalone row,
+       newest first by `archived_at`. Restore per line: a purchase through the
+       projects route, a standalone row through PATCH. The Sidebar points here
+       and its count now includes warranty claims. The projects hub's Archived
+       filter is gone — ⚠ **it was broken**: `groupsByProject` is built from
+       `allOrders`, which hides the groups of an archived purchase, so that
+       filter listed purchases with ZERO parts. Nothing had been archived until
+       today, so nobody had seen it. The hub's control is archive-only now,
+       since a restore branch there could not be reached.
+
+       **Proved by rendering**: the archive lists exactly the archived things,
+       newest first with the undated last, tabs count and filter, a purchase
+       line shows its parts, and Restore calls `archiveProject(id, false)` for a
+       purchase and `unarchiveOrder(id)` for a standalone row. The projects hub
+       before and after: every other filter identical, Archived gone.
+    3b. **The deletions** (item 13), still open: the `/orders/archived` slug and
+       `ResolvedSlug.archive`, the hub's `archive` prop and its branches, and
+       OrderTable's `"Archived"` branches — the Restore button, the status
+       label, the hidden column and its colSpan arithmetic. Nothing reaches any
+       of it now. Removing it is its own commit, enumerated over every render
+       case, because the colSpan arithmetic is shared with the live paths.
     4. The stripped-down modal, asking the same question the server answers.
+       ⚠ Until it exists, `/archive` opens the ORDINARY modal: its controls are
+       refused by the server (409 `archived_read_only`), so they fail loudly
+       rather than silently.
 21. **The registry token expires, and the deploy path around it is easy to
     break.** It went on 2026-09-16, the second time after 2026-08-18, and
     `kamal deploy` failed at `docker login` with `denied: denied` — nothing
@@ -961,6 +988,8 @@ patch_docs_archived_at.py
 patch_docs_registry_and_loader.py
 patch_archived_read_only.py
 patch_docs_archived_read_only.py
+patch_archive_section.py
+patch_docs_archive_section.py
 ```
 
 ⚠ A prerequisite check keyed on a **CSS class** rather than on an interface once

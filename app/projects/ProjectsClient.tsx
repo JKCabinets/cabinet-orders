@@ -14,7 +14,7 @@ import { AvatarWithProfile } from "@/components/AvatarWithProfile";
 import { StagePill } from "@/components/OrderTable";
 import {
   Search, ChevronRight, ChevronDown, AlertTriangle, CheckCircle2, ArrowRight,
-  Archive, RotateCcw, Loader2,
+  Archive, Loader2,
 } from "lucide-react";
 import clsx from "clsx";
 
@@ -50,7 +50,7 @@ const GROUP_DOT: Record<string, string> = {
   sample: "#5a8db8",
 };
 
-type Filter = "all" | "active" | "attention" | "complete" | "refunded" | "archived";
+type Filter = "all" | "active" | "attention" | "complete" | "refunded";
 
 const FILTERS: { key: Filter; label: string; dot?: string }[] = [
   { key: "all", label: "All" },
@@ -58,7 +58,6 @@ const FILTERS: { key: Filter; label: string; dot?: string }[] = [
   { key: "attention", label: "Needs attention", dot: "#e8b56a" },
   { key: "complete", label: "Complete", dot: "#8fbe70" },
   { key: "refunded", label: "Refunded", dot: "#e08585" },
-  { key: "archived", label: "Archived" },
 ];
 
 /** Is this group at the last stage of its own flow? */
@@ -152,7 +151,6 @@ export function ProjectsClient() {
       attention: live.filter((e) => e.reasons.length > 0).length,
       complete: live.filter((e) => e.complete).length,
       refunded: live.filter((e) => e.refunded).length,
-      archived: enriched.filter((e) => e.archived).length,
     };
   }, [enriched]);
 
@@ -160,9 +158,13 @@ export function ProjectsClient() {
     const q = search.trim().toLowerCase();
     return enriched
       .filter((e) => {
-        // Archived rows appear ONLY under their own filter.
-        if (filter === "archived") { if (!e.archived) return false; }
-        else if (e.archived) return false;
+        // ⚠ ARCHIVED PURCHASES ARE NOT HERE AT ALL (2026-09-16). They live in
+        // /archive, which is a different job -- browsing and restoring history
+        // -- for generally different people. The filter that used to show them
+        // here listed purchases with NO PARTS, because `allOrders` hides the
+        // groups of an archived purchase; /archive reads
+        // allOrdersIncludingArchived instead.
+        if (e.archived) return false;
         if (filter === "active" && (e.complete || e.refunded)) return false;
         if (filter === "attention" && e.reasons.length === 0) return false;
         if (filter === "complete" && !e.complete) return false;
@@ -547,25 +549,26 @@ export function ProjectsClient() {
                         but a control that is always visible and usually fails
                         teaches people to ignore it. */}
                     <span className="self-center flex justify-end">
-                      {(archived || complete || refunded) && (
+                      {/* ⚠ ARCHIVE ONLY. Restoring is /archive's job, and an
+                          archived purchase never appears on this hub, so a
+                          restore branch here could not be reached. */}
+                      {(complete || refunded) && (
                         <div
                           role="button"
                           tabIndex={0}
-                          onClick={(e) => { e.stopPropagation(); void doArchive(p.id, !archived); }}
+                          onClick={(e) => { e.stopPropagation(); void doArchive(p.id, true); }}
                           onKeyDown={(e) => {
                             if (e.key === "Enter" || e.key === " ") {
                               e.preventDefault(); e.stopPropagation();
-                              void doArchive(p.id, !archived);
+                              void doArchive(p.id, true);
                             }
                           }}
                           className="p-1.5 rounded-full transition-colors hover:bg-white/10 cursor-pointer"
-                          title={archived ? "Restore to the board" : "Archive this purchase"}
+                          title="Archive this purchase"
                         >
                           {busyId === p.id
                             ? <Loader2 className="w-3.5 h-3.5 animate-spin text-cream/50" />
-                            : archived
-                              ? <RotateCcw className="w-3.5 h-3.5 text-cream/45" />
-                              : <Archive className="w-3.5 h-3.5 text-cream/45" />}
+                            : <Archive className="w-3.5 h-3.5 text-cream/45" />}
                         </div>
                       )}
                     </span>

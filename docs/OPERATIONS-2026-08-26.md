@@ -790,6 +790,12 @@ purchase to archive instead, no screen offers to archive one group on its
 own, and the database refuses it outright. Before that, the order-level path wrote a duplicate flag, which is
 how SHO-1052 disappeared from one list while showing in another. See §9.
 
+**Archived work lives in its own section, `/archive`** (2026-09-16), not in the
+projects hub: four tabs (All, Shopify Orders, Custom Orders, Warranty Orders),
+one line per archived purchase showing its parts, one per archived custom job or
+warranty claim, newest first. Restoring a purchase brings the whole thing back,
+each part at the stage it had stopped at.
+
 **Archived work cannot be edited** (2026-09-16). Stage moves, dates, notes,
 attachments, acknowledgments and deletion are all refused on anything archived,
 whether it is a custom job or a whole purchase. Restore it first and the work is
