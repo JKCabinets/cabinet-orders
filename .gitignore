@@ -50,3 +50,7 @@ kamal-*.log
 
 kamal-deploy.log
 kamal-deploy.log
+
+# Kamal secrets: values live on the box only.
+.kamal/secrets
+.kamal/secrets*
