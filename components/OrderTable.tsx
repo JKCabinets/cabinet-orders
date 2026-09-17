@@ -14,7 +14,7 @@ import { formatDateWithYear, parseOrderDate } from "@/lib/dateUtils";
 import { checkAttachmentGate, checkDeliveryProofGate } from "@/lib/stageGates";
 import { requirementsFor } from "@/lib/requirements";
 import { OrderEntryActions } from "./OrderEntryActions";
-import { ArrowUp, ArrowDown, RotateCcw, ChevronRight, X } from "lucide-react";
+import { ArrowUp, ArrowDown, ChevronRight, X } from "lucide-react";
 import { AvatarWithProfile } from "./AvatarWithProfile";
 import { VendorExportPills } from "./VendorExportPills";
 import { useToast } from "./Toast";
@@ -68,12 +68,10 @@ interface OrderTableProps {
 // them blue and amber from STAGE_ACCENT. One fact, two copies, and only one of
 // them updated -- the shape that has bitten this codebase repeatedly.
 //
-// "Archived" is not a stage in any flow, so it is not in STAGE_ACCENT and is
-// added here rather than pushed into the shared map.
-const STAGE_COLOR: Record<string, string> = {
-  ...STAGE_ACCENT,
-  "Archived": "#91a597",
-};
+// ⚠ "Archived" WAS ADDED HERE until 2026-09-16, for a table stage that no
+// caller passes any more: the archive is its own section and renders its own
+// list. STAGE_ACCENT is the whole map again.
+const STAGE_COLOR: Record<string, string> = { ...STAGE_ACCENT };
 
 // Payment status pills — Shopify financial_status values mapped to brand colors
 const PAYMENT_PILL: Record<string, { bg: string; color: string; border: string; label: string }> = {
@@ -159,9 +157,8 @@ export function OrderTable({
                 <SortableHeader label="Stage" col="stage" current={sortKey} dir={sortDir} onClick={setSort} width="w-[130px]" />
               )}
               <th className="text-left px-3 py-2.5 text-[10px] uppercase tracking-[0.13em] text-cream/55 font-medium">Status</th>
-              {stage !== "Archived" && (
-                <th className="text-left px-3 py-2.5 text-[10px] uppercase tracking-[0.13em] text-cream/55 font-medium w-[180px]">Update Status</th>
-              )}
+              {/* Always: the archive has its own section since 2026-09-16. */}
+              <th className="text-left px-3 py-2.5 text-[10px] uppercase tracking-[0.13em] text-cream/55 font-medium w-[180px]">Update Status</th>
               <th className="text-left px-3 py-2.5 text-[10px] uppercase tracking-[0.13em] text-cream/55 font-medium w-[140px]">PDF</th>
               <SortableHeader label="Payment"   col="payment_status" current={sortKey} dir={sortDir} onClick={setSort} width="w-[120px]" />
               <SortableHeader label="Team"      col="claimed_by"     current={sortKey} dir={sortDir} onClick={setSort} width="w-[80px]" />
@@ -186,7 +183,7 @@ export function OrderTable({
                   colSpan={
                     (selectMode ? 8 : 7)
                     + (stage !== "New" ? 1 : 0)
-                    + (stage !== "Archived" ? 1 : 0)
+                    + 1
                   }
                   className="px-3 py-10 text-center text-cream/45 text-[12px]"
                 >
@@ -324,11 +321,9 @@ function OrderRow({
       <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
         <StatusCell order={order} stage={stage} onOpenModal={onSelect} />
       </td>
-      {stage !== "Archived" && (
-        <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
-          <UpdateStatusActions order={order} stage={stage} onOpenModal={onSelect} />
-        </td>
-      )}
+      <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+        <UpdateStatusActions order={order} stage={stage} onOpenModal={onSelect} />
+      </td>
       <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
         <VendorExportPills order={order} />
       </td>
@@ -646,7 +641,7 @@ function useRowActions(order: Order) {
   const { data: session } = useSession();
   const {
     claimOrder: rawClaimOrder, moveStage,
-    archiveOrder: rawArchiveOrder, unarchiveOrder: rawUnarchiveOrder,
+    archiveOrder: rawArchiveOrder,
     team, projects,
   } = useStore();
   const { showToast } = useToast();
@@ -719,16 +714,14 @@ function useRowActions(order: Order) {
     if (!result.ok) showToast(result.message ?? "Could not archive this order", { kind: "error" });
     return result;
   }
-  async function unarchiveOrder(id: string) {
-    const result = await rawUnarchiveOrder(id);
-    if (!result.ok) showToast(result.message ?? "Could not restore this order", { kind: "error" });
-    return result;
-  }
+  // ⚠ There was a restore wrapper here until 2026-09-16, for the table's
+  // Restore button. Restoring happens in /archive now, and the store function
+  // it wrapped is still there for that page to call.
 
   return {
     session, currentUserId, claimedBy,
     claimOrder: claimIfStandalone,
-    moveStage, archiveOrder, unarchiveOrder, busy, withBusy, orderId: order.id,
+    moveStage, archiveOrder, busy, withBusy, orderId: order.id,
   };
 }
 
@@ -759,9 +752,6 @@ function StatusLabel({ order, stage, claimedBy }: {
   // null -- its comment notes that branching on the table's stage "broke
   // twice" -- but this renderer never got the same treatment.
   stage = stage ?? order.stage;
-  if (stage === "Archived") {
-    return <span className="text-[10px] text-cream/55 italic">archived</span>;
-  }
 
   if (stage === "New") {
     if (claimedBy) {
@@ -939,7 +929,8 @@ function UpdateStatusActions({
   // The prop now decides only whether this column renders at all (the archive
   // has no actions). `stage` is rebound to the row's own value, so every
   // branch below -- twenty of them -- is correct without being rewritten.
-  if (stage === "Archived") return null;
+  // An "Archived" table stage was checked here until 2026-09-16; no caller
+  // passes one now.
   if (!rowFlow.includes(order.stage)) return null;
   stage = order.stage;
 
@@ -1303,28 +1294,7 @@ function StatusCell({
   /** Called when a gate fails so the user can fix it in the modal. */
   onOpenModal?: (o: Order, reason?: "needs-attachment" | "needs-tracking") => void;
 }) {
-  const { unarchiveOrder, claimedBy, busy, withBusy } = useRowActions(order);
-
-  // Archived still uses the combined renderer (the Restore button is
-  // the entire "status" for that stage).
-  if (stage === "Archived") {
-    return (
-      <button
-        onClick={() => withBusy(() => unarchiveOrder(order.id))}
-        disabled={busy}
-        className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all"
-        style={{
-          background: busy ? "rgba(145,165,151,0.08)" : "rgba(145,165,151,0.18)",
-          border: "0.5px solid rgba(145,165,151,0.45)",
-          color: busy ? "rgba(184,210,189,0.40)" : "#b8d0bd",
-          cursor: busy ? "wait" : "pointer",
-        }}
-      >
-        <RotateCcw className="w-3 h-3" />
-        {busy ? "..." : "Restore"}
-      </button>
-    );
-  }
+  const { claimedBy, busy, withBusy } = useRowActions(order);
 
   // Mobile combines label + actions inline for compactness
   if (mobile) {

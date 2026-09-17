@@ -14,7 +14,11 @@
  *                        Nothing that links to them breaks, and retiring them
  *                        later is deleting entries from this file, because they
  *                        were never separate pages to begin with.
- *   archived             archive mode: archived rows, no stage cards.
+ *
+ * ⚠ THERE WAS AN `archived` SLUG until 2026-09-16. It opened this hub in
+ * archive mode for CABINETS, and a cabinet group cannot be archived on its own
+ * -- its purchase is -- so it could never list a row. The archive is its own
+ * section now: /archive.
  */
 
 import type { OrderStage, OrderType } from "@/lib/data";
@@ -37,14 +41,12 @@ const STAGE_SLUGS: Record<string, OrderStage> = {
 export const VALID_STAGE_SLUGS = [
   ...Object.keys(TYPE_SLUGS),
   ...Object.keys(STAGE_SLUGS),
-  "archived",
 ] as const;
 
 export interface ResolvedSlug {
   type: OrderType;
   /** null means open on "All". */
   initialStage: OrderStage | null;
-  archive: boolean;
 }
 
 /**
@@ -56,12 +58,9 @@ export interface ResolvedSlug {
  * fallback that hides a bug.
  */
 export function resolveOrdersSlug(slug: string): ResolvedSlug | null {
-  if (slug === "archived") {
-    return { type: "order", initialStage: null, archive: true };
-  }
   const type = TYPE_SLUGS[slug];
-  if (type) return { type, initialStage: null, archive: false };
+  if (type) return { type, initialStage: null };
   const stage = STAGE_SLUGS[slug];
-  if (stage) return { type: "order", initialStage: stage, archive: false };
+  if (stage) return { type: "order", initialStage: stage };
   return null;
 }

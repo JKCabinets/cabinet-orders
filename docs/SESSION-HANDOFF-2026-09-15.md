@@ -682,14 +682,14 @@ nothing on success, so silence is not a result.
     total and a failed update. The attachment, production-date, tracking and
     delivery-proof gates were not reachable through the stubs; the wrapper
     keys on the response status, not on which refusal produced it.
-13. **`/orders/archived` can never show a row.** It is archive mode for
-    cabinets only, cabinet groups are always project-linked, and a
-    project-linked row can no longer be archived on its own. OrderTable's
-    `"Archived"` branches — the Restore button, the status label, the hidden
-    column and its colSpan arithmetic — are dead with it, unless something
-    outside the files read on 2026-09-15 passes `stage="Archived"` to the
-    table; `git grep` for that first. Remove them together, in their own
-    commit, enumerated.
+13. ✅ **`/orders/archived` and the table's archive branches are gone —
+    2026-09-16** (`patch_delete_archive_mode.py`, item 20 step 3b). The slug
+    opened the cabinets hub in archive mode, and a cabinet group cannot be
+    archived on its own, so it could never list a row. Removed with it:
+    `ResolvedSlug.archive`, the hub's `archive` prop and its nine branches, and
+    OrderTable's `"Archived"` branches — the Restore button, the status label,
+    the hidden column, its colSpan arithmetic and the stage colour — plus the
+    restore wrapper in `useRowActions` and the icon import it used.
 14. **Dead code and stale text found on the way, not touched:**
     - `app/sla/SLAClient.tsx`: `OverdueStageBlock`, `OverdueRow`,
       `StageAgingRow` and `BarRow` are defined and never rendered, and
@@ -848,12 +848,12 @@ nothing on success, so silence is not a result.
        line shows its parts, and Restore calls `archiveProject(id, false)` for a
        purchase and `unarchiveOrder(id)` for a standalone row. The projects hub
        before and after: every other filter identical, Archived gone.
-    3b. **The deletions** (item 13), still open: the `/orders/archived` slug and
-       `ResolvedSlug.archive`, the hub's `archive` prop and its branches, and
-       OrderTable's `"Archived"` branches — the Restore button, the status
-       label, the hidden column and its colSpan arithmetic. Nothing reaches any
-       of it now. Removing it is its own commit, enumerated over every render
-       case, because the colSpan arithmetic is shared with the live paths.
+    3b. ✅ **The deletions** (item 13, `patch_delete_archive_mode.py`,
+       2026-09-16). **Proved by enumeration:** 224 OrderTable renders over every
+       type, every reachable stage, archived and not, select mode on and off,
+       empty and populated — all byte-identical to before. `/orders/archived`
+       now resolves to null, so the route 404s; every surviving slug resolves to
+       the same type and stage it did.
     4a. ✅ **The panels take a `readOnly` prop** (`patch_panels_read_only.py`,
        2026-09-16). `AttachmentsPanel`, `AcknowledgmentPanel` and
        `DamageReportPanel` each carry their own write controls, so gating them
@@ -903,6 +903,16 @@ nothing on success, so silence is not a result.
 ---
 
 ## Process — what cost time today, and what to do instead
+
+**⚠ A DELETION NEEDS A MARK, or the patch script thinks it is already applied.**
+These scripts decide state per edit: `new` present once means applied, `old`
+present once means pending. That works for an insertion, where `new` contains
+`old`. It is wrong for a DELETION, where `new` is a SUBSET of `old` — the
+replacement text is already in the file before the edit runs, so the script
+reports PARTIAL and refuses. An empty `new` is worse: `count("")` is the length
+of the file, so the edit looks applied every time. Both bit on 2026-09-16.
+**Give every deletion a short comment saying what went and when.** It makes the
+replacement unique, and it leaves the reason where the code used to be.
 
 **⚠ `npx tsc --noEmit 2>&1 | grep -E "error TS"` inverts the exit code.** `grep`
 exits 1 when it finds nothing, so a **clean** typecheck looks like failure and a
@@ -1021,6 +1031,8 @@ patch_panels_read_only.py
 patch_docs_panels_read_only.py
 patch_modal_read_only.py
 patch_docs_modal_read_only.py
+patch_delete_archive_mode.py
+patch_docs_delete_archive_mode.py
 ```
 
 ⚠ A prerequisite check keyed on a **CSS class** rather than on an interface once

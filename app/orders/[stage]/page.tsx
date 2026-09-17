@@ -13,10 +13,10 @@ export default async function OrdersPage({ params }: OrdersPageProps) {
   if (!resolved) notFound();
   return (
     <AppShell>
+      {/* The `archive` prop went with /archive on 2026-09-16. */}
       <OrdersHubClient
         type={resolved.type}
         initialStage={resolved.initialStage}
-        archive={resolved.archive}
       />
     </AppShell>
   );

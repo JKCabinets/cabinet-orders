@@ -58,14 +58,12 @@ const ALL = "__all__";
 export function OrdersHubClient({
   type,
   initialStage,
-  archive = false,
   createLabel,
 }: {
   type: OrderType;
   /** Stage to preselect, from a legacy /orders/<stage> URL. null = All. */
   initialStage?: OrderStage | null;
-  /** Archive mode: archived rows of this type, no stage cards. */
-  archive?: boolean;
+  /* There was an `archive` prop here until 2026-09-16; /archive replaced it. */
   /**
    * Label for a create button, or absent for none.
    *
@@ -91,8 +89,8 @@ export function OrdersHubClient({
   const stages = (STAGE_LIST_BY_TYPE[type] ?? []) as readonly string[];
 
   const rows = useMemo(
-    () => allOrders.filter((o) => o.type === type && (archive ? o.archived : !o.archived)),
-    [allOrders, type, archive],
+    () => allOrders.filter((o) => o.type === type && !o.archived),
+    [allOrders, type],
   );
 
   const stageCounts = useMemo(() => {
@@ -103,7 +101,7 @@ export function OrdersHubClient({
 
   const filtered = useMemo(() => {
     let list = rows;
-    if (!archive && activeStage !== ALL) list = list.filter((o) => o.stage === activeStage);
+    if (activeStage !== ALL) list = list.filter((o) => o.stage === activeStage);
     if (search) {
       const q = search.toLowerCase();
       list = list.filter((o) =>
@@ -112,7 +110,7 @@ export function OrdersHubClient({
         (o.sku ?? "").toLowerCase().includes(q));
     }
     return list;
-  }, [rows, activeStage, search, archive]);
+  }, [rows, activeStage, search]);
 
   function toggleSelectMode() {
     setSelectMode((v) => { if (v) setSelectedIds(new Set()); return !v; });
@@ -135,7 +133,7 @@ export function OrdersHubClient({
   // sentinel SamplesClient already used for exactly this.
   // NULL, not a sentinel -- see the `stage` prop on OrderTable. "__none__"
   // matched no branch and printed itself into the Status column.
-  const tableStage = activeStage === ALL ? null : archive ? "Archived" : activeStage;
+  const tableStage = activeStage === ALL ? null : activeStage;
   const calendarView = activeStage === ALL ? undefined : STAGE_CALENDAR_VIEW[activeStage];
   // Exhaustive Record, so a sixth OrderType is a compile error here rather
   // than a page silently titled "Orders".
@@ -144,9 +142,9 @@ export function OrdersHubClient({
   return (
     <>
       <PageHeader
-        eyebrow={archive ? "Stored archive" : copy.eyebrow}
-        title={archive ? "Archive" : copy.title}
-        accent={archive ? "archive" : copy.accent}
+        eyebrow={copy.eyebrow}
+        title={copy.title}
+        accent={copy.accent}
         right={
           <>
             {calendarView && (
@@ -187,37 +185,34 @@ export function OrdersHubClient({
         }
       />
 
-      {/* Stage cards. Archive has none: an archived row keeps whatever stage it
-          was archived at, so filtering by stage there answers a question nobody
-          is asking. */}
-      {!archive && (
-        <div className="px-6 lg:px-8 pb-3 flex gap-1.5 flex-wrap">
+      {/* Stage cards, always: archive mode -- which had none -- went to
+          /archive on 2026-09-16. */}
+      <div className="px-6 lg:px-8 pb-3 flex gap-1.5 flex-wrap">
+        <button
+          onClick={() => setActiveStage(ALL)}
+          className={`px-3 py-1.5 rounded-full text-[11px] uppercase tracking-wider transition-all ${
+            activeStage === ALL
+              ? "bg-cream/12 border border-cream/30 text-cream"
+              : "bg-white/4 border border-cream/15 text-cream/65 hover:bg-white/8"
+          }`}
+        >
+          All <span className="opacity-65 ml-1">{rows.length}</span>
+        </button>
+        {stages.map((s) => (
           <button
-            onClick={() => setActiveStage(ALL)}
-            className={`px-3 py-1.5 rounded-full text-[11px] uppercase tracking-wider transition-all ${
-              activeStage === ALL
+            key={s}
+            onClick={() => setActiveStage(s)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] uppercase tracking-wider transition-all ${
+              activeStage === s
                 ? "bg-cream/12 border border-cream/30 text-cream"
                 : "bg-white/4 border border-cream/15 text-cream/65 hover:bg-white/8"
             }`}
           >
-            All <span className="opacity-65 ml-1">{rows.length}</span>
+            <span className="w-1.5 h-1.5 rounded-full" style={{ background: STAGE_ACCENT[s] }} />
+            {s} <span className="opacity-65 ml-0.5">{stageCounts[s] ?? 0}</span>
           </button>
-          {stages.map((s) => (
-            <button
-              key={s}
-              onClick={() => setActiveStage(s)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] uppercase tracking-wider transition-all ${
-                activeStage === s
-                  ? "bg-cream/12 border border-cream/30 text-cream"
-                  : "bg-white/4 border border-cream/15 text-cream/65 hover:bg-white/8"
-              }`}
-            >
-              <span className="w-1.5 h-1.5 rounded-full" style={{ background: STAGE_ACCENT[s] }} />
-              {s} <span className="opacity-65 ml-0.5">{stageCounts[s] ?? 0}</span>
-            </button>
-          ))}
-        </div>
-      )}
+        ))}
+      </div>
 
       <div className="px-6 lg:px-8 pb-4">
         <div className="relative max-w-md">
@@ -226,7 +221,7 @@ export function OrdersHubClient({
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder={archive ? "Search the archive…" : "Search these orders…"}
+            placeholder="Search these orders…"
             autoComplete="off"
             data-1p-ignore="true"
             data-lpignore="true"
@@ -247,11 +242,9 @@ export function OrdersHubClient({
             <div className="text-[12px] text-cream/45">
               {search
                 ? `Nothing here matched "${search}".`
-                : archive
-                  ? "No archived orders yet."
-                  : activeStage === ALL
-                    ? "No orders of this type yet."
-                    : `No orders are currently in "${activeStage}".`}
+                : activeStage === ALL
+                  ? "No orders of this type yet."
+                  : `No orders are currently in "${activeStage}".`}
             </div>
           </div>
         ) : (
@@ -283,9 +276,9 @@ export function OrdersHubClient({
           creates the claim. Putting them in the table would hand them to bulk
           actions and the stage-move path, which act on things that exist.
 
-          Hidden in archive view: nothing waiting to be worked belongs in a
-          list of finished work. */}
-      {type === "warranty" && !archive && <ClaimDrafts />}
+          ⚠ The "hidden in archive view" case went with archive mode on
+          2026-09-16; /archive is its own section. */}
+      {type === "warranty" && <ClaimDrafts />}
 
       {showNewForm && (type === "warranty" ? (
         <WarrantyClaimModal onClose={() => setShowNewForm(false)} />
