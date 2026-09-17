@@ -479,6 +479,7 @@ nothing on success, so silence is not a result.
 | `archived_at` is cleared on restore | It then means "non-null exactly while archived", which is one fact rather than two that can disagree. When something was archived previously is in the activity trail. |
 | This migration runs BEFORE its deploy | The reverse of the payment one: the code writes the column, so the column has to exist first. A column nothing writes yet changes nothing. |
 | The archive is its own section, not part of the projects hub | The projects hub is where active work lives. History that is browsed and restored is a different job, and mixing them makes one screen answer two questions. |
+| The archived modal disables the stage rail rather than removing it | The rail is the answer to "where did this stop", not only a control. Removing it would take the information out with the action. |
 | The archive is one line per purchase, not per group | A customer bought one thing; the groups exist so the backend can track parts that move at different speeds. History is the customer's view, and restoring one part was never possible anyway. |
 | The archive gets its own table, not OrderTable | OrderTable renders order rows with claim chips and stage actions. An archive line is a purchase with its parts, and it offers exactly one action. |
 | An archived row accepts exactly one request: its own restore | A whitelist of editable fields would grow with every new field and fail open on the one somebody forgot. "Nothing but the way out" cannot drift. |
@@ -869,14 +870,20 @@ nothing on success, so silence is not a result.
        before, and in `readOnly` the attachments panel keeps exactly one
        control — Download — and no inputs at all. The acknowledgment panel's
        fold is typechecked rather than rendered; its gate is the existing one.
-    4b. **The modal itself**, still open: compute the same question the server
-       asks (the predicate moves to `lib/data` so both sides read one
-       implementation), remove every write control, pass `readOnly` to the four
-       panels, and add two lines to the header — who handled the order, and
-       that it was archived on a date with restore as the way back.
-       ⚠ Until then, `/archive` opens the ORDINARY modal: its controls are
-       refused by the server (409 `archived_read_only`), so they fail loudly
-       rather than silently.
+    4b. ✅ **The modal itself** (`patch_modal_read_only.py`, 2026-09-16).
+       `archivedVia` moved to `lib/data` and `lib/archived.ts` re-exports it, so
+       the modal hides precisely what the six routes refuse. Every write control
+       is gone; the stage rail stays **disabled** because it is how you read
+       where the work stopped, and notes and tracking stay as read-only fields.
+       The header gains "Handled by …" and "Archived <date> · restore to make
+       changes".
+
+       **Proved by enumeration**, 144 renders over type × stage × admin × claim
+       state × archived-by-row / by-purchase / not-archived: the 48 live renders
+       are identical to before, and in all 96 archived renders NO enabled
+       control matches a write verb, NO input is editable, and the header says
+       both facts. What survives is the tab bar, the disabled rail, the three
+       pane toggles and Close.
 21. **The registry token expires, and the deploy path around it is easy to
     break.** It went on 2026-09-16, the second time after 2026-08-18, and
     `kamal deploy` failed at `docker login` with `denied: denied` — nothing
@@ -1012,6 +1019,8 @@ patch_archive_section.py
 patch_docs_archive_section.py
 patch_panels_read_only.py
 patch_docs_panels_read_only.py
+patch_modal_read_only.py
+patch_docs_modal_read_only.py
 ```
 
 ⚠ A prerequisite check keyed on a **CSS class** rather than on an interface once

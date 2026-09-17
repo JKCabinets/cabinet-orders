@@ -796,6 +796,11 @@ one line per archived purchase showing its parts, one per archived custom job or
 warranty claim, newest first. Restoring a purchase brings the whole thing back,
 each part at the stage it had stopped at.
 
+**Opening archived work shows it, and offers nothing** (2026-09-16). Every
+detail, file, acknowledgment and activity entry is there to read; no button
+changes anything, and the header says who handled the order and when it was
+archived. Restore it and the controls come back.
+
 **Archived work cannot be edited** (2026-09-16). Stage moves, dates, notes,
 attachments, acknowledgments and deletion are all refused on anything archived,
 whether it is a custom job or a whole purchase. Restore it first and the work is

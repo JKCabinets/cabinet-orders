@@ -60,15 +60,15 @@ export async function purchaseOf(
   return data as PurchaseState;
 }
 
-/** Archived through its purchase, on its own, or not at all. */
-export function archivedVia(
-  order: { archived?: boolean | null; project_id?: string | null },
-  purchase: PurchaseState | null,
-): "purchase" | "row" | null {
-  if (purchase?.archived) return "purchase";
-  if (order.archived) return "row";
-  return null;
-}
+/**
+ * Archived through its purchase, on its own, or not at all.
+ *
+ * ⚠ THE IMPLEMENTATION MOVED TO lib/data ON 2026-09-16 so the ORDER MODAL can
+ * ask exactly what these routes ask. lib/data has no imports of its own, which
+ * is why the shared half lives there while the Supabase read stays here.
+ * Re-exported rather than re-written: one name, one answer.
+ */
+export { archivedVia } from "@/lib/data";
 
 /**
  * The refusal. 409 rather than 422: the request is not malformed, the row is in

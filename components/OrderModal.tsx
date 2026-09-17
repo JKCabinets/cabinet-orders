@@ -8,7 +8,7 @@ import {
   Order, Stage, ORDER_STAGES, STAGE_LIST_BY_TYPE,
   AVATAR_COLOR_STYLES,
   isPaymentHoldStatus, paymentHoldActive, paymentHoldLabel,
-  displayOrderNumber, nextStageFor, poReference, archivesAsOrder,
+  displayOrderNumber, nextStageFor, poReference, archivesAsOrder, archivedVia,
   type TeamMember,
 } from "@/lib/data";
 import { slaRuleFor, slaAgeHours, hoursInStage, slaTier, formatStageAge } from "@/lib/sla";
@@ -441,6 +441,24 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
     : (liveOrder.claimed_by ?? null);
 
   /**
+   * ⚠ ARCHIVED IS READ-ONLY, AND THIS MODAL IS WHERE THAT SHOWS. Every control
+   * below asks `readOnly`; the six write routes refuse the same rows anyway
+   * (409 `archived_read_only`), so a control left behind here is one that fails
+   * on click rather than one that does damage. Same question both sides --
+   * archivedVia lives in lib/data for exactly that reason.
+   *
+   * A group's answer comes from its PURCHASE, which the store already holds.
+   * While that project is still loading the modal behaves normally and the
+   * server is the backstop.
+   */
+  const purchaseOfRow = liveOrder.project_id ? (projects[liveOrder.project_id] ?? null) : null;
+  const archivedState = archivedVia(liveOrder, purchaseOfRow);
+  const readOnly = archivedState !== null;
+  const archivedOn = archivedState === "purchase"
+    ? (purchaseOfRow?.archived_at ?? null)
+    : (liveOrder.archived_at ?? null);
+
+  /**
    * The acknowledgment gate, read where the ACTION is.
    *
    * ⚠ ONE EXPRESSION. `ackEligible` was written out twice -- once here in
@@ -825,6 +843,19 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
               <span className="mx-1.5">&middot;</span>
               {liveOrder.date}
             </p>
+            {/* ⚠ THE TWO FACTS A CONTROL-LESS MODAL OWES THE READER: who worked
+                this, and why nothing can be changed. The claim chip is gone
+                here -- claiming archived work means nothing -- and the full
+                ownership history is on the Activity tab. */}
+            {readOnly && (
+              <p className="text-[11px] text-cream/45 mt-1">
+                Handled by {claimOwnerName || "nobody"}
+                <span className="mx-1.5">&middot;</span>
+                Archived{archivedOn ? ` ${new Date(archivedOn).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "America/Phoenix" })}` : ""}
+                <span className="mx-1.5">&middot;</span>
+                restore to make changes
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-1.5 flex-shrink-0 ml-3">
 <div className="flex items-center gap-1.5">
@@ -848,6 +879,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                 said so, while the Team Member cell in the pipeline strip said
                 the same thing again and was the only one you could act on.
                 One fact, one place, and it is the place the eye goes first. */}
+            {!readOnly && (
             <ClaimChip
               claimedBy={resolvedClaimedBy}
               team={team}
@@ -863,7 +895,8 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
               onClaim={() => handleClaim(currentUserId ?? null)}
               onRelease={() => handleClaim(null)}
             />
-            {claimLockedByOther && isAdmin && (
+            )}
+            {!readOnly && claimLockedByOther && isAdmin && (
               <button
                 onClick={() => setAdminEditing((v) => !v)}
                 title={adminEditing
@@ -883,7 +916,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                 was archived twice over. And only where the viewer can act:
                 somebody else's claim refuses this server-side, and the table
                 already withholds its archive buttons from those rows. */}
-            {isCompleted && archivesAsOrder(liveOrder) && canEdit && (
+            {!readOnly && isCompleted && archivesAsOrder(liveOrder) && canEdit && (
               <button
                 onClick={() => { void handleArchive(); }}
                 disabled={archiveBusy}
@@ -897,7 +930,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                     : <><Archive className="w-3 h-3" /> Archive</>}
               </button>
             )}
-            {liveOrder.source === "Manual" && (
+            {!readOnly && liveOrder.source === "Manual" && (
               <button
                 onClick={handleDelete}
                 title="Delete order"
@@ -933,7 +966,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                 {v} PDF
               </a>
             ))}
-            {isAdmin && (
+            {!readOnly && isAdmin && (
               <button
                 onClick={handleReDecode}
                 disabled={reDecodeBusy}
@@ -1079,7 +1112,10 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                         <button
                           type="button"
                           onClick={() => handleMoveStage(s as Stage)}
-                          disabled={checkingAttachments || !isAdmin}
+                          // ⚠ DISABLED, NOT REMOVED. The rail is how you read
+                          // where the work stopped; taking it out of an archived
+                          // row would remove the answer along with the action.
+                          disabled={readOnly || checkingAttachments || !isAdmin}
                           title={!isAdmin
                             ? s
                             : isEnteredGate ? "Requires a matching acknowledgment or attachment"
@@ -1108,7 +1144,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                       <button
                         type="button"
                         onClick={() => handleMoveStage(s as Stage)}
-                        disabled={checkingAttachments}
+                        disabled={readOnly || checkingAttachments}
                         className="mt-1.5 px-0.5 text-[9px] uppercase tracking-[0.07em] font-medium text-center leading-tight transition-colors disabled:opacity-60"
                         style={{ color: isActive ? color : isPast ? "rgba(240,236,228,0.62)" : "rgba(240,236,228,0.40)" }}
                       >
@@ -1267,7 +1303,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                   key={liveOrder.id}
                   // First cell now, so no divider on its left edge.
                   flush
-                  readOnly={!canEdit}
+                  readOnly={!canEdit || readOnly}
                   lockedNote={`Claimed by ${claimOwnerName}. Ask them to release it`
                     + `${isAdmin ? ", or use Edit order above" : ""}.`}
                   order={liveOrder}
@@ -1318,6 +1354,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                   trackingSlot={typeCarriesTracking(liveOrder.type) && (
                     <TrackingEntry
                       order={liveOrder}
+                      readOnly={readOnly}
                       highlight={trackingHighlight}
                       onSaved={(stage) => {
                         setTrackingHighlight(false);
@@ -1378,6 +1415,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
             </div>
 
             <StageInputsCard
+              readOnly={readOnly}
               order={liveOrder}
               updateOrderDetails={updateOrderDetails}
               onStageChange={onStageChange}
@@ -1459,6 +1497,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                 <textarea
                   value={notes}
                   onChange={(e) => { setNotes(e.target.value); setNotesChanged(true); }}
+                  readOnly={readOnly}
                   placeholder="No customer note yet."
                   rows={3}
                   className="w-full rounded-brand p-2.5 text-[12px] resize-none placeholder:text-cream/25"
@@ -1488,6 +1527,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
               <textarea
                 value={internalNotes}
                 onChange={(e) => { setInternalNotes(e.target.value); setInternalNotesChanged(true); }}
+                readOnly={readOnly}
                 placeholder="No internal note yet."
                 rows={3}
                 className="w-full rounded-brand p-2.5 text-[12px] resize-none placeholder:text-cream/25"
@@ -1514,12 +1554,13 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
               orderSkus={liveOrder.sku_items?.map((i) => i.sku) ?? (liveOrder.sku ? [liveOrder.sku] : [])}
               orderName={liveOrder.name}
               reporterName={currentUserDisplayName}
+              readOnly={readOnly}
             />
           )}
 
           {/* Always mounted -- see the note above. Only its visibility changes. */}
           <div ref={attachmentsAnchorRef} className={openPane === "files" ? "" : "hidden"}>
-            <AttachmentsPanel ref={attachmentsRef} orderId={liveOrder.id} />
+            <AttachmentsPanel ref={attachmentsRef} orderId={liveOrder.id} readOnly={readOnly} />
           </div>
 
           </>)}
@@ -1606,7 +1647,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                     productionStartDate={open.production_start_date}
                     productionEstFinishDate={open.production_est_finish_date}
                     scheduledDeliveryDate={open.scheduled_delivery_date}
-                    readOnly={open.source === "Shopify"}
+                    readOnly={readOnly || open.source === "Shopify"}
                   />
                 </div>
               );
@@ -1692,7 +1733,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
         >
           <div className="text-[10px] text-cream/30 font-mono truncate">{liveOrder.id}</div>
           <div className="flex items-center gap-2 flex-shrink-0">
-            {(notesChanged || internalNotesChanged) && (
+            {!readOnly && (notesChanged || internalNotesChanged) && (
               <button
                 onClick={() => {
                   if (notesChanged) handleSaveNotes();
@@ -1816,9 +1857,11 @@ function QuoteInfoPanel({ notes }: { notes: string }) {
  * A second implementation here would be a second set of those rules.
  */
 function StageInputsCard({
-  order, updateOrderDetails, onStageChange, canEdit = true,
+  order, updateOrderDetails, onStageChange, canEdit = true, readOnly = false,
 }: {
   order: Order;
+  /** Archived: the dates and the tracking show, nothing offers to change them. */
+  readOnly?: boolean;
   updateOrderDetails: (id: string, details: {
     production_start_date?: string | null;
     production_est_finish_date?: string | null;
@@ -1887,7 +1930,7 @@ function StageInputsCard({
             </p>
           </div>
         </div>
-        {!isWarranty && canEdit && (
+        {!isWarranty && canEdit && !readOnly && (
           <button
             onClick={() => setEditing((v) => !v)}
             className="text-[10px] uppercase tracking-wider px-3 py-1 rounded-full transition-all flex-shrink-0 bg-white/5 border border-cream/20 text-cream/75 hover:bg-white/10 hover:text-cream"
@@ -1935,6 +1978,7 @@ function StageInputsCard({
           {carriesTracking ? (
             <TrackingEntry
               order={order}
+              readOnly={readOnly}
               onSaved={(stage) => { if (stage) onStageChange(stage as Stage); setEditing(false); }}
             />
           ) : (
@@ -1975,12 +2019,17 @@ const CARD_DATE_INPUT: React.CSSProperties = {
 };
 
 function TrackingEntry({
-  order, onSaved, highlight = false,
+  order, onSaved, highlight = false, readOnly = false,
 }: {
   order: Order;
   onSaved: (advancedTo: string | null) => void;
   /** Opened because a move was refused for want of a number. */
   highlight?: boolean;
+  /**
+   * Archived: the carrier and the number still show -- they are part of what
+   * happened -- and nothing offers to change them.
+   */
+  readOnly?: boolean;
 }) {
   const { showToast } = useToast();
   const numberRef = useRef<HTMLInputElement>(null);
@@ -2063,6 +2112,7 @@ function TrackingEntry({
       <input
         value={carrier}
         onChange={(e) => setCarrier(e.target.value)}
+        readOnly={readOnly}
         placeholder="Carrier"
         className="w-[80px] rounded-brand px-2 py-1.5 text-[11px] placeholder:text-cream/25"
         style={{
@@ -2076,7 +2126,8 @@ function TrackingEntry({
         ref={numberRef}
         value={number}
         onChange={(e) => setNumber(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter") void save(); }}
+        onKeyDown={(e) => { if (!readOnly && e.key === "Enter") void save(); }}
+        readOnly={readOnly}
         placeholder="Tracking number"
         className="w-[150px] rounded-brand px-2 py-1.5 text-[11px] placeholder:text-cream/25 transition-all"
         style={{
@@ -2087,6 +2138,7 @@ function TrackingEntry({
           fontSize: "16px",
         }}
       />
+      {!readOnly && (
       <button
         onClick={() => void save()}
         disabled={saving || !dirty}
@@ -2101,6 +2153,7 @@ function TrackingEntry({
             class of untruth as a toast that says "saved" on an advance. */}
         {saving ? "\u2026" : clearing ? "Clear" : willAdvance ? "Ship" : "Save"}
       </button>
+      )}
     </div>
   );
 }

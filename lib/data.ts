@@ -886,6 +886,29 @@ export function archivesAsOrder(order: Pick<Order, "project_id">): boolean {
 }
 
 /**
+ * Is this row archived -- on its own, or through its PURCHASE?
+ *
+ * ⚠ ONE QUESTION, BOTH SIDES (2026-09-16). The six write routes refuse an
+ * archived row (lib/archived.ts, which re-exports this) and the modal hides the
+ * controls those routes would refuse. Asking it twice in two files is how a
+ * screen ends up offering what the server rejects.
+ *
+ * A standalone row carries `archived` itself. A project-linked group never does
+ * -- orders_archived_standalone_only forbids it -- so its purchase is the only
+ * place the answer lives. `null` for the project of a group means "not known",
+ * and the caller decides: the routes refuse, the modal keeps its controls until
+ * the store has the project.
+ */
+export function archivedVia(
+  order: { archived?: boolean | null; project_id?: string | null },
+  project: { archived?: boolean | null } | null | undefined,
+): "purchase" | "row" | null {
+  if (project?.archived) return "purchase";
+  if (order.archived) return "row";
+  return null;
+}
+
+/**
  * Is `stage` one this type's UI actually OFFERS?
  *
  * ⚠ THIS IS A DIFFERENT QUESTION FROM `isStageAllowedForType`, and the two have
