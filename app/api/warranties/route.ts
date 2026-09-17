@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, cleanInput, rateLimitOr429 } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
+import { activityDate } from "@/lib/data";
 
 export async function GET(req: NextRequest) {
   const auth = await requireAuth();
@@ -48,7 +49,7 @@ export async function POST(req: NextRequest) {
   }
   if (!body.name) return NextResponse.json({ error: "name is required" }, { status: 422 });
 
-  const today = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const today = activityDate();
   const id = `WRN-${String(Date.now()).slice(-4).padStart(4, "0")}`;
 
   const claim = {

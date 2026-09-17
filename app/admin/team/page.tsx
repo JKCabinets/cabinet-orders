@@ -187,8 +187,18 @@ export default function AdminTeamPage() {
                     onProfile={() => { setEditingProfileId(member.id); setEditingId(null); setShowAddForm(false); setChangingPasswordId(null); }}
                     onRequestAction={() => setConfirmActionId(member.id)}
                     isConfirmingAction={confirmActionId === member.id}
-                    onDeactivate={() => { deactivateTeamMember(member.id); setConfirmActionId(null); showToast(`${member.name} deactivated`, { kind: "warn" }); }}
-                    onDelete={() => { deleteTeamMember(member.id); setConfirmActionId(null); showToast(`${member.name} permanently deleted`, { kind: "warn" }); }}
+                    onDeactivate={async () => {
+                      const res = await deactivateTeamMember(member.id);
+                      setConfirmActionId(null);
+                      showToast(res.ok ? `${member.name} deactivated` : res.error ?? "Could not deactivate",
+                        { kind: res.ok ? "warn" : "error" });
+                    }}
+                    onDelete={async () => {
+                      const res = await deleteTeamMember(member.id);
+                      setConfirmActionId(null);
+                      showToast(res.ok ? `${member.name} permanently deleted` : res.error ?? "Could not delete",
+                        { kind: res.ok ? "warn" : "error" });
+                    }}
                     onCancelAction={() => setConfirmActionId(null)}
                   />
                 )}
@@ -211,8 +221,18 @@ export default function AdminTeamPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <button onClick={() => { updateTeamMember(member.id, { active: true }); showToast(`${member.name} reactivated`, { kind: "success" }); }} className="text-[11px] text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] transition-colors">Reactivate</button>
-                    <button onClick={() => { deleteTeamMember(member.id); showToast(`${member.name} permanently deleted`, { kind: "warn" }); }} className="text-[11px] text-red-400/60 hover:text-red-400 transition-colors ml-2">Delete</button>
+                    {/* ⚠ WAIT, THEN SAY. These announced success the moment they
+                        fired, so a refused change still read as done. */}
+                    <button onClick={async () => {
+                      const res = await updateTeamMember(member.id, { active: true });
+                      showToast(res.ok ? `${member.name} reactivated` : res.error ?? "Could not reactivate",
+                        { kind: res.ok ? "success" : "error" });
+                    }} className="text-[11px] text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] transition-colors">Reactivate</button>
+                    <button onClick={async () => {
+                      const res = await deleteTeamMember(member.id);
+                      showToast(res.ok ? `${member.name} permanently deleted` : res.error ?? "Could not delete",
+                        { kind: res.ok ? "warn" : "error" });
+                    }} className="text-[11px] text-red-400/60 hover:text-red-400 transition-colors ml-2">Delete</button>
                   </div>
                 </div>
               ))}

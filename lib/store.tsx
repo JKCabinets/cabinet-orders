@@ -8,7 +8,7 @@ import { useSession } from "next-auth/react";
 import {
   Order, OrderType, Stage, TeamMember,
   Member, Source, ORDER_STAGES, WARRANTY_STAGES, AvatarColor, Role,
-  ID_PREFIX_BY_TYPE, ORDER_TYPES, shapeOrder, withPurchasePayment,
+  ID_PREFIX_BY_TYPE, ORDER_TYPES, shapeOrder, withPurchasePayment, activityDate,
   type Project,
 } from "./data";
 import { fieldsToClearOnBackwardMove } from "./stageLogic";
@@ -84,8 +84,14 @@ interface StoreCtx {
   ) => Promise<{ ok: boolean; claimedBy: string | null; reason?: string }>;
   addTeamMember: (m: Omit<TeamMember, "id">) => Promise<{ ok: boolean; error?: string; temporaryPassword?: string }>;
   updateTeamMember: (id: string, updates: Partial<TeamMember> & { password?: string }) => Promise<{ ok: boolean; error?: string }>;
-  deactivateTeamMember: (id: string) => Promise<void>;
-  deleteTeamMember: (id: string) => Promise<void>;
+  /**
+   * ⚠ THEY RETURN A RESULT (2026-09-16). Both applied their change locally and
+   * discarded the server's answer, so the admin page announced "deactivated"
+   * and "deleted" whatever happened -- the same shape as the archive pair
+   * before item 10. A refusal is undone here and reported to the caller.
+   */
+  deactivateTeamMember: (id: string) => Promise<{ ok: boolean; error?: string }>;
+  deleteTeamMember: (id: string) => Promise<{ ok: boolean; error?: string }>;
 
   // Profile-only updates (self OR admin; see lib/auth.ts requireSelfOrAdmin)
   updateTeamMemberProfile: (
@@ -426,7 +432,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // indicator on team-member avatars.
   const onlineUsers = usePresence();
 
-  const today = () => new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  // ⚠ PHOENIX, NOT THE BROWSER'S CLOCK. The optimistic label is replaced by the
+  // server's row moments later, and a label that disagreed with it by a day was
+  // the same untruth in the other direction. See activityDate.
+  const today = () => activityDate();
 
   const addOrder = useCallback(async (partial: Partial<Order> & { type: OrderType }) => {
     // ⚠ SPREAD, NOT A WHITELIST -- and that is the fix, not laziness.
@@ -898,8 +907,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const deactivateTeamMember = useCallback(async (id: string) => {
-    setTeam(prev => prev.map(m => m.id === id ? { ...m, active: false } : m));
-    await apiCall(`/api/team/${id}`, "PATCH", { active: false });
+    let before: TeamMember | undefined;
+    let after: TeamMember | undefined;
+    setTeam(prev => prev.map(m => {
+      if (m.id !== id) return m;
+      before = m;
+      after = { ...m, active: false };
+      return after;
+    }));
+    const res = await apiCall(`/api/team/${id}`, "PATCH", { active: false });
+    if (res?.__error) {
+      setTeam(prev => prev.map(m =>
+        m.id === id && before && after ? undoFields(m, before, after) : m));
+      return { ok: false, error: res.__error };
+    }
+    return { ok: true };
   }, []);
 
   /**
@@ -943,8 +965,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const deleteTeamMember = useCallback(async (id: string) => {
-    setTeam(prev => prev.filter(m => m.id !== id));
-    await apiCall(`/api/team/${id}?hard=true`, "DELETE");
+    // ⚠ THE ROW GOES BACK WHERE IT WAS. A removal cannot be undone with
+    // undoFields -- there is no row left to mend -- so the member and its
+    // position are kept and re-inserted if the server refuses.
+    let removed: TeamMember | undefined;
+    let at = -1;
+    setTeam(prev => {
+      at = prev.findIndex(m => m.id === id);
+      removed = at >= 0 ? prev[at] : undefined;
+      return prev.filter(m => m.id !== id);
+    });
+    const res = await apiCall(`/api/team/${id}?hard=true`, "DELETE");
+    if (res?.__error) {
+      setTeam(prev => {
+        if (!removed || prev.some(m => m.id === id)) return prev;
+        const next = [...prev];
+        next.splice(at < 0 ? next.length : at, 0, removed);
+        return next;
+      });
+      return { ok: false, error: res.__error };
+    }
+    return { ok: true };
   }, []);
 
   return (

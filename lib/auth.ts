@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/authOptions";
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { activityDate } from "@/lib/data";
 
 export type AuthSession = {
   user: {
@@ -166,7 +167,7 @@ export async function requireOrderClaim(
   pending.push({
     order_id: orderId,
     text: `${action} by ${who} (admin) while claimed by another member`,
-    time: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+    time: activityDate(),
   });
   return { override: true };
 }

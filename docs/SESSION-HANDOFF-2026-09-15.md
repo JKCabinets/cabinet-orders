@@ -771,18 +771,27 @@ nothing on success, so silence is not a result.
     **Not in this commit:** `teams-digest` still counts the groups of archived
     purchases (inert while `TEAMS_WEBHOOK_URL` is empty), and the group copy
     itself — item 19.
-17. **Reactivating a team member says it worked before it has.**
-    `app/admin/team/page.tsx:214` calls `updateTeamMember(member.id,
-    { active: true })` without awaiting it and shows "… reactivated" straight
-    away, so a rejected change still reports success. The store now reverts
-    it correctly (item 10); the page just never looks at the answer. Seen in a
-    grep line only.
-18. **Activity rows are dated on the server's clock, not Phoenix time.** The
-    PATCH route's `today` and the claim-override row both use
-    `toLocaleDateString("en-US", { month, day })` with no `timeZone`. The bulk
-    route added `timeZone: "America/Phoenix"` because without it every row
-    written after 5 pm Phoenix is dated tomorrow. One date expression, shared,
-    is the fix — not a third copy.
+17. ✅ **The team page announced writes it had not waited for — fixed
+    2026-09-16** (`patch_activity_dates_and_team_results.py`). Four buttons,
+    not one: Reactivate, Delete, and Deactivate/Delete on the active list. Two
+    of them had nothing to wait FOR — `deactivateTeamMember` and
+    `deleteTeamMember` applied their change locally and discarded the server's
+    answer, the same shape as the archive pair before item 10. Both now undo a
+    refusal and return `{ ok, error }`; delete puts the member back at its old
+    position, since there is no row left to mend. All four buttons wait, then
+    say what actually happened. **Proved:** four store scenarios — success
+    leaves the state exactly as before and returns `{ ok: true }`; a refusal is
+    undone and reported, where the old code left the change standing.
+18. ✅ **Activity rows are dated in Phoenix — fixed 2026-09-16.**
+    `activityDate()` in `lib/data` is the one expression. Four writers lacked a
+    timezone: the PATCH route, the claim-override row, the warranty route and
+    the client's optimistic label. **Proved** at every hour of four dates
+    including two month ends: `2026-09-17T00:30Z` is Sep 16 in Phoenix, and
+    `2026-10-01T02:00Z` is Sep 30 — both of which the old code dated a day
+    later. ⚠ **Eleven other writers still spell the option out inline.** They
+    are correct, so this patch left the webhook and the crons alone; adopt the
+    helper as each is next edited. ⚠ **Rows already written keep their date** —
+    a row dated tomorrow cannot be told from one written tomorrow.
 19. ✅ **The group copy of the payment fields is gone — 2026-09-16 (item 16,
     commit 2).** `patch_payment_group_copy_removed.py`: the webhook stops
     writing `payment_status` onto groups, at ingest and on `orders/updated`;
@@ -1057,6 +1066,8 @@ patch_delete_archive_mode.py
 patch_docs_delete_archive_mode.py
 patch_dead_code_and_stale_comments.py
 patch_docs_dead_code.py
+patch_activity_dates_and_team_results.py
+patch_docs_dates_and_team.py
 ```
 
 ⚠ A prerequisite check keyed on a **CSS class** rather than on an interface once

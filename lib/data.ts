@@ -899,6 +899,26 @@ export function archivesAsOrder(order: Pick<Order, "project_id">): boolean {
  * and the caller decides: the routes refuse, the modal keeps its controls until
  * the store has the project.
  */
+/**
+ * The date an activity row is stamped with: Phoenix, always.
+ *
+ * ⚠ THE SERVER'S CLOCK IS UTC, AND THE BUSINESS IS IN ARIZONA. Written without
+ * a timeZone, every row created after 5pm Phoenix carried TOMORROW's date --
+ * the trail said work happened on a day it had not. Eleven writers already
+ * passed `America/Phoenix` and four did not (the PATCH route, the claim-override
+ * row, the warranty route and the client's optimistic label); this is the one
+ * place to change, and to read when the format is questioned.
+ *
+ * ⚠ THE OTHER ELEVEN STILL SPELL IT OUT inline. They are correct, so this patch
+ * left them alone rather than touching the webhook and the crons for a rename;
+ * adopt this as each is next edited.
+ */
+export function activityDate(): string {
+  return new Date().toLocaleDateString("en-US", {
+    month: "short", day: "numeric", timeZone: "America/Phoenix",
+  });
+}
+
 export function archivedVia(
   order: { archived?: boolean | null; project_id?: string | null },
   project: { archived?: boolean | null } | null | undefined,

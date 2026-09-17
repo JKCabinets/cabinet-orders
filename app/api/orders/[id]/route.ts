@@ -4,7 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { getShopifyToken } from "@/lib/shopify";
 import { mergeTags } from "@/lib/shopifyStageSync";
 import { ALLOWED_STAGES, isStageAllowedForType, isBackwardsMove, verifyAdminPin, fieldsToClearOnBackwardMove, describeFieldsCleared } from "@/lib/stageGuards";
-import { isPaymentHoldStatus, paymentHoldLabel, paymentRecordOf, parseMoney, isStageOfferedForType, type OrderType, type Stage } from "@/lib/data";
+import { isPaymentHoldStatus, paymentHoldLabel, paymentRecordOf, parseMoney, isStageOfferedForType, activityDate, type OrderType, type Stage } from "@/lib/data";
 import { purchaseOf, archivedVia, archivedReadOnly } from "@/lib/archived";
 import { trackingTargetStage, categoryHasTracking, type OrderCategory } from "@/lib/categories";
 import { orderAllVendorsGreen } from "@/lib/acknowledgments";
@@ -727,7 +727,7 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
   const finalStage = (updates.stage as string | undefined) ?? currentStage;
 
   // Log activity
-  const today = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const today = activityDate();
   // ⚠ EVERY CHANGE GETS A ROW. INDEPENDENT CHECKS, NOT A CHAIN.
   //
   // This was `if / else if` down to a single `activityText`, so one PATCH
