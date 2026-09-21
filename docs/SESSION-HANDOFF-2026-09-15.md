@@ -476,6 +476,7 @@ nothing on success, so silence is not a result.
 | The payment constraint covers all three fields | A status and its acknowledgement are one fact. An acknowledgement left on a group would compare against a status that lives somewhere else. |
 | The code is deployed before the migration runs | Until the webhook stops writing the group copy, the constraint fails every group update and every new checkout's group insert. Demonstrated against PostgreSQL. |
 | The archiving constraint shipped with the payment one | Same table, same form, same migration — and the routes' refusal alone left every other writer able to recreate the SHO-1052 state. |
+| `archived_at` is tied to `archived` by a CHECK, both tables | The Archive section sorts on the date and shows "—" for a missing one. With the constraint, a missing date can only mean "not archived", never "archived by a path that forgot". |
 | `archived_at` is cleared on restore | It then means "non-null exactly while archived", which is one fact rather than two that can disagree. When something was archived previously is in the activity trail. |
 | This migration runs BEFORE its deploy | The reverse of the payment one: the code writes the column, so the column has to exist first. A column nothing writes yet changes nothing. |
 | The archive is its own section, not part of the projects hub | The projects hub is where active work lives. History that is browsed and restored is a different job, and mixing them makes one screen answer two questions. |
@@ -733,9 +734,16 @@ nothing on success, so silence is not a result.
     the page, and its entry from `proxy.ts`'s admin prefixes. OPERATIONS §12's
     "historic projects still need backfilling" is struck through.
 
-    **What it frees up:** it was the only writer that set `archived` without
-    `archived_at`, so a CHECK tying the two together could now be added. Not
-    done here.
+    **What it freed up, done the same day:** it was the only writer that set
+    `archived` without `archived_at`, so
+    `migrations/2026-09-16-archived-at-matches.sql` now adds
+    `orders_archived_at_matches` and `projects_archived_at_matches` — archived
+    exactly when dated. No code changed with it: every remaining writer sets
+    the two together. **Proved against real PostgreSQL:** archive with a date,
+    restore clearing it, archive a purchase, insert with defaults — all
+    accepted; archive without a date, clear the flag but keep the date, date a
+    row that is not archived, insert archived with no date — all refused.
+    Checked first: no row on either table disagreed at `d534e20`.
 
     **Left as records:** `SECURITY.md`, `docs/HANDOFF-2026-08-20-BUILD.md`,
     `migrations/2026-09-16-archived-at.sql` and the system-map SVG still name
@@ -1079,6 +1087,7 @@ patch_activity_dates_and_team_results.py
 patch_docs_dates_and_team.py
 patch_remove_order_importer.py
 patch_docs_remove_order_importer.py
+patch_archived_at_matches.py
 ```
 
 ⚠ A prerequisite check keyed on a **CSS class** rather than on an interface once
