@@ -113,7 +113,7 @@ function isPublicPath(pathname: string): boolean {
 const ADMIN_PREFIXES: readonly string[] = [
   "/api/admin",
   "/api/shopify/sync",
-  "/api/shopify/orders",
+  // "/api/shopify/orders" was here until 2026-09-16; the route was deleted.
 ];
 
 function isAdminPath(pathname: string): boolean {

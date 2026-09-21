@@ -1026,7 +1026,7 @@ so the first one to fail takes the rest with it.
   items carry `_apo_options` and `_apo_addons` from the options app, and the
   order inspected on 2026-08-27 had `_apo_addons: "23.89"` on a single line.
   If ingest sums only the base line price, that is revenue going unrecorded.
-  Check before the historic backfill runs, or the backfill bakes the error in.
+  Check before real orders arrive, or ingest bakes the error in.
 - **Is "Simple Trends" ever a product VENDOR?** It appeared as a chip beside
   the vendor field on a Shopify product page. If it is a tag, it is irrelevant;
   if it is ever a vendor it will log as unknown and route to the cabinet queue
@@ -1037,9 +1037,13 @@ so the first one to fail takes the rest with it.
   total — and `orders` gained only `total_price`, constrained by
   `orders_total_price_standalone_only` so a project-linked row cannot hold one.
   Revenue is the sum of both with no overlap possible, enforced by Postgres.
-  The `/admin` panel is live. **Historic projects still need backfilling**
-  through `/admin/shopify`; until then they sum as zero and the panel says how
-  many.
+  The `/admin` panel is live. ~~**Historic projects still need backfilling**
+  through `/admin/shopify`.~~ **There is nothing to backfill** (2026-09-16):
+  neither the OMS nor the storefront is live, and every order so far is a test
+  order. The "Import orders" button that would have done it created orders in
+  the shape from before projects existed, and was removed with its route. If a
+  real import is ever needed, it should create projects and groups the way the
+  webhook does.
 - **Record the Graph client secret's expiry** somewhere other than the Azure
   portal.
 - ~~**Does `rateLimitOr429` fail open or closed** when Upstash is

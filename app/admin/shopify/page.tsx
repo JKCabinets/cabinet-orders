@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { RefreshCw, Search, ChevronLeft, ShoppingBag, Check, ChevronDown, ChevronUp, Download } from "lucide-react";
+import { RefreshCw, Search, ChevronLeft, ShoppingBag, Check, ChevronDown, ChevronUp } from "lucide-react";
 import Link from "next/link";
 
 interface ShopifyProduct {
@@ -21,8 +21,7 @@ export default function ShopifySyncPage() {
   const [search, setSearch] = useState("");
   const [lastSynced, setLastSynced] = useState<string | null>(null);
   const [syncResult, setSyncResult] = useState<{ synced: number; products: number } | null>(null);
-  const [backfilling, setBackfilling] = useState(false);
-  const [backfillResult, setBackfillResult] = useState<{ newly_imported: number; already_imported: number; total_in_shopify: number } | null>(null);
+  // ⚠ "Import orders" lived here until 2026-09-16 -- see the note below.
   const [paymentBackfilling, setPaymentBackfilling] = useState(false);
   const [paymentBackfillResult, setPaymentBackfillResult] = useState<{ updated: number; remaining: number; message: string } | null>(null);
   const [expandedVendors, setExpandedVendors] = useState<Set<string>>(new Set());
@@ -62,20 +61,15 @@ export default function ShopifySyncPage() {
     setSyncing(false);
   }
 
-  async function backfillOrders() {
-    setBackfilling(true);
-    setBackfillResult(null);
-    try {
-      const res = await fetch("/api/shopify/orders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ defaultMember: "GB" }),
-      });
-      const data = await res.json();
-      if (data.ok) setBackfillResult(data);
-    } catch {}
-    setBackfilling(false);
-  }
+  /*
+   * ⚠ "IMPORT ORDERS" WAS REMOVED 2026-09-16 (handoff item 15). It posted to
+   * /api/shopify/orders, which inserted one `type: "order"` row per Shopify
+   * order with NO project -- the shape from before projects existed, which the
+   * archiving rule, the payment hold and the store all now read as a standalone
+   * job. It had never run in this schema and nothing was live to import. A real
+   * import, if one is ever needed, should create projects and groups the way
+   * the webhook does, sharing its code rather than growing a second copy.
+   */
 
   /**
    * Walk the backfill-payment-status endpoint repeatedly until it
@@ -186,17 +180,13 @@ export default function ShopifySyncPage() {
               <Check className="w-3 h-3" /> {paymentBackfillResult.message}
             </span>
           )}
-          {backfillResult && !paymentBackfillResult && (
-            <span className="flex items-center gap-1 text-[11px] text-green-400">
-              <Check className="w-3 h-3" /> {backfillResult.newly_imported} orders imported · {backfillResult.already_imported} already existed
-            </span>
-          )}
-          {syncResult && !backfillResult && !paymentBackfillResult && (
+          {/* The "orders imported" banner went with the importer, 2026-09-16. */}
+          {syncResult && !paymentBackfillResult && (
             <span className="flex items-center gap-1 text-[11px] text-green-400">
               <Check className="w-3 h-3" /> {syncResult.synced} variants from {syncResult.products} products
             </span>
           )}
-          {lastSynced && !syncResult && !backfillResult && !paymentBackfillResult && (
+          {lastSynced && !syncResult && !paymentBackfillResult && (
             <span className="text-[10px] text-[#5a5650]">
               Synced {new Date(lastSynced).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
             </span>
@@ -207,11 +197,7 @@ export default function ShopifySyncPage() {
             <RefreshCw className={`w-3.5 h-3.5 ${paymentBackfilling ? "animate-spin" : ""}`} />
             {paymentBackfilling ? "Backfilling..." : "Backfill payments"}
           </button>
-          <button onClick={backfillOrders} disabled={backfilling}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#2e2e2e] text-xs text-[#9e9888] hover:text-[#e8e2d4] hover:border-[#5a5650] disabled:opacity-50 transition-all">
-            <Download className={`w-3.5 h-3.5 ${backfilling ? "animate-spin" : ""}`} />
-            {backfilling ? "Importing..." : "Import orders"}
-          </button>
+          {/* "Import orders" removed 2026-09-16; see the note above. */}
           <button onClick={syncNow} disabled={syncing}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#2e2e2e] text-xs text-[#9e9888] hover:text-[#e8e2d4] hover:border-[#5a5650] disabled:opacity-50 transition-all">
             <RefreshCw className={`w-3.5 h-3.5 ${syncing ? "animate-spin" : ""}`} />

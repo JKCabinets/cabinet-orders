@@ -723,14 +723,23 @@ nothing on success, so silence is not a result.
       table.
     - `components/BulkActionBar.tsx:232` warns that deleting a custom job also
       removes its project. Custom jobs have no project.
-15. **`/api/shopify/orders` inserts cabinet rows with no project.** Called
-    from `app/admin/shopify/page.tsx:69`, which was not read. It writes one
-    `type: "order"` row per Shopify order and no `project_id` — the shape from
-    before projects existed — and the archiving rule would treat such a row
-    as standalone. None exist: on 2026-09-15 `orders` held three rows, one
-    custom job, one cabinet group and one sample group, each linked as the
-    model says. Whether OPERATIONS §12's historic backfill runs through this
-    importer is unverified.
+15. ✅ **The pre-project order importer is gone — 2026-09-16**
+    (`patch_remove_order_importer.py`). `/api/shopify/orders` wrote one
+    `type: "order"` row per Shopify order with no project, and it was one click
+    away as "Import orders" on `/admin/shopify`, a page an admin opens to sync
+    SKUs. It had never run in this schema, and nothing is live — every order is
+    a test order — so there was no backlog to import. Deleted, guarded by its
+    hash; the button, its handler, its state and its result banner went from
+    the page, and its entry from `proxy.ts`'s admin prefixes. OPERATIONS §12's
+    "historic projects still need backfilling" is struck through.
+
+    **What it frees up:** it was the only writer that set `archived` without
+    `archived_at`, so a CHECK tying the two together could now be added. Not
+    done here.
+
+    **Left as records:** `SECURITY.md`, `docs/HANDOFF-2026-08-20-BUILD.md`,
+    `migrations/2026-09-16-archived-at.sql` and the system-map SVG still name
+    the route. They describe what was true when they were written.
 16. ✅ **The overnight production run ignored the purchase — fixed 2026-09-16
     (commit 1 of 2).** `production-complete` and `productionAutoAdvance` read
     only the group's own `archived`, always false on a project-linked row, and
@@ -1068,6 +1077,8 @@ patch_dead_code_and_stale_comments.py
 patch_docs_dead_code.py
 patch_activity_dates_and_team_results.py
 patch_docs_dates_and_team.py
+patch_remove_order_importer.py
+patch_docs_remove_order_importer.py
 ```
 
 ⚠ A prerequisite check keyed on a **CSS class** rather than on an interface once
