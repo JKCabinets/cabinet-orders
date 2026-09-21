@@ -299,7 +299,7 @@ Also held, not in use by these systems: `jkkitchencabinets2you.com`,
 | Credential | Lives in | Expiry | Symptom when it dies |
 |---|---|---|---|
 | **Microsoft Graph client secret** | Entra → `.env.kamal` | ⚠ **RECORD THE DATE** — max 24 months | Customer notifications silently stop |
-| **GHCR token** (GitHub PAT, classic) | `.env.kamal` | Set at creation; expired 2026-08-18 **and again 2026-09-16** | `kamal deploy` → **`denied: denied`** at docker login |
+| **GHCR token** (GitHub PAT, classic) | `.env.kamal` | Expired 2026-08-18 **and again 2026-09-16**. **Checked weekly since 2026-09-16** — `check-registry-token.sh` logs the expiry date and alarms 14 days ahead (§6) | `kamal deploy` → **`denied: denied`** at docker login |
 | **`SHOPIFY_WEBHOOK_SECRET`** | `.env.kamal` | No expiry | Webhook HMAC fails closed — **orders stop ingesting** |
 | **`SHOPIFY_WEBHOOK_SECRET_FALLBACK`** | `.env.kamal` | Empty when idle | Rotation slot — see below |
 | **`SHOPIFY_CLIENT_ID` / `_SECRET`** | `.env.kamal` | — | Shopify API calls fail; stage sync stops |
@@ -408,6 +408,14 @@ check that would have caught both of 2026-09-16's failed deploys before they ran
 **healthchecks.io**, free tier, deliberately **off-box** so a box outage cannot
 silence its own alarm. Email alerting, verified. Ping-URL map at
 `~/cron-jobs/healthchecks.map` (mode 600, not in git).
+
+**The registry token is watched weekly** (2026-09-16):
+`~/cron-jobs/check-registry-token.sh`, Mondays 15:00 UTC, one call to the GitHub
+API with the token from `.env.kamal`. It fails when the token is rejected, has
+lost `write:packages`, or expires within 14 days, and logs every run to
+`cron.log` with the expiry date — so the date is written down without anyone
+having to remember it. It pings the map entry keyed `registry-token`. The token
+is passed to curl on stdin, never on its command line, and never logged.
 
 ⚠ **CORRECTION (2026-08-20).** Earlier documents said Teams alerting was
 "blocked by the tenant". That was wrong. Teams worked at one point and was

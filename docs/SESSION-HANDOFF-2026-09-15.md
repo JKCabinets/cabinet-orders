@@ -932,17 +932,24 @@ nothing on success, so silence is not a result.
        control matches a write verb, NO input is editable, and the header says
        both facts. What survives is the tab bar, the disabled rail, the three
        pane toggles and Close.
-21. **The registry token expires, and the deploy path around it is easy to
-    break.** It went on 2026-09-16, the second time after 2026-08-18, and
-    `kamal deploy` failed at `docker login` with `denied: denied` — nothing
-    built, nothing pushed, production untouched. Written up in OPERATIONS §5
-    (the loader section) and §9. What is still open:
-    - **Record the new token's expiry** somewhere with a reminder. This is the
-      second time it has been found by a failed deploy.
-    - **Or move the image build into GitHub Actions** with the automatic
-      `GITHUB_TOKEN`, leaving the box to pull only. That removes the write
-      credential from the box, and it is a real change to the pipeline:
-      builds stop happening on the box. Its own decision, not a deploy-day fix.
+21. ✅ **The registry token is watched — 2026-09-16, option A.** It expired on
+    2026-08-18 and again on 2026-09-16, and both times a failed deploy was how
+    anyone found out. `~/cron-jobs/check-registry-token.sh` now runs weekly and
+    alarms 14 days ahead, and every run logs the expiry date. Outside git, like
+    `run-cron.sh`; installed copy sha256 `a6c2f3dd…67571a7`.
+
+    **Option B — build in GitHub Actions — was declined.** Actions pushes with
+    its own token, but the build needs fifteen secrets, all of which would move
+    into GitHub; the box would still need an expiring token to PULL a private
+    image; and deploys would stop being one command on the box. It trades one
+    expiring credential for more secrets in more places.
+
+    **Proved** against ten stubbed cases — valid, expiring in 5 days, no
+    expiry, rejected, missing `write:packages`, an unparseable date, network
+    down, no token, no mapping, a malformed ping URL — each logging the right
+    reason and pinging the right URL, with the token in no log, no stderr and
+    no command line. And once against the real GitHub API with a bogus token:
+    `token REJECTED (HTTP 401)`.
     - ⚠ **`.kamal/secrets` is a loader and is tracked deliberately.** It holds
       no values, on any commit. It was untracked that evening on a mistaken
       reading and restored the same evening; the file's own `.gitignore`
@@ -961,6 +968,19 @@ reports PARTIAL and refuses. An empty `new` is worse: `count("")` is the length
 of the file, so the edit looks applied every time. Both bit on 2026-09-16.
 **Give every deletion a short comment saying what went and when.** It makes the
 replacement unique, and it leaves the reason where the code used to be.
+
+**⚠ THE FULL RULE, since fixing deletions broke insertions the same day:** an
+edit is APPLIED when `new` is present once AND `old` is either gone or contained
+in `new`. "`new` present" alone misreads a deletion; "`old` gone" alone misreads
+an insertion, where `old` stays in place by design. The script's own second run
+caught the second mistake as PARTIAL — which is what the second run is for.
+
+**⚠ "SUCCESS. NO ROWS RETURNED" IS NOT EVIDENCE A MIGRATION APPLIED.** The
+Supabase SQL editor shows it for a statement that changed something, a statement
+that changed nothing, and a SELECT that matched nothing. On 2026-09-16 a
+constraint migration reported it and had added nothing; only the listing query
+showed that. **After every migration, run the query that lists what it should
+have created, and read the rows.**
 
 **⚠ `npx tsc --noEmit 2>&1 | grep -E "error TS"` inverts the exit code.** `grep`
 exits 1 when it finds nothing, so a **clean** typecheck looks like failure and a
@@ -1088,7 +1108,11 @@ patch_docs_dates_and_team.py
 patch_remove_order_importer.py
 patch_docs_remove_order_importer.py
 patch_archived_at_matches.py
+patch_docs_registry_check.py
 ```
+
+Outside git, in `~/cron-jobs/`: `check-registry-token.sh` (sha256
+`a6c2f3dda6a95976eaa2e04bffa0a19d7583c0fdc883c61781f7c8eb267571a7`).
 
 ⚠ A prerequisite check keyed on a **CSS class** rather than on an interface once
 refused a panel for being *newer*. Check props and exported symbols, not
