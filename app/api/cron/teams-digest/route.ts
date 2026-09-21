@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyCronAuth } from "@/lib/cronAuth";
 import { supabase } from "@/lib/supabase";
 import { slaTier, slaRuleFor, slaAgeHours, formatStageAge } from "@/lib/sla";
-import { ORDER_TYPES, type Order, type OrderType } from "@/lib/data";
+import { ORDER_TYPES, archivedVia, type Order, type OrderType } from "@/lib/data";
 
 /**
  * Weekday morning digest, posted to Teams.
@@ -80,7 +80,7 @@ const CATEGORIES = ORDER_TYPES.map((key) => ({ key, label: TYPE_LABELS[key] }));
  *   delivery_date, scheduled_delivery_date              At cross dock clockRuns
  */
 const SELECT_COLUMNS = [
-  "id", "name", "type", "stage", "date", "archived",
+  "id", "name", "type", "stage", "date", "archived", "project_id",
   "created_at", "reported_at", "stage_entered_at",
   "production_start_date", "production_est_finish_date",
   "delivery_date", "scheduled_delivery_date",
@@ -114,7 +114,33 @@ export async function GET(req: NextRequest) {
     .eq("archived", false);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  const orders = (rows ?? []) as unknown as Order[];
+  const loaded = (rows ?? []) as unknown as Order[];
+
+  // ⚠ "ACTIVE" MEANS NOT ARCHIVED EITHER WAY (2026-09-16). The filter above is
+  // always true for a Shopify group -- orders_archived_standalone_only forbids
+  // the flag there -- so the groups of an archived PURCHASE came through as
+  // active work, in every count below and as candidates for "worst offender".
+  // The purchase's flag is the only place that answer lives. archivedVia asks
+  // it, the same question the write routes and the order modal ask.
+  //
+  // If the projects cannot be read the digest is not sent: a summary that
+  // cannot tell finished work from live work is worse than none, and the 500
+  // reaches the healthchecks ping.
+  const projectIds = [...new Set(
+    loaded.map((o) => o.project_id).filter((p): p is string => !!p))];
+  const archivedPurchases = new Set<string>();
+  if (projectIds.length > 0) {
+    const { data: projectRows, error: projectError } = await supabase
+      .from("projects")
+      .select("id, archived")
+      .in("id", projectIds);
+    if (projectError) return NextResponse.json({ error: projectError.message }, { status: 500 });
+    for (const p of (projectRows ?? []) as { id: string; archived: boolean | null }[]) {
+      if (p.archived) archivedPurchases.add(p.id);
+    }
+  }
+  const orders = loaded.filter((o) => archivedVia(
+    o, o.project_id ? { archived: archivedPurchases.has(o.project_id) } : null) === null);
 
   const now = Date.now();
   const yesterday = now - 24 * 60 * 60 * 1000;

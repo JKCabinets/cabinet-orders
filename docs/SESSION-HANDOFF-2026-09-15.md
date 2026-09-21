@@ -785,9 +785,17 @@ nothing on success, so silence is not a result.
     queue's hold reason 78 cases; the real store resolving rows, hiding archived
     purchases and keeping row identity as before.
 
-    **Not in this commit:** `teams-digest` still counts the groups of archived
-    purchases (inert while `TEAMS_WEBHOOK_URL` is empty), and the group copy
-    itself — item 19.
+    **Not in this commit:** the group copy itself — item 19. And `teams-digest`,
+    which counted the groups of archived purchases as active work — ✅ fixed
+    2026-09-21 (`patch_digest_skips_archived_purchases.py`): it loads the
+    purchases of the rows it reads and drops anything `archivedVia` says is
+    archived, the question the routes and the modal already ask. An unreadable
+    projects table now fails the run (500, nothing posted) rather than posting
+    a summary that cannot tell finished work from live work. **Proved** with
+    the real route on a mixed dataset: active 6 → 4, cabinet orders 2 → 1,
+    hardware 1 → gone — exactly the two groups of the archived purchase —
+    with the unconfigured path identical and the failure path posting
+    nothing. Still inert while `TEAMS_WEBHOOK_URL` is empty.
 17. ✅ **The team page announced writes it had not waited for — fixed
     2026-09-16** (`patch_activity_dates_and_team_results.py`). Four buttons,
     not one: Reactivate, Delete, and Deactivate/Delete on the active list. Two
@@ -954,6 +962,28 @@ nothing on success, so silence is not a result.
       no values, on any commit. It was untracked that evening on a mistaken
       reading and restored the same evening; the file's own `.gitignore`
       comment already said to keep it.
+22. **Customer-facing claim and stage wording, to match the website** (from
+    the website team, 2026-09-21). Their copy dropped freight terms:
+    "missing pieces or short shipment" → "anything missing from the order",
+    "concealed damage and defects" → "damage found after unpacking, or
+    defects", "ships to a local cross dock" → "ships to a local delivery
+    depot". The ask: wherever a message a CUSTOMER reads describes a claim type
+    in words, use the new wording. **Nothing in the contract moved** — the form
+    still sends `shortage` and `concealed` to `POST /api/public/claims`, the
+    `website` and `elapsed_ms` fields stand, and database values, internal
+    names and staff-facing labels do not change. Not urgent before the claims
+    endpoint; worth doing before the first real claim.
+
+    **What the first search found (2026-09-21):** no customer-facing sentence
+    in the repo says "concealed damage" or "short shipment" — the only hits
+    for those values are the accepted-values list in `app/api/public/claims`.
+    The customer-facing surfaces are `app/api/public/claims`,
+    `app/api/public/lookup`, `app/api/claim-submissions` (and its promote
+    route) and `lib/customerFacing.ts`, which already maps "At cross dock" to
+    "Arrived at our delivery partner" rather than the internal name. Open: read
+    those files whole for any customer-visible text describing a claim type or
+    the depot, including error messages and anything a confirmation would
+    echo back, before deciding what — if anything — changes.
 
 ---
 
@@ -1109,6 +1139,8 @@ patch_remove_order_importer.py
 patch_docs_remove_order_importer.py
 patch_archived_at_matches.py
 patch_docs_registry_check.py
+patch_digest_skips_archived_purchases.py
+patch_docs_digest_and_wording.py
 ```
 
 Outside git, in `~/cron-jobs/`: `check-registry-token.sh` (sha256
