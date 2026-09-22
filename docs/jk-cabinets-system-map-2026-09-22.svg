@@ -1,0 +1,166 @@
+<svg viewBox="0 0 1400 1818" xmlns="http://www.w3.org/2000/svg" font-family="'Segoe UI', system-ui, sans-serif">
+  <defs><style>
+    .title { font-size: 30px; font-weight: 700; fill: #2a2a2a; }
+    .subtitle { font-size: 14px; fill: #8a8578; }
+    .zone { font-size: 13px; font-weight: 700; letter-spacing: 2px; fill: #b0a89a; }
+    .zoneRed { font-size: 13px; font-weight: 700; letter-spacing: 2px; fill: #b06a4a; }
+    .box-title { font-size: 15px; font-weight: 700; fill: #2a2a2a; }
+    .box-sub { font-size: 11.5px; fill: #6a6a6a; }
+    .box-sub-em { font-size: 11.5px; fill: #b06a4a; font-weight: 600; }
+    .flowsub { font-size: 11.5px; fill: #4a4a4a; }
+    .ptr { font-size: 12px; fill: #5a7ab0; font-weight: 600; }
+    .new { font-size: 9px; font-weight: 700; fill: #b06a4a; letter-spacing: 1px; }
+  </style></defs>
+  <rect width="1400" height="1818" fill="#faf9f6"/>
+  <text x="50" y="55" class="title">JK Cabinets OMS — System Map</text>
+  <text x="50" y="80" class="subtitle">Next.js 16 · Supabase · Kamal → Docker → Hetzner CPX31 · ordersjkcabinets2you.com · as of 2026-09-22</text>
+  <rect x="960" y="30" width="390" height="62" rx="8" fill="#f4efe6" stroke="#d8c8b0" stroke-width="1.5"/>
+  <text x="974" y="49" class="new">TERRACOTTA = UNVERIFIED, EXPIRING, OR KNOWN WRONG</text>
+  <text x="974" y="67" class="box-sub">This map draws SYSTEMS AND WIRING ONLY.</text>
+  <text x="974" y="84" class="ptr">Model, pipelines, gates, SLA → OMS-STATE §2–§5</text>
+  <line x1="50" y1="106" x2="1350" y2="106" stroke="#e0ddd4" stroke-width="2"/>
+  <text x="50" y="140" class="zone">EXTERNAL SERVICES</text>
+  <rect x="50" y="156" width="310" height="162" rx="8" fill="#fff" stroke="#d8d3c8" stroke-width="1.5"/>
+  <text x="64" y="181" class="box-title">Shopify</text>
+  <text x="64" y="198" class="box-sub">orders/create · orders/updated · orders/delete</text>
+  <text x="64" y="216" class="box-sub">· app-owned subscriptions</text>
+  <text x="64" y="234" class="box-sub">in: HMAC webhook, constant-time</text>
+  <text x="64" y="251" class="box-sub">out: Production Stage note + tags</text>
+  <text x="64" y="268" class="box-sub-em">⚠ only the FIRST group of a checkout carries</text>
+  <text x="64" y="286" class="box-sub-em">shopify_id — writeback reaches one group, not</text>
+  <text x="64" y="304" class="box-sub-em">the project</text>
+  <rect x="380" y="156" width="310" height="126" rx="8" fill="#fff" stroke="#d8d3c8" stroke-width="1.5"/>
+  <text x="394" y="181" class="box-title">Avis Plus API</text>
+  <text x="394" y="198" class="box-sub">public-api.avisplus.io/api/public/v1</text>
+  <text x="394" y="216" class="box-sub">/option-sets · 60 req/min · keyed on stable</text>
+  <text x="394" y="234" class="box-sub">value_id</text>
+  <text x="394" y="251" class="box-sub">feeds sku_mappings via the 07:30 cron</text>
+  <text x="394" y="268" class="box-sub-em">⚠ AVIS_API_TOKEN never rotated</text>
+  <rect x="710" y="156" width="310" height="126" rx="8" fill="#fff" stroke="#d8d3c8" stroke-width="1.5"/>
+  <text x="724" y="181" class="box-title">healthchecks.io</text>
+  <text x="724" y="198" class="box-sub">dead-man's switch, deliberately OFF-BOX — a box</text>
+  <text x="724" y="216" class="box-sub">outage cannot silence its own alarm</text>
+  <text x="724" y="234" class="box-sub">5 checks in use: 4 crons + the registry token</text>
+  <text x="724" y="251" class="box-sub-em">⚠ strays exist on the account — delete BY</text>
+  <text x="724" y="268" class="box-sub-em">NAME, jk-webhook-health shares the prefix</text>
+  <rect x="1040" y="156" width="310" height="126" rx="8" fill="#fff" stroke="#d8d3c8" stroke-width="1.5"/>
+  <text x="1054" y="181" class="box-title">Microsoft 365 / Graph</text>
+  <text x="1054" y="198" class="box-sub">app-only Mail.Send · no-reply@ shared mailbox ·</text>
+  <text x="1054" y="216" class="box-sub">ApplicationAccessPolicy scoped</text>
+  <text x="1054" y="234" class="box-sub-em">⚠ client secret expiry UNRECORDED</text>
+  <text x="1054" y="251" class="box-sub-em">⚠ configured, but NOTHING SENDS yet —</text>
+  <text x="1054" y="268" class="box-sub-em">OPERATIONS §2</text>
+  <rect x="50" y="337.5" width="310" height="126" rx="8" fill="#fff" stroke="#d8d3c8" stroke-width="1.5"/>
+  <text x="64" y="362.5" class="box-title">Help Scout</text>
+  <text x="64" y="380" class="box-sub">email · live chat · knowledge base</text>
+  <text x="64" y="398" class="box-sub">Beacon replaces Tidio · Reply-To target for</text>
+  <text x="64" y="415" class="box-sub">notifications</text>
+  <text x="64" y="432" class="box-sub">no order sync — lookup only</text>
+  <text x="64" y="450" class="box-sub-em">⚠ first charge 2026-09-02</text>
+  <rect x="380" y="337.5" width="310" height="144" rx="8" fill="#fff" stroke="#d8d3c8" stroke-width="1.5"/>
+  <text x="394" y="362.5" class="box-title">GitHub + GHCR</text>
+  <text x="394" y="380" class="box-sub">source, and the image registry Kamal pushes to</text>
+  <text x="394" y="398" class="box-sub">and pulls from</text>
+  <text x="394" y="415" class="box-sub">image tag = the commit SHA — that is how a</text>
+  <text x="394" y="432" class="box-sub">deploy is verified</text>
+  <text x="394" y="450" class="box-sub-em">⚠ PAT expires 2026-11-16; checked weekly,</text>
+  <text x="394" y="468" class="box-sub-em">alarms 14 days out</text>
+  <rect x="710" y="337.5" width="310" height="126" rx="8" fill="#fff" stroke="#d8d3c8" stroke-width="1.5"/>
+  <text x="724" y="362.5" class="box-title">Upstash Redis</text>
+  <text x="724" y="380" class="box-sub">rate limiting · free tier</text>
+  <text x="724" y="398" class="box-sub-em">⚠ FAILS OPEN on a transient error,</text>
+  <text x="724" y="415" class="box-sub-em">deliberately — see lib/auth.ts</text>
+  <text x="724" y="432" class="box-sub-em">⚠ keyed ${bucket}:${ip}, so one office IP</text>
+  <text x="724" y="450" class="box-sub-em">shares one allowance</text>
+  <rect x="1040" y="337.5" width="310" height="109" rx="8" fill="#fff" stroke="#d8d3c8" stroke-width="1.5"/>
+  <text x="1054" y="362.5" class="box-title">GoDaddy</text>
+  <text x="1054" y="380" class="box-sub">DNS for both domains</text>
+  <text x="1054" y="398" class="box-sub-em">jkcabinets2you.com — storefront, NOT YET LIVE</text>
+  <text x="1054" y="415" class="box-sub">ordersjkcabinets2you.com — the OMS</text>
+  <text x="1054" y="432" class="box-sub">renewals: Jan and Apr 2027</text>
+  <rect x="50" y="501.5" width="640" height="92" rx="8" fill="#fff" stroke="#d8d3c8" stroke-width="1.5"/>
+  <text x="64" y="526.5" class="box-title">jk-sku-builder — a SECOND application</text>
+  <text x="64" y="544" class="box-sub">its own host and its own Supabase compute, ~$17/mo total</text>
+  <text x="64" y="562" class="box-sub">not drawn further here: it does not touch the OMS box, the OMS database or any flow below</text>
+  <text x="64" y="579" class="ptr">→ OPERATIONS §3 for what it is and why it is separate</text>
+  <text x="50" y="627.0" class="zone">THE APPLICATION — one Hetzner CPX31, every request through proxy.ts</text>
+  <rect x="50" y="643.0" width="1300" height="239" rx="10" fill="#fdfcfa" stroke="#d8d3c8" stroke-width="1.5"/>
+  <text x="64" y="676" class="box-sub">kamal-proxy v0.9.2 — TLS termination · automatic certificates · health check /api/health every 5s · --buffer-requests --buffer-responses</text>
+  <text x="64" y="698" class="box-sub">Keeps 5 old containers — that is the practical rollback window. ⚠ Logs rotate at 10 MB and are shipped nowhere.</text>
+  <line x1="64" y1="708" x2="1336" y2="708" stroke="#e8e4da" stroke-width="1"/>
+  <text x="64" y="741" class="box-sub">proxy.ts — the gate (Next 16's renamed middleware). Both lists match on a / boundary, so /api/health-summary does NOT match the public /api/health.</text>
+  <text x="64" y="762" class="box-sub">PUBLIC_PATHS: /login · /api/auth · /api/shopify/webhook · /api/webhooks · /api/cron · /api/csp-report · /api/health</text>
+  <text x="64" y="784" class="box-sub-em">ADMIN_PREFIXES (API only, NOT /admin/* pages): /api/admin · /api/shopify/sync ⚠ /api/shopify/orders was here until 2026-09-16; that route is deleted</text>
+  <line x1="64" y1="794" x2="1336" y2="794" stroke="#e8e4da" stroke-width="1"/>
+  <text x="64" y="827" class="box-sub">DEPLOY: commit → `kamal deploy` ON THE BOX builds the image with 15 build secrets → pushes to GHCR → pulls it back → health check → swap.</text>
+  <text x="64" y="848" class="box-sub-em">⚠ .kamal/secrets is a LOADER, tracked in git and holding NO values: each line greps one value out of .env.kamal, which is gitignored.</text>
+  <text x="64" y="870" class="ptr">Routes, pages, shared modules and every stage gate → OMS-STATE. Auth, credentials and what expires → OPERATIONS §5.</text>
+  <text x="50" y="916.0" class="zone">DATA — Supabase: Postgres + RLS + Realtime + Storage</text>
+  <rect x="50" y="932.0" width="1300" height="218" rx="10" fill="#fdfcfa" stroke="#d8d3c8" stroke-width="1.5"/>
+  <text x="64" y="966" class="box-sub">projects → orders. A checkout is a PROJECT; its lines split by vendor into one `orders` row per CATEGORY. Money, ownership, payment status and archiving live on the PROJECT.</text>
+  <text x="64" y="987" class="ptr">⚠ The model is the thing this map used to get wrong. It lives in OMS-STATE §2–§3 and is not redrawn here.</text>
+  <line x1="64" y1="996" x2="1336" y2="996" stroke="#e8e4da" stroke-width="1"/>
+  <text x="64" y="1030" class="box-sub">order_activity (append-only) · order_attachments (general | proof_of_delivery) · order_acknowledgments (+ lines_fingerprint) · damage_reports · claim_submissions</text>
+  <text x="64" y="1052" class="box-sub">sku_mappings · team_members (password_hash SELECT revoked) · vendors · shopify_products · webhook_events · audit_log</text>
+  <line x1="64" y1="1061" x2="1336" y2="1061" stroke="#e8e4da" stroke-width="1"/>
+  <text x="64" y="1094" class="box-sub">CHECK constraints on orders, each tying one fact to one place: total_price, the three payment fields and archived are STANDALONE-ONLY (null or false on a project-linked row).</text>
+  <text x="64" y="1116" class="box-sub">archived_at matches archived, on orders AND projects: archived exactly when dated. Added 2026-09-16 — see OMS-STATE §3 for what they enforce and why.</text>
+  <text x="64" y="1138" class="box-sub-em">⚠ Accepted risk: qual=true SELECT on orders / team_members for authenticated — required by Realtime. Service-role writes only.</text>
+  <text x="50" y="1183.5" class="zone">SCHEDULED JOBS — host crontab → ~/cron-jobs/*.sh → the app over the www URL (or the GitHub API) → a healthchecks ping</text>
+  <rect x="50" y="1199.5" width="244" height="109" rx="8" fill="#fff" stroke="#d8d3c8" stroke-width="1.5"/>
+  <text x="64" y="1224.5" class="box-title">07:30 avis-catalog</text>
+  <text x="64" y="1242" class="box-sub">reconciles sku_mappings drift</text>
+  <text x="64" y="1260" class="box-sub">logs new values, renames, orphans</text>
+  <text x="64" y="1277" class="box-sub">never writes sku_code, never</text>
+  <text x="64" y="1294" class="box-sub">deletes, refuses an empty catalogue</text>
+  <rect x="314" y="1199.5" width="244" height="162" rx="8" fill="#fff" stroke="#d8d3c8" stroke-width="1.5"/>
+  <text x="328" y="1224.5" class="box-title">08:00 production-complete</text>
+  <text x="328" y="1242" class="box-sub">In production → At cross dock when</text>
+  <text x="328" y="1260" class="box-sub">the est finish date ≤ today</text>
+  <text x="328" y="1277" class="box-sub">sole owner of that advance</text>
+  <text x="328" y="1294" class="box-sub">skips an archived or</text>
+  <text x="328" y="1312" class="box-sub">unacknowledged-refund purchase, and</text>
+  <text x="328" y="1330" class="box-sub">says why</text>
+  <text x="328" y="1347" class="box-sub-em">⚠ 08:00 UTC is 1am Phoenix</text>
+  <rect x="578" y="1199.5" width="244" height="162" rx="8" fill="#fff" stroke="#d8d3c8" stroke-width="1.5"/>
+  <text x="592" y="1224.5" class="box-title">14:00 wkdys teams-digest</text>
+  <text x="592" y="1242" class="box-sub">covers every order type; skips the</text>
+  <text x="592" y="1260" class="box-sub">groups of archived purchases</text>
+  <text x="592" y="1277" class="box-sub">sends even when all is well — a</text>
+  <text x="592" y="1294" class="box-sub">digest that only arrives with bad</text>
+  <text x="592" y="1312" class="box-sub">news looks like one that has stopped</text>
+  <text x="592" y="1330" class="box-sub-em">⚠ silent until TEAMS_WEBHOOK_URL is</text>
+  <text x="592" y="1347" class="box-sub-em">set</text>
+  <rect x="842" y="1199.5" width="244" height="144" rx="8" fill="#fff" stroke="#d8d3c8" stroke-width="1.5"/>
+  <text x="856" y="1224.5" class="box-title">:20 hourly webhook-health</text>
+  <text x="856" y="1242" class="box-sub">asks Shopify for its newest orders</text>
+  <text x="856" y="1260" class="box-sub">and confirms the OMS has them</text>
+  <text x="856" y="1277" class="box-sub">15-min grace for in-flight</text>
+  <text x="856" y="1294" class="box-sub">deliveries</text>
+  <text x="856" y="1312" class="box-sub">caught a real missed order</text>
+  <text x="856" y="1330" class="box-sub">2026-08-20</text>
+  <rect x="1106" y="1199.5" width="244" height="126" rx="8" fill="#fff" stroke="#d8d3c8" stroke-width="1.5"/>
+  <text x="1120" y="1224.5" class="box-title">Mon 15:00 registry-token</text>
+  <text x="1120" y="1242" class="box-sub">the only job that does NOT call the</text>
+  <text x="1120" y="1260" class="box-sub">app</text>
+  <text x="1120" y="1277" class="box-sub">asks GitHub whether the GHCR token</text>
+  <text x="1120" y="1294" class="box-sub">still works, and when it expires</text>
+  <text x="1120" y="1312" class="box-sub-em">⚠ fails 14 days before expiry</text>
+  <text x="50" y="1395.0" class="zone">FLOWS THAT CROSS A SYSTEM BOUNDARY</text>
+  <rect x="50" y="1411.0" width="1300" height="218" rx="10" fill="#fdfcfa" stroke="#d8d3c8" stroke-width="1.5"/>
+  <text x="64" y="1444" class="flowsub">Shopify order → /api/shopify/webhook (HMAC) → split by line-item vendor → one project + one orders row per category. payment_status is written to the PROJECT only.</text>
+  <text x="64" y="1466" class="flowsub">Manufacturer .xlsx acknowledgment → /api/orders/[id]/acknowledgment → reconciled against the order's decoded lines.</text>
+  <text x="64" y="1488" class="box-sub-em">⚠ A green acknowledgment stores a FINGERPRINT of what it matched. If the order changes afterwards the green is stale, and the modal says so.</text>
+  <text x="64" y="1509" class="flowsub">Tracking number → "Shipped", by EITHER door: typed in the modal, or carried on a Shopify fulfilment. Samples buy their label in Shopify, so there the fulfilment is the primary door.</text>
+  <text x="64" y="1530" class="flowsub">Stage change → shopifyStageSync → Production Stage note + merged tags. Custom jobs never sync. Only the group holding shopify_id can be written back.</text>
+  <text x="64" y="1552" class="flowsub">Any orders write → Supabase Realtime → the store → every page. ⚠ A realtime payload carries the row, not the join, so the store resolves project facts itself.</text>
+  <text x="64" y="1574" class="flowsub">Each cron run → its script validates the ping URL, then pings healthchecks.io. ⚠ The job's exit status is untouched by ping failures: monitoring must never break the thing it monitors.</text>
+  <text x="64" y="1595" class="flowsub">Customer → /api/public/lookup and /api/public/claims. Stage names are translated by lib/customerFacing before they leave; claim types are values, never words a customer reads.</text>
+  <text x="64" y="1616" class="box-sub-em">Notifications: Graph is configured and scoped, and NOTHING SENDS. ⚠ The order confirmation already promises updates the OMS does not send.</text>
+  <text x="50" y="1662.5" class="zoneRed">WHERE THE FACTS LIVE — this map is not one of them</text>
+  <rect x="50" y="1678.5" width="1300" height="110" rx="10" fill="#f4efe6" stroke="#d8d3c8" stroke-width="1.5"/>
+  <text x="64" y="1712" class="ptr">The document split lives in OPERATIONS, in the header block above §1, and ONLY there.</text>
+  <text x="64" y="1734" class="box-sub">Restating it here would make this the fourth copy — and a four-row summary of a six-row table is how the last one went wrong.</text>
+  <text x="64" y="1755" class="box-sub-em">⚠ This map draws external services, the box, and flows that cross a system boundary. Nothing that answers "how does the work move" belongs here.</text>
+  <text x="64" y="1776" class="box-sub-em">Redrawn 2026-09-22 from scratch: the 2026-08-27 version had been amended until its boxes no longer fitted their text.</text>
+</svg>

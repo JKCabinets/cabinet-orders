@@ -745,9 +745,11 @@ nothing on success, so silence is not a result.
     row that is not archived, insert archived with no date — all refused.
     Checked first: no row on either table disagreed at `d534e20`.
 
-    **Left as records:** `SECURITY.md`, `docs/HANDOFF-2026-08-20-BUILD.md`,
-    `migrations/2026-09-16-archived-at.sql` and the system-map SVG still name
-    the route. They describe what was true when they were written.
+    **Left as records:** `SECURITY.md`, `docs/HANDOFF-2026-08-20-BUILD.md` and
+    `migrations/2026-09-16-archived-at.sql` still name the route. They describe
+    what was true when they were written. The system map did too, and was
+    redrawn from scratch on 2026-09-22 — it describes the system as it is, so
+    it does not get to keep an old fact.
 16. ✅ **The overnight production run ignored the purchase — fixed 2026-09-16
     (commit 1 of 2).** `production-complete` and `productionAutoAdvance` read
     only the group's own `archived`, always false on a project-linked row, and
