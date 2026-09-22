@@ -974,16 +974,28 @@ nothing on success, so silence is not a result.
     names and staff-facing labels do not change. Not urgent before the claims
     endpoint; worth doing before the first real claim.
 
-    **What the first search found (2026-09-21):** no customer-facing sentence
-    in the repo says "concealed damage" or "short shipment" — the only hits
-    for those values are the accepted-values list in `app/api/public/claims`.
-    The customer-facing surfaces are `app/api/public/claims`,
-    `app/api/public/lookup`, `app/api/claim-submissions` (and its promote
-    route) and `lib/customerFacing.ts`, which already maps "At cross dock" to
-    "Arrived at our delivery partner" rather than the internal name. Open: read
-    those files whole for any customer-visible text describing a claim type or
-    the depot, including error messages and anything a confirmation would
-    echo back, before deciding what — if anything — changes.
+    ✅ **Checked 2026-09-21, nothing to change.** All five customer-facing
+    files read whole:
+    - `lib/customerFacing.ts` is the only place a stage becomes customer words.
+      No claim-type wording at all, and "At cross dock" already reads "Arrived
+      at our delivery partner" — with a comment insisting on "our delivery
+      partner, never 'we'".
+    - `app/api/public/claims`: `shortage` and `concealed` appear ONLY as
+      accepted values. Every message a customer can see is generic — "the type
+      of claim", the photo-count, size and format errors, "We could not record
+      your claim." On success it redirects to the website's own
+      `claim-received` page, so that confirmation's wording is the website's.
+    - `app/api/public/lookup` takes its labels from `customerFacing.ts`.
+    - `app/api/claim-submissions` and its promote route are staff-facing.
+
+    So the OMS never describes a claim type in words to a customer, and never
+    says "cross dock" to one either. **Decision:** the website says "delivery
+    depot" and we say "Arrived at our delivery partner"; both avoid the
+    internal term, which was the ask, and the two are close enough that no
+    customer is misled — left as they are. ⚠ **The rule to keep:** a
+    customer-visible string describing a claim type or that place belongs in
+    `lib/customerFacing.ts`, not inline in a route, so the next person changing
+    wording has one file to read.
 
 ---
 
@@ -1141,6 +1153,7 @@ patch_archived_at_matches.py
 patch_docs_registry_check.py
 patch_digest_skips_archived_purchases.py
 patch_docs_digest_and_wording.py
+patch_docs_claim_wording_checked.py
 ```
 
 Outside git, in `~/cron-jobs/`: `check-registry-token.sh` (sha256
