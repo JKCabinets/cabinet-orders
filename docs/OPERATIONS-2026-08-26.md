@@ -351,6 +351,18 @@ awk -F= '/^SOME_KEY=/{print length($2)}' .env.kamal
 **The safe direction:** declared in `deploy.yml` but MISSING from
 `.kamal/secrets` fails loudly with `Kamal::ConfigurationError`.
 
+**The public quote endpoint is guarded by Cloudflare Turnstile** (2026-09-24),
+verified server-side before anything is written or stored.
+`TURNSTILE_SECRET_KEY` lives in `.env.kamal` like every other value; the SITE
+key is public and lives in the storefront's Liquid.
+
+⚠ **`QUOTE_WEBHOOK_SECRET` is NOT a control.** Its value sits in JavaScript on a
+public page, so it authenticates nobody — it is a speed bump that stops casual
+posting, and it is kept for that. It was also EMPTY in production until
+2026-09-24, and the check is written `if (secret)`, so the endpoint accepted
+anything at all. Found by the website team, not by us. The Turnstile check
+refuses when its own key is missing rather than skipping itself.
+
 ## ⚠ `.kamal/secrets` is a LOADER, not a secret store
 
 Every line is a command substitution that reads one value out of `.env.kamal`:

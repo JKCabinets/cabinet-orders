@@ -964,6 +964,34 @@ nothing on success, so silence is not a result.
       no values, on any commit. It was untracked that evening on a mistaken
       reading and restored the same evening; the file's own `.gitignore`
       comment already said to keep it.
+23. ⚠ **The public quote endpoint was open, and is now guarded — 2026-09-24.**
+    `POST /api/webhooks/quote-form` takes a customer's details and up to five
+    files from anyone on the internet. Its only check was a shared `secret`
+    written `if (secret) { ... }` — and `QUOTE_WEBHOOK_SECRET` was EMPTY in
+    production, so nothing was checked. Confirmed by posting with no secret and
+    getting a 201. **The website team found it**, in a note dated 2026-09-24,
+    after we told them the path used HMAC. It does not, and never did.
+
+    **Done the same day:** `QUOTE_WEBHOOK_SECRET` set (401 without it,
+    verified); Cloudflare Turnstile verified server-side before any validation,
+    upload or row (`patch_quote_form_turnstile.py`); file caps down from 10 × 20
+    MB to **5 × 10 MB**, matching the form. **Proved** with the real route over
+    seven cases: a valid token still returns 201 and writes its two rows; a
+    missing token 400, a rejected one 403, an unreachable or 500-ing Cloudflare
+    503 — each writing nothing; the shared-secret and honeypot paths unchanged;
+    and a missing `TURNSTILE_SECRET_KEY` refuses with 503 rather than skipping
+    the check.
+
+    **Still owed on our side:** EXIF stripping from uploaded photos (customer
+    kitchen shots carry house GPS), and `submission_id` dedupe so a retry
+    updates the first job rather than opening a second — that one needs a
+    column and a unique index. Spec sent to the website team as
+    `oms-to-website-turnstile-2026-09-24.md`.
+
+    ⚠ **The lesson is not "add Turnstile".** An optional check with an empty
+    key looks identical to a working one from inside the code, and identical to
+    an open door from outside. `if (secret)` is the shape to distrust — the
+    same shape that let the payment hold read a copy nobody wrote.
 22. **Customer-facing claim and stage wording, to match the website** (from
     the website team, 2026-09-21). Their copy dropped freight terms:
     "missing pieces or short shipment" → "anything missing from the order",
@@ -1156,6 +1184,8 @@ patch_docs_registry_check.py
 patch_digest_skips_archived_purchases.py
 patch_docs_digest_and_wording.py
 patch_docs_claim_wording_checked.py
+patch_quote_form_turnstile.py
+patch_docs_quote_form_turnstile.py
 ```
 
 Outside git, in `~/cron-jobs/`: `check-registry-token.sh` (sha256
