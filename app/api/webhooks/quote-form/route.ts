@@ -6,6 +6,7 @@ import {
   SNIFF_BYTES, sniffMagicBytes, safeContentType,
   PUBLIC_UPLOAD_TYPES, PUBLIC_UPLOAD_LABEL,
 } from "@/lib/fileValidation";
+import { stripImageMetadata } from "@/lib/stripExif";
 
 /**
  * Origins allowed to call this endpoint from a browser.
@@ -406,6 +407,73 @@ export async function POST(req: NextRequest) {
   }
   const notes = notesParts.join("\n");
 
+  // ── The submission, kept as it arrived ────────────────────────────────────
+  //
+  // ⚠ THE CUSTOMER'S REQUEST IS NOT THE DESIGNER'S RECORD. Everything here is
+  // what was ASKED FOR: stable keys with the words the customer actually read,
+  // both multi-selects, the version and the file metadata. Written once, at
+  // ingest; nothing in the OMS updates it afterwards. The designer's own
+  // selections live in the ordinary columns.
+  //
+  // Until 2026-09-24 all of this was flattened into `notes`, so "Budget: 5k_10k"
+  // was stored where the customer had read "$5,000 to $10,000", and project
+  // type, home type, timeline and design assistance were dropped entirely.
+  const jsonField = (raw: string | undefined): unknown => {
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch { return raw; }
+  };
+  const quoteSubmission = {
+    form_version: body.form_version ?? null,
+    submitted_at: new Date().toISOString(),
+    customer: {
+      first_name: cleanInput(body.first_name ?? ""),
+      last_name: cleanInput(body.last_name ?? ""),
+      email,
+      phone,
+    },
+    project: {
+      street: cleanInput(body.street ?? ""),
+      city: cleanInput(body.city ?? ""),
+      state: cleanInput(body.state ?? ""),
+      zip: cleanInput(body.zip ?? ""),
+      address,
+    },
+    choices: {
+      project_type:      { key: body.project_type ?? null, label: body.project_type_label ?? null },
+      home_type:         { key: body.home_type ?? null,    label: body.home_type_label ?? null },
+      timeline:          { key: body.timeline ?? null,     label: body.timeline_label ?? null },
+      budget:            { key: body.budget ?? null,       label: body.budget_label ?? null },
+      design_assistance: body.design_assistance ?? null,
+      door_style:        { keys: jsonField(body.door_style), labels: jsonField(body.door_style_label) },
+      color:             { keys: jsonField(body.color),      labels: jsonField(body.color_label) },
+    },
+    text: {
+      finish_notes: cleanInput((body.finish_notes ?? "").slice(0, MAX_BODY_LEN)),
+      notes: customerNotesFinal,
+    },
+    files_meta: jsonField(body.files_meta),
+    elapsed_ms: body.elapsed_ms ?? null,
+  };
+
+  // ⚠ A RETRY IS THE SAME REQUEST. The form mints submission_id on page load and
+  // keeps it across retries of one attempt, so a send that failed AFTER the row
+  // was written must not open a second job. The partial unique index makes that
+  // hold even if two retries arrive together.
+  const submissionId = cleanInput(body.submission_id ?? "").slice(0, 100) || null;
+  if (submissionId) {
+    const { data: already } = await supabase
+      .from("orders")
+      .select("id")
+      .eq("submission_id", submissionId)
+      .maybeSingle();
+    if (already?.id) {
+      return NextResponse.json(
+        { ok: true, order_id: already.id, duplicate: true },
+        { status: 201, headers: CORS },
+      );
+    }
+  }
+
   const { error } = await supabase.from("orders").insert({
     id: orderId,
     // A quote request IS a custom order at stage New -- the same thing a
@@ -425,8 +493,14 @@ export async function POST(req: NextRequest) {
     sku: "—",
     notes,
     archived: false,
-    door_style: doorStyle,
-    color,
+    // ⚠ NOT door_style / color. Those columns are the DESIGNER'S selection, made
+    // after talking to the customer. The form sends PREFERENCES -- on the first
+    // real submission, two door styles and four colours -- and writing a JSON
+    // array into a single-value column made a wish look like a decision. The
+    // preferences live in quote_submission and are shown as their own panel;
+    // these columns stay empty until a designer fills them.
+    quote_submission: quoteSubmission,
+    submission_id: submissionId,
     sku_items: [],
     vendor: "",
     ship_to: address,
@@ -448,9 +522,15 @@ export async function POST(req: NextRequest) {
   // === Save uploaded files ===
   const uploadedFiles: { name: string; path: string }[] = [];
   for (const file of incomingFiles) {
-    const safeName = sanitizeFileName(file.name);
-    const filePath = `${orderId}/${Date.now()}-${safeName}`;
-    const arrayBuffer = await file.arrayBuffer();
+    // ⚠ GENERATED, NOT THE SENDER'S NAME. The original is kept as the label in
+    // file_name, where it is data. In the path it would be an instruction, and
+    // this endpoint is anonymous.
+    const sniffed = sniffedTypes.get(file) ?? "application/octet-stream";
+    const ext = sniffed === "image/jpeg" ? "jpg" : sniffed === "image/png" ? "png" : "pdf";
+    const filePath = `${orderId}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
+    // ⚠ METADATA OUT BEFORE IT IS STORED. A phone photo of a kitchen carries the
+    // GPS of the house it is in. See lib/stripExif.
+    const arrayBuffer = stripImageMetadata(await file.arrayBuffer(), sniffed);
 
     // The sniffed type, never file.type. Validated above, so it is always
     // present here.

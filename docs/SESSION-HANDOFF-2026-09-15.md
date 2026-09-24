@@ -964,6 +964,26 @@ nothing on success, so silence is not a result.
       no values, on any commit. It was untracked that evening on a mistaken
       reading and restored the same evening; the file's own `.gitignore`
       comment already said to keep it.
+24. **Custom jobs become an attachment-led hub** (decided with Garrett,
+    2026-09-24; mockup in hand). A custom job is specs and files, not SKUs. The
+    designer owns it end to end: no gates, SLA still applies, claimed jobs show
+    in My Work. The website form fills it in and everything stays editable.
+
+    **The shape agreed:** `custom_specs` jsonb holding AREAS (Kitchen, Master
+    Bath), each with one or more SETS (Perimeter, Island), each set carrying
+    manufacturer, door style, colour and notes — one set is ONE combination, so
+    a second style is a second set. Every area and set gets a generated id at
+    creation, and `order_attachments` gains a nullable column pointing at one,
+    so a file belongs to the job, an area or a set. Deleting an area or set
+    UNLINKS its files rather than removing them; files change often. Fields are
+    free text for now — no dropdowns. Nothing here reaches a customer.
+
+    **Not built yet:** the column, the attachment link, and the modal's custom
+    layout (specs panel above, the website submission below it, read-only). The
+    Shopify product picker in `NewOrderModal` goes when that lands — a custom
+    job has no SKUs, and the picker reads an admin-only endpoint, so it shows
+    an empty list to anyone else. Verified unused: the one manual row has zero
+    sku_items.
 23. ⚠ **The public quote endpoint was open, and is now guarded — 2026-09-24.**
     `POST /api/webhooks/quote-form` takes a customer's details and up to five
     files from anyone on the internet. Its only check was a shared `secret`
@@ -982,10 +1002,18 @@ nothing on success, so silence is not a result.
     and a missing `TURNSTILE_SECRET_KEY` refuses with 503 rather than skipping
     the check.
 
-    **Still owed on our side:** EXIF stripping from uploaded photos (customer
-    kitchen shots carry house GPS), and `submission_id` dedupe so a retry
-    updates the first job rather than opening a second — that one needs a
-    column and a unique index. Spec sent to the website team as
+    ✅ **Finished the same day** (`patch_quote_capture.py`): `quote_submission`
+    jsonb and `submission_id` with a partial unique index; the whole payload
+    kept instead of flattened into `notes`; a retry returns the first job and
+    writes nothing; stored filenames generated (`<uuid>.<ext>` from the SNIFFED
+    type, the sender's name kept only as the label); JPEG metadata stripped by
+    `lib/stripExif.ts`, which walks the marker structure and drops Exif, XMP,
+    IPTC and comments without re-encoding or adding a dependency; and
+    `door_style`/`color` no longer written from the form. **Proved:** a
+    hand-built JPEG loses its Exif and comment while keeping JFIF and its pixel
+    bytes, a PNG and an unparseable file come back untouched, and the real route
+    keeps every field, generates the path, refuses to duplicate a retry, and
+    leaves the designer's columns empty. Spec sent to the website team as
     `oms-to-website-turnstile-2026-09-24.md`.
 
     ⚠ **The lesson is not "add Turnstile".** An optional check with an empty
@@ -1186,6 +1214,8 @@ patch_docs_digest_and_wording.py
 patch_docs_claim_wording_checked.py
 patch_quote_form_turnstile.py
 patch_docs_quote_form_turnstile.py
+patch_quote_capture.py
+patch_docs_quote_capture.py
 ```
 
 Outside git, in `~/cron-jobs/`: `check-registry-token.sh` (sha256
