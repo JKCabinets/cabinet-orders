@@ -992,8 +992,24 @@ nothing on success, so silence is not a result.
     and dropped: '' already means unset on every row, and null would add a
     second way to say it.
 
-    **Not built yet:** the modal's custom layout (specs panel above, the website
-    submission below it, read-only). The
+    **Step 2 ✅ 2026-09-25** (`patch_custom_specs_panel.py`):
+    `components/CustomSpecsPanel.tsx` — rooms with Add Room / Group, style
+    groups with Add Style Group, duplicate and remove on both, free-text fields,
+    per-room explicit Save, and a revert to the last accepted document on
+    refusal. The route accepts `custom_specs` for custom jobs only, normalises
+    it server-side, refuses an archived row, and writes "Job specifications
+    updated by X" to the trail. **Proved by driving the panel**: building a
+    kitchen with two style groups sends one document with two distinct set ids
+    and every field carried; a refused save leaves nothing changed on screen and
+    surfaces the reason; read-only shows the specs with no editable input and no
+    add, save, remove or duplicate anywhere. **And the route over eight cases**:
+    a cabinet group and a warranty claim refused 422, a malformed document
+    normalised rather than stored raw, an unknown version emptied, an archived
+    job 409, other edits untouched.
+
+    **Not built yet:** the submitted-preferences panel (the website form's answers,
+    read-only, below the specs) and attachments linked to an area or set — the
+    column exists, nothing writes it. The
     Shopify product picker in `NewOrderModal` goes when that lands — a custom
     job has no SKUs, and the picker reads an admin-only endpoint, so it shows
     an empty list to anyone else. Verified unused: the one manual row has zero
@@ -1231,6 +1247,8 @@ patch_docs_quote_form_turnstile.py
 patch_quote_capture.py
 patch_docs_quote_capture.py
 patch_custom_specs_schema.py
+patch_custom_specs_panel.py
+patch_docs_custom_specs_panel.py
 ```
 
 Outside git, in `~/cron-jobs/`: `check-registry-token.sh` (sha256

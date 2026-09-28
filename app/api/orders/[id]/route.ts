@@ -4,7 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { getShopifyToken } from "@/lib/shopify";
 import { mergeTags } from "@/lib/shopifyStageSync";
 import { ALLOWED_STAGES, isStageAllowedForType, isBackwardsMove, verifyAdminPin, fieldsToClearOnBackwardMove, describeFieldsCleared } from "@/lib/stageGuards";
-import { isPaymentHoldStatus, paymentHoldLabel, paymentRecordOf, parseMoney, isStageOfferedForType, activityDate, type OrderType, type Stage } from "@/lib/data";
+import { isPaymentHoldStatus, paymentHoldLabel, paymentRecordOf, parseMoney, isStageOfferedForType, activityDate, readCustomSpecs, type OrderType, type Stage } from "@/lib/data";
 import { purchaseOf, archivedVia, archivedReadOnly } from "@/lib/archived";
 import { trackingTargetStage, categoryHasTracking, type OrderCategory } from "@/lib/categories";
 import { orderAllVendorsGreen } from "@/lib/acknowledgments";
@@ -620,6 +620,29 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
   if (body.stage === "Entered")    updates.entered_by = auth.session.user.id;  // team_members.id
   if (body.notes !== undefined)    updates.notes      = cleanInput(body.notes as string);
   if (body.internal_notes !== undefined) updates.internal_notes = cleanInput(body.internal_notes as string);
+  // ── Custom job specifications ─────────────────────────────────────────────
+  //
+  // ⚠ CUSTOM JOBS ONLY, AND NORMALISED HERE. The panel sends the whole document
+  // because `custom_specs` IS one document; the server decides what a valid one
+  // is rather than trusting the shape that arrives. readCustomSpecs drops a
+  // malformed area or set and refuses an unknown version, so a stale tab cannot
+  // write a shape this build does not understand.
+  //
+  // A Shopify group's specification comes decoded from its SKUs, and a warranty
+  // claim is about work already done. Neither has specs to record.
+  if (body.custom_specs !== undefined) {
+    if (currentType !== "custom") {
+      return NextResponse.json(
+        {
+          error: "custom_specs_not_allowed",
+          message: `Specifications belong to custom jobs; ${id} is a ${currentType} order.`,
+        },
+        { status: 422 },
+      );
+    }
+    updates.custom_specs = readCustomSpecs(body.custom_specs);
+  }
+
   // archived_at travels with archived -- see the projects route. Only a
   // standalone row reaches here; the block above refuses a project-linked one.
   if (body.archived !== undefined) {
@@ -768,6 +791,7 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
   // ── Everything else, each asked independently ──────────────────────────
   if (body.notes !== undefined) activityTexts.push(`Notes updated by ${who}`);
   if (body.internal_notes !== undefined) activityTexts.push(`Internal notes updated by ${who}`);
+  if (body.custom_specs !== undefined) activityTexts.push(`Job specifications updated by ${who}`);
   if (body.archived === true) activityTexts.push(`Archived by ${who}`);
   if (body.archived === false) activityTexts.push(`Restored by ${who}`);
 

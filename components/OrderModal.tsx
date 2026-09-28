@@ -27,6 +27,7 @@ import { requirementsFor } from "@/lib/requirements";
 import { formatMDY } from "@/lib/dates";
 import { useOrderEnrichment } from "@/lib/useOrderEnrichment";
 import { NextActionPanel } from "./NextActionPanel";
+import { CustomSpecsPanel } from "./CustomSpecsPanel";
 
 interface OrderModalProps {
   /**
@@ -1421,6 +1422,15 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
               onStageChange={onStageChange}
               canEdit={canEdit}
             />
+
+            {/* ⚠ CUSTOM JOBS ONLY. A custom job is specs and files: a designer
+                owns it end to end, and this is where what the customer CHOSE is
+                recorded. A Shopify group's specification arrives decoded from
+                its SKUs and has no business here; a warranty claim is about work
+                already done. The route refuses the column on anything else. */}
+            {liveOrder.type === "custom" && (
+              <CustomSpecsPanel order={liveOrder} readOnly={readOnly || !canEdit} />
+            )}
           </div>
 
             {/* Acknowledgments: per-vendor .xlsx reconciliation.
