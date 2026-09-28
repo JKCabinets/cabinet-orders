@@ -288,6 +288,13 @@ export interface Order {
    * A project-linked row has neither: its PURCHASE carries both.
    */
   archived_at?: string | null;
+  /**
+   * A custom job's specifications — see CustomSpecs. Null on every row that is
+   * not a custom job, and on a custom job nobody has specified yet.
+   */
+  custom_specs?: CustomSpecs | null;
+  /** The website form's payload, as it arrived. Never edited. See §3. */
+  quote_submission?: Record<string, unknown> | null;
   // Order details
   door_style?: string;
   color?: string;
@@ -917,6 +924,95 @@ export function activityDate(): string {
   return new Date().toLocaleDateString("en-US", {
     month: "short", day: "numeric", timeZone: "America/Phoenix",
   });
+}
+
+/**
+ * A custom job's SPECIFICATIONS: what the customer actually chose, as the
+ * designer records it. Stored in `orders.custom_specs`.
+ *
+ * ⚠ ONE SET IS ONE COMBINATION of manufacturer, door style and colour. A
+ * kitchen whose island differs from its perimeter is TWO SETS under one area,
+ * not one set carrying two styles. Everything about this shape follows from
+ * that: areas hold sets, sets hold one of each.
+ *
+ * ⚠ IDS ARE GENERATED AND NEVER REUSED. Attachments point at an area or a set
+ * by id (`order_attachments.spec_ref`), so renaming "Kitchen" to "Main Kitchen"
+ * cannot orphan a drawing. Deleting an area or set UNLINKS its files rather
+ * than removing them.
+ *
+ * ⚠ `v` IS THE SHAPE'S VERSION, not the job's. It exists so a reader can tell
+ * which shape it is holding rather than inferring it from which keys are
+ * present — the same reason the website's payload carries form_version.
+ *
+ * This is NOT the customer's request. That lives in `orders.quote_submission`,
+ * written once at ingest and never edited.
+ */
+export interface CustomSpecSet {
+  id: string;
+  name: string;
+  manufacturer?: string;
+  door_style?: string;
+  color?: string;
+  notes?: string;
+}
+
+export interface CustomSpecArea {
+  id: string;
+  name: string;
+  sets: CustomSpecSet[];
+}
+
+export interface CustomSpecs {
+  v: 1;
+  areas: CustomSpecArea[];
+}
+
+export const EMPTY_CUSTOM_SPECS: CustomSpecs = { v: 1, areas: [] };
+
+/**
+ * Read whatever is in the column as specs, or nothing.
+ *
+ * ⚠ TOTAL, ON PURPOSE. The column is jsonb and nullable: a row created before
+ * this existed holds null, and a row written by a future shape holds something
+ * this version does not understand. Both must render as "no specs yet" rather
+ * than throwing inside a modal. An unknown `v` is refused rather than guessed.
+ */
+export function readCustomSpecs(raw: unknown): CustomSpecs {
+  if (!raw || typeof raw !== "object") return EMPTY_CUSTOM_SPECS;
+  const doc = raw as { v?: unknown; areas?: unknown };
+  if (doc.v !== 1 || !Array.isArray(doc.areas)) return EMPTY_CUSTOM_SPECS;
+  const areas: CustomSpecArea[] = [];
+  for (const a of doc.areas) {
+    if (!a || typeof a !== "object") continue;
+    const area = a as { id?: unknown; name?: unknown; sets?: unknown };
+    if (typeof area.id !== "string" || typeof area.name !== "string") continue;
+    const sets: CustomSpecSet[] = [];
+    for (const s of Array.isArray(area.sets) ? area.sets : []) {
+      if (!s || typeof s !== "object") continue;
+      const set = s as Record<string, unknown>;
+      if (typeof set.id !== "string" || typeof set.name !== "string") continue;
+      sets.push({
+        id: set.id,
+        name: set.name,
+        manufacturer: typeof set.manufacturer === "string" ? set.manufacturer : "",
+        door_style: typeof set.door_style === "string" ? set.door_style : "",
+        color: typeof set.color === "string" ? set.color : "",
+        notes: typeof set.notes === "string" ? set.notes : "",
+      });
+    }
+    areas.push({ id: area.id, name: area.name, sets });
+  }
+  return { v: 1, areas };
+}
+
+/**
+ * A new id for an area or a set.
+ *
+ * ⚠ PREFIXED so an id says what it points at: an attachment's spec_ref can be
+ * read without loading the specs to find out whether it means an area or a set.
+ */
+export function newSpecId(kind: "area" | "set"): string {
+  return `${kind === "area" ? "a" : "s"}_${crypto.randomUUID().slice(0, 8)}`;
 }
 
 export function archivedVia(

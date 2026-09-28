@@ -978,8 +978,22 @@ nothing on success, so silence is not a result.
     UNLINKS its files rather than removing them; files change often. Fields are
     free text for now — no dropdowns. Nothing here reaches a customer.
 
-    **Not built yet:** the column, the attachment link, and the modal's custom
-    layout (specs panel above, the website submission below it, read-only). The
+    **Step 1 ✅ 2026-09-25** (`patch_custom_specs_schema.py`):
+    `orders.custom_specs` jsonb, `order_attachments.spec_ref` text with an index
+    on `(order_id, spec_ref)`, and the shape in `lib/data.ts` as types plus
+    `readCustomSpecs` (total: an unknown `v` or a malformed document reads as no
+    specs rather than throwing inside a modal) and `newSpecId`. **Proved against
+    real PostgreSQL:** the nested document stores and reads back — area 2, set
+    "Island", v 1 — a file links to a set, a job-level file keeps a null
+    spec_ref, unlinking a set leaves both files in place, the index exists, and
+    `door_style` stays NOT NULL DEFAULT ''.
+
+    ⚠ **door_style and color were NOT made nullable.** Proposed on 2026-09-24
+    and dropped: '' already means unset on every row, and null would add a
+    second way to say it.
+
+    **Not built yet:** the modal's custom layout (specs panel above, the website
+    submission below it, read-only). The
     Shopify product picker in `NewOrderModal` goes when that lands — a custom
     job has no SKUs, and the picker reads an admin-only endpoint, so it shows
     an empty list to anyone else. Verified unused: the one manual row has zero
@@ -1216,6 +1230,7 @@ patch_quote_form_turnstile.py
 patch_docs_quote_form_turnstile.py
 patch_quote_capture.py
 patch_docs_quote_capture.py
+patch_custom_specs_schema.py
 ```
 
 Outside git, in `~/cron-jobs/`: `check-registry-token.sh` (sha256
