@@ -1053,9 +1053,26 @@ nothing on success, so silence is not a result.
     moved. ⚠ The type did not catch it and could not: both fields are optional,
     so a mapper that skips them compiles.
 
+    ✅ **The customer note is the customer's again — 2026-09-28**
+    (`patch_quote_notes_and_alignment.py`). The webhook stopped writing the
+    submission prose into `notes`, and `migrations/2026-09-28-clear-quote-prose.sql`
+    cleared it from the rows already written. The preferences panel also lost the
+    top margin that pushed it out of line with the specs card beside it.
+    **Proved:** the route before and after on the same payload — the note goes
+    from a six-line dump to "Please call me Thursday." and nothing else, an empty
+    message leaves an empty note, and the submission still carries the budget
+    label. **And the cleanup against real PostgreSQL:** the customer's message
+    survives, the prose goes, a row without `quote_submission` keeps its prose
+    (for those it is the only copy), a designer's own note is untouched, and a
+    second run changes nothing.
+
+    ⚠ **Three variables in the webhook are now unused** — `extractedBudget`,
+    `cabinetLine`, `doorStyle` — left in place because removing them means
+    unpicking the legacy parse chain they come from. Worth doing when that
+    parser is next touched.
+
     **Not built yet:** the preferences panel restructured to the form's own
-    sections (the mockup groups them; the Liquid names them), stopping the
-    QUOTE REQUEST prose being written into the customer note at all, and
+    sections (the mockup groups them; the Liquid names them), and
     attachments split into customer uploads and designer files. Also
     attachments linked to an area or set — the column and index exist, nothing
     writes them. The
@@ -1304,6 +1321,8 @@ patch_retire_quote_info_panel.py
 patch_docs_retire_quote_info.py
 patch_shape_order_carries_specs.py
 patch_docs_shape_order.py
+patch_quote_notes_and_alignment.py
+patch_docs_quote_notes.py
 ```
 
 Outside git, in `~/cron-jobs/`: `check-registry-token.sh` (sha256

@@ -384,28 +384,20 @@ export async function POST(req: NextRequest) {
       ? legacyAttachmentUrlCandidate
       : "";
 
-  const notesParts: string[] = [];
-  notesParts.push(`📋 QUOTE REQUEST — ${today}`);
-  notesParts.push(`Customer: ${name}`);
-  if (phone)   notesParts.push(`Phone: ${phone}`);
-  if (email)   notesParts.push(`Email: ${email}`);
-  if (address) notesParts.push(`Address: ${address}`);
-  if (city)    notesParts.push(`City: ${city}`);
-  if (state)   notesParts.push(`State: ${state}`);
-  if (zip)     notesParts.push(`Zip: ${zip}`);
-  if (extractedBudget) notesParts.push(`Budget: ${cleanInput(extractedBudget)}`);
-  if (cabinetLine) notesParts.push(`Cabinet Line: ${cabinetLine}`);
-  if (doorStyle)   notesParts.push(`Door Style: ${doorStyle}`);
-  if (color)       notesParts.push(`Color: ${color}`);
+  // ⚠ THE CUSTOMER NOTE IS FOR THE CUSTOMER (2026-09-28). This built a prose
+  // dump of the whole submission -- name, phone, address, the budget KEY, the
+  // raw door_style array -- and wrote it into `notes`, the field the modal
+  // labels "visible to the customer, written to the Shopify order", and the one
+  // a designer writes their message in. Every quote job therefore arrived with
+  // that field already full of the customer's own answers, badly formatted.
+  //
+  // Everything the prose held is in `quote_submission`, and the preferences
+  // panel shows it in the words the customer read. What survives here is the
+  // customer's own message and nothing else. The attachment line went too: the
+  // files are in the Files tab, where they can actually be opened.
   const rawNotes = body.notes || "";
   const customerNotesFinal = cleanInput((rawNotes || extractedDetails || "").slice(0, MAX_BODY_LEN));
-  if (customerNotesFinal) notesParts.push(`Notes: ${customerNotesFinal}`);
-  if (incomingFiles.length > 0) {
-    notesParts.push(`📎 ${incomingFiles.length} file${incomingFiles.length === 1 ? "" : "s"} attached`);
-  } else if (legacyAttachmentUrl) {
-    notesParts.push(`📎 Attachment: ${legacyAttachmentUrl}`);
-  }
-  const notes = notesParts.join("\n");
+  const notes = customerNotesFinal;
 
   // ── The submission, kept as it arrived ────────────────────────────────────
   //

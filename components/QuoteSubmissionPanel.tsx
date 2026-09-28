@@ -85,7 +85,9 @@ export function QuoteSubmissionPanel({ order }: { order: Order }) {
   );
 
   return (
-    <div className="rounded-brand mt-2.5" style={{ background: "rgba(255,255,255,0.02)", border: "0.5px solid rgba(255,255,255,0.07)" }}>
+    // ⚠ NO TOP MARGIN. This panel sits BESIDE the specs card in a two-column
+    // grid, not under it; a margin here pushed its top edge out of line.
+    <div className="rounded-brand" style={{ background: "rgba(255,255,255,0.02)", border: "0.5px solid rgba(255,255,255,0.07)" }}>
       <div className="px-4 py-3">
         <p className="text-[13px] text-cream/90">Submitted website preferences</p>
         <p className="text-[11px] text-cream/45">
