@@ -84,6 +84,26 @@ export function QuoteSubmissionPanel({ order }: { order: Order }) {
     </span>
   );
 
+  const row = (label: string, value: string) => (
+    <div key={label} className="flex items-baseline justify-between gap-3">
+      <span className="text-[10px] uppercase tracking-wider text-cream/35">{label}</span>
+      <span className="text-[11px] text-cream/75 text-right">{value}</span>
+    </div>
+  );
+
+  /**
+   * ⚠ THE FORM'S OWN SECTIONS, IN ITS OWN ORDER. The customer filled in four
+   * steps -- contact, project, style and finish, uploads -- so the record reads
+   * back the same way. A designer comparing this against what the customer says
+   * on the phone should not have to hunt for which step an answer came from.
+   */
+  const section = (title: string, children: React.ReactNode) => (
+    <div className="px-4 py-3" style={{ borderTop: "0.5px solid rgba(255,255,255,0.06)" }}>
+      <p className="text-[9px] uppercase tracking-wider text-cream/35 mb-2">{title}</p>
+      {children}
+    </div>
+  );
+
   return (
     // ⚠ NO TOP MARGIN. This panel sits BESIDE the specs card in a two-column
     // grid, not under it; a margin here pushed its top edge out of line.
@@ -95,95 +115,72 @@ export function QuoteSubmissionPanel({ order }: { order: Order }) {
         </p>
       </div>
 
-      {/* ⚠ THE ONLY PLACE THE MODAL SHOWS THESE. The order-details card carries
-          source, date, PO reference and type -- not the customer's phone, email
-          or address. They were shown by QuoteInfoPanel, which parsed them out of
-          the notes prose; they are read from the submission now. */}
-      {(contactName || phone || email || address) && (
-        <div className="px-4 pb-3 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
-          {contactName && (
-            <div className="md:col-span-2">
-              <p className="text-[9px] uppercase tracking-wider text-cream/35">Name</p>
-              <p className="text-[12px] text-cream/80">{contactName}</p>
-            </div>
-          )}
-          {phone && (
-            <div>
-              <p className="text-[9px] uppercase tracking-wider text-cream/35">Phone</p>
-              <p className="text-[12px] text-cream/80">{phone}</p>
-            </div>
-          )}
-          {email && (
-            <div className="min-w-0">
-              <p className="text-[9px] uppercase tracking-wider text-cream/35">Email</p>
-              <p className="text-[12px] text-cream/80 truncate" title={email}>{email}</p>
-            </div>
-          )}
-          {address && (
-            <div className="md:col-span-2">
-              <p className="text-[9px] uppercase tracking-wider text-cream/35">Project address</p>
-              <p className="text-[12px] text-cream/80">{address}</p>
-            </div>
+      {(contactName || phone || email) && section("Contact", (
+        <div className="space-y-1.5">
+          {contactName && <p className="text-[12px] text-cream/80">{contactName}</p>}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1">
+            {phone && row("Phone", phone)}
+            {email && <div className="flex items-baseline justify-between gap-3 min-w-0">
+              <span className="text-[10px] uppercase tracking-wider text-cream/35">Email</span>
+              <span className="text-[11px] text-cream/75 truncate" title={email}>{email}</span>
+            </div>}
+          </div>
+        </div>
+      ))}
+
+      {(address || rows.length > 0 || wantsDesignHelp) && section("Project", (
+        <div className="space-y-1.5">
+          {address && <p className="text-[12px] text-cream/80">{address}</p>}
+          {rows.map(([label, value]) => row(label, value))}
+          {wantsDesignHelp && (
+            <p className="text-[11px]" style={{ color: "#b8d0bd" }}>Asked for design assistance</p>
           )}
         </div>
-      )}
+      ))}
 
-      <div className="px-4 pb-4 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
-        <div className="space-y-3">
+      {(styles.length > 0 || colors.length > 0 || finishNotes) && section("Style and finish", (
+        <div className="space-y-2.5">
           {styles.length > 0 && (
             <div>
-              <p className="text-[9px] uppercase tracking-wider text-cream/35 mb-1.5">Preferred door styles</p>
+              <p className="text-[10px] uppercase tracking-wider text-cream/35 mb-1.5">Door styles</p>
               <div className="flex flex-wrap gap-1.5">{styles.map(chip)}</div>
             </div>
           )}
           {colors.length > 0 && (
             <div>
-              <p className="text-[9px] uppercase tracking-wider text-cream/35 mb-1.5">Preferred colors</p>
+              <p className="text-[10px] uppercase tracking-wider text-cream/35 mb-1.5">Colors</p>
               <div className="flex flex-wrap gap-1.5">{colors.map(chip)}</div>
             </div>
           )}
           {finishNotes && (
             <div>
-              <p className="text-[9px] uppercase tracking-wider text-cream/35 mb-1">Finish notes</p>
+              <p className="text-[10px] uppercase tracking-wider text-cream/35 mb-1">Finish notes</p>
               <p className="text-[11px] text-cream/70 whitespace-pre-wrap">{finishNotes}</p>
             </div>
           )}
         </div>
+      ))}
 
+      {(files.length > 0 || notes) && section("Files and notes", (
         <div className="space-y-2">
-          {rows.map(([label, value]) => (
-            <div key={label} className="flex items-baseline justify-between gap-3">
-              <span className="text-[10px] uppercase tracking-wider text-cream/35">{label}</span>
-              <span className="text-[11px] text-cream/75 text-right">{value}</span>
-            </div>
-          ))}
-          {wantsDesignHelp && (
-            <p className="text-[11px]" style={{ color: "#b8d0bd" }}>Asked for design assistance</p>
-          )}
           {files.length > 0 && (
-            <div className="pt-1">
-              <p className="text-[9px] uppercase tracking-wider text-cream/35 mb-1">Files they attached</p>
+            <div>
               {files.map((f) => (
                 <p key={f} className="text-[11px] text-cream/60 truncate" title={f}>{f}</p>
               ))}
               <p className="text-[10px] text-cream/30 mt-0.5">Open them in the Files tab.</p>
             </div>
           )}
+          {notes && <p className="text-[11px] text-cream/70 whitespace-pre-wrap">{notes}</p>}
         </div>
+      ))}
 
-        {notes && (
-          <div className="md:col-span-2">
-            <p className="text-[9px] uppercase tracking-wider text-cream/35 mb-1">Their notes</p>
-            <p className="text-[11px] text-cream/70 whitespace-pre-wrap">{notes}</p>
-          </div>
-        )}
-
-        {styles.length === 0 && colors.length === 0 && rows.length === 0 && !notes && !finishNotes && files.length === 0 && (
-          <p className="md:col-span-2 text-[11px] text-cream/35">
-            This submission carried no preferences — it may predate the current form.
-          </p>
-        )}
-      </div>
+      {!contactName && !phone && !email && !address && rows.length === 0
+        && styles.length === 0 && colors.length === 0 && !notes && !finishNotes && files.length === 0 && (
+        <p className="px-4 pb-4 text-[11px] text-cream/35">
+          This submission carried no preferences — it may predate the current form.
+        </p>
+      )}
     </div>
   );
 }

@@ -1071,8 +1071,12 @@ nothing on success, so silence is not a result.
     unpicking the legacy parse chain they come from. Worth doing when that
     parser is next touched.
 
-    **Not built yet:** the preferences panel restructured to the form's own
-    sections (the mockup groups them; the Liquid names them), and
+    ✅ **The panel follows the form's own sections — 2026-09-28**
+    (`patch_preferences_sections.py`): Contact, Project, Style and finish, Files
+    and notes, in the order the customer filled them in, read from the Liquid
+    rather than invented. A section with nothing in it is not drawn.
+
+    **Not built yet:**
     attachments split into customer uploads and designer files. Also
     attachments linked to an area or set — the column and index exist, nothing
     writes them. The
