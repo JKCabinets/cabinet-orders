@@ -1041,8 +1041,24 @@ nothing on success, so silence is not a result.
     first occurrence AFTER the start. A deletion that removes more than it names
     is why the typecheck runs before the commit.
 
-    **Not built yet:** attachments linked to an area or set — the column and
-    index exist, nothing writes them. The
+    ⚠ **A DATA-LOSS BUG, fixed 2026-09-28** (`patch_shape_order_carries_specs.py`).
+    `shapeOrder` never mapped `custom_specs` or `quote_submission`, so both were
+    `undefined` in the browser however full the columns were. The preferences
+    panel rendered nothing — which is what the 09-28 screenshot showed — and the
+    specs panel opened EMPTY on a job with specs, so pressing Save room would
+    have written that emptiness over them. The stored specs survived; nobody
+    saved from an empty panel. **Proved:** before the fix both fields come out
+    undefined, after it a row's areas and its budget label arrive, a row without
+    the columns carries nulls rather than junk, and nothing else in the shaping
+    moved. ⚠ The type did not catch it and could not: both fields are optional,
+    so a mapper that skips them compiles.
+
+    **Not built yet:** the preferences panel restructured to the form's own
+    sections (the mockup groups them; the Liquid names them), stopping the
+    QUOTE REQUEST prose being written into the customer note at all, and
+    attachments split into customer uploads and designer files. Also
+    attachments linked to an area or set — the column and index exist, nothing
+    writes them. The
     Shopify product picker in `NewOrderModal` goes when that lands — a custom
     job has no SKUs, and the picker reads an admin-only endpoint, so it shows
     an empty list to anyone else. Verified unused: the one manual row has zero
@@ -1286,6 +1302,8 @@ patch_quote_submission_panel.py
 patch_docs_quote_submission_panel.py
 patch_retire_quote_info_panel.py
 patch_docs_retire_quote_info.py
+patch_shape_order_carries_specs.py
+patch_docs_shape_order.py
 ```
 
 Outside git, in `~/cron-jobs/`: `check-registry-token.sh` (sha256

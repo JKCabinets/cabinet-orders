@@ -459,6 +459,14 @@ export function shapeOrder(raw: Record<string, unknown>): Order {
     door_style: (raw.door_style as string) ?? "",
     color: (raw.color as string) ?? "",
     sku_items: (raw.sku_items as { sku: string; quantity: number; description?: string }[]) ?? [],
+    // ⚠ A FIELD ABSENT FROM THIS MAPPER IS undefined IN EVERY BROWSER, however
+    // full the column is, and the TYPE WILL NOT SAY SO -- both of these are
+    // optional on Order, so a mapper that skips them still compiles. Added here
+    // on 2026-09-28 after the preferences panel rendered nothing and the specs
+    // panel opened empty on a job that had specs. The second was the dangerous
+    // one: saving from an empty panel would have written the emptiness back.
+    custom_specs: (raw.custom_specs as Order["custom_specs"]) ?? null,
+    quote_submission: (raw.quote_submission as Order["quote_submission"]) ?? null,
     needs_review: (raw.needs_review as boolean) ?? false,
     claimed_by: (raw.claimed_by as string | null) ?? null,
     entered_by: (raw.entered_by as string | null) ?? null,
