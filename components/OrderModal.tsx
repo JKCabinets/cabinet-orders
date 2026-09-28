@@ -28,6 +28,7 @@ import { formatMDY } from "@/lib/dates";
 import { useOrderEnrichment } from "@/lib/useOrderEnrichment";
 import { NextActionPanel } from "./NextActionPanel";
 import { CustomSpecsPanel } from "./CustomSpecsPanel";
+import { QuoteSubmissionPanel } from "./QuoteSubmissionPanel";
 
 interface OrderModalProps {
   /**
@@ -1431,6 +1432,12 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
             {liveOrder.type === "custom" && (
               <CustomSpecsPanel order={liveOrder} readOnly={readOnly || !canEdit} />
             )}
+
+            {/* ⚠ BELOW THE SPECS, AND SMALLER, ON PURPOSE. The panel above is
+                what the customer CHOSE and the designer works from; this is what
+                they ASKED FOR on the website. It renders nothing at all when
+                there is no submission -- a job raised by hand has none. */}
+            {liveOrder.type === "custom" && <QuoteSubmissionPanel order={liveOrder} />}
           </div>
 
             {/* Acknowledgments: per-vendor .xlsx reconciliation.

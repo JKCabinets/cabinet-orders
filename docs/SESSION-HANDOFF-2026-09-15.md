@@ -1007,9 +1007,24 @@ nothing on success, so silence is not a result.
     normalised rather than stored raw, an unknown version emptied, an archived
     job 409, other edits untouched.
 
-    **Not built yet:** the submitted-preferences panel (the website form's answers,
-    read-only, below the specs) and attachments linked to an area or set — the
-    column exists, nothing writes it. The
+    **Step 3a ✅ 2026-09-25** (`patch_quote_submission_panel.py`):
+    `components/QuoteSubmissionPanel.tsx`, read-only, below the specs. **Proved
+    against the document production actually stored** on 2026-09-28: every label
+    rendered and no key leaked (`Raised Panel` not `raised_panel`, `$10,000 to
+    $25,000` not `10k_25k`), the file name listed, the design-assistance line
+    shown only when they asked, and zero buttons and zero inputs in the panel.
+    **And over seven awkward shapes:** a null column, a string instead of a
+    document, a submission with no choices, keys with no labels (falls back to
+    the key rather than blank), a label array holding numbers, `files_meta` as a
+    string, and design assistance "no".
+
+    ⚠ **A correction to step 2's proof:** the typecheck target list never
+    contained either panel — two edits to it had failed silently — so "typecheck
+    clean" on 2026-09-25 did not cover `CustomSpecsPanel`. Both are in the list
+    now and both compile with no errors. Check the list, not the exit code.
+
+    **Not built yet:** attachments linked to an area or set — the column and
+    index exist, nothing writes them. The
     Shopify product picker in `NewOrderModal` goes when that lands — a custom
     job has no SKUs, and the picker reads an admin-only endpoint, so it shows
     an empty list to anyone else. Verified unused: the one manual row has zero
@@ -1249,6 +1264,8 @@ patch_docs_quote_capture.py
 patch_custom_specs_schema.py
 patch_custom_specs_panel.py
 patch_docs_custom_specs_panel.py
+patch_quote_submission_panel.py
+patch_docs_quote_submission_panel.py
 ```
 
 Outside git, in `~/cron-jobs/`: `check-registry-token.sh` (sha256
