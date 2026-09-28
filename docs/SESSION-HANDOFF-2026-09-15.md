@@ -1023,6 +1023,24 @@ nothing on success, so silence is not a result.
     clean" on 2026-09-25 did not cover `CustomSpecsPanel`. Both are in the list
     now and both compile with no errors. Check the list, not the exit code.
 
+    **Step 3b (part 1) ✅ 2026-09-28** (`patch_retire_quote_info_panel.py`):
+    `QuoteInfoPanel` retired. It parsed `notes` and showed keys — "10k_25k",
+    ["raised_panel"] — which is what the screenshot on 2026-09-28 caught, and it
+    REPLACED the customer-note textarea on any quote job, so a designer could not
+    write a customer note on exactly the jobs they own. The preferences panel
+    gained the contact block (name, phone, email, project address, read from the
+    submission), because the order-details card carries only source, date, PO
+    reference and type. **Proved:** the note field and its Save button are back,
+    the function and its render site are gone with a note left where they were,
+    the panel renders the contact plus the labels with no key leaking and no
+    control, and the typecheck is clean.
+
+    ⚠ **A bug in the patch engine, caught by that typecheck:** the range deletion
+    took the LAST occurrence of its end anchor, so it swallowed everything to the
+    file's final matching block, `StageInputsCard` included. It now takes the
+    first occurrence AFTER the start. A deletion that removes more than it names
+    is why the typecheck runs before the commit.
+
     **Not built yet:** attachments linked to an area or set — the column and
     index exist, nothing writes them. The
     Shopify product picker in `NewOrderModal` goes when that lands — a custom
@@ -1266,6 +1284,8 @@ patch_custom_specs_panel.py
 patch_docs_custom_specs_panel.py
 patch_quote_submission_panel.py
 patch_docs_quote_submission_panel.py
+patch_retire_quote_info_panel.py
+patch_docs_retire_quote_info.py
 ```
 
 Outside git, in `~/cron-jobs/`: `check-registry-token.sh` (sha256

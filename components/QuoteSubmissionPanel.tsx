@@ -65,6 +65,14 @@ export function QuoteSubmissionPanel({ order }: { order: Order }) {
     .map((f) => (f && typeof f === "object" ? text((f as Record<string, unknown>).name) : ""))
     .filter(Boolean);
 
+  const customer = (doc.customer ?? {}) as Record<string, unknown>;
+  const project = (doc.project ?? {}) as Record<string, unknown>;
+  const contactName = [text(customer.first_name), text(customer.last_name)].filter(Boolean).join(" ");
+  const phone = text(customer.phone);
+  const email = text(customer.email);
+  const address = text(project.address)
+    || [text(project.street), text(project.city), text(project.state), text(project.zip)].filter(Boolean).join(", ");
+
   const submitted = text(doc.submitted_at);
   const submittedLabel = submitted
     ? new Date(submitted).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "America/Phoenix" })
@@ -84,6 +92,39 @@ export function QuoteSubmissionPanel({ order }: { order: Order }) {
           What the customer asked for on the quote form{submittedLabel ? `, ${submittedLabel}` : ""}. Not editable.
         </p>
       </div>
+
+      {/* ⚠ THE ONLY PLACE THE MODAL SHOWS THESE. The order-details card carries
+          source, date, PO reference and type -- not the customer's phone, email
+          or address. They were shown by QuoteInfoPanel, which parsed them out of
+          the notes prose; they are read from the submission now. */}
+      {(contactName || phone || email || address) && (
+        <div className="px-4 pb-3 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
+          {contactName && (
+            <div className="md:col-span-2">
+              <p className="text-[9px] uppercase tracking-wider text-cream/35">Name</p>
+              <p className="text-[12px] text-cream/80">{contactName}</p>
+            </div>
+          )}
+          {phone && (
+            <div>
+              <p className="text-[9px] uppercase tracking-wider text-cream/35">Phone</p>
+              <p className="text-[12px] text-cream/80">{phone}</p>
+            </div>
+          )}
+          {email && (
+            <div className="min-w-0">
+              <p className="text-[9px] uppercase tracking-wider text-cream/35">Email</p>
+              <p className="text-[12px] text-cream/80 truncate" title={email}>{email}</p>
+            </div>
+          )}
+          {address && (
+            <div className="md:col-span-2">
+              <p className="text-[9px] uppercase tracking-wider text-cream/35">Project address</p>
+              <p className="text-[12px] text-cream/80">{address}</p>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="px-4 pb-4 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
         <div className="space-y-3">

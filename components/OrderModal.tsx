@@ -1508,10 +1508,12 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
               <p className="text-[10px] text-cream/35 mb-2">
                 Visible to the customer &middot; written to the Shopify order
               </p>
-              {liveOrder.source === "Manual" && liveOrder.notes?.includes("QUOTE REQUEST") ? (
-                <QuoteInfoPanel notes={liveOrder.notes} />
-              ) : (<>
-                <textarea
+              {/* ⚠ ONE TEXTAREA, ALWAYS (2026-09-28). A quote job used to render
+                  parsed prose here INSTEAD of this field, so the designer who
+                  owns the job could not write a customer note on it. What the
+                  customer asked for is shown by QuoteSubmissionPanel on the
+                  Overview tab, in their own words rather than the form's keys. */}
+              <textarea
                   value={notes}
                   onChange={(e) => { setNotes(e.target.value); setNotesChanged(true); }}
                   readOnly={readOnly}
@@ -1525,13 +1527,12 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                     fontSize: "16px",
                   }}
                 />
-                {notesChanged && (
-                  <button onClick={handleSaveNotes}
-                    className="mt-2 text-[11px] uppercase tracking-wider font-medium text-terracotta hover:brightness-110">
-                    Save note
-                  </button>
-                )}
-              </>)}
+              {notesChanged && (
+                <button onClick={handleSaveNotes}
+                  className="mt-2 text-[11px] uppercase tracking-wider font-medium text-terracotta hover:brightness-110">
+                  Save note
+                </button>
+              )}
             </div>
           </div>
 
@@ -1779,79 +1780,14 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
   );
 }
 
-function QuoteInfoPanel({ notes }: { notes: string }) {
-  function extract(label: string): string {
-    const regex = new RegExp(`^${label}:\\s*(.+)`, "im");
-    const match = notes.match(regex);
-    return match ? match[1].trim() : "";
-  }
-
-  const customerName = extract("Customer");
-  const phone    = extract("Phone");
-  const email    = extract("Email");
-  const address  = extract("Address");
-  const city     = extract("City");
-  const state    = extract("State");
-  const zip      = extract("Zip");
-  const budget   = extract("Budget");
-  const door     = extract("Door Style");
-  const color    = extract("Color");
-  const notesTxt = extract("Notes");
-  const attach   = extract("📎 Attachment");
-
-  const ROW = "flex flex-col gap-0.5";
-  const LBL = "text-[9px] uppercase tracking-[0.13em] font-medium text-cream/45" as const;
-  const VAL = "text-[13px]" as const;
-
-  return (
-    <div className="space-y-3">
-      {/* Contact info */}
-      <div className="rounded-brand p-4" style={{ background: "rgba(255,255,255,0.04)", border: "0.5px solid rgba(255,255,255,0.12)" }}>
-        <p className="eyebrow mb-3">Contact</p>
-        <div className="grid grid-cols-2 gap-3">
-          {customerName && <div className={ROW + " col-span-2"}><span className={LBL}>Name</span><span className={VAL} style={{ color: "#f0ece4", fontWeight: 500 }}>{customerName}</span></div>}
-          {phone && <div className={ROW}><span className={LBL}>Phone</span><span className={VAL} style={{ color: "rgba(240,236,228,0.85)" }}>{phone}</span></div>}
-          {email && <div className={ROW}><span className={LBL}>Email</span><span className={VAL} style={{ color: "rgba(240,236,228,0.85)", wordBreak: "break-all" }}>{email}</span></div>}
-          {address && <div className={ROW + " col-span-2"}><span className={LBL}>Address</span><span className={VAL} style={{ color: "rgba(240,236,228,0.85)" }}>{address}</span></div>}
-          {(city || state || zip) && (
-            <div className={ROW + " col-span-2"}>
-              <span className={LBL}>City / State / Zip</span>
-              <span className={VAL} style={{ color: "rgba(240,236,228,0.85)" }}>{[city, state, zip].filter(Boolean).join(", ")}</span>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Quote selections */}
-      {(budget || door || color) && (
-        <div className="rounded-brand p-4" style={{ background: "rgba(255,255,255,0.04)", border: "0.5px solid rgba(255,255,255,0.12)" }}>
-          <p className="eyebrow mb-3">Selections</p>
-          <div className="space-y-2.5">
-            {budget && <div className={ROW}><span className={LBL}>Budget</span><span className={VAL} style={{ color: "#a0cc7a" }}>{budget}</span></div>}
-            {door && <div className={ROW}><span className={LBL}>Door Style</span><span className={VAL} style={{ color: "rgba(240,236,228,0.85)" }}>{door}</span></div>}
-            {color && <div className={ROW}><span className={LBL}>Color</span><span className={VAL} style={{ color: "rgba(240,236,228,0.85)" }}>{color}</span></div>}
-          </div>
-        </div>
-      )}
-
-      {/* Customer notes */}
-      {notesTxt && (
-        <div className="rounded-brand p-4" style={{ background: "rgba(255,255,255,0.04)", border: "0.5px solid rgba(255,255,255,0.12)" }}>
-          <p className="eyebrow mb-2">Customer Notes</p>
-          <p className="text-[13px] leading-relaxed" style={{ color: "rgba(240,236,228,0.80)" }}>{notesTxt}</p>
-        </div>
-      )}
-
-      {/* Attachment link */}
-      {attach && (
-        <div className="rounded-brand p-4" style={{ background: "rgba(255,255,255,0.04)", border: "0.5px solid rgba(255,255,255,0.12)" }}>
-          <p className="eyebrow mb-2">Attachment</p>
-          <a href={attach} target="_blank" rel="noopener noreferrer" className="text-[13px] underline text-terracotta hover:brightness-110 transition-all">View uploaded file</a>
-        </div>
-      )}
-    </div>
-  );
-}
+/*
+ * ⚠ QuoteInfoPanel WAS HERE until 2026-09-28. It read the "QUOTE REQUEST" prose
+ * out of `notes` with a regex per label and rendered the form's raw keys --
+ * "10k_25k", ["raised_panel"] -- because that is what the flattened notes hold.
+ * QuoteSubmissionPanel reads `quote_submission` instead and shows the words the
+ * customer actually read. The notes string is still written for continuity and
+ * nothing parses it any more.
+ */
 
 /**
  * What this group's stages run on, and the control that changes it.
