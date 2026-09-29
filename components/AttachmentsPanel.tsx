@@ -16,8 +16,15 @@ interface Attachment {
   created_at: string;
   /**
    * What this attachment IS, not its file type.
-   * "general" | "proof_of_delivery". Optional because rows created before
-   * the kind column existed are returned without it by older caches.
+   * "general" | "proof_of_delivery" | "customer_upload". Optional because
+   * rows created before the kind column existed are returned without it by
+   * older caches.
+   *
+   * ⚠ "customer_upload" MARKS WHAT ARRIVED WITH A QUOTE REQUEST (2026-09-28).
+   * Before it, a customer's kitchen photo and a designer's packing slip were
+   * both "general" and the Files tab could not tell them apart. It is written
+   * at ingest by the quote webhook -- never inferred later, because "general"
+   * on an older row genuinely could be either.
    */
   kind?: string;
 }
@@ -66,6 +73,14 @@ export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPa
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
+  const [bin, setBin] = useState<"designer" | "customer">("designer");
+
+  // ⚠ ANYTHING NOT MARKED AS THE CUSTOMER'S IS THE TEAM'S. A row written before
+  // "customer_upload" existed, or by any other route, belongs with the work --
+  // which is where somebody looking for a packing slip will look first.
+  const customerFiles = attachments.filter(a => a.kind === "customer_upload");
+  const designerFiles = attachments.filter(a => a.kind !== "customer_upload");
+  const shown = bin === "customer" ? customerFiles : designerFiles;
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const receiptInputRef = useRef<HTMLInputElement>(null);
@@ -216,13 +231,41 @@ export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPa
         </div>
       )}
 
+      {/* ⚠ TWO BINS, BY WHO PUT THE FILE THERE. Customer uploads arrive with a
+          quote request and are never added here; the designer's own files --
+          drawings, acknowledgments, packing slips, delivery receipts -- are the
+          ones staff add. A receipt keeps its own badge inside the designer bin;
+          the delivery gate reads `kind`, not this tab. */}
+      {!loading && attachments.length > 0 && (
+        <div className="flex items-center gap-1.5 mb-3">
+          {([["designer", "Designer attachments"], ["customer", "Customer attachments"]] as const).map(([key, label]) => {
+            const count = key === "customer" ? customerFiles.length : designerFiles.length;
+            return (
+              <button
+                key={key}
+                onClick={() => setBin(key)}
+                className={`px-3 py-1 rounded-full text-[10px] uppercase tracking-wider transition-all border ${
+                  bin === key
+                    ? "bg-white/10 border-cream/25 text-cream"
+                    : "bg-white/4 border-white/10 text-cream/55 hover:text-cream/80"
+                }`}
+              >
+                {label} <span className="opacity-65 ml-1">{count}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {loading ? (
         <div className="flex items-center justify-center py-4">
           <Loader2 className="w-4 h-4 animate-spin text-[rgba(232,227,218,0.30)]" />
         </div>
-      ) : attachments.length === 0 ? (
-        readOnly ? (
-          <p className="text-[11px] text-[rgba(232,227,218,0.30)] py-3">No files on this order.</p>
+      ) : shown.length === 0 ? (
+        readOnly || bin === "customer" ? (
+          <p className="text-[11px] text-[rgba(232,227,218,0.30)] py-3">
+            {bin === "customer" ? "The customer attached nothing." : "No files on this order."}
+          </p>
         ) : (
         <button
           onClick={() => fileInputRef.current?.click()}
@@ -237,7 +280,7 @@ export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPa
         )
       ) : (
         <div className="flex flex-col gap-1.5">
-          {attachments.map((att) => (
+          {shown.map((att) => (
             <div
               key={att.id}
               className="flex items-center gap-2.5 px-3 py-2 bg-[#111] border border-[rgba(255,255,255,0.10)] rounded-lg group hover:border-[rgba(86,100,72,0.55)] transition-colors"

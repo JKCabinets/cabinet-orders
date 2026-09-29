@@ -551,6 +551,11 @@ export async function POST(req: NextRequest) {
       file_size: file.size,
       file_type: storedType,
       uploaded_by: "Customer (form submission)",
+      // ⚠ THE CUSTOMER PUT THIS HERE, NOT THE TEAM (2026-09-28). The Files tab
+      // splits on this value, and it was not set at all before -- so a photo
+      // that came with the request sat among the designer's drawings, packing
+      // slips and delivery receipts with nothing to tell them apart.
+      kind: "customer_upload",
     });
 
     if (dbError) {
@@ -575,6 +580,7 @@ export async function POST(req: NextRequest) {
       file_size: 0,
       file_type: legacyAttachmentUrl.toLowerCase().endsWith(".pdf") ? "application/pdf" : "image/jpeg",
       uploaded_by: "Customer (form submission, legacy URL)",
+      kind: "customer_upload",
     });
   }
 
