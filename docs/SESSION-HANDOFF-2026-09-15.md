@@ -1076,8 +1076,21 @@ nothing on success, so silence is not a result.
     and notes, in the order the customer filled them in, read from the Liquid
     rather than invented. A section with nothing in it is not drawn.
 
+    ✅ **Customer and designer files are separate — 2026-09-28**
+    (`patch_customer_vs_designer_files.py`). The quote webhook marks both of its
+    inserts `kind: "customer_upload"` — ⚠ it had set no kind at all, so those
+    rows took the default and were indistinguishable from a designer's packing
+    slip. The Files pane shows two bins with counts, uploads only under
+    Designer, and a per-bin empty state.
+
+    ⚠ **SHIPPED WITHOUT A TYPECHECK OR A RENDER TEST.** The container running
+    the harnesses reset mid-build, so the evidence was structural only: anchors
+    verified, applies twice, bins wired, rows read from the visible bin, both
+    webhook inserts marked, brackets balanced. `npx tsc --noEmit` on the box was
+    the backstop, and it runs before the commit. Worth re-testing the pane when
+    the room bins land.
+
     **Not built yet:**
-    attachments split into customer uploads and designer files. Also
     attachments linked to an area or set — the column and index exist, nothing
     writes them. The
     Shopify product picker in `NewOrderModal` goes when that lands — a custom
@@ -1327,6 +1340,9 @@ patch_shape_order_carries_specs.py
 patch_docs_shape_order.py
 patch_quote_notes_and_alignment.py
 patch_docs_quote_notes.py
+patch_preferences_sections.py
+patch_customer_vs_designer_files.py
+patch_docs_file_bins.py
 ```
 
 Outside git, in `~/cron-jobs/`: `check-registry-token.sh` (sha256
