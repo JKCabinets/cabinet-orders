@@ -2,6 +2,12 @@
 
 **As of 2026-09-15 · supersedes OPERATIONS-2026-08-18.md**
 
+⚠ **AMENDED 2026-09-30.** §10 records why a custom job's specifications save
+one room at a time; §12 adds `order_attachments` to the tables with no creating
+migration. ⚠ **Several statements in this document were found wrong that day
+and are NOT yet corrected** — they are listed in the session handoff, Open item
+26. Check there before relying on §2, §3, §5, §6, §7, §9 or §12.
+
 ⚠ **AMENDED 2026-09-15.** The `override_ack` inconsistency in §10 is closed,
 the warranty-vs-custom question in §12 is decided, §9 carries two new
 incidents, and archiving has a stated rule, now enforced. Corrections are
@@ -865,6 +871,19 @@ the project model**: what it called one order is now one **group**, and what it
 called "a single order" at checkout is now a **project**. The reasoning survives
 the rename; the noun did not.
 
+**A CUSTOM JOB'S SPECIFICATIONS SAVE ONE ROOM AT A TIME** (2026-09-30), checked in
+the database against THAT ROOM's revision. Per room, not per document and not
+`updated_at`: `updated_at` moves on every edit to the row, and a document-wide
+counter would make saving Kitchen conflict with a colleague's save of Bath. The
+merge and the unlinking of a removed room's files happen in one database
+function because PostgREST offers no transaction any other way. The document
+went to v2 because a reader must not guess a shape from which keys are present;
+a tab still running the old reader shows the job as having no specs until it
+reloads, and cannot save — accepted, because a custom job is one designer's
+(Garrett, 2026-09-30). A refusal keeps the designer's typing; a conflict replaces
+it with what was stored, and says so. An unreadable document is refused and
+named, never emptied.
+
 **Order value is stored at ingest, not queried live.** A metrics page that
 depends on Shopify is one that breaks when Shopify does, and 2026-08-20
 demonstrated how that goes. Custom orders are hand-entered, having no Shopify
@@ -989,9 +1008,12 @@ covers the box, not the database, and the database is where the orders are.
   `role: "public_api"` using `SUPABASE_JWT_SECRET`, which is already in
   `.kamal/secrets`.
 
-- **⚠ `projects` AND `order_acknowledgments` HAVE NO CREATING MIGRATION.**
-  Neither is in `migrations/` nor in the versioned schema files, which all
-  predate them by months. The schema of record exists only in Supabase, so the
+- **⚠ `projects`, `order_acknowledgments` AND `order_attachments` HAVE NO
+  CREATING MIGRATION.** The first two are in neither `migrations/` nor the
+  versioned schema files, which all predate them by months. `order_attachments`
+  (found 2026-09-30): no tracked `.sql` file creates it — the earliest that names
+  it, `2026-08-18-order-attachments-kind.sql`, is an ALTER.
+  The schema of record exists only in Supabase, so the
   database cannot be rebuilt from the repo — and the RLS exposure in §9 is the
   first concrete cost of that.
 

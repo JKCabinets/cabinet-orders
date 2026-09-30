@@ -1430,7 +1430,10 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                 its SKUs and has no business here; a warranty claim is about work
                 already done. The route refuses the column on anything else. */}
             {liveOrder.type === "custom" && (
-              <CustomSpecsPanel order={liveOrder} readOnly={readOnly || !canEdit} />
+              // ⚠ KEYED BY THE JOB. The panel holds drafts, and a panel handed a
+              // different job once saved the last job's rooms onto it (proven
+              // 2026-09-30). A new job is a new panel.
+              <CustomSpecsPanel key={liveOrder.id} order={liveOrder} readOnly={readOnly || !canEdit} />
             )}
 
             {/* ⚠ BELOW THE SPECS, AND SMALLER, ON PURPOSE. The panel above is

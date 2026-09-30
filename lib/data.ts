@@ -946,11 +946,20 @@ export function activityDate(): string {
  * ⚠ IDS ARE GENERATED AND NEVER REUSED. Attachments point at an area or a set
  * by id (`order_attachments.spec_ref`), so renaming "Kitchen" to "Main Kitchen"
  * cannot orphan a drawing. Deleting an area or set UNLINKS its files rather
- * than removing them.
+ * than removing them -- done by the database functions that save and remove a
+ * room (migrations/2026-09-30-custom-specs-rooms.sql), in the same transaction
+ * as the change. Until 2026-09-30 this sentence described nothing: no code
+ * unlinked anything.
  *
  * ⚠ `v` IS THE SHAPE'S VERSION, not the job's. It exists so a reader can tell
  * which shape it is holding rather than inferring it from which keys are
  * present — the same reason the website's payload carries form_version.
+ *
+ * ⚠ v2 (2026-09-30) GAVE EVERY AREA A `rev`: the room's revision, set by the
+ * database on each save of that room. A save names the revision it started
+ * from and is refused if the room has moved on, so two tabs cannot silently
+ * overwrite one room -- and saving Kitchen never conflicts with saving Bath.
+ * orders_custom_specs_valid holds every stored document to v2.
  *
  * This is NOT the customer's request. That lives in `orders.quote_submission`,
  * written once at ingest and never edited.
@@ -967,33 +976,44 @@ export interface CustomSpecSet {
 export interface CustomSpecArea {
   id: string;
   name: string;
+  /** The room's revision, set by the database on every save of the room. A
+   *  save sends the one it started from as `base_rev`; it never sets this. */
+  rev: number;
   sets: CustomSpecSet[];
 }
 
 export interface CustomSpecs {
-  v: 1;
+  v: 2;
   areas: CustomSpecArea[];
 }
 
-export const EMPTY_CUSTOM_SPECS: CustomSpecs = { v: 1, areas: [] };
+export const EMPTY_CUSTOM_SPECS: CustomSpecs = { v: 2, areas: [] };
 
 /**
  * Read whatever is in the column as specs, or nothing.
  *
- * ⚠ TOTAL, ON PURPOSE. The column is jsonb and nullable: a row created before
- * this existed holds null, and a row written by a future shape holds something
- * this version does not understand. Both must render as "no specs yet" rather
- * than throwing inside a modal. An unknown `v` is refused rather than guessed.
+ * ⚠ TOTAL, ON PURPOSE. The column is jsonb and nullable: a row with no specs
+ * holds null, and a document of a shape this build does not know -- a future
+ * `v` -- must render as "no specs yet" rather than throwing inside a modal. An
+ * unknown `v` is refused rather than guessed.
+ *
+ * ⚠ A RENDERER, NOT A GATE. It skips what it cannot read. What may be STORED is
+ * decided by custom_specs_problem() in the database, which is strict, and
+ * every document that function accepts reads back here field for field.
+ *
+ * ⚠ IT COPIES FIELD BY FIELD, so a field it does not name is gone in every
+ * browser -- the shapeOrder lesson one level down. `rev` is why this says so.
  */
 export function readCustomSpecs(raw: unknown): CustomSpecs {
   if (!raw || typeof raw !== "object") return EMPTY_CUSTOM_SPECS;
   const doc = raw as { v?: unknown; areas?: unknown };
-  if (doc.v !== 1 || !Array.isArray(doc.areas)) return EMPTY_CUSTOM_SPECS;
+  if (doc.v !== 2 || !Array.isArray(doc.areas)) return EMPTY_CUSTOM_SPECS;
   const areas: CustomSpecArea[] = [];
   for (const a of doc.areas) {
     if (!a || typeof a !== "object") continue;
-    const area = a as { id?: unknown; name?: unknown; sets?: unknown };
+    const area = a as { id?: unknown; name?: unknown; rev?: unknown; sets?: unknown };
     if (typeof area.id !== "string" || typeof area.name !== "string") continue;
+    if (typeof area.rev !== "number" || !Number.isInteger(area.rev) || area.rev < 1) continue;
     const sets: CustomSpecSet[] = [];
     for (const s of Array.isArray(area.sets) ? area.sets : []) {
       if (!s || typeof s !== "object") continue;
@@ -1008,9 +1028,9 @@ export function readCustomSpecs(raw: unknown): CustomSpecs {
         notes: typeof set.notes === "string" ? set.notes : "",
       });
     }
-    areas.push({ id: area.id, name: area.name, sets });
+    areas.push({ id: area.id, name: area.name, rev: area.rev, sets });
   }
-  return { v: 1, areas };
+  return { v: 2, areas };
 }
 
 /**

@@ -569,6 +569,16 @@ nothing on success, so silence is not a result.
 | `.kamal/secrets` stays tracked, and stays a loader | It holds no values, and tracking it is what recovered the 2026-08-03 config damage. Untracking it removed a safety net to solve a problem that did not exist. |
 | The registry credential stays a classic PAT for now | GHCR's support for fine-grained tokens is unreliable, and a failed deploy is the wrong moment to discover that. Moving the build to Actions is the real answer and deserves its own decision. |
 | `kamal secrets print` before any deploy that follows a secrets change | Both of 2026-09-16's failed deploys would have been caught by it: one name reading EMPTY, in a list of twenty. |
+| Specs save one room at a time, through a database function (2026-09-30) | Every property of the whole-document save was proven wrong against the real panel. The merge and the unlink must be one transaction, and PostgREST has none; a function is the only place they can be one. |
+| A revision per ROOM, inside the document | `updated_at` moves on any edit to the row; a document-wide counter makes Kitchen conflict with Bath. |
+| `custom_specs` is v2 | Adding `rev` changes the shape, and a reader must not infer a shape from its keys. A stale tab shows no specs until reload and cannot save — accepted: one designer per custom job (Garrett). |
+| PATCH refuses `custom_specs`; it does not ignore it | Ignoring it answers 200 to an old tab for a save that never happened. |
+| An unreadable document is refused and named, never emptied | Emptying is what the old route did, silently. The migration names every such row and writes nothing. |
+| Archived custom jobs are converted too | Read-only is about human edits; a v1 row left behind would violate the CHECK forever (Garrett, 2026-09-30). |
+| The validator is `service_role`-only | A role without EXECUTE on a CHECK's function cannot write ANY row. RLS lets only `service_role` and the owner write `orders`, so nothing else needs it — and it stays off `/rpc`. |
+| Rooms capped at 100, style groups at 50 | The uncapped validator was quadratic: 3.2 s of CPU at 8,000 rooms. |
+| A refusal keeps the draft; a conflict replaces it | A network or claim refusal changed nothing, so the typing stays, marked unsaved. A conflict means someone else's version is the truth. |
+| The specs panel is keyed by the job | It held drafts from mount; a re-pointed modal would have saved one job's rooms onto another. Latent today, closed anyway. |
 
 ---
 
@@ -1206,6 +1216,54 @@ nothing on success, so silence is not a result.
     job has no SKUs, and the picker reads an admin-only endpoint, so it shows
     an empty list to anyone else. Verified unused: the one manual row has zero
     sku_items.
+
+    **The Files work, in order (agreed 2026-09-30), each step its own commit.**
+    It could not start where this file said it could: the specs files would hang
+    on were not safe to point at.
+    1. ✅ **Specs save one room at a time** (`patch_specs_one_room.py`,
+       migration `2026-09-30-custom-specs-rooms.sql`, run BEFORE the deploy).
+       What it is: OMS-STATE §3. Why: OPERATIONS §10.
+    2. **The attachments client.** A shared cache in the `lib/ackStatus.ts`
+       shape, with a request generation — `invalidateAck` lets an older fetch
+       overwrite a newer one, which is not to be copied. Upload and delete check
+       the answer; the panel takes `canEdit`; Receipt asks `lib/requirements`.
+    3. **Upload accepts `spec_ref`:** custom jobs, `general` files, ids that
+       resolve against the STORED specs. One `attachmentBin()` decides the bin for
+       every view. An unresolvable `spec_ref` falls back to Designer when read.
+    4. **The Files view** with room tabs, read from the saved specs.
+    5. **Promote writes `customer_upload`** (Open 25), with a data fix by
+       `uploaded_by = 'Customer (claim form)'`, which only that route writes.
+
+    **Step 1 proved** on PostgreSQL 16 and on 17.6 — production's version, from
+    the npm registry's binaries — with production's `orders` policies and grants:
+    conversion keeps every document but `v` and the added `rev`; a second run
+    changes nothing; four unreadable documents are named and nothing is written;
+    every room operation, including a stale save, a different room right after, a
+    dropped set unlinking its file, duplicate ids, archived, Shopify group and a
+    missing order; two saves of one room at once serialize and the second gets
+    409; anon can call none of the three functions. The reader over 1,502
+    generated documents and 25 malformed ones: every accepted one read back field
+    for field, every malformed one refused, the reader never threw. The route,
+    through the real `lib/auth` and `lib/archived` to the real functions: 20
+    cases, among them an admin's override row written after the room row on
+    success and not at all on a conflict, an old tab's PATCH refused, and a
+    notes-only PATCH unchanged. The panel, through the route to the database: 11
+    scenarios. The patch: apply, re-run, changed anchor, partial tree, and a panel
+    differing from the copy read — the last three write nothing. A type error
+    planted in each of the six files was caught six times.
+
+    ⚠ **PRODUCTION HAD NO SPECS TO CONVERT.** 2026-09-30: one custom job,
+    `count(custom_specs) = 0`, no `spec_ref` ever set. `CST-1788985171138`, believed
+    this session to hold a real Kitchen/Island document, was deleted through the
+    app on 2026-09-24 at 22:23 UTC by `battles45` — the day BEFORE the column
+    existed; the Kitchen/Island shape is step 1's own proof, run on a test
+    database. The migration was proved against production's real state instead:
+    nothing changed, and the job's first room saved as v2, rev 1.
+
+    ⚠ **UNVERIFIED:** the 2026-09-28 data-loss note above says the panel "opened
+    EMPTY on a job with specs" and "the stored specs survived". No production row
+    has specs, and no code can null the column. A test database or a job deleted
+    since — do not cite it as production fact.
 23. ⚠ **The public quote endpoint was open, and is now guarded — 2026-09-24.**
     `POST /api/webhooks/quote-form` takes a customer's details and up to five
     files from anyone on the internet. Its only check was a shared `secret`
@@ -1276,6 +1334,50 @@ nothing on success, so silence is not a result.
     customer-visible string describing a claim type or that place belongs in
     `lib/customerFacing.ts`, not inline in a route, so the next person changing
     wording has one file to read.
+25. **Found 2026-09-30, outside item 24, NOT fixed.**
+    - ⚠ **A customer's HEIC, WEBP or GIF keeps its metadata, GPS included.**
+      `PUBLIC_UPLOAD_TYPES` accepts all three; `stripImageMetadata` scrubs JPEG
+      only. Proven with the real route and scrubber. Whether a browser sends them
+      is the storefront's accept list. Narrow the types, or scrub HEIC properly
+      (its metadata is addressed by offset — a rewrite, not a cut). A decision
+      with the website team. The same three are stored with a `.pdf` extension.
+    - The quote route tells a customer "(max 20 MB)"; the cap is 10 MB.
+    - The quote route leaves the storage object when its row insert fails (the
+      staff route cleans up) — which is where the 09-28→30 orphans came from.
+    - `promote` writes a customer's claim photos as `general`: a warranty claim
+      shows them under Designer, and says the customer attached nothing. Item 24
+      step 5.
+    - `AttachmentsPanel`: delete ignores the answer (proven: a 409 removed the
+      file from the list, no error); it is not claim-aware (`readOnly` is
+      archived-only); Receipt says "required before … Delivered" on custom jobs.
+      Item 24 step 2.
+    - Deleting an order leaves its files in storage (rows cascade, objects do not).
+    - Two near-simultaneous promotes both create a claim; the second's update
+      matches nothing without an error and answers 201.
+    - The attachment DELETE skips its archived check if its `orders` read fails.
+    - Stale comments: the upload route's `ATTACHMENT_KINDS` "MUST match" the CHECK
+      (a subset now); `archivedVia`'s doc comment sits above `activityDate`;
+      `isStageOfferedForType` says samples run New → Entered → Delivered;
+      `ProjectFiles` sends people to a "Project tab" labelled Overview.
+    - The quote webhook has SEVEN unused variables, not three: add `color`,
+      `city`, `state`, `zip`.
+26. **Documents known wrong, found 2026-09-30, NOT corrected** — each wants its
+    own look rather than a line in somebody else's commit.
+    - OPERATIONS §5: `QUOTE_WEBHOOK_SECRET` "Deliberately EMPTY" and "Setting it
+      breaks the quote form", and the `kamal secrets print` list of names empty by
+      design — item 23 set it on 2026-09-24.
+    - OPERATIONS §2 says `POST /api/public/lookup` is "not built yet", and §12 that
+      the warranty question "blocks the public intake work". Both routes exist.
+    - OPERATIONS §2, the master for customer-facing words, says Cabinets / At cross
+      dock → "Arrived in Arizona"; `lib/customerFacing.ts` says "Arrived at our
+      delivery partner" (item 22).
+    - "Four checks … of eleven" (OMS-STATE §6, OPERATIONS §3 and §6) predates
+      `check-registry-token.sh`; OPERATIONS §7 has no Monday 15:00 row for it.
+    - OPERATIONS §5 puts the Graph secret in `.env.kamal`; §12 says it is not there.
+    - Item 9 and OPERATIONS §9 say "the one NO ACTION edge"; item 14, read from
+      the database later, names two.
+    - Item 20 still reads "in progress" with every step done; Open item 1's "see
+      below" points above.
 
 ---
 
@@ -1303,6 +1405,22 @@ that changed nothing, and a SELECT that matched nothing. On 2026-09-16 a
 constraint migration reported it and had added nothing; only the listing query
 showed that. **After every migration, run the query that lists what it should
 have created, and read the rows.**
+
+**⚠ ASK THE SQL EDITOR QUESTIONS THAT ALWAYS RETURN A ROW.** The same message
+answers a SELECT that matched nothing. On 2026-09-30 it was the first sign that
+the specs this session believed in did not exist, and it could not say so. Wrap a
+check in `count(*)` or `coalesce(json_agg(...), '[]')`, so empty is a visible 0 or
+`[]`. The editor also shows only the LAST statement's result: one query per run.
+
+**⚠ A CHECK'S FUNCTION MUST BE EXECUTABLE BY EVERY ROLE THAT WRITES THE TABLE**,
+or that role cannot write ANY row — Postgres checks the permission before the
+constraint's own `is null` short-circuits (proven 2026-09-30). Which roles write
+is decided by RLS: read `pg_policies` before choosing the grant.
+
+**⚠ THE `grep` EXIT CODE BIT A TEST RUNNER TOO** (2026-09-30): a clean fixture
+load printed nothing, `grep -v` exited 1, and the `&&` chain skipped the seed —
+the first run tested an empty table, and passed. A proof prints the row counts of
+every database it creates.
 
 **⚠ `npx tsc --noEmit 2>&1 | grep -E "error TS"` inverts the exit code.** `grep`
 exits 1 when it finds nothing, so a **clean** typecheck looks like failure and a
@@ -1380,6 +1498,14 @@ also had to change, and only one of them was checked.**
 does not enforce a mapper. A test list does not update itself. A column accepts
 what its constraint allows, not what the code writes. Each of these is one query
 or one `grep -c` away from being certain instead of assumed.
+
+**2026-09-30 found four more of the same shape**, three before they shipped:
+`rev` added to the specs document, and `readCustomSpecs`, which copies field by
+field, would have dropped it in every browser; the specs moved to their own
+route, and PATCH would have answered 200 for them had the field merely been
+deleted; a CHECK calling a function, and every role that writes the table needs
+EXECUTE on it. The fourth is live: the quote form accepts HEIC, WEBP and GIF, and
+`stripImageMetadata` scrubs JPEG only (Open 25).
 
 ## The patch scripts
 
@@ -1471,6 +1597,8 @@ patch_docs_file_bins.py
 patch_attachment_kind_constraint.py
 patch_system_map_redrawn.py
 patch_docs_handoff_next_session.py
+patch_specs_one_room.py
+patch_docs_specs_one_room.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it
