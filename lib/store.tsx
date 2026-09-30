@@ -366,11 +366,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         // Every other mutation in this file merges with `{ ...o, ... }` and
         // keeps the trail. This was the only wholesale replace.
         //
-        // ⚠ Stops it going BACKWARDS; does not make new entries arrive live.
-        // Nothing subscribes to order_activity, so a row the server wrote
-        // still needs a refetch to show up. Guarded on length rather than
-        // replaced unconditionally, so a caller that ever does supply
-        // activity wins.
+        // ⚠ Stops it going BACKWARDS; new entries arrive through
+        // useRealtimeActivity below. (This said nothing subscribed to
+        // order_activity. The subscription came on 2026-09-15, but it RECEIVED
+        // nothing until 2026-09-30, when the table became readable to the
+        // browser's role -- see that hook.) Guarded on length rather than
+        // replaced unconditionally, so a caller that ever does supply activity
+        // wins.
         return row.activity.length > 0 ? row : { ...row, activity: o.activity };
       }));
     },

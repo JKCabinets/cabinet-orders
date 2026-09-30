@@ -6,7 +6,8 @@
 one room at a time; §12 adds `order_attachments` to the tables with no creating
 migration. ⚠ **Several statements in this document were found wrong that day
 and are NOT yet corrected** — they are listed in the session handoff, Open item
-26. Check there before relying on §2, §3, §5, §6, §7, §9 or §12.
+26. Check there before relying on §2, §3, §5, §6, §7, §9 or §12. §2 now records
+the second read policy Realtime needed.
 
 ⚠ **AMENDED 2026-09-15.** The `override_ack` inconsistency in §10 is closed,
 the warranty-vs-custom question in §12 is decided, §9 carries two new
@@ -234,8 +235,9 @@ be wrong about something. The response needs a **status per category**.
 - **Identical responses for "no such order" and "wrong email"**, or the endpoint
   becomes an order-number oracle.
 - **A separate `public_api` database role.** The authenticated role holds a
-  `qual=true` SELECT on `orders` because Realtime requires it — acceptable for a
-  small trusted team, not for a public endpoint.
+  `qual=true` SELECT on `orders`, and since 2026-09-30 on `order_activity`,
+  because Realtime requires it — acceptable for a small trusted team, not for a
+  public endpoint.
 - **Translate every stage** through the table above, keyed on `(type, stage)`.
 
 ## Order numbers

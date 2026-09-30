@@ -124,19 +124,8 @@ export function useRealtimeOrders(handlers: RealtimeOrdersHandlers) {
   }, [status]);
 }
 
-/**
- * The same subscription, for the `projects` table.
- *
- * ⚠ WHY THIS EXISTS AT ALL. `payment_status` and the four money columns live
- * on `projects`. Without this, a refund arriving from Shopify does not reach an
- * open browser until the next full refetch -- and the payment hold exists
- * precisely to stop an order moving forward after a refund. A control that
- * arrives on reload is not the control that was designed.
- *
- * Its own channel rather than more `.on()` calls on the orders channel: the two
- * tables have independent lifecycles, and one failing to subscribe should not
- * take the other down with it.
- */
+// (2026-09-30) useRealtimeProjects' doc comment stood here, above the wrong
+// declaration; it moved to the function it describes.
 interface RealtimeActivityHandlers {
   /**
    * A new trail entry, with the order it belongs to.
@@ -161,6 +150,15 @@ interface RealtimeActivityHandlers {
  *
  * Its own channel, like projects: independent lifecycles, and one failing
  * to subscribe should not take the others down.
+ *
+ * ⚠ PUBLISHED IS NOT DELIVERED. Realtime sends a row only to a subscriber whose
+ * ROLE MAY SELECT IT, and this client subscribes as `authenticated` (the JWT
+ * from /api/realtime-token). order_activity was published on 2026-09-15 with no
+ * read policy for that role, so this handler received nothing for two weeks.
+ * Stage moves and archiving add their row locally; every other trail row waited
+ * for a refresh, which came to look normal. Readable since
+ * 2026-09-30 (authenticated_read_all_activity). Any table added here needs its
+ * read policy too, and the test is a SECOND TAB, not the publication list.
  */
 export function useRealtimeActivity(handlers: RealtimeActivityHandlers) {
   const { status } = useSession();
@@ -213,6 +211,19 @@ export function useRealtimeActivity(handlers: RealtimeActivityHandlers) {
   }, [status]);
 }
 
+/**
+ * The same subscription, for the `projects` table.
+ *
+ * ⚠ WHY THIS EXISTS AT ALL. `payment_status` and the four money columns live
+ * on `projects`. Without this, a refund arriving from Shopify does not reach an
+ * open browser until the next full refetch -- and the payment hold exists
+ * precisely to stop an order moving forward after a refund. A control that
+ * arrives on reload is not the control that was designed.
+ *
+ * Its own channel rather than more `.on()` calls on the orders channel: the two
+ * tables have independent lifecycles, and one failing to subscribe should not
+ * take the other down with it.
+ */
 export function useRealtimeProjects(handlers: RealtimeProjectsHandlers) {
   const { status } = useSession();
   const handlersRef = useRef(handlers);

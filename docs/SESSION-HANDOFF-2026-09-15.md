@@ -478,6 +478,15 @@ a DAY string, so two identical texts on one day collapse to one in the display.
 Dropping the optimistic append instead would put a round-trip in front of every
 action's feedback.
 
+⚠ **IT DID NOT WORK IN PRODUCTION UNTIL 2026-09-30.** Publishing the table was
+checked; being able to READ it was not. Realtime delivers a row only to a role
+that may SELECT it, and `order_activity`'s only policy, `no_direct_access`,
+refuses everyone — so no browser received a single trail row. Only stage moves
+and archiving add their row locally; every other row — notes, dates, claims,
+overrides, a colleague's anything — waited for a refresh, which came to look
+normal. Questioned when a room save's row needed one. Fixed by
+`authenticated_read_all_activity`, SELECT only; see OMS-STATE §5.
+
 ### 14. The durable docs caught up
 
 `OMS-STATE` and `OPERATIONS` were a week behind, and the worst of it was
@@ -579,6 +588,7 @@ nothing on success, so silence is not a result.
 | Rooms capped at 100, style groups at 50 | The uncapped validator was quadratic: 3.2 s of CPU at 8,000 rooms. |
 | A refusal keeps the draft; a conflict replaces it | A network or claim refusal changed nothing, so the typing stays, marked unsaved. A conflict means someone else's version is the truth. |
 | The specs panel is keyed by the job | It held drafts from mount; a re-pointed modal would have saved one job's rooms onto another. Latent today, closed anyway. |
+| `order_activity` readable by `authenticated`, read-only (2026-09-30) | Realtime delivers only what the subscriber's role may read. `authenticated` is a signed-in session's 30-minute token and already reads all of `orders`; the trail is about those orders. Writes stay refused by `no_direct_access`. |
 
 ---
 
@@ -1361,6 +1371,11 @@ nothing on success, so silence is not a result.
       `ProjectFiles` sends people to a "Project tab" labelled Overview.
     - The quote webhook has SEVEN unused variables, not three: add `color`,
       `city`, `state`, `zip`.
+    - `app/api/realtime-token` says a username "IS the user id"; `lib/auth` says
+      the id is the immutable `team_members.id` and a username can be changed.
+      It matters the day a policy filters on `sub`.
+    - `lib/useRealtimeOrders.ts` opens by saying it feeds `setOrders` /
+      `setWarranties`, which no longer exist.
 26. **Documents known wrong, found 2026-09-30, NOT corrected** — each wants its
     own look rather than a line in somebody else's commit.
     - OPERATIONS §5: `QUOTE_WEBHOOK_SECRET` "Deliberately EMPTY" and "Setting it
@@ -1421,6 +1436,20 @@ is decided by RLS: read `pg_policies` before choosing the grant.
 load printed nothing, `grep -v` exited 1, and the `&&` chain skipped the seed —
 the first run tested an empty table, and passed. A proof prints the row counts of
 every database it creates.
+
+**⚠ PUBLISHED IS NOT DELIVERED.** A table in the realtime publication reaches a
+browser only if the browser's role may SELECT it. 2026-09-15 checked the
+publication and not the policy, and for two weeks every trail row but a stage
+move or an archive needed a refresh — which came to look like how it worked.
+Verify a realtime change with a SECOND TAB that did not make the change.
+
+**⚠ A MIGRATION ENDS WITH ITS OWN CHECK.** On 2026-09-30 the specs migration
+took three runs to land in the SQL editor. The first two did not apply, and why
+was never established; the one that did answered only "Success. No rows
+returned" — the words a run that does nothing also gives. Put the verifying
+SELECT last in the file, so one run answers with the evidence. Prefer `if not
+exists` to DROP: the editor may stop to question a DROP, which is one unconfirmed
+explanation for the two runs that did not apply.
 
 **⚠ `npx tsc --noEmit 2>&1 | grep -E "error TS"` inverts the exit code.** `grep`
 exits 1 when it finds nothing, so a **clean** typecheck looks like failure and a
@@ -1505,7 +1534,9 @@ field, would have dropped it in every browser; the specs moved to their own
 route, and PATCH would have answered 200 for them had the field merely been
 deleted; a CHECK calling a function, and every role that writes the table needs
 EXECUTE on it. The fourth is live: the quote form accepts HEIC, WEBP and GIF, and
-`stripImageMetadata` scrubs JPEG only (Open 25).
+`stripImageMetadata` scrubs JPEG only (Open 25). **And a fifth**, live since
+2026-09-15 and found after the step-1 deploy: `order_activity` added to the
+realtime publication, and the read policy Realtime also needed.
 
 ## The patch scripts
 
@@ -1599,6 +1630,8 @@ patch_system_map_redrawn.py
 patch_docs_handoff_next_session.py
 patch_specs_one_room.py
 patch_docs_specs_one_room.py
+patch_activity_readable.py
+patch_docs_activity_readable.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it
