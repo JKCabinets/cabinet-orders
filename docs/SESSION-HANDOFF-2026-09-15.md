@@ -1,6 +1,6 @@
 # SESSION HANDOFF — 2026-09-15
 
-Covers work from 2026-09-09 through 2026-09-16. Where a date is given below
+Covers work from 2026-09-09 through 2026-09-30. Where a date is given below
 it is the date of the **decision**, taken from the commit trail; the
 conversation that produced it may have run across a day boundary.
 
@@ -91,7 +91,27 @@ ssh garrett@5.78.220.153 "cd ~/cabinet-orders && tar -czf - PATH [PATH...]" > pu
 ```
 
 Then extract and **check the line counts against the `wc -l` output** before
-reading — a truncated extraction reads like a file with something missing.
+reading — a truncated extraction reads like a file with something missing. One
+command that does all of it and says so:
+
+```bash
+cd /c/Users/garre/Downloads
+P="components/OrderModal.tsx lib/data.ts"      # quote bracket paths
+ssh garrett@5.78.220.153 "cd ~/cabinet-orders && git log -1 --format='%H %s' && wc -l $P" > pull.remote-wc.txt \
+  && ssh garrett@5.78.220.153 "cd ~/cabinet-orders && tar -czf - $P" > pull.tar.gz \
+  && mkdir pull && tar -xzf pull.tar.gz -C pull \
+  && (cd pull && eval "wc -l $P") > pull.local-wc.txt \
+  && echo "PULLED — compare the two wc files"
+```
+
+The `git log -1` in the first line matters as much as the counts: it says WHICH
+COMMIT the copy is of, and a patch written against a stale copy is the failure
+this whole procedure exists to prevent.
+
+⚠ **A grep is not a pull.** On 2026-09-24 a pattern of mine matched
+`address_line` inside `address_line1`, reported a field as missing, and the
+website team renamed a field on the strength of it. The field had been there all
+along.
 
 - **Quote paths containing brackets:** `'app/api/orders/[id]/route.ts'`.
 - **Never leave a placeholder** like `YOUR_HOST` in a command. Derive it, or ask.
@@ -103,6 +123,67 @@ reading — a truncated extraction reads like a file with something missing.
   is not auditing the callers.
 
 ---
+
+## Deploying
+
+Every change goes the same way, and each step exists because a previous one was
+skipped.
+
+**1. Verify the script, both ends.** Hashes are computed by whoever wrote the
+script, in the same step that published it — never quoted from memory:
+
+```bash
+cd /c/Users/garre/Downloads \
+  && echo "<sha256>  patch_x.py" | sha256sum -c - \
+  && scp patch_x.py garrett@5.78.220.153: \
+  && ssh garrett@5.78.220.153 "echo '<sha256>  patch_x.py' | sha256sum -c -"
+```
+
+**2. Apply, typecheck, commit, deploy — one chain, `&&` throughout** so a
+failure stops it:
+
+```bash
+cd ~/cabinet-orders \
+  && test -z "$(git status --short)" \
+  && python3 ~/patch_x.py . \
+  && python3 ~/patch_docs_x.py . \
+  && npx tsc --noEmit \
+  && git add <the files the patch names> \
+  && git diff --cached --stat \
+  && git commit -m "..." \
+  && git push origin main \
+  && kamal deploy 2>&1 | tee kamal-deploy.log
+```
+
+⚠ **The scripts write before `tsc` runs.** A failed typecheck leaves the tree
+modified; `git checkout -- <files>` is the undo. Do not hand-edit to make it
+compile.
+
+⚠ **Never `npx tsc --noEmit 2>&1 | grep "error TS"`.** `grep` exits 1 on no
+match, so a clean typecheck looks like a failure and a failing one looks clean.
+That inversion deployed a broken commit once already.
+
+**3. Verify the deploy — the image tag IS the commit:**
+
+```bash
+cd ~/cabinet-orders \
+  && HEAD_FULL=$(git rev-parse HEAD) \
+  && git log -1 --format='HEAD %H %s' \
+  && docker ps --filter label=service=cabinet-orders --format 'IMAGE {{.Image}}' \
+  && docker ps --filter label=service=cabinet-orders --format '{{.Image}}' | grep -qF "$HEAD_FULL" \
+  && echo "DEPLOYED" || echo "MISMATCH"
+```
+
+**4. Migrations run in Supabase by hand, and are verified by LISTING what they
+made.** ⚠ "Success. No rows returned" is what the SQL editor says for a
+statement that changed something, a statement that changed nothing, and a SELECT
+that matched nothing. On 2026-09-16 a constraint migration reported it and had
+added nothing; only the listing query showed that. A migration whose columns the
+new code writes runs BEFORE the deploy.
+
+⚠ **Run the deploy inside `tmux`** (`tmux new -As deploy`) if the connection is
+unreliable: a dropped ssh session kills `kamal deploy` mid-run and leaves the
+deploy lock held (`kamal lock release`).
 
 ## What shipped
 
@@ -1101,6 +1182,23 @@ nothing on success, so silence is not a result.
     the backstop, and it runs before the commit. Worth re-testing the pane when
     the room bins land.
 
+    **The Files work, decided 2026-09-30 and not yet built.** A custom job needs
+    its own Files view; `ProjectFiles` stays exactly as it is for Shopify
+    purchases, where it solves a problem custom jobs do not have (finding a
+    receipt across a project's groups).
+    - Tabs: **Customer attachments**, **Designer attachments**, then ONE PER ROOM
+      built from `custom_specs`, so bins appear as rooms are added.
+    - A file attached to a STYLE GROUP shows under its ROOM's tab, labelled with
+      the group name — otherwise a kitchen with four groups becomes five tabs and
+      the point of bins is lost.
+    - Upload lives in the tab and writes `spec_ref`; the attachment routes must
+      ACCEPT and CLEAR it (second place — see the section above).
+    - Deleting a room or style group UNLINKS its files (`spec_ref` to null) so
+      they fall back to Designer. Files change often; losing a drawing to a
+      renamed room is the worse failure.
+    - The Overview attachments card STAYS: the acknowledgment flow reaches
+      `AttachmentsPanel` through an imperative handle that must remain mounted.
+
     **Not built yet:**
     attachments linked to an area or set — the column and index exist, nothing
     writes them. The
@@ -1267,6 +1365,22 @@ HEAD and IMAGE lines let a person see what was compared.
 
 ---
 
+## ⚠ The shape of every bug on 2026-09-28 to 09-30
+
+Three in three days, all the same shape: **a change with a second place that
+also had to change, and only one of them was checked.**
+
+| The change | The second place | How it showed |
+|---|---|---|
+| `custom_specs` and `quote_submission` added to the `Order` type | `shapeOrder`, which maps columns field by field | Both `undefined` in every browser; the specs panel opened empty and a Save would have overwritten real specs |
+| Two panels added to the repo | the typecheck target list, which is a literal array | "typecheck clean" reported twice on files that were never compiled |
+| The webhook started writing `kind: "customer_upload"` | the CHECK constraint listing allowed values | Every customer upload rejected for two days — file in storage, no row, nothing in the pane |
+
+**Before claiming a change works, ask what else has to know about it.** A type
+does not enforce a mapper. A test list does not update itself. A column accepts
+what its constraint allows, not what the code writes. Each of these is one query
+or one `grep -c` away from being certain instead of assumed.
+
 ## The patch scripts
 
 Changes ship as idempotent Python scripts in `~/`, not as diffs. Each validates
@@ -1355,7 +1469,14 @@ patch_preferences_sections.py
 patch_customer_vs_designer_files.py
 patch_docs_file_bins.py
 patch_attachment_kind_constraint.py
+patch_system_map_redrawn.py
+patch_docs_handoff_next_session.py
 ```
+
+⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it
+found `patch_system_map_redrawn.py` missing — the patch that redrew the map had
+updated an item and never added itself here. Search this file for a script's
+name before assuming it is recorded.
 
 Outside git, in `~/cron-jobs/`: `check-registry-token.sh` (sha256
 `a6c2f3dda6a95976eaa2e04bffa0a19d7583c0fdc883c61781f7c8eb267571a7`).
