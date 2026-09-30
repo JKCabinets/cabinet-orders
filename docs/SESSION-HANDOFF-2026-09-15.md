@@ -1083,6 +1083,17 @@ nothing on success, so silence is not a result.
     slip. The Files pane shows two bins with counts, uploads only under
     Designer, and a per-bin empty state.
 
+    ⚠ **AND IT BROKE CUSTOMER UPLOADS FOR TWO DAYS.**
+    `order_attachments.kind` has a CHECK allowing only `general` and
+    `proof_of_delivery`; nobody extended it, so every quote upload after the
+    deploy was rejected — file in storage, no row, nothing in the pane. Found
+    2026-09-30 by a real submission, named exactly by the webhook's own activity
+    line ("uploaded but DB row failed: ... violates check constraint"). Fixed by
+    hand the same day and committed as
+    `migrations/2026-09-30-attachment-kind-customer-upload.sql`. ⚠ The rule: a
+    new value in a constrained column is the writer AND the constraint, and only
+    one of them is in the code.
+
     ⚠ **SHIPPED WITHOUT A TYPECHECK OR A RENDER TEST.** The container running
     the harnesses reset mid-build, so the evidence was structural only: anchors
     verified, applies twice, bins wired, rows read from the visible bin, both
@@ -1343,6 +1354,7 @@ patch_docs_quote_notes.py
 patch_preferences_sections.py
 patch_customer_vs_designer_files.py
 patch_docs_file_bins.py
+patch_attachment_kind_constraint.py
 ```
 
 Outside git, in `~/cron-jobs/`: `check-registry-token.sh` (sha256
