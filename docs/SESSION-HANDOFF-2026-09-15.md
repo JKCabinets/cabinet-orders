@@ -589,6 +589,11 @@ nothing on success, so silence is not a result.
 | A refusal keeps the draft; a conflict replaces it | A network or claim refusal changed nothing, so the typing stays, marked unsaved. A conflict means someone else's version is the truth. |
 | The specs panel is keyed by the job | It held drafts from mount; a re-pointed modal would have saved one job's rooms onto another. Latent today, closed anyway. |
 | `order_activity` readable by `authenticated`, read-only (2026-09-30) | Realtime delivers only what the subscriber's role may read. `authenticated` is a signed-in session's 30-minute token and already reads all of `orders`; the trail is about those orders. Writes stay refused by `no_direct_access`. |
+| One shared list of an order's files, every request ticketed (2026-09-30) | Two views that fetch for themselves disagree after any change, and step 4 adds a third. Only the newest ticket writes, so a slow answer cannot undo a change it predates — `ackStatus`'s way of doing it is proven to. |
+| A view mounting refetches the list | Attachments do not publish over realtime. A cache kept until invalidated would never show a colleague's upload, not even on reopening. |
+| Gates ask the server, not the shared list | A gate is a point-in-time check; a cache can be a second out of date. The server re-checks anyway. |
+| Receipt offered only where `lib/requirements` asks for one | Only a cabinet group needs a signed receipt. The button on a custom job was a demand nothing enforces, which the custom rule forbids. |
+| The attachments panel is read-only on somebody else's claim | Every other panel already was; a colleague was offered Upload and Delete and refused after the fact. |
 
 ---
 
@@ -669,13 +674,14 @@ nothing on success, so silence is not a result.
 
 
 1. **`order_attachments` does not publish over realtime.** `order_activity`
-   now does (see below). Attachments are harder: the store holds no attachment
-   state and `AttachmentsPanel` fetches its own list per modal, so a change
-   event has two consumers and nowhere to merge into. **Follow
-   `lib/ackStatus.ts`** — module-level cache, per-order subscriber sets, an
-   `invalidate` that refetches and notifies every mounted view. Then the client
-   change, then the publication. Adding the table alone broadcasts to nobody and
-   looks like a fix.
+   does (item 13, working since 2026-09-30). The client half for attachments
+   now exists: `lib/attachments` (item 24 step 2) is one shared list per order,
+   and a view mounting refetches, so a colleague's upload appears on reopening.
+   What remains for LIVE: a subscriber that calls `refreshAttachments(orderId)`
+   on a change, and a read policy for `authenticated` — a published table with
+   no read policy delivers nothing (OMS-STATE §5). ⚠ Not `lib/ackStatus.ts`'s
+   pattern, which this item used to recommend: its `invalidateAck` race is proven
+   (Open 25).
 2. **Rail timestamps** (mockup 2) need a real per-transition time. The activity
    trail's `time` is a display string — `"Aug 24"`, no clock time. Either the
    PATCH route starts writing a real timestamp per transition (better, and
@@ -1202,10 +1208,10 @@ nothing on success, so silence is not a result.
     the backstop, and it runs before the commit. Worth re-testing the pane when
     the room bins land.
 
-    **The Files work, decided 2026-09-30 and not yet built.** A custom job needs
-    its own Files view; `ProjectFiles` stays exactly as it is for Shopify
-    purchases, where it solves a problem custom jobs do not have (finding a
-    receipt across a project's groups).
+    **The Files work, decided 2026-09-30.** A custom job needs its own Files
+    view; `ProjectFiles` stays for Shopify purchases, where it solves a problem
+    custom jobs do not have (finding a receipt across a project's groups). Since
+    step 2 it reads the shared list, and a group that failed to load says so.
     - Tabs: **Customer attachments**, **Designer attachments**, then ONE PER ROOM
       built from `custom_specs`, so bins appear as rooms are added.
     - A file attached to a STYLE GROUP shows under its ROOM's tab, labelled with
@@ -1233,10 +1239,26 @@ nothing on success, so silence is not a result.
     1. ✅ **Specs save one room at a time** (`patch_specs_one_room.py`,
        migration `2026-09-30-custom-specs-rooms.sql`, run BEFORE the deploy).
        What it is: OMS-STATE §3. Why: OPERATIONS §10.
-    2. **The attachments client.** A shared cache in the `lib/ackStatus.ts`
-       shape, with a request generation — `invalidateAck` lets an older fetch
-       overwrite a newer one, which is not to be copied. Upload and delete check
-       the answer; the panel takes `canEdit`; Receipt asks `lib/requirements`.
+    2. ✅ **The attachments client** (`patch_attachments_shared.py`, 2026-09-30).
+       `lib/attachments`: one list per order for every view, every request
+       ticketed so only the newest writes, and a view mounting refetches.
+       `AttachmentsPanel` reads it; a delete leaves the screen only on a 2xx; a
+       failed load, a refused upload and a refused download each say why, in the
+       route's words; read-only on somebody else's claim; Receipt only where
+       `lib/requirements` ever asks for one. `ProjectFiles` reads it too. The one
+       visible change beyond the fixes: a work-queue row that opens the modal to
+       attach a file no longer pops the picker for somebody who could not upload
+       — it used to, and the upload was refused. **Proved**, with the real
+       module, panel, `ProjectFiles` and `lib/requirements` against a fake server
+       answering as the routes do: two views mounting make one request and an
+       upload in one is in the other; a refused delete stays in both with the
+       claim's own message and no enrichment refetch; an accepted one leaves
+       both; a stale list landing after an upload does not erase it; a 500 says
+       so and Retry recovers; read-only offers nothing and the pickers are safe;
+       Receipt on cabinet groups only; reopening shows a colleague's upload; two
+       files with one refused, a refused download, a null date, and a project
+       with one failed group. Typecheck strict over the new files, and with
+       `OrderModal` against stubs; a planted error caught in each.
     3. **Upload accepts `spec_ref`:** custom jobs, `general` files, ids that
        resolve against the STORED specs. One `attachmentBin()` decides the bin for
        every view. An unresolvable `spec_ref` falls back to Designer when read.
@@ -1357,10 +1379,15 @@ nothing on success, so silence is not a result.
     - `promote` writes a customer's claim photos as `general`: a warranty claim
       shows them under Designer, and says the customer attached nothing. Item 24
       step 5.
-    - `AttachmentsPanel`: delete ignores the answer (proven: a 409 removed the
-      file from the list, no error); it is not claim-aware (`readOnly` is
-      archived-only); Receipt says "required before … Delivered" on custom jobs.
-      Item 24 step 2.
+    - ✅ ~~`AttachmentsPanel`: delete ignores the answer; not claim-aware;
+      Receipt on custom jobs.~~ Fixed in item 24 step 2, with the Files tab's
+      "Project tab" copy.
+    - ⚠ **`lib/ackStatus`'s `invalidateAck` race is PROVEN**, not only read: with
+      the real module, the newest verdict (green) was on screen and the older
+      one (red) landed after it and replaced it. After an acknowledgment upload,
+      the panel can show the verdict from before it. The fix is
+      `lib/attachments`' tickets.
+    - The Files tab (`ProjectFiles`) lists files it cannot open: no download.
     - Deleting an order leaves its files in storage (rows cascade, objects do not).
     - Two near-simultaneous promotes both create a claim; the second's update
       matches nothing without an error and answers 201.
@@ -1368,7 +1395,8 @@ nothing on success, so silence is not a result.
     - Stale comments: the upload route's `ATTACHMENT_KINDS` "MUST match" the CHECK
       (a subset now); `archivedVia`'s doc comment sits above `activityDate`;
       `isStageOfferedForType` says samples run New → Entered → Delivered;
-      `ProjectFiles` sends people to a "Project tab" labelled Overview.
+      ~~`ProjectFiles` sends people to a "Project tab" labelled Overview~~
+      (fixed in item 24 step 2).
     - The quote webhook has SEVEN unused variables, not three: add `color`,
       `city`, `state`, `zip`.
     - `app/api/realtime-token` says a username "IS the user id"; `lib/auth` says
@@ -1632,6 +1660,8 @@ patch_specs_one_room.py
 patch_docs_specs_one_room.py
 patch_activity_readable.py
 patch_docs_activity_readable.py
+patch_attachments_shared.py
+patch_docs_attachments_shared.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

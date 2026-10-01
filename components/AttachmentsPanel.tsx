@@ -1,42 +1,25 @@
 "use client";
 
-import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from "react";
-import { Paperclip, Upload, X, Download, FileText, Image, File, Loader2, Trash2, FileCheck } from "lucide-react";
-import clsx from "clsx";
-import { invalidateEnrichment } from "@/lib/useOrderEnrichment";
-
-interface Attachment {
-  id: number;
-  order_id: string;
-  file_name: string;
-  file_path: string;
-  file_size: number;
-  file_type: string;
-  uploaded_by: string;
-  created_at: string;
-  /**
-   * What this attachment IS, not its file type.
-   * "general" | "proof_of_delivery" | "customer_upload". Optional because
-   * rows created before the kind column existed are returned without it by
-   * older caches.
-   *
-   * ⚠ "customer_upload" MARKS WHAT ARRIVED WITH A QUOTE REQUEST (2026-09-28).
-   * Before it, a customer's kitchen photo and a designer's packing slip were
-   * both "general" and the Files tab could not tell them apart. It is written
-   * at ingest by the quote webhook -- never inferred later, because "general"
-   * on an older row genuinely could be either.
-   */
-  kind?: string;
-}
+import { useState, useRef, forwardRef, useImperativeHandle } from "react";
+import { Paperclip, Upload, X, Download, FileText, Image, File, Loader2, Trash2, FileCheck, RotateCcw } from "lucide-react";
+import type { OrderType } from "@/lib/data";
+import { typeEverRequires } from "@/lib/requirements";
+import {
+  useAttachments, uploadAttachment, deleteAttachment, attachmentUrl, refreshAttachments,
+  type Attachment,
+} from "@/lib/attachments";
 
 interface AttachmentsPanelProps {
   orderId: string;
+  /** Decides whether a signed receipt is offered at all -- see `receiptOffered`. */
+  orderType: OrderType;
   /**
-   * Show the files, offer nothing. Set for an ARCHIVED row, where every write
-   * route refuses anyway (409 `archived_read_only`) -- the list, the names, the
-   * dates and the downloads stay, because reading is what the archive is for.
-   *
-   * Defaults to false, so every existing caller is unchanged.
+   * Show the files, offer nothing. The modal sets it for an ARCHIVED row and
+   * for a row CLAIMED BY SOMEONE ELSE (unless an admin chose to edit it) --
+   * every write route refuses both anyway, 409 `archived_read_only` or
+   * `claimed_by_other`. Until 2026-09-30 it was archived only, so a colleague
+   * saw Upload and Delete on somebody else's order and was refused after the
+   * fact. The list, the names, the dates and the downloads stay.
    */
   readOnly?: boolean;
 }
@@ -46,6 +29,10 @@ interface AttachmentsPanelProps {
  * `ref.current?.openFilePicker()` to programmatically open the OS file
  * picker — used when the modal opens because of a missing-attachment gate
  * failure and we want to land the user directly on "add a file".
+ *
+ * Both are no-ops when the panel offers nothing: read-only, or -- for the
+ * receipt -- a type that never needs one. Every caller in the modal already
+ * appears only where both hold.
  */
 export interface AttachmentsPanelHandle {
   openFilePicker: () => void;
@@ -60,20 +47,45 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function formatDay(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
 function FileIcon({ type }: { type: string }) {
   if (type.startsWith("image/")) return <Image className="w-3.5 h-3.5 text-blue-400" />;
   if (type === "application/pdf") return <FileText className="w-3.5 h-3.5 text-red-400" />;
   return <File className="w-3.5 h-3.5 text-[rgba(232,227,218,0.50)]" />;
 }
 
+/**
+ * The order's files, in two bins, with upload and delete.
+ *
+ * ⚠ THE LIST IS SHARED (lib/attachments, 2026-09-30). This panel and the
+ * modal's Files tab read one list, so an upload or a delete in either shows in
+ * both, and a delete leaves the screen only when the server has done it.
+ */
 export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPanelProps>(
-  function AttachmentsPanel({ orderId, readOnly = false }, ref) {
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [loading, setLoading] = useState(true);
+  function AttachmentsPanel({ orderId, orderType, readOnly = false }, ref) {
+  const list = useAttachments(orderId);
+  const attachments: Attachment[] = list.files ?? [];
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const [bin, setBin] = useState<"designer" | "customer">("designer");
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const receiptInputRef = useRef<HTMLInputElement>(null);
+
+  // ⚠ THE RECEIPT FOLLOWS THE REQUIREMENTS TABLE, like every other control that
+  // stands for a requirement. Only a cabinet group ever needs a signed proof of
+  // delivery (Terms 12.3). Until 2026-09-30 the button was offered on every
+  // type, with a title saying it was "required before this order can be marked
+  // Delivered" -- on a custom job, which has no gates at all, that was a demand
+  // nothing enforces. A receipt uploaded before this keeps its badge.
+  const receiptOffered = !readOnly && typeEverRequires(orderType, "proof_of_delivery");
 
   // ⚠ ANYTHING NOT MARKED AS THE CUSTOMER'S IS THE TEAM'S. A row written before
   // "customer_upload" existed, or by any other route, belongs with the work --
@@ -81,97 +93,55 @@ export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPa
   const customerFiles = attachments.filter(a => a.kind === "customer_upload");
   const designerFiles = attachments.filter(a => a.kind !== "customer_upload");
   const shown = bin === "customer" ? customerFiles : designerFiles;
-  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const receiptInputRef = useRef<HTMLInputElement>(null);
 
   useImperativeHandle(ref, () => ({
     openFilePicker: () => fileInputRef.current?.click(),
     openReceiptPicker: () => receiptInputRef.current?.click(),
   }), []);
 
-  useEffect(() => {
-    async function fetchAttachments() {
-      setLoading(true);
-      try {
-        const res = await fetch(`/api/orders/attachments?orderId=${encodeURIComponent(orderId)}`);
-        const data = await res.json();
-        if (data.data) setAttachments(data.data);
-      } catch {
-        setError("Failed to load attachments");
-      }
-      setLoading(false);
-    }
-    fetchAttachments();
-  }, [orderId]);
-
   async function handleUpload(
     e: React.ChangeEvent<HTMLInputElement>,
     kind: "general" | "proof_of_delivery" = "general",
   ) {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
+    const files = e.target.files ? Array.from(e.target.files) : [];
+    e.target.value = "";
+    if (files.length === 0) return;
     setUploading(true);
     setError("");
-
-    for (const file of Array.from(files)) {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("orderId", orderId);
-      formData.append("kind", kind);
-
-      try {
-        const res = await fetch("/api/orders/attachments", { method: "POST", body: formData });
-        const data = await res.json();
-        if (!res.ok) {
-          setError(data.error ?? "Upload failed");
-        } else if (data.data) {
-          setAttachments(prev => [data.data, ...prev]);
-        }
-      } catch {
-        setError("Upload failed");
-      }
+    // ⚠ EVERY REFUSAL IS KEPT. One message per file that did not go, in the
+    // route's own words; the ones that did go are in the list.
+    const refused: string[] = [];
+    for (const file of files) {
+      const r = await uploadAttachment(orderId, file, kind);
+      if (!r.ok) refused.push(r.message);
     }
-
     setUploading(false);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-    if (receiptInputRef.current) receiptInputRef.current.value = "";
-    // The next-action checklist reads the batch enrichment endpoint, which
-    // refetches only when the id list changes. An upload changes the answer
-    // for THIS row -- an attachment satisfies the Entered gate, a receipt the
-    // Delivered gate -- so tell every subscriber to ask again.
-    invalidateEnrichment();
+    if (refused.length) {
+      setError((files.length > 1 ? `${files.length - refused.length} of ${files.length} uploaded. ` : "") + refused.join(" · "));
+    }
   }
 
   async function handleDownload(attachment: Attachment) {
     setDownloadingId(attachment.id);
-    try {
-      const res = await fetch(`/api/orders/attachments/${attachment.id}`);
-      const data = await res.json();
-      if (data.url) {
-        const a = document.createElement("a");
-        a.href = data.url;
-        a.download = attachment.file_name;
-        a.target = "_blank";
-        a.click();
-      }
-    } catch {
-      setError("Download failed");
-    }
+    const r = await attachmentUrl(attachment.id);
     setDownloadingId(null);
+    if (!r.ok) { setError(`${attachment.file_name}: ${r.message}`); return; }
+    const a = document.createElement("a");
+    a.href = r.value;
+    a.download = attachment.file_name;
+    a.target = "_blank";
+    a.click();
   }
 
-  async function handleDelete(id: number) {
-    try {
-      await fetch(`/api/orders/attachments/${id}`, { method: "DELETE" });
-      setAttachments(prev => prev.filter(a => a.id !== id));
-      setConfirmDeleteId(null);
-      invalidateEnrichment(); // removing a receipt reopens the gate
-    } catch {
-      setError("Delete failed");
-    }
+  async function handleDelete(att: Attachment) {
+    setConfirmDeleteId(null);
+    setDeletingId(att.id);
+    const r = await deleteAttachment(orderId, att.id);
+    setDeletingId(null);
+    if (!r.ok) setError(`${att.file_name} was not deleted: ${r.message}`);
   }
+
+  const firstLoad = list.files === null;
 
   return (
     <div className="px-6 py-5 border-b border-white/10">
@@ -181,14 +151,16 @@ export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPa
         </p>
         {!readOnly && (
         <div className="flex items-center gap-1.5">
-          <button
-            onClick={() => receiptInputRef.current?.click()}
-            disabled={uploading}
-            title="Signed delivery receipt — required before this order can be marked Delivered"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-cream/18 bg-white/4 text-[11px] uppercase tracking-wider text-cream/85 hover:bg-white/8 hover:border-terracotta/40 transition-all disabled:opacity-50"
-          >
-            <FileCheck className="w-3 h-3" /> Receipt
-          </button>
+          {receiptOffered && (
+            <button
+              onClick={() => receiptInputRef.current?.click()}
+              disabled={uploading}
+              title="Signed delivery receipt — required before this order can be marked Delivered"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-cream/18 bg-white/4 text-[11px] uppercase tracking-wider text-cream/85 hover:bg-white/8 hover:border-terracotta/40 transition-all disabled:opacity-50"
+            >
+              <FileCheck className="w-3 h-3" /> Receipt
+            </button>
+          )}
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
@@ -203,31 +175,43 @@ export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPa
         </div>
         )}
         {!readOnly && (
-        <>
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          className="hidden"
-          onChange={(e) => handleUpload(e, "general")}
-          accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv"
-        />
-        <input
-          ref={receiptInputRef}
-          type="file"
-          multiple
-          className="hidden"
-          onChange={(e) => handleUpload(e, "proof_of_delivery")}
-          accept="image/*,.pdf"
-        />
-        </>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => void handleUpload(e, "general")}
+            accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv"
+          />
+        )}
+        {receiptOffered && (
+          <input
+            ref={receiptInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => void handleUpload(e, "proof_of_delivery")}
+            accept="image/*,.pdf"
+          />
         )}
       </div>
 
       {error && (
-        <div className="flex items-center justify-between mb-2 px-2.5 py-1.5 bg-red-950/30 border border-red-900/50 rounded-lg">
+        <div className="flex items-start justify-between gap-2 mb-2 px-2.5 py-1.5 bg-red-950/30 border border-red-900/50 rounded-lg">
           <p className="text-[11px] text-red-400">{error}</p>
-          <button onClick={() => setError("")}><X className="w-3 h-3 text-red-400" /></button>
+          <button onClick={() => setError("")} title="Dismiss"><X className="w-3 h-3 text-red-400" /></button>
+        </div>
+      )}
+
+      {/* ⚠ A FAILED LOAD SAYS SO. It used to read as "No files on this order". */}
+      {list.error && (
+        <div className="flex items-center justify-between gap-2 mb-2 px-2.5 py-1.5 bg-red-950/30 border border-red-900/50 rounded-lg">
+          <p className="text-[11px] text-red-400">
+            {firstLoad ? "The files could not be loaded" : "The list may be out of date"}: {list.error}
+          </p>
+          <button onClick={() => refreshAttachments(orderId)} title="Try again" className="flex items-center gap-1 text-[10px] text-red-300 hover:text-red-200">
+            <RotateCcw className="w-3 h-3" /> Retry
+          </button>
         </div>
       )}
 
@@ -236,7 +220,7 @@ export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPa
           drawings, acknowledgments, packing slips, delivery receipts -- are the
           ones staff add. A receipt keeps its own badge inside the designer bin;
           the delivery gate reads `kind`, not this tab. */}
-      {!loading && attachments.length > 0 && (
+      {!firstLoad && attachments.length > 0 && (
         <div className="flex items-center gap-1.5 mb-3">
           {([["designer", "Designer attachments"], ["customer", "Customer attachments"]] as const).map(([key, label]) => {
             const count = key === "customer" ? customerFiles.length : designerFiles.length;
@@ -257,10 +241,12 @@ export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPa
         </div>
       )}
 
-      {loading ? (
-        <div className="flex items-center justify-center py-4">
-          <Loader2 className="w-4 h-4 animate-spin text-[rgba(232,227,218,0.30)]" />
-        </div>
+      {firstLoad ? (
+        list.error ? null : (
+          <div className="flex items-center justify-center py-4">
+            <Loader2 className="w-4 h-4 animate-spin text-[rgba(232,227,218,0.30)]" />
+          </div>
+        )
       ) : shown.length === 0 ? (
         readOnly || bin === "customer" ? (
           <p className="text-[11px] text-[rgba(232,227,218,0.30)] py-3">
@@ -296,19 +282,21 @@ export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPa
                   )}
                 </div>
                 <p className="text-[10px] text-[rgba(232,227,218,0.30)]">
-                  {formatBytes(att.file_size)} · {att.uploaded_by} · {new Date(att.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                  {formatBytes(att.file_size)} · {att.uploaded_by} · {formatDay(att.created_at)}
                 </p>
               </div>
               <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                {confirmDeleteId === att.id ? (
+                {deletingId === att.id ? (
+                  <Loader2 className="w-3 h-3 animate-spin text-[rgba(232,227,218,0.50)]" />
+                ) : confirmDeleteId === att.id ? (
                   <>
-                    <button onClick={() => handleDelete(att.id)} className="text-[10px] text-red-400 hover:text-red-300 px-1.5 py-0.5 rounded border border-red-900/50 transition-colors">Delete</button>
+                    <button onClick={() => void handleDelete(att)} className="text-[10px] text-red-400 hover:text-red-300 px-1.5 py-0.5 rounded border border-red-900/50 transition-colors">Delete</button>
                     <button onClick={() => setConfirmDeleteId(null)} className="text-[10px] text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] px-1.5 py-0.5 rounded border border-[rgba(255,255,255,0.10)] transition-colors">Cancel</button>
                   </>
                 ) : (
                   <>
                     <button
-                      onClick={() => handleDownload(att)}
+                      onClick={() => void handleDownload(att)}
                       disabled={downloadingId === att.id}
                       title="Download"
                       className="p-1 text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] transition-colors"
