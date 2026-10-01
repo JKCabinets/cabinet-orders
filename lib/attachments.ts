@@ -179,11 +179,14 @@ export type Outcome<T = undefined> = { ok: true; value: T } | { ok: false; messa
  */
 export async function uploadAttachment(
   orderId: string, file: File, kind: "general" | "proof_of_delivery",
+  /** A room or style group of a custom job to file it under; null is the job itself. */
+  specRef: string | null = null,
 ): Promise<Outcome<Attachment>> {
   const form = new FormData();
   form.append("file", file);
   form.append("orderId", orderId);
   form.append("kind", kind);
+  if (specRef) form.append("spec_ref", specRef);
   let res: Response;
   try {
     res = await fetch("/api/orders/attachments", { method: "POST", body: form });

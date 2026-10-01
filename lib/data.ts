@@ -1037,16 +1037,51 @@ export function readCustomSpecs(raw: unknown): CustomSpecs {
 export const SPEC_ID_RE = /^[as]_[0-9a-f]{8}$/;
 
 /**
- * Is `ref` a room or a style group on this job?
+ * Where a spec_ref points on this job: the room, and the style group when it
+ * names one. null: nowhere -- an id this job does not have, or no longer has.
  *
  * ⚠ THE ONE READING OF A spec_ref (2026-09-30). The upload route refuses a ref
- * this says no to; the views file a ref it says no to under the job itself --
- * which is where a file lands if its room was removed between the route's check
- * and its insert. Ids are never reused, so such a file can never surface in
- * somebody else's room.
+ * this cannot place; attachmentBin files a ref it cannot place under the job
+ * itself -- which is where a file lands if its room was removed between the
+ * route's check and its insert. Ids are never reused, so such a file can never
+ * surface in somebody else's room.
  */
+export function specRefLocation(specs: CustomSpecs, ref: string): { areaId: string; setId?: string } | null {
+  for (const a of specs.areas) {
+    if (a.id === ref) return { areaId: a.id };
+    if (a.sets.some((s) => s.id === ref)) return { areaId: a.id, setId: ref };
+  }
+  return null;
+}
+
+/** Is `ref` a room or a style group on this job? See specRefLocation. */
 export function specRefResolves(specs: CustomSpecs, ref: string): boolean {
-  return specs.areas.some((a) => a.id === ref || a.sets.some((s) => s.id === ref));
+  return specRefLocation(specs, ref) !== null;
+}
+
+/** Which bin a file is shown in. `room:<area id>` for a custom job's rooms. */
+export type AttachmentBin = "designer" | "customer" | `room:${string}`;
+
+/**
+ * The bin a file is shown in -- for EVERY view of an order's files (2026-10-01;
+ * Garrett: the same bins wherever files are shown).
+ *
+ *   customer        what arrived with the customer's request (kind customer_upload)
+ *   room:<id>       filed under that room, or under one of its style groups
+ *                   (setId says which -- shown in the room's bin, tagged)
+ *   designer        everything else: the job's own files, receipts included, and
+ *                   any file whose room is gone
+ *
+ * The customer's files come first and are never filed under a room: the staff
+ * route only files `general` files, and the quote webhook files nothing.
+ */
+export function attachmentBin(
+  a: { kind: string; spec_ref: string | null },
+  specs: CustomSpecs,
+): { bin: AttachmentBin; setId?: string } {
+  if (a.kind === "customer_upload") return { bin: "customer" };
+  const at = a.spec_ref ? specRefLocation(specs, a.spec_ref) : null;
+  return at ? { bin: `room:${at.areaId}`, setId: at.setId } : { bin: "designer" };
 }
 
 /**

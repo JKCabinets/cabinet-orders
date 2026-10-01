@@ -1587,7 +1587,8 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                 other panel here: a colleague was shown Upload and Delete and
                 refused after the fact. orderType decides whether a receipt is
                 offered at all. */}
-            <AttachmentsPanel ref={attachmentsRef} orderId={liveOrder.id} orderType={liveOrder.type} readOnly={readOnly || !canEdit} />
+            <AttachmentsPanel ref={attachmentsRef} orderId={liveOrder.id} orderType={liveOrder.type} readOnly={readOnly || !canEdit}
+              specs={liveOrder.type === "custom" ? liveOrder.custom_specs : null} />
           </div>
 
           </>)}
@@ -1718,7 +1719,15 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
             );
           })()}
 
-          {tab === "files" && <ProjectFiles groups={projectGroups} />}
+          {tab === "files" && (liveOrder.type === "custom"
+            // ⚠ A CUSTOM JOB'S FILES TAB IS THE PANEL ITSELF (2026-10-01;
+            // Garrett: the same bins wherever files are shown). Same component,
+            // same shared list, same bins -- Designer, Customer, one per room --
+            // so a label cannot mean two sets of files. ProjectFiles stays for
+            // Shopify purchases, whose files span the groups of a project.
+            ? <AttachmentsPanel orderId={liveOrder.id} orderType={liveOrder.type} readOnly={readOnly || !canEdit}
+                specs={liveOrder.custom_specs} />
+            : <ProjectFiles groups={projectGroups} />)}
 
           {/* Activity — the SELECTED GROUP's trail, not the project's.
               order_activity hangs off orders.order_id, and a merged

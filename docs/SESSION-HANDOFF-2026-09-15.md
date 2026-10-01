@@ -595,6 +595,8 @@ nothing on success, so silence is not a result.
 | Receipt offered only where `lib/requirements` asks for one | Only a cabinet group needs a signed receipt. The button on a custom job was a demand nothing enforces, which the custom rule forbids. |
 | The attachments panel is read-only on somebody else's claim | Every other panel already was; a colleague was offered Upload and Delete and refused after the fact. |
 | `spec_ref` checked at upload against the STORED specs; the race left open (2026-09-30) | A room nobody saved yet does not exist, and one removed is gone. A file that loses the race reads as the job's — never another room's, because ids are never reused. Closing it would mean inserting through a locking function. |
+| The same bins wherever files are shown (Garrett, 2026-10-01) | Two views with different bins under the same labels are two lists. On a custom job the Files tab is the attachments panel itself, so they cannot drift. |
+| Where an upload is filed is set by what opened the picker, and forgotten once read | The modal opens the picker for "a file" from a work-queue row; that must land on the job whichever room was last on screen. A target that carried over would file the next upload somewhere nobody chose. |
 
 ---
 
@@ -1207,7 +1209,8 @@ nothing on success, so silence is not a result.
     verified, applies twice, bins wired, rows read from the visible bin, both
     webhook inserts marked, brackets balanced. `npx tsc --noEmit` on the box was
     the backstop, and it runs before the commit. Worth re-testing the pane when
-    the room bins land.
+    the room bins land. Re-tested 2026-10-01: rendered and driven by step 2's
+    suite and step 4's.
 
     **The Files work, decided 2026-09-30.** A custom job needs its own Files
     view; `ProjectFiles` stays for Shopify purchases, where it solves a problem
@@ -1225,11 +1228,15 @@ nothing on success, so silence is not a result.
       renamed room is the worse failure.
     - The Overview attachments card STAYS: the acknowledgment flow reaches
       `AttachmentsPanel` through an imperative handle that must remain mounted.
+      It shows the SAME bins as the Files tab (Garrett, 2026-10-01), and on a
+      custom job the Files tab is that same panel. Built in step 4, Designer
+      first, as the pane has been since 2026-09-28.
 
     **Not built yet:**
-    a screen that files an upload under a room — step 4; the route accepts
-    `spec_ref` since step 3. The
-    Shopify product picker in `NewOrderModal` goes when that lands — a custom
+    moving a file to another room, and filing under a style group from a
+    screen (the route already accepts a style group's id). The
+    Shopify product picker in `NewOrderModal` was to go when room filing
+    landed, and it has, so it is next — a custom
     job has no SKUs, and the picker reads an admin-only endpoint, so it shows
     an empty list to anyone else. Verified unused: the one manual row has zero
     sku_items.
@@ -1275,7 +1282,22 @@ nothing on success, so silence is not a result.
        it afterwards refused. `attachmentBin()` — one function deciding the bin
        for every view, an unresolvable ref falling back to the job — comes with
        step 4, where a view first reads `spec_ref`.
-    4. **The Files view** with room tabs, read from the saved specs.
+    4. ✅ **The Files view** (`patch_files_by_room.py`, 2026-10-01). A bin per
+       room of the SAVED specs, in the Overview card and the Files tab alike —
+       the same component; `attachmentBin` decides every file's bin.
+       Uploading in a room's bin files it there; where an upload goes is set
+       by whatever opened the picker and forgotten once read, so the modal's
+       own calls always file under the job. **Proved** with two panels of one
+       job against a fake server recording each `spec_ref`: identical bins and
+       counts in both; a style group's file in its room's bin, tagged; an
+       upload in Kitchen filed under Kitchen and in the other view's Kitchen;
+       an empty room's dropzone names and files to it; Designer and the
+       modal's picker file under the job even with Kitchen on screen; a target
+       never carries over; Customer offers no upload; a room removed elsewhere
+       falls back to Designer with its not-yet-unlinked file, and a rename
+       shows at once; read-only says "Nothing filed under Pantry." and offers
+       nothing; a cabinet order keeps two bins. Step 2's whole suite again,
+       unchanged, against the new panel.
     5. **Promote writes `customer_upload`** (Open 25), with a data fix by
        `uploaded_by = 'Customer (claim form)'`, which only that route writes.
 
@@ -1400,7 +1422,8 @@ nothing on success, so silence is not a result.
       one (red) landed after it and replaced it. After an acknowledgment upload,
       the panel can show the verdict from before it. The fix is
       `lib/attachments`' tickets.
-    - The Files tab (`ProjectFiles`) lists files it cannot open: no download.
+    - A Shopify project's Files tab (`ProjectFiles`) lists files it cannot open:
+      no download. (A custom job's Files tab is the panel, Download included.)
     - Deleting an order leaves its files in storage (rows cascade, objects do not).
     - Two near-simultaneous promotes both create a claim; the second's update
       matches nothing without an error and answers 201.
@@ -1678,6 +1701,8 @@ patch_attachments_shared.py
 patch_docs_attachments_shared.py
 patch_spec_ref_upload.py
 patch_docs_spec_ref_upload.py
+patch_files_by_room.py
+patch_docs_files_by_room.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it
