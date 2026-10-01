@@ -1033,6 +1033,22 @@ export function readCustomSpecs(raw: unknown): CustomSpecs {
   return { v: 2, areas };
 }
 
+/** A room or style-group id: the shape newSpecId makes and custom_specs_problem() requires. */
+export const SPEC_ID_RE = /^[as]_[0-9a-f]{8}$/;
+
+/**
+ * Is `ref` a room or a style group on this job?
+ *
+ * ⚠ THE ONE READING OF A spec_ref (2026-09-30). The upload route refuses a ref
+ * this says no to; the views file a ref it says no to under the job itself --
+ * which is where a file lands if its room was removed between the route's check
+ * and its insert. Ids are never reused, so such a file can never surface in
+ * somebody else's room.
+ */
+export function specRefResolves(specs: CustomSpecs, ref: string): boolean {
+  return specs.areas.some((a) => a.id === ref || a.sets.some((s) => s.id === ref));
+}
+
 /**
  * A new id for an area or a set.
  *

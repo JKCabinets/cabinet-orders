@@ -3,10 +3,12 @@ import { requireAuth, requireOrderClaim, withClaimOverrideLog, type ClaimOverrid
 import { purchaseOf, archivedVia, archivedReadOnly } from "@/lib/archived";
 import { SNIFF_BYTES, sniffMagicBytes, safeContentType } from "@/lib/fileValidation";
 import { supabase } from "@/lib/supabase";
+import { readCustomSpecs, specRefResolves, SPEC_ID_RE } from "@/lib/data";
 
-// Hard caps on attachment uploads. These match the quote-form webhook so the
-// two ingest paths have consistent guardrails. Twenty MB per file mirrors what
-// Supabase Storage will accept without bucket-side tuning.
+// Hard caps on attachment uploads. Twenty MB per file mirrors what Supabase
+// Storage will accept without bucket-side tuning. (This said the quote-form
+// webhook matched it. It has not since 2026-09-24: a public form takes five
+// files of 10 MB, because its caller is anyone.)
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 const MAX_FILENAME_LEN = 200;
 // Order IDs follow patterns like `SHO-123456`, `ORD-1700000000000`,
@@ -20,9 +22,11 @@ const ORDER_ID_RE = /^[A-Za-z0-9._-]{1,100}$/;
  *   general           manufacturer acknowledgments, exports, anything else
  *   proof_of_delivery a signed delivery receipt
  *
- * MUST match the CHECK constraint on order_attachments.kind. The database
- * would reject a mismatch, but the user would see a raw constraint error;
- * validating here turns that into a clear 422.
+ * A SUBSET of the CHECK on order_attachments.kind, on purpose: the CHECK also
+ * allows `customer_upload`, which only the quote webhook writes -- staff do not
+ * upload the customer's files. (This said "MUST match" until 2026-09-30, which
+ * stopped being true when customer_upload was added on 2026-09-28.) Validating
+ * here turns a value the database would reject into a clear 422.
  *
  * The gate on At cross dock -> Delivered looks for proof_of_delivery
  * specifically, because every order at that stage already carries the ack
@@ -98,6 +102,22 @@ export const POST = withClaimOverrideLog(async function POST(
   }
   const kind = kindStr as AttachmentKind;
 
+  // ⚠ spec_ref FILES THE UPLOAD UNDER A ROOM OR A STYLE GROUP of a custom job
+  // (handoff item 24, step 3; 2026-09-30). Optional, and empty is the same as
+  // absent: the file belongs to the job itself. Its shape is checked here;
+  // whether the job HAS that room is checked once the order is read, below.
+  const rawSpecRef = formData.get("spec_ref");
+  const specRef = rawSpecRef === null || rawSpecRef === "" ? null : String(rawSpecRef);
+  if (specRef !== null && !SPEC_ID_RE.test(specRef)) {
+    return NextResponse.json({ error: "spec_ref must be a room or style-group id" }, { status: 422 });
+  }
+  if (specRef !== null && kind !== "general") {
+    return NextResponse.json(
+      { error: "spec_ref_kind", message: "A delivery receipt belongs to the order, not to a room." },
+      { status: 422 },
+    );
+  }
+
   // ── Validate orderId shape ────────────────────────────────────────────
   // The id is interpolated into a storage path below. Without validation,
   // a string like "../../foo" would let an attacker write files outside
@@ -120,7 +140,7 @@ export const POST = withClaimOverrideLog(async function POST(
   // order_attachments table.
   const { data: order, error: orderErr } = await supabase
     .from("orders")
-    .select("id, archived, project_id")
+    .select("id, type, archived, project_id, custom_specs")
     .eq("id", orderId)
     .single();
   if (orderErr || !order) {
@@ -141,6 +161,33 @@ export const POST = withClaimOverrideLog(async function POST(
   // stage gate refused it from the modal while this route accepted it.
   const claimGate = await requireOrderClaim(orderId, auth.session, overrides, "Attachment added");
   if (claimGate instanceof NextResponse) return claimGate;
+
+  // ⚠ A ROOM THE JOB DOES NOT HAVE IS REFUSED, WITH THE REASON, BEFORE A BYTE IS
+  // WRITTEN -- never stored as a pointer to nothing. Read against the job's
+  // STORED specs: a room another tab has not saved yet does not exist, and one
+  // somebody removed is gone. specRefResolves is the same reading the views use.
+  //
+  // ⚠ ONE RACE IS LEFT, AND IT IS SAFE. A room removed between this check and the
+  // insert below leaves this file pointing at an id that no longer exists:
+  // custom_specs_remove_area unlinks the files it can see, and this one was not
+  // there yet. It then reads as filed under the job -- the fallback agreed in
+  // item 24 -- and ids are never reused, so it cannot surface in another room.
+  // Closing the race would mean inserting through a function that locks the
+  // order row; a file in the job's own bin is not worth that.
+  if (specRef !== null) {
+    if (order.type !== "custom") {
+      return NextResponse.json(
+        { error: "spec_ref_not_custom", message: `Only a custom job has rooms to file under; ${orderId} is a ${order.type} order.` },
+        { status: 422 },
+      );
+    }
+    if (!specRefResolves(readCustomSpecs(order.custom_specs), specRef)) {
+      return NextResponse.json(
+        { error: "spec_ref_unknown", message: "That room or style group is not on this job any more. Reload to see its rooms." },
+        { status: 422 },
+      );
+    }
+  }
 
   // Sanitize the display filename ONCE, then use the same value for the
   // storage key and the DB row. Previously the route stored `file.name`
@@ -190,6 +237,8 @@ export const POST = withClaimOverrideLog(async function POST(
       uploaded_by: cleanInput(auth.session.user.name ?? auth.session.user.username),
       // Whitelisted above, and constrained again by the DB CHECK.
       kind,
+      // Checked above against the stored specs; null is the job itself.
+      spec_ref: specRef,
     })
     .select()
     .single();

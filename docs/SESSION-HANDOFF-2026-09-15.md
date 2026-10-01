@@ -594,6 +594,7 @@ nothing on success, so silence is not a result.
 | Gates ask the server, not the shared list | A gate is a point-in-time check; a cache can be a second out of date. The server re-checks anyway. |
 | Receipt offered only where `lib/requirements` asks for one | Only a cabinet group needs a signed receipt. The button on a custom job was a demand nothing enforces, which the custom rule forbids. |
 | The attachments panel is read-only on somebody else's claim | Every other panel already was; a colleague was offered Upload and Delete and refused after the fact. |
+| `spec_ref` checked at upload against the STORED specs; the race left open (2026-09-30) | A room nobody saved yet does not exist, and one removed is gone. A file that loses the race reads as the job's — never another room's, because ids are never reused. Closing it would mean inserting through a locking function. |
 
 ---
 
@@ -1226,8 +1227,8 @@ nothing on success, so silence is not a result.
       `AttachmentsPanel` through an imperative handle that must remain mounted.
 
     **Not built yet:**
-    attachments linked to an area or set — the column and index exist, nothing
-    writes them. The
+    a screen that files an upload under a room — step 4; the route accepts
+    `spec_ref` since step 3. The
     Shopify product picker in `NewOrderModal` goes when that lands — a custom
     job has no SKUs, and the picker reads an admin-only endpoint, so it shows
     an empty list to anyone else. Verified unused: the one manual row has zero
@@ -1259,9 +1260,21 @@ nothing on success, so silence is not a result.
        files with one refused, a refused download, a null date, and a project
        with one failed group. Typecheck strict over the new files, and with
        `OrderModal` against stubs; a planted error caught in each.
-    3. **Upload accepts `spec_ref`:** custom jobs, `general` files, ids that
-       resolve against the STORED specs. One `attachmentBin()` decides the bin for
-       every view. An unresolvable `spec_ref` falls back to Designer when read.
+    3. ✅ **Upload accepts `spec_ref`** (`patch_spec_ref_upload.py`, 2026-09-30):
+       custom jobs, `general` files, ids that resolve against the STORED specs,
+       checked before a byte reaches storage; `specRefResolves` in `lib/data` is
+       the one reading of a ref. The race left open — a room removed between the
+       check and the insert — leaves the file reading as the job's; closing it
+       would mean inserting through a locking function. **Proved** through the
+       real route, `lib/auth`, `lib/archived` and `lib/data` against 17.6 with
+       the step-1 functions: filed under a room and under a style group; none
+       and empty both mean the job; a room the job lacks, a malformed id, a
+       receipt, a Shopify group, somebody else's claim and an archived job each
+       refused with its own reason and nothing written, row or object; removing
+       Kitchen unlinked both its files, the style group's included; filing under
+       it afterwards refused. `attachmentBin()` — one function deciding the bin
+       for every view, an unresolvable ref falling back to the job — comes with
+       step 4, where a view first reads `spec_ref`.
     4. **The Files view** with room tabs, read from the saved specs.
     5. **Promote writes `customer_upload`** (Open 25), with a data fix by
        `uploaded_by = 'Customer (claim form)'`, which only that route writes.
@@ -1392,8 +1405,9 @@ nothing on success, so silence is not a result.
     - Two near-simultaneous promotes both create a claim; the second's update
       matches nothing without an error and answers 201.
     - The attachment DELETE skips its archived check if its `orders` read fails.
-    - Stale comments: the upload route's `ATTACHMENT_KINDS` "MUST match" the CHECK
-      (a subset now); `archivedVia`'s doc comment sits above `activityDate`;
+    - Stale comments: ~~the upload route's `ATTACHMENT_KINDS` "MUST match" the
+      CHECK~~ (fixed in item 24 step 3, with the caps comment beside it);
+      `archivedVia`'s doc comment sits above `activityDate`;
       `isStageOfferedForType` says samples run New → Entered → Delivered;
       ~~`ProjectFiles` sends people to a "Project tab" labelled Overview~~
       (fixed in item 24 step 2).
@@ -1662,6 +1676,8 @@ patch_activity_readable.py
 patch_docs_activity_readable.py
 patch_attachments_shared.py
 patch_docs_attachments_shared.py
+patch_spec_ref_upload.py
+patch_docs_spec_ref_upload.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it
