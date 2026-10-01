@@ -1,28 +1,42 @@
 import type { Metadata } from "next";
-import { DM_Sans, Cormorant_Garamond } from "next/font/google";
+import localFont from "next/font/local";
 import { headers } from "next/headers";
 import "./globals.css";
 import { StoreProvider } from "@/lib/store";
 import { AuthProvider } from "@/components/AuthProvider";
 import { ToastProvider } from "@/components/Toast";
 
-// Brand fonts per the JK Cabinets brand guide. next/font fetches these at
-// build time and self-hosts them, so no FOIT and no Google Fonts roundtrip
-// in production. The CSS variables --font-sans and --font-serif are then
-// consumed by globals.css and Tailwind.
-const dmSans = DM_Sans({
-  subsets: ["latin"],
+// Brand fonts per the JK Cabinets brand guide, SERVED FROM THE REPO (2026-10-01):
+// app/fonts/. The CSS variables --font-sans and --font-serif are consumed by
+// globals.css and Tailwind exactly as before, so nothing else changed.
+//
+// ⚠ WHY NOT next/font/google. It downloads the fonts from Google WHILE THE IMAGE
+// BUILDS. On 2026-10-01 the deploy of e027ee9 failed inside that download
+// (Turbopack: "next/font/google queries have exactly one entry") and the same
+// commit built cleanly on a retry -- nothing in the repo had changed, only what
+// Google answered. A build that fetches from a third party can fail for a
+// reason no commit contains. With these files the build fetches nothing.
+//
+// What the files are, where they came from, how to rebuild them and their
+// licence (OFL, which allows bundling): OMS-STATE §7, "The build".
+// The weights are exactly the ones this layout used to ask Google for.
+const dmSans = localFont({
+  src: [{ path: "./fonts/DMSans-wght300-600.woff2", weight: "300 600", style: "normal" }],
   variable: "--font-sans",
-  weight: ["300", "400", "500", "600"],
   display: "swap",
+  // next/font/google sized its fallback against Arial for a sans; same here.
+  adjustFontFallback: "Arial",
 });
 
-const cormorant = Cormorant_Garamond({
-  subsets: ["latin"],
+const cormorant = localFont({
+  src: [
+    { path: "./fonts/CormorantGaramond-wght400-600.woff2", weight: "400 600", style: "normal" },
+    { path: "./fonts/CormorantGaramond-Italic-wght400-600.woff2", weight: "400 600", style: "italic" },
+  ],
   variable: "--font-serif",
-  weight: ["400", "500", "600"],
-  style: ["normal", "italic"],
   display: "swap",
+  // ...and against Times New Roman for a serif.
+  adjustFontFallback: "Times New Roman",
 });
 
 export const metadata: Metadata = {

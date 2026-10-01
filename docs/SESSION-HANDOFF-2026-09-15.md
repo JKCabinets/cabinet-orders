@@ -597,6 +597,7 @@ nothing on success, so silence is not a result.
 | `spec_ref` checked at upload against the STORED specs; the race left open (2026-09-30) | A room nobody saved yet does not exist, and one removed is gone. A file that loses the race reads as the job's — never another room's, because ids are never reused. Closing it would mean inserting through a locking function. |
 | The same bins wherever files are shown (Garrett, 2026-10-01) | Two views with different bins under the same labels are two lists. On a custom job the Files tab is the attachments panel itself, so they cannot drift. |
 | Where an upload is filed is set by what opened the picker, and forgotten once read | The modal opens the picker for "a file" from a work-queue row; that must land on the job whichever room was last on screen. A target that carried over would file the next upload somewhere nobody chose. |
+| The brand fonts are served from the repo, BOTH of them (Garrett, 2026-10-01) | A build that downloads fonts can fail for a reason no commit contains, and did. Moving only DM Sans would have left the build fetching Cormorant from Google. Built from Google's sources so they are the same designs, reproducibly. |
 
 ---
 
@@ -1424,6 +1425,14 @@ nothing on success, so silence is not a result.
       `lib/attachments`' tickets.
     - A Shopify project's Files tab (`ProjectFiles`) lists files it cannot open:
       no download. (A custom job's Files tab is the panel, Download included.)
+    - ⚠ `xlsx` installs from `cdn.sheetjs.com/xlsx-latest/xlsx-latest.tgz`: the
+      next dependency rebuild after a SheetJS release should fail `npm ci` on
+      the lockfile's integrity hash. Pin a versioned URL. OMS-STATE §7.
+    - `NewOrderModal` styles one input with `var(--font-geist-mono, monospace)`;
+      nothing defines `--font-geist-mono` (a create-next-app leftover), so it is
+      `monospace` — which is probably what was meant. Say so, or drop the var.
+    - Check after the fonts deploy: a screenshot of one screen before and after,
+      for DM Sans's pinned optical size (OMS-STATE §7).
     - Deleting an order leaves its files in storage (rows cascade, objects do not).
     - Two near-simultaneous promotes both create a claim; the second's update
       matches nothing without an error and answers 201.
@@ -1515,6 +1524,15 @@ returned" — the words a run that does nothing also gives. Put the verifying
 SELECT last in the file, so one run answers with the evidence. Prefer `if not
 exists` to DROP: the editor may stop to question a DROP, which is one unconfirmed
 explanation for the two runs that did not apply.
+
+**⚠ A BUILD THAT FETCHES FROM A THIRD PARTY FAILS FOR REASONS NO COMMIT HOLDS.**
+2026-10-01: the deploy of `e027ee9` failed in `next/font/google`'s download of
+DM Sans, and a retry of the same commit built. How that was told apart from a
+code fault: the same commit, the same unchanged lockfile under `npm ci
+--frozen-lockfile` (so the same packages), and nothing the commit touched
+anywhere near the error — leaving only what Google answered. **Read the build
+log's error and its import trace before reverting anything.** The fonts are in
+the repo now (OMS-STATE §7); `xlsx` still comes from a moving URL.
 
 **⚠ `npx tsc --noEmit 2>&1 | grep -E "error TS"` inverts the exit code.** `grep`
 exits 1 when it finds nothing, so a **clean** typecheck looks like failure and a
@@ -1703,6 +1721,8 @@ patch_spec_ref_upload.py
 patch_docs_spec_ref_upload.py
 patch_files_by_room.py
 patch_docs_files_by_room.py
+patch_brand_fonts_local.py
+patch_docs_brand_fonts_local.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it
