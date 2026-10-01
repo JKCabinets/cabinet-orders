@@ -2,6 +2,11 @@
 
 **As of 2026-09-15 · supersedes OPERATIONS-2026-08-18.md**
 
+⚠ **AMENDED 2026-10-01.** §2's stage words now match `lib/customerFacing.ts`,
+which they had not; §5 records both Turnstile secrets and corrects
+`QUOTE_WEBHOOK_SECRET`, which it called deliberately empty; §10 records that
+Help Scout handles every customer reply.
+
 ⚠ **AMENDED 2026-09-30.** §10 records why a custom job's specifications save
 one room at a time; §12 adds `order_attachments` to the tables with no creating
 migration. ⚠ **Several statements in this document were found wrong that day
@@ -195,9 +200,9 @@ the customer-facing layer, where nobody had noticed it.
 | Type | Internal | Customer-facing |
 |---|---|---|
 | Cabinets | New | Order received |
-| Cabinets | Entered | Confirmed with the manufacturer |
+| Cabinets | Entered | Order has been processed |
 | Cabinets | In production | In production |
-| Cabinets | At cross dock | **Arrived in Arizona** |
+| Cabinets | At cross dock | Arrived at our delivery partner |
 | Cabinets | Delivered | Delivered |
 | Samples | New | Order received |
 | Samples | Shipped | Shipped |
@@ -316,7 +321,9 @@ Also held, not in use by these systems: `jkkitchencabinets2you.com`,
 | **`SUPABASE_SERVICE_ROLE_KEY` / `_JWT_SECRET` / `NEXT_PUBLIC_*`** | `.env.kamal` | — | Everything stops / Realtime fails |
 | **`NEXTAUTH_SECRET`** | `.env.kamal` | — | All sessions invalidated |
 | **`CRON_SECRET`** | `~/.cron-secret` | — | All four crons 401; healthchecks alarms |
-| **`QUOTE_WEBHOOK_SECRET`** | `.env.kamal` | ⚠ Deliberately EMPTY | Setting it breaks the quote form |
+| **`QUOTE_WEBHOOK_SECRET`** | `.env.kamal` | Set 2026-09-24 | A speed bump, not a control (below). Empty, the check is skipped and Turnstile still guards |
+| **`TURNSTILE_SECRET_KEY`** | `.env.kamal` | No expiry | The quote form answers 503; the page offers the phone number |
+| **`TURNSTILE_CLAIMS_SECRET_KEY`** (2026-10-01) | `.env.kamal` | No expiry | The claims form answers 503; the page offers the email route |
 | **`UPSTASH_REDIS_REST_URL` / `_TOKEN`** | `.env.kamal` | — | Rate-limit behaviour unverified |
 
 ## The webhook secret can now be rotated without downtime
@@ -359,10 +366,14 @@ awk -F= '/^SOME_KEY=/{print length($2)}' .env.kamal
 **The safe direction:** declared in `deploy.yml` but MISSING from
 `.kamal/secrets` fails loudly with `Kamal::ConfigurationError`.
 
-**The public quote endpoint is guarded by Cloudflare Turnstile** (2026-09-24),
-verified server-side before anything is written or stored.
-`TURNSTILE_SECRET_KEY` lives in `.env.kamal` like every other value; the SITE
-key is public and lives in the storefront's Liquid.
+**Both public write endpoints are guarded by Cloudflare Turnstile** — the quote
+form since 2026-09-24, the claims form since 2026-10-01 — verified server-side
+by `lib/turnstile.ts` before anything is written or stored. Each form has its
+OWN widget and secret, so a token solved on one fails on the other:
+`TURNSTILE_SECRET_KEY` and `TURNSTILE_CLAIMS_SECRET_KEY`, in `.env.kamal` like
+every other value; the SITE keys are public and live in the storefront's Liquid.
+The claims check also requires the token's action, `claim`, and a storefront
+hostname.
 
 ⚠ **`QUOTE_WEBHOOK_SECRET` is NOT a control.** Its value sits in JavaScript on a
 public page, so it authenticates nobody — it is a speed bump that stops casual
@@ -401,8 +412,9 @@ Which is why:
 kamal secrets print 2>&1 | awk -F= '/^[A-Z_]+=/ { v=substr($0, index($0,"=")+1); print (v=="" ? "EMPTY " : "set   ") $1 }'
 ```
 
-Names and set/empty, never values. Only `SHOPIFY_WEBHOOK_SECRET_FALLBACK`,
-`QUOTE_WEBHOOK_SECRET` and `TEAMS_WEBHOOK_URL` are empty by design. This is the
+Names and set/empty, never values. Only `SHOPIFY_WEBHOOK_SECRET_FALLBACK` and
+`TEAMS_WEBHOOK_URL` are empty by design. (`QUOTE_WEBHOOK_SECRET` was listed here
+until 2026-10-01; it has been set since 2026-09-24.) This is the
 check that would have caught both of 2026-09-16's failed deploys before they ran.
 
 ## Reading a failed deploy
@@ -885,6 +897,13 @@ reloads, and cannot save — accepted, because a custom job is one designer's
 (Garrett, 2026-09-30). A refusal keeps the designer's typing; a conflict replaces
 it with what was stored, and says so. An unreadable document is refused and
 named, never emptied.
+
+**HELP SCOUT HANDLES EVERY CUSTOMER REPLY; THE OMS SENDS NO EMAIL** (Garrett,
+2026-10-01). A claim's customer is told it arrived by the website's own received
+page, with its reference, and every human answer goes through Help Scout. An
+automated email would need a sending service, a credential and a send log, all
+new. Later, perhaps: messages the OMS drafts with a claim's details filled in,
+for the team to send themselves.
 
 **Order value is stored at ingest, not queried live.** A metrics page that
 depends on Shopify is one that breaks when Shopify does, and 2026-08-20

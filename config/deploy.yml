@@ -110,6 +110,9 @@ env:
     - SHOPIFY_STORE_DOMAIN
     - QUOTE_WEBHOOK_SECRET
     - TURNSTILE_SECRET_KEY
+    # The claims form's own widget (2026-10-01): a token solved on the quote
+    # form must fail on the claims endpoint, so each has its own secret.
+    - TURNSTILE_CLAIMS_SECRET_KEY
     - TEAMS_WEBHOOK_URL
     - UPSTASH_REDIS_REST_URL
     - UPSTASH_REDIS_REST_TOKEN

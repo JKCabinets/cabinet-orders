@@ -122,7 +122,9 @@ export async function POST(
   // The claim's working notes: what the customer actually said, kept verbatim
   // rather than summarised, because it is the report.
   const notesParts = [
-    `📮 CUSTOMER CLAIM — submitted ${new Date(sub.received_at).toLocaleString("en-US", { timeZone: "America/Phoenix" })}`,
+    // The reference the customer was given (2026-10-01), so a call quoting
+    // "CR-1042" finds this claim.
+    `📮 CUSTOMER CLAIM${sub.ref ? ` ${sub.ref}` : ""} — submitted ${new Date(sub.received_at).toLocaleString("en-US", { timeZone: "America/Phoenix" })}`,
     `Type: ${sub.claim_type}`,
     `Order as typed: ${sub.order_number_raw}`,
   ];
@@ -203,10 +205,13 @@ export async function POST(
         file_size: bytes.byteLength,
         file_type: blob.type || "image/jpeg",
         uploaded_by: "Customer (claim form)",
-        // 'general', not 'proof_of_delivery'. A customer's photo of damage is
-        // not a signed delivery receipt, and the cross-dock gate counts the
-        // latter specifically.
-        kind: "general",
+        // ⚠ 'customer_upload' (2026-10-01): the customer's photo, filed with
+        // the customer's files. It was 'general' until then, so a warranty
+        // claim showed the photos under Designer and said the customer had
+        // attached nothing; the 2026-10-01 migration moved the rows already
+        // written. Never 'proof_of_delivery': a photo of damage is not a signed
+        // delivery receipt, and the cross-dock gate counts the latter.
+        kind: "customer_upload",
       });
       if (rowErr) throw new Error(rowErr.message);
       copied++;

@@ -89,13 +89,27 @@ export function ClaimDrafts({ onCompleted }: { onCompleted?: () => void }) {
             style={{ borderTop: i === 0 ? "none" : HAIRLINE }}
           >
             <div className="flex items-baseline justify-between gap-3">
-              <span className="text-[14px] text-cream">{d.claimant_name}</span>
+              <span className="text-[14px] text-cream">
+                {d.ref && <span className="text-[rgba(232,227,218,0.45)] mr-2">{d.ref}</span>}
+                {d.claimant_name}
+              </span>
               <span className="text-[11px] text-[rgba(232,227,218,0.40)] shrink-0">
                 {new Date(d.received_at).toLocaleDateString("en-US", {
                   month: "short", day: "numeric", timeZone: "America/Phoenix",
                 })}
               </span>
             </div>
+            {/* ⚠ FLAGGED, NOT DROPPED (2026-10-01). The spam checks used to throw
+                these away behind a fake success; a browser autofilling the
+                hidden field would have cost a real customer their claim. Shown
+                at New claim like any other, with the reason in plain words. */}
+            {d.screening && (
+              <p className="text-[11px] mt-1" style={{ color: "#d4922a" }}>
+                {d.screening === "honeypot"
+                  ? "Flagged: the hidden spam-trap field was filled. Usually a bot, sometimes a browser's autofill."
+                  : "Flagged: sent within two seconds of the page opening. Usually a bot."}
+              </p>
+            )}
             <p className="text-[12px] text-[rgba(232,227,218,0.60)] mt-0.5 line-clamp-2">
               {d.message || "No description given."}
             </p>

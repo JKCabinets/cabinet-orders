@@ -64,6 +64,10 @@ export interface ClaimPhoto {
 
 export interface ClaimSubmissionSeed {
   id: string;
+  /** What the customer was told, e.g. CR-1042. Absent on rows read before 2026-10-01. */
+  ref?: string | null;
+  /** Why the spam checks flagged it ("honeypot" | "too_fast"), or null. */
+  screening?: string | null;
   order_number: string | null;
   order_number_raw: string;
   claim_type: string;
@@ -322,7 +326,7 @@ export function WarrantyClaimModal({ onClose, submission, onDone }: Props) {
             <h2 className="font-display text-[22px] leading-tight text-cream">New warranty claim</h2>
             <p className="text-[12px] text-[rgba(232,227,218,0.45)] mt-0.5">
               {submission
-                ? `From a customer claim submitted ${new Date(submission.received_at).toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: "America/Phoenix" })}`
+                ? `From customer claim ${submission.ref ? `${submission.ref}, ` : ""}submitted ${new Date(submission.received_at).toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: "America/Phoenix" })}`
                 : "Against an existing customer order."}
             </p>
           </div>

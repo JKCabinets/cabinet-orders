@@ -41,9 +41,10 @@ const ALLOWED_ORIGINS = (process.env.LOOKUP_ALLOWED_ORIGINS
   .split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
 
 /**
- * ⚠ CORS IS REQUIRED HERE, UNLIKE THE CLAIM AND CONTACT FORMS. Those post a
- * plain form and take a redirect; this one uses fetch because the answer
- * renders in place, so the browser must be allowed to READ the response.
+ * ⚠ CORS IS REQUIRED HERE: this uses fetch because the answer renders in
+ * place, so the browser must be allowed to READ the response. (This said the
+ * claim form posted a plain form and took a redirect. Since 2026-10-01 it sends
+ * in the background and reads its answer too, with CORS of its own.)
  *
  * No Allow-Credentials: the endpoint authenticates on the body, not a cookie,
  * and echoing credentials back would let a third-party page ride a session.

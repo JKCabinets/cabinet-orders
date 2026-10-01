@@ -7,6 +7,7 @@ import {
   PUBLIC_UPLOAD_TYPES, PUBLIC_UPLOAD_LABEL,
 } from "@/lib/fileValidation";
 import { stripImageMetadata } from "@/lib/stripExif";
+import { verifyTurnstile } from "@/lib/turnstile";
 
 /**
  * Origins allowed to call this endpoint from a browser.
@@ -245,65 +246,17 @@ export async function POST(req: NextRequest) {
   //
   // Verified BEFORE any validation, any upload and any row: a submission that
   // cannot prove itself never touches storage or the database.
-  const turnstileSecret = process.env.TURNSTILE_SECRET_KEY ?? "";
-  const token = (body["cf-turnstile-response"] ?? "").trim();
-
-  if (!turnstileSecret) {
-    console.error("[quote-form] TURNSTILE_SECRET_KEY is not set -- refusing submissions");
-    return NextResponse.json(
-      { error: "turnstile_unavailable", message: "Verification is unavailable. Please try again shortly." },
-      { status: 503, headers: CORS },
-    );
-  }
-  if (!token) {
-    return NextResponse.json(
-      { error: "turnstile_missing", message: "Please complete the verification check." },
-      { status: 400, headers: CORS },
-    );
-  }
-
-  {
-    const form = new URLSearchParams();
-    form.set("secret", turnstileSecret);
-    form.set("response", token);
-    // Cloudflare scores the token against the address that solved it. Behind
-    // kamal-proxy the socket address is the proxy, so the forwarded header is
-    // the only honest answer -- and if it is absent, sending nothing beats
-    // sending a wrong one.
-    const ip = (req.headers.get("x-forwarded-for") ?? "").split(",")[0].trim();
-    if (ip) form.set("remoteip", ip);
-
-    let outcome: { success?: boolean; "error-codes"?: string[] } | null = null;
-    try {
-      const verify = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: form.toString(),
-        signal: AbortSignal.timeout(8000),
-      });
-      if (verify.ok) outcome = await verify.json();
-    } catch {
-      outcome = null;
-    }
-
-    if (outcome === null) {
-      // Cloudflare unreachable or slow. Dropping a genuine submission is bad;
-      // accepting an unverified one is worse, and the form retries.
-      console.error("[quote-form] Turnstile verification unreachable");
-      return NextResponse.json(
-        { error: "turnstile_unavailable", message: "Verification is unavailable. Please try again shortly." },
-        { status: 503, headers: CORS },
-      );
-    }
-    if (!outcome.success) {
-      // Expired, already used, or not ours. The form fetches a FRESH token per
-      // attempt, so a retry is expected to succeed.
-      console.warn(`[quote-form] Turnstile rejected: ${(outcome["error-codes"] ?? []).join(",") || "no code"}`);
-      return NextResponse.json(
-        { error: "turnstile_failed", message: "That verification has expired. Please try again." },
-        { status: 403, headers: CORS },
-      );
-    }
+  // (2026-10-01) The check itself is lib/turnstile now, shared with the claims
+  // endpoint: the same answers, word for word, and the same log lines.
+  const turnstile = await verifyTurnstile({
+    secret: process.env.TURNSTILE_SECRET_KEY,
+    secretName: "TURNSTILE_SECRET_KEY",
+    token: body["cf-turnstile-response"],
+    req,
+    label: "quote-form",
+  });
+  if (!turnstile.ok) {
+    return NextResponse.json(turnstile.body, { status: turnstile.status, headers: CORS });
   }
 
   // Belt-and-braces per-file checks, plus type validation.

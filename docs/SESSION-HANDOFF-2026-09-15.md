@@ -598,6 +598,11 @@ nothing on success, so silence is not a result.
 | The same bins wherever files are shown (Garrett, 2026-10-01) | Two views with different bins under the same labels are two lists. On a custom job the Files tab is the attachments panel itself, so they cannot drift. |
 | Where an upload is filed is set by what opened the picker, and forgotten once read | The modal opens the picker for "a file" from a work-queue row; that must land on the job whichever room was last on screen. A target that carried over would file the next upload somewhere nobody chose. |
 | The brand fonts are served from the repo, BOTH of them (Garrett, 2026-10-01) | A build that downloads fonts can fail for a reason no commit contains, and did. Moving only DM Sans would have left the build fetching Cormorant from Google. Built from Google's sources so they are the same designs, reproducibly. |
+| A claim's reference is CR-1042, from an identity column (Garrett, 2026-10-01) | The submission id is a 36-character uuid, over the page's 32, and unreadable down a phone. CR, not WAR-: no claim exists until promotion. |
+| The spam checks flag a claim; they do not drop it (Garrett, 2026-10-01) | Browsers autofill fields named "website". A customer told "received" whose claim was binned has lost the reporting window. Turnstile runs first, so the flagged are few. |
+| Turnstile in one module, `lib/turnstile.ts` (Garrett, 2026-10-01) | Two forms, two copies of one check, is how checks drift apart. The quote route's answers are proven unchanged. |
+| The claims check requires its action and a storefront hostname | Its own secret already fails a quote-form token, as the website asked; action and hostname also catch a misconfigured widget. |
+| A scrubbed JPEG keeps its Orientation, and nothing else | Dropping it turned phone portraits sideways. The one fact kept says nothing about where or who. |
 
 ---
 
@@ -1299,8 +1304,8 @@ nothing on success, so silence is not a result.
        shows at once; read-only says "Nothing filed under Pantry." and offers
        nothing; a cabinet order keeps two bins. Step 2's whole suite again,
        unchanged, against the new panel.
-    5. **Promote writes `customer_upload`** (Open 25), with a data fix by
-       `uploaded_by = 'Customer (claim form)'`, which only that route writes.
+    5. ✅ **Promote writes `customer_upload`**, with the data fix by
+       `uploaded_by = 'Customer (claim form)'` — done inside item 27, 2026-10-01.
 
     **Step 1 proved** on PostgreSQL 16 and on 17.6 — production's version, from
     the npm registry's binaries — with production's `orders` policies and grants:
@@ -1412,9 +1417,13 @@ nothing on success, so silence is not a result.
     - The quote route tells a customer "(max 20 MB)"; the cap is 10 MB.
     - The quote route leaves the storage object when its row insert fails (the
       staff route cleans up) — which is where the 09-28→30 orphans came from.
-    - `promote` writes a customer's claim photos as `general`: a warranty claim
-      shows them under Designer, and says the customer attached nothing. Item 24
-      step 5.
+    - ✅ ~~`promote` writes a customer's claim photos as `general`~~ — fixed in
+      item 27, with the rows already written.
+    - ⚠ **The metadata scrubber dropped a JPEG's Orientation** with the rest of
+      its Exif, from 2026-09-24: a phone's portrait photo then displayed on its
+      side. And it scrubbed nothing from a PNG, GPS included. Both proven
+      against the real function and fixed in item 27; HEIC, WEBP and GIF are
+      still accepted unscrubbed on the QUOTE form, pending item 27's step 6.
     - ✅ ~~`AttachmentsPanel`: delete ignores the answer; not claim-aware;
       Receipt on custom jobs.~~ Fixed in item 24 step 2, with the Files tab's
       "Project tab" copy.
@@ -1431,8 +1440,10 @@ nothing on success, so silence is not a result.
     - `NewOrderModal` styles one input with `var(--font-geist-mono, monospace)`;
       nothing defines `--font-geist-mono` (a create-next-app leftover), so it is
       `monospace` — which is probably what was meant. Say so, or drop the var.
-    - Check after the fonts deploy: a screenshot of one screen before and after,
-      for DM Sans's pinned optical size (OMS-STATE §7).
+    - ✅ ~~Check after the fonts deploy~~ — done 2026-10-01: production serves
+      `DMSans_wght300_600-s.p.0roqa3ab3xhnr.woff2`, the exact content-hashed name
+      the verified build produced, and Garrett checked the screens by eye. No
+      pixel comparison was run.
     - Deleting an order leaves its files in storage (rows cascade, objects do not).
     - Two near-simultaneous promotes both create a claim; the second's update
       matches nothing without an error and answers 201.
@@ -1452,14 +1463,13 @@ nothing on success, so silence is not a result.
       `setWarranties`, which no longer exist.
 26. **Documents known wrong, found 2026-09-30, NOT corrected** — each wants its
     own look rather than a line in somebody else's commit.
-    - OPERATIONS §5: `QUOTE_WEBHOOK_SECRET` "Deliberately EMPTY" and "Setting it
-      breaks the quote form", and the `kamal secrets print` list of names empty by
-      design — item 23 set it on 2026-09-24.
+    - ✅ ~~OPERATIONS §5: `QUOTE_WEBHOOK_SECRET` "Deliberately EMPTY"~~ —
+      corrected 2026-10-01, the table row and the empty-by-design list both.
     - OPERATIONS §2 says `POST /api/public/lookup` is "not built yet", and §12 that
       the warranty question "blocks the public intake work". Both routes exist.
-    - OPERATIONS §2, the master for customer-facing words, says Cabinets / At cross
-      dock → "Arrived in Arizona"; `lib/customerFacing.ts` says "Arrived at our
-      delivery partner" (item 22).
+    - ✅ ~~OPERATIONS §2 disagreed with `lib/customerFacing.ts`~~ — corrected
+      2026-10-01 from the code: Entered → "Order has been processed", At cross
+      dock → "Arrived at our delivery partner".
     - "Four checks … of eleven" (OMS-STATE §6, OPERATIONS §3 and §6) predates
       `check-registry-token.sh`; OPERATIONS §7 has no Monday 15:00 row for it.
     - OPERATIONS §5 puts the Graph secret in `.env.kamal`; §12 says it is not there.
@@ -1467,6 +1477,49 @@ nothing on success, so silence is not a result.
       the database later, names two.
     - Item 20 still reads "in progress" with every step done; Open item 1's "see
       below" points above.
+27. **The claims endpoint, to the website's 2026-10-01 contract**
+    (`website-to-oms-open-items-2026-10-01.md`; the only item left on the
+    website's critical path to launch). Decisions, all Garrett's, 2026-10-01: a
+    short reference; flagged submissions kept, not dropped; Help Scout handles
+    every reply and the OMS sends no email; Turnstile in one shared module;
+    email claims entered as submissions; quote uploads narrowed to JPG, PNG and
+    PDF.
+    1. ✅ **The endpoint** (`patch_claims_contract.py`, migration
+       `2026-10-01-claim-submissions-ref.sql`, run BEFORE the deploy). What it
+       is: OMS-STATE §2. **Proved** through the real route, `lib/auth`,
+       `lib/turnstile`, the new scrubber and `lib/fileValidation` against 17.6
+       with both claims migrations: a genuine claim answers 201 `CR-1004` with
+       CORS and every field stored; both storefront hosts, and no CORS for any
+       other; the secret sent to Cloudflare is the CLAIMS widget's, never the
+       quote form's; no token, a quote-form token, the wrong action, another
+       host and Cloudflare down each give exactly the answer the page acts on,
+       and only the missing token's 400 says "turnstile"; seven photos, 11 MB, a
+       GIF, a missing name and an unreadable form are refused as "anything
+       else"; none of those writes a row or a photo; the secret missing answers
+       503 and logs it; a filled honeypot and a 0.8 s send are kept, flagged;
+       the eleventh request in a minute gets 429 with CORS and Retry-After.
+       Stored photos: a rotated GPS-tagged JPEG keeps Orientation 6 and loses
+       its location and camera, a PNG loses its eXIf and text, both
+       pixel-identical to the upload. The migration: refs given to existing rows,
+       a second run changes nothing, a bad flag and a hand-set number refused.
+       The quote route against its own old self through all eight Turnstile
+       outcomes: status, body, CORS and log lines identical. Promotion, through
+       the real route and database: the photos filed `customer_upload`, the
+       notes opening with the reference, the report date carried.
+    2. **The claims widget's secret:** the website team sends it privately; it
+       goes in `.env.kamal` only. Until it does, the endpoint answers 503 and the
+       page offers email — safe, and the page has no endpoint set yet anyway.
+    3. **The reply to the website**, by number, once deployed.
+    4. **The joint test** (their item 10): one genuine claim from the live page,
+       photos included; and our own post without a token, expecting
+       `turnstile_missing`.
+    5. **Email claims entered as submissions**, the email's arrival time as
+       `received_at`, so the report date keeps one path. Not on the website's
+       critical path.
+    6. **Quote uploads narrowed to JPG, PNG and PDF**, server and form together
+       — the website must narrow its `accept` in the same change, or a HEIC
+       upload that worked starts being refused. Fixes the "max 20 MB" message and
+       the `.pdf` naming with it.
 
 ---
 
@@ -1533,6 +1586,16 @@ code fault: the same commit, the same unchanged lockfile under `npm ci
 anywhere near the error — leaving only what Google answered. **Read the build
 log's error and its import trace before reverting anything.** The fonts are in
 the repo now (OMS-STATE §7); `xlsx` still comes from a moving URL.
+
+**⚠ A FIXTURE CARRIES PRODUCTION'S GRANTS, OR IT TESTS SOMETHING ELSE.**
+2026-10-01: the claims route answered 500 in the proof, because the test database
+lacked Supabase's default grant of a new table to `service_role`. Read the grants
+production actually has (`information_schema.role_table_grants`) and give the
+fixture the same.
+
+**⚠ AN ASSERTION CHECKS THE TYPE FIRST.** The same day, "the reference fits the
+page" passed on `undefined`: the regex matched the string "undefined". Assert
+`typeof x === "string"` before what the string looks like.
 
 **⚠ `npx tsc --noEmit 2>&1 | grep -E "error TS"` inverts the exit code.** `grep`
 exits 1 when it finds nothing, so a **clean** typecheck looks like failure and a
@@ -1723,6 +1786,8 @@ patch_files_by_room.py
 patch_docs_files_by_room.py
 patch_brand_fonts_local.py
 patch_docs_brand_fonts_local.py
+patch_claims_contract.py
+patch_docs_claims_contract.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

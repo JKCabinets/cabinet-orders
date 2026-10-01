@@ -2,19 +2,39 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { checkRateLimit, cleanInput } from "@/lib/auth";
 import { SNIFF_BYTES, sniffMagicBytes } from "@/lib/fileValidation";
+import { stripImageMetadata } from "@/lib/stripExif";
+import { verifyTurnstile } from "@/lib/turnstile";
 
 /**
  * POST /api/public/claims — the warranty claim form on /pages/warranty-claims.
  *
- * Multipart, because it carries photographs. Unlike the lookup, the page posts
- * a plain form and takes a redirect, so THERE IS NO CORS HERE and none is
- * needed: the browser never reads the response.
+ * ⚠ THE CONTRACT IS THE WEBSITE'S NOTE OF 2026-10-01 ("website-to-oms open items",
+ * section 1). Multipart, because it carries photographs, sent IN THE BACKGROUND
+ * by the page's script -- so the page never loses what the customer typed -- and
+ * the page reads this route's answer. Hence, unlike the route this replaced:
+ *
+ *   - CORS on EVERY answer, for both storefront hosts. Without it the page
+ *     cannot read the reference, or tell a missing token from anything else.
+ *   - 201 with JSON {"ref": "CR-1042"}, not a redirect. The page goes to its
+ *     own received page with that reference.
+ *   - Cloudflare Turnstile, on the CLAIMS widget's own secret. A token solved on
+ *     the quote form fails here, as the website asked.
+ *
+ * The page acts on exactly these, so no other path may return them:
+ *   400 turnstile_missing   (the page looks for the word "turnstile" in a 400)
+ *   403 turnstile_failed    (ANY 403 counts as a failed check on the page)
+ *   429                     wait and retry
+ *   503 turnstile_unavailable  the page retries once with a fresh token
+ * Anything else -- a 422, 413, 415, 500 -- shows the customer the email route.
  *
  * ⚠ THIS WRITES. Everything below is shaped by that. The lookup could fail
  * closed on any doubt because a refused read costs a customer nothing. A
  * refused claim costs them their claim: Terms 12.3 makes the reporting windows
  * conditions precedent, and visible damage has 48 hours from delivery. So this
  * route accepts nearly everything and resolves nothing -- a human promotes it.
+ * The one exception is Turnstile, which fails closed: and when it does, the page
+ * shows the customer the email route, and an email inside the window counts as
+ * the report (the Refund Policy and the Terms say so). So the claim is not lost.
  *
  * ⚠ RUNS AS THE SERVICE ROLE, like every route on this box. The `public_api`
  * role intended to be the real boundary does not exist. The column list on the
@@ -31,6 +51,13 @@ const MIN_ELAPSED_MS = 2_000;
 const BUCKET = "claim-photos";
 
 /**
+ * The storefront: who may read these answers, and where a claims token may
+ * have been solved. One list for both, so they cannot disagree.
+ */
+const STOREFRONT_HOSTS = ["jkcabinets2you.com", "www.jkcabinets2you.com"] as const;
+const ALLOWED_ORIGINS = STOREFRONT_HOSTS.map((h) => `https://${h}`);
+
+/**
  * ⚠ NARROWER THAN PUBLIC_UPLOAD_TYPES. The form's own `accept` is JPEG and PNG,
  * so anything else is a mismatch between what the page promised and what
  * arrived. Accepting more here would mean the bucket's allowed_mime_types
@@ -43,15 +70,24 @@ const CLAIM_TYPES: ReadonlySet<string> = new Set([
   "visible", "shortage", "concealed", "defect",
 ]);
 
-const RECEIVED_URL = "https://www.jkcabinets2you.com/pages/claim-received";
-
 /**
- * ⚠ 303, NOT 302. A 303 tells the browser to follow with GET; a 302 after a
- * POST is handled inconsistently and can re-submit the form.
+ * No Allow-Credentials: the endpoint authenticates on the body, not a cookie.
+ * The page sends no custom headers, so the request needs no preflight -- the
+ * OPTIONS answer below is for any browser that sends one anyway.
  */
-function redirect(ref?: string): NextResponse {
-  const url = ref ? `${RECEIVED_URL}?ref=${encodeURIComponent(ref)}` : RECEIVED_URL;
-  return NextResponse.redirect(url, 303);
+function corsFor(req: NextRequest): Record<string, string> {
+  const base: Record<string, string> = {
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Vary": "Origin",
+  };
+  const origin = (req.headers.get("origin") ?? "").toLowerCase();
+  if ((ALLOWED_ORIGINS as readonly string[]).includes(origin)) base["Access-Control-Allow-Origin"] = origin;
+  return base;
+}
+
+export async function OPTIONS(req: NextRequest) {
+  return new NextResponse(null, { status: 204, headers: corsFor(req) });
 }
 
 /** Same rule as the attachments and quote-form paths, so all three agree. */
@@ -81,6 +117,12 @@ function field(form: FormData, key: string, max = MAX_FIELD_LEN): string {
 }
 
 export async function POST(req: NextRequest) {
+  // Per request, because the allowed origin is echoed back -- and on EVERY
+  // answer below, or the page cannot read it.
+  const CORS = corsFor(req);
+  const answer = (body: unknown, status: number, extra?: Record<string, string>) =>
+    NextResponse.json(body, { status, headers: { ...CORS, ...extra } });
+
   /**
    * ⚠ FAILS OPEN, UNLIKE THE LOOKUP, AND THE DIFFERENCE IS DELIBERATE.
    *
@@ -89,42 +131,57 @@ export async function POST(req: NextRequest) {
    *
    * Here, failing closed would refuse a customer's claim during an outage they
    * cannot see, inside a window that decides whether the claim is valid at
-   * all. Spam is recoverable; a missed 48-hour deadline is not.
+   * all. Spam is recoverable; a missed 48-hour deadline is not. Turnstile, now
+   * in front, is what stops a script.
    */
   if (!await checkRateLimit(req, 10, 60_000, "claims:post")) {
-    return NextResponse.json(
-      { error: "Too many submissions. Please wait a minute and try again." },
-      { status: 429 },
-    );
+    return answer({ error: "Too many submissions. Please wait a minute and try again." }, 429, { "Retry-After": "60" });
   }
 
   let form: FormData;
   try {
     form = await req.formData();
   } catch {
-    return NextResponse.json({ error: "Invalid form submission" }, { status: 400 });
+    // ⚠ NO "turnstile" IN THIS 400. The page reads that word as "no token".
+    return answer({ error: "Invalid form submission" }, 400);
   }
 
+  // ── Cloudflare Turnstile, FIRST ──────────────────────────────────────────
+  //
+  // Before the spam checks, before any validation, any upload and any row: a
+  // submission that cannot prove itself never touches storage or the database.
+  // The claims widget's OWN secret, its action ("claim", set by the page) and
+  // the storefront's hostnames -- a token solved anywhere else is refused.
+  const turnstile = await verifyTurnstile({
+    secret: process.env.TURNSTILE_CLAIMS_SECRET_KEY,
+    secretName: "TURNSTILE_CLAIMS_SECRET_KEY",
+    token: form.get("cf-turnstile-response"),
+    req,
+    label: "claims",
+    expect: { action: "claim", hostnames: STOREFRONT_HOSTS },
+  });
+  if (!turnstile.ok) return answer(turnstile.body, turnstile.status);
+
   /**
-   * ⚠ BOTS GET A SUCCESSFUL-LOOKING REDIRECT AND NO DATABASE ROW.
+   * ⚠ THE SPAM CHECKS FLAG; THEY NO LONGER DROP (Garrett, 2026-10-01).
    *
-   * Telling a bot it was detected tells whoever wrote it what to change. The
-   * same page a real customer sees, and nothing stored.
+   * They used to answer a successful-looking redirect and store nothing. But
+   * some browsers autofill a field named "website" despite autocomplete="off",
+   * and a customer told "received" whose claim was thrown away has lost their
+   * reporting window -- the outcome this route exists to prevent. Turnstile now
+   * runs first, so whatever reaches here has proven itself to Cloudflare. It is
+   * kept, at `new` like any other, with `screening` telling staff to look twice.
    *
-   * Both signals are client-supplied and are friction rather than controls.
-   * The field names match the quote-form handler exactly -- the website team
-   * renamed them from company_website/form_loaded_at on 2026-09-01 for that
-   * reason, and under the old names this check would have found nothing and
-   * silently passed every submission.
+   * The field names match the quote form's exactly -- `website` and
+   * `elapsed_ms`, renamed by the website team from company_website /
+   * form_loaded_at on 2026-09-01 for that reason.
    */
   const honeypot = form.get("website");
-  if (typeof honeypot === "string" && honeypot.trim() !== "") {
-    return redirect();
-  }
   const elapsed = Number(form.get("elapsed_ms"));
-  if (Number.isFinite(elapsed) && elapsed > 0 && elapsed < MIN_ELAPSED_MS) {
-    return redirect();
-  }
+  const screening: "honeypot" | "too_fast" | null =
+    typeof honeypot === "string" && honeypot.trim() !== "" ? "honeypot"
+    : Number.isFinite(elapsed) && elapsed > 0 && elapsed < MIN_ELAPSED_MS ? "too_fast"
+    : null;
 
   // ── Fields ───────────────────────────────────────────────────────────────
   const orderNumberRaw = field(form, "order_number");
@@ -143,10 +200,7 @@ export async function POST(req: NextRequest) {
    * nothing to work with; everything else can be chased.
    */
   if (!orderNumberRaw || !name || !email || !CLAIM_TYPES.has(claimType)) {
-    return NextResponse.json(
-      { error: "Please give your order number, your name, your email and the type of claim." },
-      { status: 422 },
-    );
+    return answer({ error: "Please give your order number, your name, your email and the type of claim." }, 422);
   }
 
   // Date-only, and only if it is one. A malformed date is dropped rather than
@@ -161,27 +215,18 @@ export async function POST(req: NextRequest) {
   // when a staff member opened it through a signed URL.
   const files = form.getAll("photos").filter((f): f is File => f instanceof File && f.size > 0);
   if (files.length > MAX_FILES) {
-    return NextResponse.json(
-      { error: `Please attach no more than ${MAX_FILES} photos.` },
-      { status: 422 },
-    );
+    return answer({ error: `Please attach no more than ${MAX_FILES} photos.` }, 422);
   }
 
   const sniffed = new Map<File, string>();
   for (const file of files) {
     if (file.size > MAX_FILE_BYTES) {
-      return NextResponse.json(
-        { error: `"${cleanInput(file.name)}" is larger than 10 MB.` },
-        { status: 413 },
-      );
+      return answer({ error: `"${cleanInput(file.name)}" is larger than 10 MB.` }, 413);
     }
     const head = new Uint8Array(await file.slice(0, SNIFF_BYTES).arrayBuffer());
     const mime = sniffMagicBytes(head);
     if (!mime || !CLAIM_PHOTO_TYPES.has(mime)) {
-      return NextResponse.json(
-        { error: `"${cleanInput(file.name)}" is not a JPEG or PNG photo.` },
-        { status: 415 },
-      );
+      return answer({ error: `"${cleanInput(file.name)}" is not a JPEG or PNG photo.` }, 415);
     }
     sniffed.set(file, mime);
   }
@@ -204,30 +249,33 @@ export async function POST(req: NextRequest) {
       claimant_phone:   phone || null,
       message:          message || null,
       policy_version:   policyVersion || null,
-      // received_at and status take their database defaults. received_at in
-      // particular is now(), set by Postgres, not by anything the client sent.
+      screening,
+      // received_at, status and ref take their database defaults. received_at
+      // in particular is now(), set by Postgres, not by anything the client sent.
     })
-    .select("id")
+    .select("id, ref")
     .single();
 
   if (insertError || !row) {
-    return NextResponse.json(
-      { error: "We could not record your claim. Please call us so this is not delayed." },
-      { status: 500 },
-    );
+    return answer({ error: "We could not record your claim. Please call us so this is not delayed." }, 500);
   }
 
   const paths: string[] = [];
   for (const file of files) {
     const safeName = sanitizeFileName(file.name);
     const path = `${row.id}/${Date.now()}-${safeName}`;
-    const bytes = await file.arrayBuffer();
+    const mime = sniffed.get(file) ?? "application/octet-stream";
+    // ⚠ METADATA OUT BEFORE IT IS STORED (2026-10-01). These are photographs
+    // taken in customers' homes and carry where they were taken. Until this
+    // line, claim photos were stored exactly as they arrived. The Orientation
+    // survives, so a portrait photo still shows upright.
+    const bytes = stripImageMetadata(await file.arrayBuffer(), mime);
 
     const { error: uploadError } = await supabase.storage
       .from(BUCKET)
       .upload(path, bytes, {
         // The sniffed type, never file.type. Validated above, so it is present.
-        contentType: sniffed.get(file) ?? "application/octet-stream",
+        contentType: mime,
         upsert: false,
       });
 
@@ -245,10 +293,10 @@ export async function POST(req: NextRequest) {
   }
 
   /**
-   * ⚠ THE REFERENCE IS THE SUBMISSION ID, NOT A CLAIM NUMBER. No warranty row
-   * exists yet -- a human creates WAR-1033-1 on promotion. Handing the
-   * customer a number that looks like a claim reference before the claim has
-   * been accepted would be a promise we have not made.
+   * ⚠ THE REFERENCE IS THE SUBMISSION'S, NOT A CLAIM NUMBER. No warranty row
+   * exists yet -- a human creates WAR-1033-1 on promotion. CR-1042 says "we have
+   * your report", which is true; a claim number would be a promise not yet made.
+   * At most 32 letters, digits and hyphens, as the received page requires.
    */
-  return redirect(row.id);
+  return answer({ ref: row.ref }, 201);
 }
