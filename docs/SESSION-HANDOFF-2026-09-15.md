@@ -603,6 +603,7 @@ nothing on success, so silence is not a result.
 | Turnstile in one module, `lib/turnstile.ts` (Garrett, 2026-10-01) | Two forms, two copies of one check, is how checks drift apart. The quote route's answers are proven unchanged. |
 | The claims check requires its action and a storefront hostname | Its own secret already fails a quote-form token, as the website asked; action and hostname also catch a misconfigured widget. |
 | A scrubbed JPEG keeps its Orientation, and nothing else | Dropping it turned phone portraits sideways. The one fact kept says nothing about where or who. |
+| A honeypot flag keeps what the field held, first 100 characters (2026-10-05) | CR-1003, a genuine claim, tripped the honeypot through Chrome's autofill. "Filled" cannot tell an autofilled company name from a bot's junk; the value can, and it is evidence for the website's fix. |
 
 ---
 
@@ -1506,13 +1507,20 @@ nothing on success, so silence is not a result.
        outcomes: status, body, CORS and log lines identical. Promotion, through
        the real route and database: the photos filed `customer_upload`, the
        notes opening with the reference, the report date carried.
-    2. **The claims widget's secret:** the website team sends it privately; it
-       goes in `.env.kamal` only. Until it does, the endpoint answers 503 and the
-       page offers email — safe, and the page has no endpoint set yet anyway.
+    2. ✅ **The claims widget's secret** — set 2026-10-05, a production key
+       (`0x`), length 35 in the running app; a post without a token now answers
+       400 `turnstile_missing`.
     3. **The reply to the website**, by number, once deployed.
-    4. **The joint test** (their item 10): one genuine claim from the live page,
-       photos included; and our own post without a token, expecting
-       `turnstile_missing`.
+    4. ✅ **The joint test** (their item 10), 2026-10-05: a genuine claim from the
+       live page answered 201 and the received page showed `CR-1003`; it arrived
+       with every field and its photo, and promoted to `WRN-1052-1` with the
+       reference in its notes and the photo filed `customer_upload`. ⚠ **It came
+       in flagged `honeypot`**: Garrett filled the form with Chrome's autofill,
+       which filled the hidden field labelled "Company website". Kept, as
+       decided — the old route would have binned it. From 2026-10-05 the flag
+       keeps what the field held (`patch_screening_value.py`). **The website's
+       to fix:** a name and label autofill does not recognise, or no honeypot,
+       since Turnstile runs first and is the control.
     5. **Email claims entered as submissions**, the email's arrival time as
        `received_at`, so the report date keeps one path. Not on the website's
        critical path.
@@ -1596,6 +1604,12 @@ fixture the same.
 **⚠ AN ASSERTION CHECKS THE TYPE FIRST.** The same day, "the reference fits the
 page" passed on `undefined`: the regex matched the string "undefined". Assert
 `typeof x === "string"` before what the string looks like.
+
+**⚠ A CHECK CONSTRAINT PASSES WHEN ITS EXPRESSION IS NULL.** 2026-10-05: `check
+(value is null or (screening = 'honeypot' and ...))` let a value in with NO flag,
+because with `screening` null the comparison is NULL, not false. A constraint
+refuses only on false. Compare a nullable column with `is not distinct from`, and
+test the row the constraint exists to refuse.
 
 **⚠ `npx tsc --noEmit 2>&1 | grep -E "error TS"` inverts the exit code.** `grep`
 exits 1 when it finds nothing, so a **clean** typecheck looks like failure and a
@@ -1788,6 +1802,8 @@ patch_brand_fonts_local.py
 patch_docs_brand_fonts_local.py
 patch_claims_contract.py
 patch_docs_claims_contract.py
+patch_screening_value.py
+patch_docs_screening_value.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

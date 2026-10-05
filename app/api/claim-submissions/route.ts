@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
     .from("claim_submissions")
     .select(
       // ref and screening added 2026-10-01 -- by name, like everything else here.
-      "id, ref, screening, received_at, order_number_raw, order_number, delivered_on, claim_type, claimant_name, claimant_email, claimant_phone, message, policy_version, photo_paths, status, promoted_to_order_id, promoted_at, promoted_by, review_notes",
+      "id, ref, screening, screening_value, received_at, order_number_raw, order_number, delivered_on, claim_type, claimant_name, claimant_email, claimant_phone, message, policy_version, photo_paths, status, promoted_to_order_id, promoted_at, promoted_by, review_notes",
     )
     .eq("status", status)
     .order("received_at", { ascending: true });

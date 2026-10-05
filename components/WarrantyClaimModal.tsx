@@ -68,6 +68,8 @@ export interface ClaimSubmissionSeed {
   ref?: string | null;
   /** Why the spam checks flagged it ("honeypot" | "too_fast"), or null. */
   screening?: string | null;
+  /** For a honeypot flag: what the field contained, first 100 characters (2026-10-05). */
+  screening_value?: string | null;
   order_number: string | null;
   order_number_raw: string;
   claim_type: string;

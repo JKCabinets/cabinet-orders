@@ -106,7 +106,7 @@ export function ClaimDrafts({ onCompleted }: { onCompleted?: () => void }) {
             {d.screening && (
               <p className="text-[11px] mt-1" style={{ color: "#d4922a" }}>
                 {d.screening === "honeypot"
-                  ? "Flagged: the hidden spam-trap field was filled. Usually a bot, sometimes a browser's autofill."
+                  ? `Flagged: the hidden spam-trap field was filled${d.screening_value ? ` with “${d.screening_value}”` : ""}. A company name or an address usually means a browser's autofill; junk means a bot.`
                   : "Flagged: sent within two seconds of the page opening. Usually a bot."}
               </p>
             )}

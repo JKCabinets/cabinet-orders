@@ -177,6 +177,11 @@ export async function POST(req: NextRequest) {
    * form_loaded_at on 2026-09-01 for that reason.
    */
   const honeypot = form.get("website");
+  // ⚠ WHAT IT CONTAINED, TOO (2026-10-05). CR-1003, the first genuine claim from
+  // the live page, was flagged here because Chrome's autofill filled this field.
+  // A flag that says only "filled" cannot tell an autofilled company name from a
+  // bot's junk; the first 100 characters can.
+  const honeypotValue = typeof honeypot === "string" ? cleanInput(honeypot.slice(0, 100)) : "";
   const elapsed = Number(form.get("elapsed_ms"));
   const screening: "honeypot" | "too_fast" | null =
     typeof honeypot === "string" && honeypot.trim() !== "" ? "honeypot"
@@ -250,6 +255,7 @@ export async function POST(req: NextRequest) {
       message:          message || null,
       policy_version:   policyVersion || null,
       screening,
+      screening_value: screening === "honeypot" ? honeypotValue || null : null,
       // received_at, status and ref take their database defaults. received_at
       // in particular is now(), set by Postgres, not by anything the client sent.
     })
