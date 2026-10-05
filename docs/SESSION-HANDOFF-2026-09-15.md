@@ -1409,13 +1409,12 @@ nothing on success, so silence is not a result.
     `lib/customerFacing.ts`, not inline in a route, so the next person changing
     wording has one file to read.
 25. **Found 2026-09-30, outside item 24, NOT fixed.**
-    - ⚠ **A customer's HEIC, WEBP or GIF keeps its metadata, GPS included.**
-      `PUBLIC_UPLOAD_TYPES` accepts all three; `stripImageMetadata` scrubs JPEG
-      only. Proven with the real route and scrubber. Whether a browser sends them
-      is the storefront's accept list. Narrow the types, or scrub HEIC properly
-      (its metadata is addressed by offset — a rewrite, not a cut). A decision
-      with the website team. The same three are stored with a `.pdf` extension.
-    - The quote route tells a customer "(max 20 MB)"; the cap is 10 MB.
+    - ✅ ~~A customer's HEIC, WEBP or GIF keeps its metadata, GPS included~~ —
+      fixed 2026-10-05 by narrowing: the quote form takes JPEG, PNG and PDF, as
+      the website's own form already did, so nothing is stored that cannot be
+      scrubbed, and nothing under a wrong `.pdf` name. Item 27 step 6.
+    - ✅ ~~The quote route tells a customer "(max 20 MB)"~~ — the message reads
+      the limit from its constant since 2026-10-05.
     - The quote route leaves the storage object when its row insert fails (the
       staff route cleans up) — which is where the 09-28→30 orphans came from.
     - ✅ ~~`promote` writes a customer's claim photos as `general`~~ — fixed in
@@ -1423,8 +1422,8 @@ nothing on success, so silence is not a result.
     - ⚠ **The metadata scrubber dropped a JPEG's Orientation** with the rest of
       its Exif, from 2026-09-24: a phone's portrait photo then displayed on its
       side. And it scrubbed nothing from a PNG, GPS included. Both proven
-      against the real function and fixed in item 27; HEIC, WEBP and GIF are
-      still accepted unscrubbed on the QUOTE form, pending item 27's step 6.
+      against the real function and fixed in item 27; HEIC, WEBP and GIF were
+      accepted unscrubbed on the QUOTE form until item 27's step 6 (2026-10-05).
     - ✅ ~~`AttachmentsPanel`: delete ignores the answer; not claim-aware;
       Receipt on custom jobs.~~ Fixed in item 24 step 2, with the Files tab's
       "Project tab" copy.
@@ -1524,10 +1523,20 @@ nothing on success, so silence is not a result.
     5. **Email claims entered as submissions**, the email's arrival time as
        `received_at`, so the report date keeps one path. Not on the website's
        critical path.
-    6. **Quote uploads narrowed to JPG, PNG and PDF**, server and form together
-       — the website must narrow its `accept` in the same change, or a HEIC
-       upload that worked starts being refused. Fixes the "max 20 MB" message and
-       the `.pdf` naming with it.
+    6. ✅ **Quote uploads narrowed to JPG, PNG and PDF**
+       (`patch_quote_types_note_label.py`, 2026-10-05). The website's form had
+       already narrowed in its picker and its own check, so nothing it offers is
+       refused. **Proved** through the real quote route before and after: a HEIC
+       accepted, then refused 415 naming "JPEG, PNG or PDF"; an 11 MB JPEG's
+       message "max 20 MB", then "max 10 MB"; a JPEG accepted both times. The
+       `.pdf` naming is exact with only these three.
+    7. ✅ **The customer-note label** says "written to the Shopify order" only
+       on an order with a `shopify_id` (same script, 2026-10-05). The website
+       asked where a customer could see a claim's note; the answer was nowhere —
+       the PATCH route writes notes to Shopify only for a row with a Shopify
+       order, the public lookup never returns notes — but the label said so on
+       every order. `Order` gained `shopify_id` for it: GET /api/orders always
+       sent the column, and `shapeOrder` dropped it.
 
 ---
 
@@ -1611,6 +1620,14 @@ because with `screening` null the comparison is NULL, not false. A constraint
 refuses only on false. Compare a nullable column with `is not distinct from`, and
 test the row the constraint exists to refuse.
 
+**⚠ A TYPECHECK THROUGH AN `any` STUB CHECKS NOTHING THAT FLOWS FROM IT.**
+2026-10-05: the first build of the note-label fix read `liveOrder.shopify_id`,
+which `Order` did not declare. The proof passed, because its stand-in store
+returned `any`, and `liveOrder` derives from the store. The box's `npx tsc
+--noEmit` refused it before the commit, as the deploy chain is built to. A
+stand-in must carry the real TYPES of what flows from it; prove it by making
+the change that failed on the box fail locally first.
+
 **⚠ `npx tsc --noEmit 2>&1 | grep -E "error TS"` inverts the exit code.** `grep`
 exits 1 when it finds nothing, so a **clean** typecheck looks like failure and a
 **failing** one looks like success. Chained with `&&`, this deployed a broken
@@ -1693,8 +1710,9 @@ or one `grep -c` away from being certain instead of assumed.
 field, would have dropped it in every browser; the specs moved to their own
 route, and PATCH would have answered 200 for them had the field merely been
 deleted; a CHECK calling a function, and every role that writes the table needs
-EXECUTE on it. The fourth is live: the quote form accepts HEIC, WEBP and GIF, and
-`stripImageMetadata` scrubs JPEG only (Open 25). **And a fifth**, live since
+EXECUTE on it. The fourth was live until 2026-10-05: the quote form accepted
+HEIC, WEBP and GIF, which `stripImageMetadata` cannot scrub (Open 25; item 27
+step 6 narrowed it). **And a fifth**, live since
 2026-09-15 and found after the step-1 deploy: `order_activity` added to the
 realtime publication, and the read policy Realtime also needed.
 
@@ -1804,6 +1822,8 @@ patch_claims_contract.py
 patch_docs_claims_contract.py
 patch_screening_value.py
 patch_docs_screening_value.py
+patch_quote_types_note_label.py
+patch_docs_quote_types_note_label.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

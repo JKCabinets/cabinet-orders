@@ -89,18 +89,22 @@ export function sniffMagicBytes(buf: Uint8Array): string | null {
 /**
  * What the PUBLIC quote form accepts: a photograph of a kitchen, or a PDF.
  * Anything else is rejected outright rather than stored defensively.
+ *
+ * ⚠ JPEG, PNG AND PDF ONLY (2026-10-05). GIF, WEBP and HEIC were accepted too,
+ * and lib/stripExif cannot scrub them -- so a HEIC straight off a phone was
+ * stored with the GPS of the customer's house, and all three were stored
+ * under a `.pdf` name. The website's form had already narrowed to these three
+ * in its picker and its own check (its note of 2026-10-05), so nothing a
+ * customer can choose there is refused here.
  */
 export const PUBLIC_UPLOAD_TYPES: ReadonlySet<string> = new Set([
   "image/jpeg",
   "image/png",
-  "image/gif",
-  "image/webp",
-  "image/heic",
   "application/pdf",
 ]);
 
 /** Human-readable list for error messages, so the customer knows what to do. */
-export const PUBLIC_UPLOAD_LABEL = "JPEG, PNG, GIF, WEBP, HEIC or PDF";
+export const PUBLIC_UPLOAD_LABEL = "JPEG, PNG or PDF";
 
 /**
  * Types that execute when a browser renders them. Never stored or served with

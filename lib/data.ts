@@ -358,6 +358,15 @@ export interface Order {
    */
   project_id?: string | null;
   /**
+   * The Shopify order this row was written from, or null: a custom job, a
+   * warranty claim, a hand-entered order. The PATCH route writes notes and
+   * dates to Shopify ONLY when it is set, so it is what decides whether
+   * "written to the Shopify order" is true (2026-10-05). The column always
+   * existed and GET /api/orders always sent it; shapeOrder dropped it --
+   * another of the fields listed above that the type system did not know.
+   */
+  shopify_id?: string | null;
+  /**
    * Warranty only: the GROUP this claim is about. A distinct relationship
    * from project_id -- one means "belongs to", this means "is about".
    * Points at the group rather than the project because the 48-hour
@@ -485,6 +494,8 @@ export function shapeOrder(raw: Record<string, unknown>): Order {
     // useRealtimeOrders carried its own copy until 2026-08-20 and shaped
     // every realtime row with a stale version until the next full fetch.
     project_id: (raw.project_id as string | null) ?? null,
+    // String, whatever the column's type: only "is there one" is ever asked.
+    shopify_id: raw.shopify_id != null ? String(raw.shopify_id) : null,
     about_order_id: (raw.about_order_id as string | null) ?? null,
     claimant_name: (raw.claimant_name as string | null) ?? null,
     claimant_email: (raw.claimant_email as string | null) ?? null,

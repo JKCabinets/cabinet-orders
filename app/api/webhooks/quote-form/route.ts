@@ -269,7 +269,9 @@ export async function POST(req: NextRequest) {
   for (const file of incomingFiles) {
     if (file.size > MAX_FILE_BYTES) {
       return NextResponse.json(
-        { error: `File "${file.name}" is too large (max 20 MB)` },
+        // The limit from the constant, not typed out: this said "max 20 MB"
+        // for eleven days after the limit became 10 (fixed 2026-10-05).
+        { error: `File "${file.name}" is too large (max ${MAX_FILE_BYTES / (1024 * 1024)} MB)` },
         { status: 413, headers: CORS },
       );
     }
@@ -471,6 +473,9 @@ export async function POST(req: NextRequest) {
     // file_name, where it is data. In the path it would be an instruction, and
     // this endpoint is anonymous.
     const sniffed = sniffedTypes.get(file) ?? "application/octet-stream";
+    // Exact since 2026-10-05: PUBLIC_UPLOAD_TYPES is JPEG, PNG and PDF, so the
+    // last branch is a PDF. (While GIF, WEBP and HEIC were accepted, they were
+    // stored under a .pdf name too.)
     const ext = sniffed === "image/jpeg" ? "jpg" : sniffed === "image/png" ? "png" : "pdf";
     const filePath = `${orderId}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
     // ⚠ METADATA OUT BEFORE IT IS STORED. A phone photo of a kitchen carries the

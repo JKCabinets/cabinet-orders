@@ -1511,7 +1511,15 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
             <div className="px-6 py-4" style={SECTION_BORDER}>
               <p className={LABEL}>Customer note</p>
               <p className="text-[10px] text-cream/35 mb-2">
-                Visible to the customer &middot; written to the Shopify order
+                {/* ⚠ TRUE ONLY WITH A SHOPIFY ORDER (2026-10-05). The note is
+                    written to Shopify by the PATCH route, and only for a row
+                    with a shopify_id. A custom job or a warranty claim has
+                    none, yet this said "written to the Shopify order" on every
+                    order -- the website asked where a customer could see a
+                    claim's note, and the answer was nowhere. */}
+                {liveOrder.shopify_id
+                  ? <>Visible to the customer &middot; written to the Shopify order</>
+                  : <>Kept in the OMS &middot; there is no Shopify order to write it to</>}
               </p>
               {/* ⚠ ONE TEXTAREA, ALWAYS (2026-09-28). A quote job used to render
                   parsed prose here INSTEAD of this field, so the designer who
