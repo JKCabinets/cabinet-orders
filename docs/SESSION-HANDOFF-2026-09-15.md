@@ -604,6 +604,9 @@ nothing on success, so silence is not a result.
 | The claims check requires its action and a storefront hostname | Its own secret already fails a quote-form token, as the website asked; action and hostname also catch a misconfigured widget. |
 | A scrubbed JPEG keeps its Orientation, and nothing else | Dropping it turned phone portraits sideways. The one fact kept says nothing about where or who. |
 | A honeypot flag keeps what the field held, first 100 characters (2026-10-05) | CR-1003, a genuine claim, tripped the honeypot through Chrome's autofill. "Filled" cannot tell an autofilled company name from a bot's junk; the value can, and it is evidence for the website's fix. |
+| Claims go to Help Scout AFTER the OMS records them (Garrett, 2026-10-05) | The website cannot post to Help Scout's API without a secret it cannot keep, so "Help Scout first" would mean email: no Turnstile, no scrubbing, no reference, no database timestamp for the reporting window, and two systems on the deadline path. |
+| The conversation is the website's specification, to the letter | Their Help Scout workflow sends the confirmation, keyed on the tag and the subject. Any drift is a customer with no confirmation, or two. |
+| A claim reaches a sender only through `claim_helpscout_lease()`; a sender searches before creating | The immediate send and the retry job overlap by design. A lease and a search make a second conversation impossible, even after a crash between creating one and recording it. |
 
 ---
 
@@ -1537,6 +1540,39 @@ nothing on success, so silence is not a result.
        order, the public lookup never returns notes — but the label said so on
        every order. `Order` gained `shopify_id` for it: GET /api/orders always
        sent the column, and `shapeOrder` dropped it.
+28. **Claims to Help Scout** (`patch_claims_to_helpscout.py`, migration
+    `2026-10-05-claim-helpscout.sql`, run BEFORE the deploy). Decided by
+    Garrett 2026-10-05: the OMS first, then Help Scout; only claims from then
+    on; a 15-minute retry. Inbox `373175` (JK Cabinets 2 You, info@). The
+    conversation is the website's specification (their note of 2026-10-05,
+    items 3 to 8). What it is: OMS-STATE §2.
+    **Proved** against 17.6 with every claims migration and a fake Help Scout
+    API built from its documentation, through the real claims route, job and
+    client: a claim sent the moment it is recorded, with the exact subject, the
+    one tag, type `email`, status `active`, the inbox, no `autoReply` or
+    `imported`, the customer's name split, the claim's own arrival as
+    `createdAt`, the form's labels, the customer's text escaped, an internal
+    note, and its scrubbed photo on the customer thread; Help Scout down at
+    arrival, then sent by the job; an attempt that died before recording its
+    conversation, found and not repeated; an expired token, one fresh token;
+    four failed attempts, the job answering 500 naming the claim; earlier rows
+    never sent; not configured, claims kept and the job saying why; two
+    senders at once, one conversation; CR-2003 never matching CR-20030; a
+    refused photo, the conversation standing and the card naming the photo; a
+    wrong cron secret, 401. The migration: existing rows `skipped`, new ones
+    `pending`, the lease handing a claim to one caller only, both constraints,
+    no access for a signed-in session. The card in every state. A STRICT
+    typecheck against the real store types, every file proven read, and a
+    misuse of `projects` proven caught.
+    **After the deploy (Garrett):** the crontab line
+    `*/15 * * * * /home/garrett/cron-jobs/run-cron.sh /api/cron/helpscout-sync`;
+    a healthchecks.io check named `helpscout-sync` (period 15 minutes, grace
+    30); its line in `~/cron-jobs/healthchecks.map`, typed on the box. Then one
+    live claim, to confirm the real API — notably that Help Scout takes a
+    10 MB photo, which its documentation does not bound.
+    **Next:** emailed claims (item 27 step 5). Staff record the email's own
+    conversation; the push tags it and sets its subject instead of creating
+    one, as the website asked (their item 7).
 
 ---
 
@@ -1627,6 +1663,13 @@ returned `any`, and `liveOrder` derives from the store. The box's `npx tsc
 --noEmit` refused it before the commit, as the deploy chain is built to. A
 stand-in must carry the real TYPES of what flows from it; prove it by making
 the change that failed on the box fail locally first.
+
+**⚠ A HAND-WRITTEN STAND-IN TYPE CAN BE WRONG; COPY THE REAL ONE.** The typed
+stand-in written for that fix declared `projects` as an array; the real store
+says `Record<string, Project>`. It passed only because that run relaxed implicit
+`any`. From the Help Scout push on, the stand-in is `StoreCtx` copied verbatim
+from `lib/store.tsx`, the typecheck is strict with nothing relaxed, and a
+deliberate misuse of a store field is shown to fail.
 
 **⚠ `npx tsc --noEmit 2>&1 | grep -E "error TS"` inverts the exit code.** `grep`
 exits 1 when it finds nothing, so a **clean** typecheck looks like failure and a
@@ -1824,6 +1867,8 @@ patch_screening_value.py
 patch_docs_screening_value.py
 patch_quote_types_note_label.py
 patch_docs_quote_types_note_label.py
+patch_claims_to_helpscout.py
+patch_docs_claims_to_helpscout.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

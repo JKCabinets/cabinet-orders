@@ -110,6 +110,26 @@ export function ClaimDrafts({ onCompleted }: { onCompleted?: () => void }) {
                   : "Flagged: sent within two seconds of the page opening. Usually a bot."}
               </p>
             )}
+            {/* ⚠ WHERE IT IS IN HELP SCOUT (2026-10-05). Every claim from the
+                website becomes a Help Scout conversation, where the customer is
+                answered. A claim that has not got there yet says why, so nobody
+                waits on a reply that cannot come. `skipped` -- every claim from
+                before the push existed -- says nothing. */}
+            {d.helpscout_state === "sent" && (
+              <p className="text-[11px] mt-1 text-[rgba(232,227,218,0.55)]">
+                <a href={d.helpscout_url || `https://secure.helpscout.net/conversation/${d.helpscout_conversation_id}`}
+                   target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}
+                   className="underline hover:text-cream">In Help Scout</a>
+                {d.helpscout_last_error ? <span style={{ color: "#d4922a" }}> &middot; {d.helpscout_last_error}</span> : null}
+              </p>
+            )}
+            {d.helpscout_state === "pending" && (
+              <p className="text-[11px] mt-1" style={{ color: d.helpscout_last_error ? "#d4922a" : "rgba(232,227,218,0.45)" }}>
+                {d.helpscout_last_error
+                  ? `Not in Help Scout yet (tried ${d.helpscout_attempts ?? 0} times): ${d.helpscout_last_error}`
+                  : "On its way to Help Scout."}
+              </p>
+            )}
             <p className="text-[12px] text-[rgba(232,227,218,0.60)] mt-0.5 line-clamp-2">
               {d.message || "No description given."}
             </p>

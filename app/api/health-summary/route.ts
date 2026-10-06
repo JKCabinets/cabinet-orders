@@ -58,6 +58,14 @@ const HEALTH_GROUPS: { key: string; label: string; detail: string; checks: strin
     detail: "Production advance and the team digest",
     checks: ["production-complete", "teams-digest"],
   },
+  {
+    // 2026-10-05: the retry job that sends website claims on to Help Scout.
+    // It fails only when a claim has been stuck for about an hour.
+    key: "helpscout",
+    label: "Claims to Help Scout",
+    detail: "Website claims reaching the Help Scout inbox",
+    checks: ["helpscout-sync"],
+  },
 ];
 
 /**

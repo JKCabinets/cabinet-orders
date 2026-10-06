@@ -2,6 +2,10 @@
 
 **As of 2026-09-15 · supersedes OPERATIONS-2026-08-18.md**
 
+⚠ **AMENDED 2026-10-05.** §5 records the Help Scout app's credentials; §6 the
+fifth check, `helpscout-sync`; §10 that every website claim becomes a Help
+Scout conversation.
+
 ⚠ **AMENDED 2026-10-01.** §2's stage words now match `lib/customerFacing.ts`,
 which they had not; §5 records both Turnstile secrets and corrects
 `QUOTE_WEBHOOK_SECRET`, which it called deliberately empty; §10 records that
@@ -324,6 +328,8 @@ Also held, not in use by these systems: `jkkitchencabinets2you.com`,
 | **`QUOTE_WEBHOOK_SECRET`** | `.env.kamal` | Set 2026-09-24 | A speed bump, not a control (below). Empty, the check is skipped and Turnstile still guards |
 | **`TURNSTILE_SECRET_KEY`** | `.env.kamal` | No expiry | The quote form answers 503; the page offers the phone number |
 | **`TURNSTILE_CLAIMS_SECRET_KEY`** (2026-10-01) | `.env.kamal` | No expiry | The claims form answers 503; the page offers the email route |
+| **`HELPSCOUT_APP_ID`**, **`HELPSCOUT_APP_SECRET`** (2026-10-05) | `.env.kamal` | No expiry. The app acts as the Help Scout user who created it, who must stay active | Claims stay `pending` in the OMS; `helpscout-sync` alarms within the hour |
+| `HELPSCOUT_MAILBOX_ID` (2026-10-05) | `config/deploy.yml` — not secret: `373175`, info@ | — | As above |
 | **`UPSTASH_REDIS_REST_URL` / `_TOKEN`** | `.env.kamal` | — | Rate-limit behaviour unverified |
 
 ## The webhook secret can now be rotated without downtime
@@ -455,7 +461,8 @@ is passed to curl on stdin, never on its command line, and never logged.
 webhook can be recreated whenever wanted. The stale note would have sent
 someone hunting for a restriction that does not exist.
 
-**Four checks**, one per cron job — out of **eleven on the account**. The
+**Five checks**, one per cron job — out of **twelve on the account** (the
+fifth, `helpscout-sync`, added 2026-10-05). The
 other seven are strays listed for deletion in §12, each with a 365-day period so
 they report "up" forever whatever happens.
 
@@ -471,6 +478,7 @@ them from healthchecks.io and shrink `IGNORED_CHECKS` in
 | `production-complete` | In production → At cross dock |
 | `teams-digest` | Silent until `TEAMS_WEBHOOK_URL` is set — now safe to enable |
 | **`jk-webhook-health`** | **Shopify ingestion** — added 2026-08-20 |
+| **`helpscout-sync`** | **Website claims reaching Help Scout**, every 15 minutes; fails when a claim is unsent after four attempts — added 2026-10-05 |
 
 ## The ingestion check reconciles; it does not heartbeat
 
@@ -904,6 +912,13 @@ page, with its reference, and every human answer goes through Help Scout. An
 automated email would need a sending service, a credential and a send log, all
 new. Later, perhaps: messages the OMS drafts with a claim's details filled in,
 for the team to send themselves.
+
+**SINCE 2026-10-05 EVERY WEBSITE CLAIM BECOMES A HELP SCOUT CONVERSATION**
+(Garrett): the OMS sends it on after recording it, never before, so a Help
+Scout outage cannot cost a claim. It is built to the website's specification so
+the website's own Help Scout workflow can send the customer's confirmation —
+tag `oms-claim`, one reply per conversation. The OMS still sends no email
+itself.
 
 **Order value is stored at ingest, not queried live.** A metrics page that
 depends on Shopify is one that breaks when Shopify does, and 2026-08-20

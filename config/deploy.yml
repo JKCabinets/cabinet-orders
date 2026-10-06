@@ -91,6 +91,9 @@ env:
     NEXTAUTH_URL: https://www.ordersjkcabinets2you.com
     PORT: "3000"
     HOSTNAME: "0.0.0.0"
+    # The Help Scout inbox claims go to: JK Cabinets 2 You, info@ (2026-10-05).
+    # Not a secret -- an id. The app's id and secret are below.
+    HELPSCOUT_MAILBOX_ID: "373175"
   secret:
     - SUPABASE_URL
     - SUPABASE_SERVICE_ROLE_KEY
@@ -113,6 +116,9 @@ env:
     # The claims form's own widget (2026-10-01): a token solved on the quote
     # form must fail on the claims endpoint, so each has its own secret.
     - TURNSTILE_CLAIMS_SECRET_KEY
+    # Help Scout's client-credentials app (2026-10-05), for sending claims on.
+    - HELPSCOUT_APP_ID
+    - HELPSCOUT_APP_SECRET
     - TEAMS_WEBHOOK_URL
     - UPSTASH_REDIS_REST_URL
     - UPSTASH_REDIS_REST_TOKEN

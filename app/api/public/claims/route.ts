@@ -4,6 +4,7 @@ import { checkRateLimit, cleanInput } from "@/lib/auth";
 import { SNIFF_BYTES, sniffMagicBytes } from "@/lib/fileValidation";
 import { stripImageMetadata } from "@/lib/stripExif";
 import { verifyTurnstile } from "@/lib/turnstile";
+import { pushClaims } from "@/lib/claimHelpScout";
 
 /**
  * POST /api/public/claims — the warranty claim form on /pages/warranty-claims.
@@ -297,6 +298,13 @@ export async function POST(req: NextRequest) {
       .update({ photo_paths: paths })
       .eq("id", row.id);
   }
+
+  // ⚠ ON TO HELP SCOUT, WITHOUT HOLDING THE CUSTOMER (2026-10-05). Not awaited:
+  // the customer's answer must never wait on Help Scout, or fail because of it.
+  // This box runs one long-lived Node server, so the send finishes after the
+  // response is gone; whatever it does not finish -- a deploy restarting the
+  // container mid-send -- the retry job sends within 15 minutes.
+  pushClaims({ id: row.id }).catch((e) => console.error(`[helpscout] ${row.ref}: ${(e as Error).message}`));
 
   /**
    * ⚠ THE REFERENCE IS THE SUBMISSION'S, NOT A CLAIM NUMBER. No warranty row

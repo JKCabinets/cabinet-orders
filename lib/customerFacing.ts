@@ -145,3 +145,16 @@ export const TRACKING_GROUP_LABEL: Partial<Record<OrderType, string>> = {
 export const NOTE_NO_CABINETS =
   "This order is on its way. Tracking is below where we have it, and it is "
   + "also in your account and on your confirmation email.";
+
+/**
+ * A claim's type in the customer's words -- the labels on the website's claim
+ * form (its note of 2026-10-05), used wherever a customer can read claim text:
+ * the first thread of the Help Scout conversation. The stable keys never leave
+ * the OMS. Plain punctuation, on purpose: no long dashes, no emoji.
+ */
+export const CLAIM_TYPE_LABEL: Record<string, string> = {
+  visible: "Visible shipping damage",
+  shortage: "Something missing from the order",
+  concealed: "Damage found after unpacking",
+  defect: "Defect",
+};
