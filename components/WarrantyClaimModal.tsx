@@ -70,6 +70,9 @@ export interface ClaimSubmissionSeed {
   screening?: string | null;
   /** For a honeypot flag: what the field contained, first 100 characters (2026-10-05). */
   screening_value?: string | null;
+  /** team_members.id of whoever has claimed it, as orders.claimed_by (2026-10-06). */
+  claimed_by?: string | null;
+  claimed_at?: string | null;
   /** pending | sent | skipped (2026-10-05): where the claim is in Help Scout. */
   helpscout_state?: string | null;
   helpscout_conversation_id?: number | null;

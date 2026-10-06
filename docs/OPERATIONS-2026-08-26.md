@@ -920,6 +920,12 @@ the website's own Help Scout workflow can send the customer's confirmation —
 tag `oms-claim`, one reply per conversation. The OMS still sends no email
 itself.
 
+**A CUSTOMER'S CLAIM IS CLAIMED LIKE AN ORDER** (Garrett, 2026-10-06): "Once
+claimed, the order is locked to that person to avoid duplicate communication
+and duplicate orders." Since 2026-10-06 that includes the submissions waiting
+in the warranty queue. Whoever promotes one claims it in the same step, and the
+warranty claim it becomes is theirs.
+
 **Order value is stored at ingest, not queried live.** A metrics page that
 depends on Shopify is one that breaks when Shopify does, and 2026-08-20
 demonstrated how that goes. Custom orders are hand-entered, having no Shopify

@@ -607,6 +607,7 @@ nothing on success, so silence is not a result.
 | Claims go to Help Scout AFTER the OMS records them (Garrett, 2026-10-05) | The website cannot post to Help Scout's API without a secret it cannot keep, so "Help Scout first" would mean email: no Turnstile, no scrubbing, no reference, no database timestamp for the reporting window, and two systems on the deadline path. |
 | The conversation is the website's specification, to the letter | Their Help Scout workflow sends the confirmation, keyed on the tag and the subject. Any drift is a customer with no confirmation, or two. |
 | A claim reaches a sender only through `claim_helpscout_lease()`; a sender searches before creating | The immediate send and the retry job overlap by design. A lease and a search make a second conversation impossible, even after a crash between creating one and recording it. |
+| A claim submission is claimed like an order; promoting it claims it first (Garrett, 2026-10-06) | One person answers the customer and one claim is created. A claim alone does not stop the same person pressing twice, so promotion also takes a lease, in the same locked step. |
 
 ---
 
@@ -1448,8 +1449,9 @@ nothing on success, so silence is not a result.
       the verified build produced, and Garrett checked the screens by eye. No
       pixel comparison was run.
     - Deleting an order leaves its files in storage (rows cascade, objects do not).
-    - Two near-simultaneous promotes both create a claim; the second's update
-      matches nothing without an error and answers 201.
+    - ✅ ~~Two near-simultaneous promotes both create a claim~~ — fixed in item
+      29 (2026-10-06). Shown first: two presses at once through the deployed
+      route created TWO warranty claims; through the new one, one.
     - The attachment DELETE skips its archived check if its `orders` read fails.
     - Stale comments: ~~the upload route's `ATTACHMENT_KINDS` "MUST match" the
       CHECK~~ (fixed in item 24 step 3, with the caps comment beside it);
@@ -1570,9 +1572,39 @@ nothing on success, so silence is not a result.
     30); its line in `~/cron-jobs/healthchecks.map`, typed on the box. Then one
     live claim, to confirm the real API — notably that Help Scout takes a
     10 MB photo, which its documentation does not bound.
-    **Next:** emailed claims (item 27 step 5). Staff record the email's own
-    conversation; the push tags it and sets its subject instead of creating
-    one, as the website asked (their item 7).
+    **Verified live 2026-10-06:** CR-1004 became conversation #17 with the
+    subject, the tag, the form's labels, all four photos and the internal
+    note, and the website's workflow sent one confirmation within a minute.
+    Two Help Scout settings passed to the website team: Outlook flags the
+    confirmation as unverified ("via helpscout.net" — jkcabinets2you.com needs
+    Help Scout's DKIM and SPF records), and Help Scout's "How would you rate my
+    reply?" sits under an automatic message. **The website removed its
+    honeypot from both forms on 2026-10-06** (Chrome autofilled it with the
+    company name, as CR-1004's stored value showed): the OMS check stays and
+    finds nothing; `elapsed_ms` still flags.
+29. **Claim submissions are claimed like orders**
+    (`patch_claim_submission_claims.py`, migration
+    `2026-10-06-claim-submission-claims.sql`, run BEFORE the deploy). Garrett,
+    2026-10-06: once claimed, locked to that person. What it is: OMS-STATE §2.
+    **Proved** on 17.6: every path through `claim_submission()`,
+    `release_submission()` and `begin_promotion()`; two concurrent sessions,
+    the second waiting on the first's lock and then refused `promoting`.
+    Through the real routes: an unclaimed submission promoted and claimed for
+    the promoter; someone else's claim refusing a member AND an admin, with no
+    claim created; two presses at once, one claim (the deployed route, as a
+    control: two); a failed create releasing the lease at once and a corrected
+    retry succeeding; every claim-route answer. The card rendered in each
+    state, someone else's not opening, Claim and Release each sending one
+    request. A strict typecheck against the deployed store's real types.
+30. **Emailed claims** (Garrett, 2026-10-06): staff enter everything by hand —
+    the details, the date and time the customer's email arrived (which the
+    claim is judged against), and JPEG or PNG photos, scrubbed; PDFs and every
+    other type refused. They paste the Help Scout conversation's link, checked
+    to be a real conversation in inbox 373175 not used by another claim; the
+    entry is claimed by whoever made it, and the push adopts that conversation
+    — `oms-claim` added to its tags, the subject set — instead of creating
+    one. The website's workflow should fire when the tag arrives; a live test
+    with the website team proves it, and they hold a manual fallback.
 
 ---
 
@@ -1869,6 +1901,8 @@ patch_quote_types_note_label.py
 patch_docs_quote_types_note_label.py
 patch_claims_to_helpscout.py
 patch_docs_claims_to_helpscout.py
+patch_claim_submission_claims.py
+patch_docs_claim_submission_claims.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
 import { Image as ImageIcon, RefreshCw } from "lucide-react";
+import { useStore } from "@/lib/store";
 import {
   WarrantyClaimModal,
   type ClaimSubmissionSeed,
@@ -22,6 +24,12 @@ import {
  * draft wearing an Order's shape would reach all four, and the first person to
  * bulk-advance a stage would be advancing something that does not exist. Their
  * own band, their own component, their own fetch.
+ *
+ * ⚠ CLAIMED LIKE AN ORDER (Garrett, 2026-10-06). Once claimed, a submission is
+ * that person's: one person answers the customer, one person promotes it.
+ * Claim and Release sit BELOW each card, not inside it -- the card is a button
+ * that opens the promotion form, and a button inside a button is invalid. A
+ * card claimed by someone else does not open; it says who has it.
  */
 
 const HAIRLINE = "0.5px solid rgba(255,255,255,0.12)";
@@ -35,6 +43,42 @@ export function ClaimDrafts({ onCompleted }: { onCompleted?: () => void }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [open, setOpen] = useState<Draft | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const { team } = useStore();
+  const { data: session } = useSession();
+  // team_members.id -- what claimed_by holds -- as OrderModal reads it.
+  const me = (session?.user as { id?: string } | undefined)?.id;
+  const nameOf = (id: string) => team.find((m) => m.id === id)?.name ?? "another member";
+
+  // Claim or release, then reload: the queue is not on the realtime channel,
+  // so the list is re-read rather than patched.
+  const setClaim = async (d: Draft, claim: boolean) => {
+    setBusy(d.id);
+    setError("");
+    try {
+      const res = await fetch(`/api/claim-submissions/${d.id}/claim`, { method: claim ? "POST" : "DELETE" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const who = json.claimed_by ? ` (${nameOf(json.claimed_by)})` : "";
+        throw new Error(`${d.ref ?? "This submission"}: ${json.message ?? "could not be changed"}${who}`);
+      }
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not change the claim.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  // Someone else's claim does not open: promoting it would be refused anyway,
+  // after the form had been filled in.
+  const openCard = (d: Draft) => {
+    if (d.claimed_by && d.claimed_by !== me) {
+      setError(`${d.ref ?? "This submission"} is claimed by ${nameOf(d.claimed_by)}. Ask them to release it.`);
+      return;
+    }
+    setOpen(d);
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -82,11 +126,10 @@ export function ClaimDrafts({ onCompleted }: { onCompleted?: () => void }) {
         )}
 
         {drafts.map((d, i) => (
+          <div key={d.id} style={{ borderTop: i === 0 ? "none" : HAIRLINE }}>
           <button
-            key={d.id}
-            onClick={() => setOpen(d)}
-            className="w-full text-left px-4 py-3 transition-colors hover:bg-[rgba(255,255,255,0.04)]"
-            style={{ borderTop: i === 0 ? "none" : HAIRLINE }}
+            onClick={() => openCard(d)}
+            className="w-full text-left px-4 pt-3 pb-2 transition-colors hover:bg-[rgba(255,255,255,0.04)]"
           >
             <div className="flex items-baseline justify-between gap-3">
               <span className="text-[14px] text-cream">
@@ -149,6 +192,28 @@ export function ClaimDrafts({ onCompleted }: { onCompleted?: () => void }) {
               )}
             </div>
           </button>
+          <div className="flex items-center gap-3 px-4 pb-3 text-[11px]">
+            {d.claimed_by ? (
+              <span style={{ color: d.claimed_by === me ? "rgba(232,227,218,0.70)" : "#d4922a" }}>
+                Claimed by {d.claimed_by === me ? "you" : nameOf(d.claimed_by)}
+              </span>
+            ) : (
+              <span className="text-[rgba(232,227,218,0.40)]">Unclaimed</span>
+            )}
+            {!d.claimed_by && (
+              <button onClick={() => void setClaim(d, true)} disabled={busy === d.id}
+                className="underline text-[rgba(232,227,218,0.70)] hover:text-cream disabled:opacity-50">
+                Claim
+              </button>
+            )}
+            {d.claimed_by === me && (
+              <button onClick={() => void setClaim(d, false)} disabled={busy === d.id}
+                className="underline text-[rgba(232,227,218,0.55)] hover:text-cream disabled:opacity-50">
+                Release
+              </button>
+            )}
+          </div>
+          </div>
         ))}
       </div>
 

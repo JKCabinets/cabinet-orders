@@ -119,6 +119,35 @@ export async function POST(
     );
   }
 
+  // ⚠ CLAIMED, AND LEASED, BEFORE ANYTHING IS CREATED (2026-10-06).
+  // The status check above was the only guard, and it ran at the start while
+  // the submission is only marked at the end -- so two promotions pressed
+  // together both created a warranty claim. begin_promotion() claims the
+  // submission for this person and takes a five-minute lease in one locked
+  // step: someone else's claim is refused, and so is a second press while this
+  // one runs. Proven with two concurrent sessions: the second waited for the
+  // first's lock, then was refused. Every path below either marks the
+  // submission (clearing the lease) or clears the lease itself.
+  const { data: leaseRows, error: leaseErr } = await supabase.rpc("begin_promotion", {
+    p_id: id, p_user: auth.session.user.id,
+  });
+  const lease = (Array.isArray(leaseRows) ? leaseRows[0] : leaseRows) as
+    { ok: boolean; claimed_by: string | null; reason: string | null } | undefined;
+  if (leaseErr || !lease) {
+    return NextResponse.json({ error: leaseErr?.message ?? "Could not claim the submission" }, { status: 500 });
+  }
+  if (!lease.ok) {
+    const message =
+      lease.reason === "already_claimed" ? "Someone else has claimed this submission. Ask them to release it."
+      : lease.reason === "promoting" ? "This submission is already being promoted."
+      : lease.reason === "closed" ? "This submission has already been promoted or set aside."
+      : "No such submission.";
+    return NextResponse.json(
+      { error: lease.reason, claimed_by: lease.claimed_by, message },
+      { status: lease.reason === "not_found" ? 404 : 409 },
+    );
+  }
+
   // The claim's working notes: what the customer actually said, kept verbatim
   // rather than summarised, because it is the report.
   const notesParts = [
@@ -162,6 +191,9 @@ export async function POST(
   });
 
   if (!created.ok) {
+    // Nothing was created, so the lease goes back at once -- a corrected retry
+    // must not wait five minutes. The claim stays: it is still this person's.
+    await supabase.from("claim_submissions").update({ promoting_since: null }).eq("id", id);
     return NextResponse.json(
       { error: created.error, message: created.message },
       { status: created.status },
@@ -238,6 +270,7 @@ export async function POST(
       promoted_to_order_id: claimId,
       promoted_at: new Date().toISOString(),
       promoted_by: auth.session.user.username,
+      promoting_since: null,
     })
     .eq("id", id)
     // Only if still `new`, so two simultaneous promotions cannot both mark it.
