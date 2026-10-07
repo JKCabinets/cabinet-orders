@@ -402,7 +402,7 @@ export default function MappingsPage() {
                 <button
                   onClick={() => void resolveDrift(d.id)}
                   title="Dismiss - the sync reopens it if the situation recurs"
-                  className="text-[10px] uppercase tracking-wider text-cream/40 hover:text-cream/75 underline whitespace-nowrap"
+                  className="text-[10px] uppercase tracking-wider px-3 py-1 rounded-full transition-all bg-white/5 border border-cream/20 text-cream/75 hover:bg-white/10 hover:text-cream whitespace-nowrap"
                 >
                   dismiss
                 </button>
@@ -422,7 +422,7 @@ export default function MappingsPage() {
               <p className="text-xs text-cream/85">{loadError}</p>
               <button
                 onClick={() => void load()}
-                className="mt-1 text-[11px] text-cream/60 hover:text-cream/90 underline"
+                className="mt-1.5 text-[10px] uppercase tracking-wider px-3 py-1 rounded-full transition-all bg-white/5 border border-cream/20 text-cream/75 hover:bg-white/10 hover:text-cream"
               >
                 Try again
               </button>
@@ -534,7 +534,7 @@ function MappingRowView({
           <button
             onClick={() => onSetCodeRequired(false)}
             title="This value never needs a code - e.g. a selector whose real code comes from another option"
-            className="text-[10px] uppercase tracking-wider text-cream/40 hover:text-cream/75 underline whitespace-nowrap"
+            className="text-[10px] uppercase tracking-wider px-3 py-1 rounded-full transition-all bg-white/5 border border-cream/20 text-cream/75 hover:bg-white/10 hover:text-cream whitespace-nowrap"
           >
             not needed
           </button>
@@ -548,7 +548,7 @@ function MappingRowView({
           <button
             onClick={() => onSetCodeRequired(true)}
             title="Put this value back in the needs-a-code queue"
-            className="text-[10px] uppercase tracking-wider text-cream/40 hover:text-cream/75 underline whitespace-nowrap"
+            className="text-[10px] uppercase tracking-wider px-3 py-1 rounded-full transition-all bg-white/5 border border-cream/20 text-cream/75 hover:bg-white/10 hover:text-cream whitespace-nowrap"
           >
             undo
           </button>

@@ -614,6 +614,7 @@ nothing on success, so silence is not a result.
 | Requests up to 64 MB reach the app; the claims route refuses more with a 413 (2026-10-07) | Next CUTS OFF a body past its proxy buffer instead of refusing it. 64 MB clears a claim's largest legitimate request; past it, a clear 413 beats an unreadable form. |
 | Every claim refusal carries a machine key, and the file or field (the website's request, 2026-10-07) | The page can tell the customer exactly what to fix instead of offering the email route for everything. The Turnstile answers, which the page already acts on, are unchanged. |
 | Every action is a pill; nothing clickable sits inside another (Garrett, 2026-10-07) | Underlined text is too easily missed. One look across the OMS, from the styles it already uses. |
+| The Shopify product picker is removed from `NewOrderModal` (2026-10-07) | It only ever appeared on a custom job, which records choices room by room, and its catalogue was admin-only, so it listed nothing for the team. |
 
 ---
 
@@ -1253,7 +1254,7 @@ nothing on success, so silence is not a result.
     moving a file to another room, and filing under a style group from a
     screen (the route already accepts a style group's id). The
     Shopify product picker in `NewOrderModal` was to go when room filing
-    landed, and it has, so it is next — a custom
+    landed, and it has — ✅ removed in item 33, 2026-10-07. A custom
     job has no SKUs, and the picker reads an admin-only endpoint, so it shows
     an empty list to anyone else. Verified unused: the one manual row has zero
     sku_items.
@@ -1447,9 +1448,13 @@ nothing on success, so silence is not a result.
     - ⚠ `xlsx` installs from `cdn.sheetjs.com/xlsx-latest/xlsx-latest.tgz`: the
       next dependency rebuild after a SheetJS release should fail `npm ci` on
       the lockfile's integrity hash. Pin a versioned URL. OMS-STATE §7.
-    - `NewOrderModal` styles one input with `var(--font-geist-mono, monospace)`;
-      nothing defines `--font-geist-mono` (a create-next-app leftover), so it is
-      `monospace` — which is probably what was meant. Say so, or drop the var.
+    - ✅ ~~`NewOrderModal` styles one input with `var(--font-geist-mono,
+      monospace)`~~ — the input was the picker's SKU search, removed with it in
+      item 33 (2026-10-07).
+    - `NewOrderModal` keeps a WARRANTY branch (the "about which order" search)
+      that nothing can reach: the dashboard opens it for custom jobs only, and
+      the orders hub opens `WarrantyClaimModal` for claims. Dead code, left in
+      place by item 33 to keep that change to the picker.
     - ✅ ~~Check after the fonts deploy~~ — done 2026-10-01: production serves
       `DMSans_wght300_600-s.p.0roqa3ab3xhnr.woff2`, the exact content-hashed name
       the verified build produced, and Garrett checked the screens by eye. No
@@ -1627,8 +1632,12 @@ nothing on success, so silence is not a result.
     once, one row and a 409; promotion's notes saying "by email, entered by"
     with the entered time as the report date. The form and band rendered and
     driven. A strict typecheck against the real store types.
-    **Next:** the live test with the website team — one emailed claim, to see
-    their workflow confirm in the customer's own thread.
+    ✅ **Verified live 2026-10-07** (Garrett): an emailed claim entered from its
+    conversation's link became an OMS claim, adopted that conversation —
+    subject, `oms-claim`, note — and the website's workflow sent its
+    confirmation once, in the customer's own thread. So the workflow DOES fire
+    on a tag added later through the API; the website's manual fallback is not
+    needed.
 31. **Requests over 10 MB were cut off; claim refusals are keyed**
     (`patch_request_size_and_error_keys.py`, 2026-10-07). The website reported
     a 400, not mentioning Turnstile, for a claim with one 8 MB photo. The
@@ -1661,7 +1670,26 @@ nothing on success, so silence is not a result.
     **Proved:** no class list in either file underlines anything; the band and
     the form rendered and driven, every action still doing what it did.
     Screens not yet pulled were not checked; a repository-wide search lists
-    any underlined action left.
+    any underlined action left. It found four, all on the admin mappings page
+    — made pills in item 33.
+33. **The Shopify product picker is gone from `NewOrderModal`; the mappings
+    page's actions are pills** (`patch_picker_removed_map_pills.py`,
+    2026-10-07). The modal is only ever opened for a custom job — the
+    dashboard passes `custom`; the orders hub offers create for custom jobs
+    and claims only and opens `WarrantyClaimModal` for claims; the server
+    creates nothing else by hand (`MANUAL_CREATABLE_TYPES`). So the picker
+    showed in exactly the place it did not belong, and listed nothing for
+    anyone but an admin (`/api/shopify/sync` is `requireAdmin`). Removed: its
+    state, the catalogue fetch on open, the vendor list, the four handlers, the
+    "SKUs & quantities" block, and `sku`, `sku_items` and `vendor` from what is
+    sent — the route defaults all three to what an empty picker sent.
+    `/api/shopify/sync` and the admin Shopify page are untouched. **Proved:**
+    old and new modals rendered for a custom job — the old fetched the
+    catalogue, showed the picker and sent the three fields; the new does none
+    of it and sends every other field identically, door style and colour kept.
+    The admin mappings page's four underlined buttons (dismiss, try again, not
+    needed, undo) are neutral pills; no class list on it underlines anything.
+    A strict typecheck of both against the real store types.
 
 ---
 
@@ -1983,6 +2011,8 @@ patch_request_size_and_error_keys.py
 patch_docs_request_size_and_error_keys.py
 patch_pill_actions.py
 patch_docs_pill_actions.py
+patch_picker_removed_map_pills.py
+patch_docs_picker_removed_map_pills.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it
