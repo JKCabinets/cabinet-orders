@@ -70,6 +70,10 @@ export interface ClaimSubmissionSeed {
   screening?: string | null;
   /** For a honeypot flag: what the field contained, first 100 characters (2026-10-05). */
   screening_value?: string | null;
+  /** website | email, and who entered an emailed one (username) (2026-10-06). */
+  source?: string | null;
+  entered_by?: string | null;
+  email_conversation_id?: number | null;
   /** team_members.id of whoever has claimed it, as orders.claimed_by (2026-10-06). */
   claimed_by?: string | null;
   claimed_at?: string | null;

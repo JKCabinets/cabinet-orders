@@ -153,7 +153,9 @@ export async function POST(
   const notesParts = [
     // The reference the customer was given (2026-10-01), so a call quoting
     // "CR-1042" finds this claim.
-    `📮 CUSTOMER CLAIM${sub.ref ? ` ${sub.ref}` : ""} — submitted ${new Date(sub.received_at).toLocaleString("en-US", { timeZone: "America/Phoenix" })}`,
+    // An emailed claim (2026-10-06) says so, and who entered it: its report
+    // date is the email's arrival as they entered it, not a form's timestamp.
+    `📮 CUSTOMER CLAIM${sub.ref ? ` ${sub.ref}` : ""}${sub.source === "email" ? ` (by email, entered by ${sub.entered_by})` : ""} — ${sub.source === "email" ? "email received" : "submitted"} ${new Date(sub.received_at).toLocaleString("en-US", { timeZone: "America/Phoenix" })}`,
     `Type: ${sub.claim_type}`,
     `Order as typed: ${sub.order_number_raw}`,
   ];

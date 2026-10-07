@@ -138,5 +138,50 @@ export async function uploadAttachment(
   if (!res.ok) await refused(res, `attaching ${fileName}`);
 }
 
+export interface ConversationInfo { id: number; mailboxId: number; tags: string[]; url: string | null }
+
+/**
+ * GET /v2/conversations/{id}, or null if Help Scout has no such conversation.
+ * A conversation merged into another answers 301 for 60 days, which fetch
+ * follows -- so `id` here is the conversation AS IT IS NOW, perhaps not the
+ * one asked for.
+ */
+export async function getConversation(id: number): Promise<ConversationInfo | null> {
+  const res = await call(`/conversations/${id}`);
+  if (res.status === 404) return null;
+  if (!res.ok) await refused(res, "reading the conversation");
+  const body = (await res.json()) as {
+    id?: unknown; mailboxId?: unknown; tags?: Array<{ tag?: unknown } | string>; _links?: { web?: { href?: unknown } };
+  };
+  const tags = (body.tags ?? [])
+    .map((t) => (typeof t === "string" ? t : typeof t?.tag === "string" ? t.tag : ""))
+    .filter(Boolean);
+  const href = body._links?.web?.href;
+  return { id: Number(body.id), mailboxId: Number(body.mailboxId), tags, url: typeof href === "string" ? href : null };
+}
+
+/** PATCH /v2/conversations/{id}: replace the subject. */
+export async function setSubject(id: number, subject: string): Promise<void> {
+  const res = await call(`/conversations/${id}`, { method: "PATCH", json: { op: "replace", path: "/subject", value: subject } });
+  if (!res.ok) await refused(res, "changing the subject");
+}
+
+/**
+ * PUT /v2/conversations/{id}/tags. ⚠ THE WHOLE LIST: any tag not sent is
+ * removed. Callers send the tags the conversation already has plus the new
+ * one; a tag an agent adds in the instant between that read and this write is
+ * lost -- the API offers no add-one-tag call.
+ */
+export async function setTags(id: number, tags: string[]): Promise<void> {
+  const res = await call(`/conversations/${id}/tags`, { method: "PUT", json: { tags } });
+  if (!res.ok) await refused(res, "setting the tags");
+}
+
+/** POST /v2/conversations/{id}/notes: an internal note, never seen by the customer. */
+export async function addNote(id: number, text: string): Promise<void> {
+  const res = await call(`/conversations/${id}/notes`, { method: "POST", json: { text } });
+  if (!res.ok) await refused(res, "adding the note");
+}
+
 /** For tests: forget the cached token. */
 export function _forgetToken(): void { cached = null; }

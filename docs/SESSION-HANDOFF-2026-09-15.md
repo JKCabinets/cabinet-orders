@@ -608,6 +608,9 @@ nothing on success, so silence is not a result.
 | The conversation is the website's specification, to the letter | Their Help Scout workflow sends the confirmation, keyed on the tag and the subject. Any drift is a customer with no confirmation, or two. |
 | A claim reaches a sender only through `claim_helpscout_lease()`; a sender searches before creating | The immediate send and the retry job overlap by design. A lease and a search make a second conversation impossible, even after a crash between creating one and recording it. |
 | A claim submission is claimed like an order; promoting it claims it first (Garrett, 2026-10-06) | One person answers the customer and one claim is created. A claim alone does not stop the same person pressing twice, so promotion also takes a lease, in the same locked step. |
+| An emailed claim's report date is typed by staff from the email (Garrett, 2026-10-06) | Entered by hand, nothing read out of the email. Recorded with who entered it; never in the future. |
+| Photo checking and scrubbing live in ONE place, `lib/claimIntake` | Two routes now take claim photos. Two copies of a security step drift; the public route's answers were proven unchanged by the move. |
+| An emailed claim ADOPTS its conversation (the website's item 7) | A second conversation is a second thread and a second confirmation for a claim the customer already sent. Tags are read and written back whole — the API has no add-one-tag call — so a tag added in that instant is lost. |
 
 ---
 
@@ -1525,9 +1528,7 @@ nothing on success, so silence is not a result.
        keeps what the field held (`patch_screening_value.py`). **The website's
        to fix:** a name and label autofill does not recognise, or no honeypot,
        since Turnstile runs first and is the control.
-    5. **Email claims entered as submissions**, the email's arrival time as
-       `received_at`, so the report date keeps one path. Not on the website's
-       critical path.
+    5. ✅ **Email claims entered as submissions** — item 30, 2026-10-06.
     6. ✅ **Quote uploads narrowed to JPG, PNG and PDF**
        (`patch_quote_types_note_label.py`, 2026-10-05). The website's form had
        already narrowed in its picker and its own check, so nothing it offers is
@@ -1605,6 +1606,26 @@ nothing on success, so silence is not a result.
     — `oms-claim` added to its tags, the subject set — instead of creating
     one. The website's workflow should fire when the tag arrives; a live test
     with the website team proves it, and they hold a manual fallback.
+    ✅ **Built** (`patch_emailed_claims.py`, migration
+    `2026-10-06-claim-emailed.sql`, run BEFORE the deploy). **Proved** on 17.6:
+    the migration's three constraints and one-per-conversation index refusing
+    each bad row. The public route, refactored onto `lib/claimIntake`, run
+    through the whole 2026-10-01 claims suite against the DEPLOYED route:
+    22 cases, identical output, the stored photos byte-identical. Through the
+    real staff route, push and promotion against a fake Help Scout: an emailed
+    claim recorded with its source, enterer, conversation, claim and exact
+    time (2:05 pm Arizona = 21:05 UTC), its conversation adopted — tags kept
+    plus `oms-claim`, subject set, the note — with no conversation created;
+    the same email twice, another inbox, no such conversation, a bare number,
+    a future time, February 30, no time, a PDF, seven photos, Help Scout down
+    (nothing written), Help Scout unconfigured, signed out: each refused with
+    its reason; a merged conversation's link followed to the one it became;
+    tags already carrying ours not rewritten; two entries of one email at
+    once, one row and a 409; promotion's notes saying "by email, entered by"
+    with the entered time as the report date. The form and band rendered and
+    driven. A strict typecheck against the real store types.
+    **Next:** the live test with the website team — one emailed claim, to see
+    their workflow confirm in the customer's own thread.
 
 ---
 
@@ -1702,6 +1723,17 @@ says `Record<string, Project>`. It passed only because that run relaxed implicit
 `any`. From the Help Scout push on, the stand-in is `StoreCtx` copied verbatim
 from `lib/store.tsx`, the typecheck is strict with nothing relaxed, and a
 deliberate misuse of a store field is shown to fail.
+
+**⚠ A COMPARISON OF TWO CRASHES PROVES NOTHING.** 2026-10-06: the first
+"deployed route vs refactored" diff of the claims suite came back IDENTICAL —
+because both runs died at the second case, unable to find a test photo. Before
+reading a diff, count what ran and look for errors.
+
+**⚠ A STAND-IN MUST PASS THE DATABASE'S ERROR CODES THROUGH.** The same day,
+two entries of one email answered 201 and 500, not 409: the route turns a
+unique-index violation (SQLSTATE 23505) into a clear 409, and the test's
+Supabase stand-in dropped the code that PostgREST sends. Fixed in the
+stand-in, not the route.
 
 **⚠ `npx tsc --noEmit 2>&1 | grep -E "error TS"` inverts the exit code.** `grep`
 exits 1 when it finds nothing, so a **clean** typecheck looks like failure and a
@@ -1903,6 +1935,8 @@ patch_claims_to_helpscout.py
 patch_docs_claims_to_helpscout.py
 patch_claim_submission_claims.py
 patch_docs_claim_submission_claims.py
+patch_emailed_claims.py
+patch_docs_emailed_claims.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

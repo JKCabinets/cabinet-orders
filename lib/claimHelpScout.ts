@@ -1,8 +1,9 @@
 import { supabase } from "@/lib/supabase";
 import { CLAIM_TYPE_LABEL } from "@/lib/customerFacing";
 import {
-  createConversation, customerThreadId, findConversationByRef, helpScoutConfigured,
-  mailboxId, uploadAttachment, type Conversation,
+  addNote, createConversation, customerThreadId, findConversationByRef, getConversation,
+  helpScoutConfigured, HelpScoutError, mailboxId, setSubject, setTags, uploadAttachment,
+  type Conversation,
 } from "@/lib/helpscout";
 
 /**
@@ -55,6 +56,10 @@ export interface ClaimToSend {
   photo_paths: string[] | null;
   screening: string | null;
   screening_value: string | null;
+  /** website | email (2026-10-06). An emailed claim adopts its conversation. */
+  source?: string | null;
+  entered_by?: string | null;
+  email_conversation_id?: number | null;
 }
 
 function esc(s: string): string {
@@ -99,6 +104,9 @@ export function claimThreadHtml(c: ClaimToSend): string {
 /** An internal note: the team sees it, the customer never does. */
 export function claimNoteHtml(c: ClaimToSend): string {
   const parts = [`From the OMS: claim report ${esc(c.ref)}. Triage it at https://www.ordersjkcabinets2you.com/warranty.`];
+  if (c.source === "email") {
+    parts.push(`Entered from this email by ${esc(c.entered_by ?? "a team member")}. Its report date is when this email arrived, as entered.`);
+  }
   if (c.screening === "honeypot") {
     parts.push(`Flagged by the spam check: the hidden field was filled${c.screening_value ? ` with "${esc(c.screening_value)}"` : ""}. A company name or an address usually means a browser's autofill.`);
   } else if (c.screening === "too_fast") {
@@ -138,7 +146,29 @@ export function conversationPayload(c: ClaimToSend): Record<string, unknown> {
 const PHOTO_BUCKET = "claim-photos";
 
 /** Sends one claim. Returns the conversation, and what could not be attached. */
+/**
+ * ⚠ AN EMAILED CLAIM ADOPTS ITS CONVERSATION; IT NEVER GETS A NEW ONE (the
+ * website's note of 2026-10-05, item 7). The customer's own email started a
+ * conversation; a second would give them a second thread and a second
+ * confirmation. So: the subject set to the claim form's, `oms-claim` added to
+ * the tags it already has, and the internal note. The website's workflow,
+ * which acts the first time a conversation matches, then confirms in that
+ * thread. Every step can safely run again, so a retry after a partial failure
+ * converges; the note goes last, so only a failure in recording the result
+ * could ever add it twice. No photos are sent: they came in the email.
+ */
+async function adopt(c: ClaimToSend, conversationId: number): Promise<{ conversation: Conversation; notes: string[] }> {
+  const conv = await getConversation(conversationId);
+  if (!conv) throw new HelpScoutError(`conversation ${conversationId} is not in Help Scout any more (deleted, or merged over 60 days ago)`);
+  if (conv.mailboxId !== mailboxId()) throw new HelpScoutError(`conversation ${conversationId} is no longer in the JK Cabinets 2 You inbox`);
+  await setSubject(conv.id, claimSubject(c.ref));
+  if (!conv.tags.includes(CLAIM_TAG)) await setTags(conv.id, [...conv.tags, CLAIM_TAG]);
+  await addNote(conv.id, claimNoteHtml(c));
+  return { conversation: { id: conv.id, url: conv.url }, notes: [] };
+}
+
 async function send(c: ClaimToSend): Promise<{ conversation: Conversation; notes: string[] }> {
+  if (c.email_conversation_id) return adopt(c, Number(c.email_conversation_id));
   const found = await findConversationByRef(c.ref);
   if (found) {
     // An earlier attempt created it and died before recording the id. Its

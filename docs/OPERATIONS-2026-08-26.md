@@ -926,6 +926,14 @@ and duplicate orders." Since 2026-10-06 that includes the submissions waiting
 in the warranty queue. Whoever promotes one claims it in the same step, and the
 warranty claim it becomes is theirs.
 
+**A CLAIM THAT ARRIVES BY EMAIL IS ENTERED BY HAND** (Garrett, 2026-10-06).
+Staff type the details and the date and time the customer's email arrived,
+and the claim is reviewed against that date. Photos are JPEG or PNG only; a PDF
+is the one format that could carry something harmful, and claims never need
+one. One claim per email conversation, though a customer may make several
+claims. The claim keeps the customer's own Help Scout conversation, so their
+confirmation arrives in their own thread.
+
 **Order value is stored at ingest, not queried live.** A metrics page that
 depends on Shopify is one that breaks when Shopify does, and 2026-08-20
 demonstrated how that goes. Custom orders are hand-entered, having no Shopify

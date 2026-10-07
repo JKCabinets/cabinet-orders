@@ -8,6 +8,7 @@ import {
   WarrantyClaimModal,
   type ClaimSubmissionSeed,
 } from "@/components/WarrantyClaimModal";
+import { EmailClaimForm } from "@/components/EmailClaimForm";
 
 /**
  * Customer claim submissions waiting to be turned into claims.
@@ -44,6 +45,8 @@ export function ClaimDrafts({ onCompleted }: { onCompleted?: () => void }) {
   const [error, setError] = useState("");
   const [open, setOpen] = useState<Draft | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [emailOpen, setEmailOpen] = useState(false);
+  const [notice, setNotice] = useState("");
   const { team } = useStore();
   const { data: session } = useSession();
   // team_members.id -- what claimed_by holds -- as OrderModal reads it.
@@ -97,9 +100,11 @@ export function ClaimDrafts({ onCompleted }: { onCompleted?: () => void }) {
 
   useEffect(() => { void load(); }, [load]);
 
-  // Nothing waiting is the ordinary state. An empty band would be a permanent
-  // reminder of an empty queue, so it renders nothing at all.
-  if (!loading && !error && drafts.length === 0) return null;
+  // ⚠ THE BAND ALWAYS RENDERS NOW (2026-10-06). It used to vanish when nothing
+  // was waiting; but "Claim from an email" lives in it, and an emailed claim
+  // arrives precisely when the queue may be empty.
+  const enteredBy = (username: string | null | undefined) =>
+    team.find((m) => m.username === username)?.name ?? username ?? "a team member";
 
   return (
     <>
@@ -108,18 +113,29 @@ export function ClaimDrafts({ onCompleted }: { onCompleted?: () => void }) {
           style={{ borderBottom: drafts.length ? HAIRLINE : "none", background: "rgba(145,165,151,0.12)" }}>
           <div>
             <h3 className="text-[13px] text-cream">
-              {loading ? "Loading customer submissions" : `${drafts.length} customer submission${drafts.length === 1 ? "" : "s"} waiting`}
+              {loading ? "Loading customer submissions"
+                : drafts.length === 0 ? "No customer submissions waiting"
+                : `${drafts.length} customer submission${drafts.length === 1 ? "" : "s"} waiting`}
             </h3>
             <p className="text-[11px] text-[rgba(232,227,218,0.45)] mt-0.5">
               Attach each to an order and record what needs replacing.
             </p>
           </div>
-          <button onClick={() => void load()}
-            className="text-[rgba(232,227,218,0.45)] hover:text-cream transition-colors p-1"
-            aria-label="Reload submissions">
-            <RefreshCw className="w-3.5 h-3.5" />
-          </button>
+          <div className="flex items-center gap-3">
+            <button onClick={() => { setNotice(""); setEmailOpen(true); }}
+              className="text-[11px] underline text-[rgba(232,227,218,0.70)] hover:text-cream">
+              Claim from an email
+            </button>
+            <button onClick={() => void load()}
+              className="text-[rgba(232,227,218,0.45)] hover:text-cream transition-colors p-1"
+              aria-label="Reload submissions">
+              <RefreshCw className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
+        {notice && (
+          <p className="text-[12px] px-4 py-2 text-[rgba(232,227,218,0.75)]" style={{ borderBottom: HAIRLINE }}>{notice}</p>
+        )}
 
         {error && (
           <p className="text-[12px] px-4 py-3" style={{ color: "#e0806a" }}>{error}</p>
@@ -142,6 +158,9 @@ export function ClaimDrafts({ onCompleted }: { onCompleted?: () => void }) {
                 })}
               </span>
             </div>
+            {d.source === "email" && (
+              <p className="text-[11px] mt-1 text-[rgba(232,227,218,0.55)]">From an email, entered by {enteredBy(d.entered_by)}</p>
+            )}
             {/* ⚠ FLAGGED, NOT DROPPED (2026-10-01). The spam checks used to throw
                 these away behind a fake success; a browser autofilling the
                 hidden field would have cost a real customer their claim. Shown
@@ -216,6 +235,19 @@ export function ClaimDrafts({ onCompleted }: { onCompleted?: () => void }) {
           </div>
         ))}
       </div>
+
+      {emailOpen && (
+        <EmailClaimForm
+          onClose={() => setEmailOpen(false)}
+          onDone={(ref, photosFailed) => {
+            setEmailOpen(false);
+            setNotice(photosFailed.length
+              ? `${ref} recorded and claimed by you. Not stored, try again from the claim: ${photosFailed.join(", ")}.`
+              : `${ref} recorded and claimed by you. It goes to its Help Scout conversation next.`);
+            void load();
+          }}
+        />
+      )}
 
       {open && (
         <WarrantyClaimModal

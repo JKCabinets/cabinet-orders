@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { checkRateLimit, cleanInput } from "@/lib/auth";
-import { SNIFF_BYTES, sniffMagicBytes } from "@/lib/fileValidation";
-import { stripImageMetadata } from "@/lib/stripExif";
+import { CLAIM_TYPES, checkClaimPhotos, normaliseOrderNumber, storeClaimPhotos } from "@/lib/claimIntake";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { pushClaims } from "@/lib/claimHelpScout";
 
@@ -42,14 +41,13 @@ import { pushClaims } from "@/lib/claimHelpScout";
  * insert below is therefore a security control, not a convenience.
  */
 
-const MAX_FILES = 6;
-const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_FIELD_LEN = 200;
 const MAX_MESSAGE_LEN = 1000;
-const MAX_FILENAME_LEN = 200;
 const MIN_ELAPSED_MS = 2_000;
 
-const BUCKET = "claim-photos";
+// The photo limits, the claim types, the photo check and store, and the order
+// number's normalising live in lib/claimIntake (2026-10-06): one copy, shared
+// with claims staff enter from a customer's email.
 
 /**
  * The storefront: who may read these answers, and where a claims token may
@@ -57,19 +55,6 @@ const BUCKET = "claim-photos";
  */
 const STOREFRONT_HOSTS = ["jkcabinets2you.com", "www.jkcabinets2you.com"] as const;
 const ALLOWED_ORIGINS = STOREFRONT_HOSTS.map((h) => `https://${h}`);
-
-/**
- * ⚠ NARROWER THAN PUBLIC_UPLOAD_TYPES. The form's own `accept` is JPEG and PNG,
- * so anything else is a mismatch between what the page promised and what
- * arrived. Accepting more here would mean the bucket's allowed_mime_types
- * rejects it at the storage layer instead, which surfaces as a failed upload
- * rather than a clear message.
- */
-const CLAIM_PHOTO_TYPES: ReadonlySet<string> = new Set(["image/jpeg", "image/png"]);
-
-const CLAIM_TYPES: ReadonlySet<string> = new Set([
-  "visible", "shortage", "concealed", "defect",
-]);
 
 /**
  * No Allow-Credentials: the endpoint authenticates on the body, not a cookie.
@@ -89,27 +74,6 @@ function corsFor(req: NextRequest): Record<string, string> {
 
 export async function OPTIONS(req: NextRequest) {
   return new NextResponse(null, { status: 204, headers: corsFor(req) });
-}
-
-/** Same rule as the attachments and quote-form paths, so all three agree. */
-function sanitizeFileName(name: string): string {
-  const base = name.replace(/[^a-zA-Z0-9._-]/g, "_");
-  return base.replace(/^\.+/, "_").slice(0, MAX_FILENAME_LEN) || "file";
-}
-
-/**
- * Best-effort only. An unrecognisable number is stored raw and left for a
- * human -- see the migration for why this is not a foreign key.
- */
-function normaliseOrderNumber(raw: string): string | null {
-  let s = String(raw ?? "").toUpperCase();
-  s = s.replace(/ORDER/g, "").replace(/#/g, "").replace(/\s+/g, "");
-  if (!s) return null;
-  for (const suffix of ["-CAB", "-HW", "-SMP", "-CST"]) {
-    if (s.endsWith(suffix)) { s = s.slice(0, -suffix.length); break; }
-  }
-  if (/^\d+$/.test(s)) s = `SHO-${s}`;
-  return /^[A-Z]{3}-[A-Z0-9-]+$/.test(s) ? s : null;
 }
 
 function field(form: FormData, key: string, max = MAX_FIELD_LEN): string {
@@ -215,27 +179,11 @@ export async function POST(req: NextRequest) {
 
   // ── Photos ───────────────────────────────────────────────────────────────
   //
-  // ⚠ TYPE COMES FROM THE FILE'S OWN BYTES, NEVER file.type. This endpoint is
-  // anonymous, so the browser's claim is an attacker's claim. An SVG or HTML
-  // file with an embedded script and a chosen MIME would otherwise execute
-  // when a staff member opened it through a signed URL.
+  // Checked by their own bytes -- never file.type, since this endpoint is
+  // anonymous -- in lib/claimIntake, before anything is written.
   const files = form.getAll("photos").filter((f): f is File => f instanceof File && f.size > 0);
-  if (files.length > MAX_FILES) {
-    return answer({ error: `Please attach no more than ${MAX_FILES} photos.` }, 422);
-  }
-
-  const sniffed = new Map<File, string>();
-  for (const file of files) {
-    if (file.size > MAX_FILE_BYTES) {
-      return answer({ error: `"${cleanInput(file.name)}" is larger than 10 MB.` }, 413);
-    }
-    const head = new Uint8Array(await file.slice(0, SNIFF_BYTES).arrayBuffer());
-    const mime = sniffMagicBytes(head);
-    if (!mime || !CLAIM_PHOTO_TYPES.has(mime)) {
-      return answer({ error: `"${cleanInput(file.name)}" is not a JPEG or PNG photo.` }, 415);
-    }
-    sniffed.set(file, mime);
-  }
+  const checked = await checkClaimPhotos(files);
+  if (!checked.ok) return answer({ error: checked.error }, checked.status);
 
   // ── The row first, then the photos ───────────────────────────────────────
   //
@@ -267,37 +215,12 @@ export async function POST(req: NextRequest) {
     return answer({ error: "We could not record your claim. Please call us so this is not delayed." }, 500);
   }
 
-  const paths: string[] = [];
-  for (const file of files) {
-    const safeName = sanitizeFileName(file.name);
-    const path = `${row.id}/${Date.now()}-${safeName}`;
-    const mime = sniffed.get(file) ?? "application/octet-stream";
-    // ⚠ METADATA OUT BEFORE IT IS STORED (2026-10-01). These are photographs
-    // taken in customers' homes and carry where they were taken. Until this
-    // line, claim photos were stored exactly as they arrived. The Orientation
-    // survives, so a portrait photo still shows upright.
-    const bytes = stripImageMetadata(await file.arrayBuffer(), mime);
-
-    const { error: uploadError } = await supabase.storage
-      .from(BUCKET)
-      .upload(path, bytes, {
-        // The sniffed type, never file.type. Validated above, so it is present.
-        contentType: mime,
-        upsert: false,
-      });
-
-    // ⚠ A FAILED PHOTO NEVER FAILS THE CLAIM. The claim is the thing with a
-    // deadline. A missing photo is a phone call; a rejected submission is a
-    // lost right to claim.
-    if (!uploadError) paths.push(path);
-  }
-
-  if (paths.length > 0) {
-    await supabase
-      .from("claim_submissions")
-      .update({ photo_paths: paths })
-      .eq("id", row.id);
-  }
+  // Scrubbed of location and stored, in lib/claimIntake.
+  //
+  // ⚠ A FAILED PHOTO NEVER FAILS THE CLAIM. The claim is the thing with a
+  // deadline. A missing photo is a phone call; a rejected submission is a
+  // lost right to claim. So what failed is not even reported here.
+  await storeClaimPhotos(row.id, checked.photos);
 
   // ⚠ ON TO HELP SCOUT, WITHOUT HOLDING THE CUSTOMER (2026-10-05). Not awaited:
   // the customer's answer must never wait on Help Scout, or fail because of it.
