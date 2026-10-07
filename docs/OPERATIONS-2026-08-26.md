@@ -126,6 +126,9 @@ because it lived nowhere:
 3. The manufacturer returns an **Excel acknowledgment** of what was ordered.
 4. That `.xlsx` is uploaded to the OMS, which **reconciles it against the
    order** and either gives a green light or lists every line that is off.
+   Since 2026-10-07 each discrepancy shows on its own line — on the order's
+   **Full Order** tab (the Overview's **View discrepancies** opens it) and on
+   the vendor PDF.
 
 ⚠ **Only Waypoint has a parser.** HCI and J&K use different acknowledgment
 formats, and neither is implemented. Their orders satisfy the gate with an

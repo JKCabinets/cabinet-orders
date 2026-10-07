@@ -620,6 +620,7 @@ nothing on success, so silence is not a result.
 | Deleting a claim closes its Help Scout conversation; nothing in Help Scout is ever deleted (Garrett, 2026-10-07) | The conversation is the record of what the customer was told. Closing says the claim is gone; a reply reopens it. |
 | Next and eslint-config-next pinned EXACTLY, at 16.4.0 (Garrett, 2026-10-07) | A caret let `npm update` move the framework a minor version unasked. Pinned, every framework upgrade is a decision with its own proof. 16.4.0 over 16.3.8: both carry every fix; 16.4.0 passed the same tests. |
 | Every PDF line shows its door style and colour codes; order issues are flagged on the PDF (Garrett, 2026-10-07) | Waypoint orders by the codes, so the person entering the order needs them on every line. A missing name, address, ZIP, phone or email stops a vendor order, so the PDF says so before it is sent. |
+| Acknowledgment discrepancies are shown on the lines they are about, on Full Order and the PDF; the Overview keeps a count and a pill (Garrett, 2026-10-07) | A list apart from the lines makes somebody match them up by eye. On the line, the fix is where the problem is. |
 | A deleted claim's submission is unlinked, not left pointing at its number (2026-10-07) | Claim numbers are reused. A stale link would have sent a new claim's progress notes to another customer's conversation. |
 
 ---
@@ -1786,6 +1787,20 @@ nothing on success, so silence is not a result.
     pale seam (the table is rounded instead); the ZIP check passed every address
     with a five-digit house number (moved to the end); the footer's time was
     UTC. Strict typecheck.
+40. **Acknowledgment discrepancies on their lines; Full Order gets the PDF's
+    header** (`patch_discrepancies_full_order.py`, 2026-10-07; Garrett). What
+    it is: OMS-STATE §3. **Proved:** the real export route with a red
+    acknowledgment of every kind — a quantity, the modifications, a line
+    missing, a line extra, a misspelt name — each on its line, the extra in its
+    own section, the name under the customer's, the banner counting five, and
+    "Keyed By" a NAME for a claimed order (it printed the id); the clean order
+    flags nothing. Printed under the route's policy. On screen, rendered with
+    the same acknowledgment through the real `useAckStatus`: Full Order's
+    header, banner, notes and extra line; the Overview's count, NO breakdown,
+    the pill calling the modal's handler, Manual Push kept. Strict typecheck of
+    all seven files; the modal, among stand-ins for its unrelated imports,
+    raises exactly the three errors the DEPLOYED modal raises among the same
+    stand-ins — a control proving the change adds none.
 
 ---
 
@@ -2131,6 +2146,8 @@ patch_docs_xlsx_and_ack.py
 patch_docs_deps_upgrade.py
 patch_vendor_pdf_design.py
 patch_docs_vendor_pdf_design.py
+patch_discrepancies_full_order.py
+patch_docs_discrepancies_full_order.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

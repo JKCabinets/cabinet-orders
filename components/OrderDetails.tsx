@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { Plus, Trash2, Check, X, Pencil, AlertTriangle } from "lucide-react";
 import { SkuItem } from "@/lib/data";
 import { useStore } from "@/lib/store";
+import { ackNotesFor, type AckIssues } from "@/lib/orderIssues";
 
 // Friendly labels + tooltips for per-line review reasons (Step 4a), keyed by
 // SkuItem.review_reason. Falls back gracefully for any unknown value.
@@ -31,9 +32,14 @@ interface OrderDetailsProps {
   productionEstFinishDate?: string | null;
   scheduledDeliveryDate?: string | null;
   readOnly?: boolean;
+  /**
+   * The vendor acknowledgment's differences, per line (2026-10-07) -- from
+   * lib/orderIssues, the copy the vendor PDF uses. Absent: nothing to show.
+   */
+  ack?: AckIssues;
 }
 
-export function OrderDetails({ orderId, skuItems, readOnly = false }: OrderDetailsProps) {
+export function OrderDetails({ orderId, skuItems, readOnly = false, ack }: OrderDetailsProps) {
   const { updateOrderDetails } = useStore();
 
   const [localSkuItems, setLocalSkuItems] = useState<SkuItem[]>(skuItems);
@@ -181,13 +187,14 @@ export function OrderDetails({ orderId, skuItems, readOnly = false }: OrderDetai
   // distinct vendor/style/color combinations).
   function renderSkuRow(item: SkuItem, idx: number) {
     const isBackordered = !!item.backordered;
+    const ackNotes = ack ? ackNotesFor(ack, item.sku) : [];
     const todayIso = new Date().toISOString().split("T")[0];
     const isReady = isBackordered && item.expected_ready_date && item.expected_ready_date <= todayIso;
     const rowTint = isBackordered
       ? (isReady
           ? "bg-[rgba(76,175,122,0.06)] hover:bg-[rgba(76,175,122,0.10)]"
           : "bg-[rgba(224,128,48,0.06)] hover:bg-[rgba(224,128,48,0.10)]")
-      : item.needs_review
+      : item.needs_review || ackNotes.length > 0
         ? "bg-[rgba(224,168,72,0.07)] hover:bg-[rgba(224,168,72,0.12)]"
         : "hover:bg-[rgba(255,255,255,0.04)]";
     return (
@@ -289,6 +296,17 @@ export function OrderDetails({ orderId, skuItems, readOnly = false }: OrderDetai
                     <span className="text-cream/35">↳</span>
                     <span className="font-mono text-cream/70">{mod.sku}</span>
                     <span className="text-cream/50">{mod.label}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {ackNotes.length > 0 && (
+              <div className="flex flex-col gap-0.5 pl-4 pb-1">
+                {ackNotes.map((note, ni) => (
+                  <div key={ni} className="flex items-center gap-2 px-2 text-[10px]" style={{ color: "#e8b866" }}>
+                    <AlertTriangle className="w-2.5 h-2.5 flex-shrink-0" />
+                    <span>Acknowledgment: {note}</span>
                   </div>
                 ))}
               </div>
@@ -421,6 +439,17 @@ export function OrderDetails({ orderId, skuItems, readOnly = false }: OrderDetai
                 <span className="text-[11px] font-medium text-cream/85">
                   {localSkuItems.reduce((sum, i) => sum + i.quantity, 0)}
                 </span>
+              </div>
+            )}
+            {ack && ack.extras.length > 0 && (
+              <div className="mt-2 px-3 py-2 rounded-lg" style={{ background: "rgba(224,168,72,0.07)", border: "0.5px solid rgba(224,168,72,0.30)" }}>
+                <p className="text-[9px] uppercase tracking-widest mb-1" style={{ color: "#e8b866" }}>On the acknowledgment, not on the order</p>
+                {ack.extras.map((e, ei) => (
+                  <div key={ei} className="flex items-center gap-2 text-[11px]">
+                    <span className="font-mono text-cream/85">{e.sku}</span>
+                    <span className="text-cream/55">{e.text}</span>
+                  </div>
+                ))}
               </div>
             )}
           </div>

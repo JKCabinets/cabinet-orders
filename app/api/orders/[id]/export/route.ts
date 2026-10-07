@@ -5,6 +5,8 @@ import { groupSkuItemsByStyle, decodeSku, doorStyleNameToCode, colorNameToCode }
 import { lookupVendorsForSkus } from "@/lib/vendorLookup";
 import type { SkuItem } from "@/lib/skuDecoder";
 import { poReference, displayOrderNumber } from "@/lib/data";
+import { latestAckByVendor } from "@/lib/acknowledgments";
+import { customerIssues, ackIssues, ackNotesFor, keyedByName as keyedBy } from "@/lib/orderIssues";
 
 // Short alias since this file does a lot of escaping
 const h = escapeHtml;
@@ -90,11 +92,16 @@ export async function GET(
   //    only when neither is set. Older orders may have a stale "GB"
   //    default in `member` from before the webhook fix; we still want
   //    the PDF to reflect the actual current owner.
-  let keyedByName = "—";
-  const ownerName = (order.entered_by as string | null) ?? (order.claimed_by as string | null) ?? null;
-  if (ownerName) {
-    keyedByName = ownerName;
-  } else if (order.member) {
+  // ⚠ A NAME, NEVER AN ID (2026-10-07). claimed_by holds a team_members.id,
+  // and this printed it as "Keyed By" on every claimed order's PDF.
+  let claimerName: string | null = null;
+  if (!order.entered_by && order.claimed_by) {
+    const { data: claimer } = await supabase
+      .from("team_members").select("name").eq("id", order.claimed_by).maybeSingle();
+    claimerName = (claimer?.name as string | undefined) ?? null;
+  }
+  let keyedByName = keyedBy(order, () => claimerName) || "—";
+  if (keyedByName === "—" && order.member) {
     const { data: teamMember } = await supabase
       .from("team_members")
       .select("name")
@@ -121,6 +128,12 @@ export async function GET(
   } else if (vendorLookup.uniqueVendors.length > 1) {
     headerVendor = vendorLookup.uniqueVendors.join(", ");
   }
+
+  // The vendor's acknowledgment, reconciled against the order (2026-10-07): the
+  // latest per vendor this PDF covers. Each line that differs is told on its
+  // line, as on the order modal's Full Order tab -- lib/orderIssues, one copy.
+  const ack = ackIssues(await latestAckByVendor(
+    order.id, vendorFilter ? [vendorFilter] : vendorLookup.uniqueVendors, order));
 
   // If the filter is set but doesn't match any vendor on this order, 404.
   // Defensive — protects against a stale UI sending a vendor that no longer
@@ -154,22 +167,9 @@ export async function GET(
   const orderedOn           = order.date            || "—";
 
   // ⚠ ORDER ISSUES (Garrett, 2026-10-07): what a vendor cannot ship to, reach
-  // or file without -- flagged like a line under review, amber in its card and
-  // listed in the banner, so no order goes out with a hole in it. Simple on
-  // purpose: a missing value, or one that cannot be right.
-  const noName = !String(customerName).trim();
-  const issue = {
-    name:   noName ? "No customer name, so the PO has no last name" : "",
-    shipTo: !String(shipToAddress).trim() ? "No ship-to address"
-      // At the END, optionally before "USA": a five-digit house number
-      // ("22792 E Via De Olivos") is not a ZIP, and a test anywhere in the
-      // line passed every address with one.
-      : !/\b\d{5}(?:-\d{4})?\s*(?:,?\s*(?:USA?|United States))?\s*$/i.test(String(shipToAddress).trim()) ? "Ship-to address has no ZIP code" : "",
-    phone:  !String(customerPhone).trim() ? "No customer phone"
-      : String(customerPhone).replace(/\D/g, "").length < 10 ? "Customer phone looks incomplete" : "",
-    email:  !String(customerEmail).trim() ? "No customer email"
-      : !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(customerEmail).trim()) ? "Customer email looks wrong" : "",
-  };
+  // or file without -- amber in its card and listed in the banner. The checks
+  // live in lib/orderIssues, shared with the order modal.
+  const issue = customerIssues(order);
   const orderIssues = Object.values(issue).filter(Boolean);
   // A card cell, amber when its value has an issue; "Missing" when it is empty.
   const flag = (bad: string) => (bad ? " issue" : "");
@@ -273,10 +273,10 @@ export async function GET(
           ? ` <span class="review-pill">\u26a0 ${h(REVIEW_LABEL[rf.review_reason ?? ""] ?? "review")}</span>`
           : "";
         const mainRow = `
-    <tr class="${rf.needs_review ? "review-row" : ""}">
+    <tr class="${rf.needs_review || ackNotesFor(ack, item.sku).length > 0 ? "review-row" : ""}">
       <td>${rowIndex++}</td>
       <td class="code">${h(displaySku)}${styleCodes(item)}</td>
-      <td>${text(item.description ?? "—")}${reviewTag}</td>
+      <td>${text(item.description ?? "—")}${reviewTag}${ackNotesFor(ack, item.sku).map((t) => `<span class="ack-note">\u26a0 Acknowledgment: ${h(t)}</span>`).join("")}</td>
       <td class="center">—</td>
       <td class="center">${h(item.quantity ?? 1)}</td>
       <td class="center">—</td>
@@ -374,7 +374,11 @@ export async function GET(
       + reviewLines.map(i => `${h(i.sku || "\u2014")} (${h(REVIEW_LABEL[(i as ReviewFields).review_reason ?? ""] ?? "review")})`).join("; ")]
     : [];
   // The order's own issues join the lines' (2026-10-07).
-  const bannerParts = [...reviewParts, ...orderIssues.map((s) => h(s))];
+  const ackParts = ack.count > 0
+    ? [`${ack.count} acknowledgment discrepanc${ack.count === 1 ? "y" : "ies"}`
+       + (ack.stale ? " (the acknowledgment is older than the order's last change)" : "")]
+    : [];
+  const bannerParts = [...reviewParts, ...ackParts, ...orderIssues.map((s) => h(s))];
   const needsReviewBanner = bannerParts.length > 0
     ? `<div class="review-banner">\u26a0 NEEDS REVIEW \u2014 ${bannerParts.join(" \u00b7 ")}</div>`
     : "";
@@ -505,6 +509,8 @@ export async function GET(
     .kv td.issue.lbl { color: #8a5a1c; padding-left: 8px; border-radius: 6px 0 0 6px; }
     .kv td.issue.val { border-radius: 0 6px 6px 0; padding-right: 8px; }
     .missing, .no-code { color: #b5651d; font-style: italic; }
+    /* What the acknowledgment says differs, on the line or the field (2026-10-07). */
+    .ack-note { display: block; margin-top: 3px; font-size: 9px; font-style: italic; color: #9a5a12; }
 
     /* A line's door style and colour, with the codes it is ordered by. */
     .code-sub { display: block; margin-top: 3px; font-size: 9px; color: var(--muted); }
@@ -569,8 +575,8 @@ export async function GET(
     </div>
     <div class="card">
       <table class="kv kv2"><tbody>
-        <tr><td class="lbl${flag(issue.name)}">Customer Name:</td><td class="val${flag(issue.name)}">${shown(customerName)}</td></tr>
-        <tr><td class="lbl${flag(issue.shipTo)}">Ship To Address:</td><td class="val${flag(issue.shipTo)}">${shown(shipToAddress)}</td></tr>
+        <tr><td class="lbl${flag(issue.name || ack.fields.name || "")}">Customer Name:</td><td class="val${flag(issue.name || ack.fields.name || "")}">${shown(customerName)}${ack.fields.name ? `<span class="ack-note">${h(ack.fields.name)}</span>` : ""}</td></tr>
+        <tr><td class="lbl${flag(issue.shipTo || ack.fields.address || "")}">Ship To Address:</td><td class="val${flag(issue.shipTo || ack.fields.address || "")}">${shown(shipToAddress)}${ack.fields.address ? `<span class="ack-note">${h(ack.fields.address)}</span>` : ""}</td></tr>
         <tr><td class="lbl${flag(issue.phone)}">Customer Phone:</td><td class="val${flag(issue.phone)}">${shown(customerPhone)}</td></tr>
         <tr><td class="lbl">Special instructions:</td><td class="val">${text(specialInstructions)}</td></tr>
         <tr><td class="lbl${flag(issue.email)}">Customer Email:</td><td class="val${flag(issue.email)}">${shown(customerEmail)}</td></tr>
@@ -596,6 +602,10 @@ export async function GET(
           ? `<tr><td colspan="6" style="text-align:center;color:#aaa;padding:18px;">No line items recorded</td></tr>`
           : "")}
       ${unassignedRows}
+      ${ack.extras.length > 0 ? `
+    <tr class="section-row ack-extra-section"><td colspan="6">\u26a0 On the acknowledgment, not on the order</td></tr>`
+        + ack.extras.map((e) => `
+    <tr class="review-row"><td></td><td class="code">${h(e.sku)}</td><td colspan="4"><span class="ack-note">${h(e.text)}</span></td></tr>`).join("") : ""}
     </tbody>
   </table>
 

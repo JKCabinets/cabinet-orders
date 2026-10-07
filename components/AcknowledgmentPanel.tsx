@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useRef, forwardRef, useImperativeHandle } from "react";
-import { describeLineIssue } from "@/lib/reconcile";
-import { Upload, Loader2, Check, X, ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
+import { Upload, Loader2, Check, X, AlertTriangle } from "lucide-react";
 import type { ReconcileResult } from "@/lib/reconcile";
 import { useToast } from "./Toast";
 import { useAckStatus, invalidateAck } from "@/lib/ackStatus";
@@ -58,9 +57,14 @@ interface AcknowledgmentPanelProps {
   canAct?: boolean;
   /** Whose claim it is, named where the buttons were. */
   lockedNote?: string;
+  /**
+   * Opens the order's Full Order tab, where each discrepancy is told on its own
+   * line (Garrett, 2026-10-07). The panel no longer lists them itself.
+   */
+  onViewDiscrepancies?: () => void;
 }
 
-const FIELD_LABEL: Record<string, string> = { name: "Name", address: "Shipping address" };
+// FIELD_LABEL went with the breakdown (2026-10-07): Full Order shows the fields now.
 
 
 function discrepancyCount(r: ReconcileResult): number {
@@ -85,7 +89,7 @@ export const AcknowledgmentPanel = forwardRef<AcknowledgmentPanelHandle, Acknowl
   function AcknowledgmentPanel({
     orderId, orderName, eligible, onAdvanceOverride,
     uploadOfferedElsewhere = false, canAct: canActProp = true, lockedNote,
-    readOnly = false,
+    readOnly = false, onViewDiscrepancies,
   }, ref) {
     // ⚠ ONE GATE, NOT TWO. readOnly folds into canAct so submit, resubmit and
     // Manual Push all follow a single answer -- a second condition beside it is
@@ -94,7 +98,7 @@ export const AcknowledgmentPanel = forwardRef<AcknowledgmentPanelHandle, Acknowl
     const { showToast } = useToast();
     const status = useAckStatus(orderId, eligible);
     const [uploadingVendor, setUploadingVendor] = useState<string | null>(null);
-    const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+    // No per-vendor "expanded" state since 2026-10-07: the breakdown moved to Full Order.
     const [pushing, setPushing] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const pendingVendorRef = useRef<string | null>(null);
@@ -175,7 +179,7 @@ export const AcknowledgmentPanel = forwardRef<AcknowledgmentPanelHandle, Acknowl
               const label = v.replace(/\s+Cabinetry$/i, "");
               const ack = status.ackByVendor[v] ?? null;
               const isUploading = uploadingVendor === v;
-              const isOpen = !!expanded[v];
+              // (isOpen went with the breakdown, 2026-10-07.)
               const count = ack && ack.verdict === "red" ? discrepancyCount(ack.result) : 0;
 
               return (
@@ -225,42 +229,18 @@ export const AcknowledgmentPanel = forwardRef<AcknowledgmentPanelHandle, Acknowl
                     )}
                   </div>
 
-                  {ack?.verdict === "red" && (
+                  {/* ⚠ A PILL TO THE FULL ORDER TAB, NOT A LIST (Garrett, 2026-10-07).
+                      The breakdown that unfolded here now lives on the lines it
+                      is about: Full Order marks each discrepancy on its own line,
+                      as the vendor PDF does. The count above says how many. */}
+                  {ack?.verdict === "red" && onViewDiscrepancies && (
                     <div className="mt-2">
                       <button
-                        onClick={() => setExpanded((p) => ({ ...p, [v]: !p[v] }))}
-                        className="flex items-center gap-1 text-[11px] text-cream/60 hover:text-cream/90 transition-colors"
+                        onClick={onViewDiscrepancies}
+                        className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-[rgba(201,112,112,0.12)] border border-[rgba(201,112,112,0.45)] text-[#e89090] hover:bg-[rgba(201,112,112,0.20)]"
                       >
-                        {isOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-                        {isOpen ? "Hide details" : "View details"}
+                        <AlertTriangle className="w-3 h-3" /> View discrepancies
                       </button>
-
-                      {isOpen && (
-                        <div className="mt-2 flex flex-col gap-1.5 pl-1">
-                          {ack.result.fields.filter((f) => !f.matched).map((f) => (
-                            <div key={f.field} className="flex items-start gap-2 text-[11px]">
-                              <AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" style={{ color: "#e89090" }} />
-                              <p className="text-cream/75">
-                                <span className="text-cream/90">{FIELD_LABEL[f.field] ?? f.field}</span>
-                                {" — order: "}
-                                <span className="text-cream/90">{f.order_value || "—"}</span>
-                                {" · acknowledgment: "}
-                                <span style={{ color: "#e89090" }}>{f.ack_value || "—"}</span>
-                              </p>
-                            </div>
-                          ))}
-                          {ack.result.lines.filter((l) => l.status !== "match").map((l) => (
-                            <div key={l.composite_sku} className="flex items-start gap-2 text-[11px]">
-                              <AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" style={{ color: "#e89090" }} />
-                              <p className="text-cream/75">
-                                <span className="font-mono text-cream/90">{l.composite_sku}</span>
-                                {" — "}
-                                <span style={{ color: "#e89090" }}>{describeLineIssue(l)}</span>
-                              </p>
-                            </div>
-                          ))}
-                        </div>
-                      )}
                     </div>
                   )}
                 </div>
@@ -272,8 +252,8 @@ export const AcknowledgmentPanel = forwardRef<AcknowledgmentPanelHandle, Acknowl
                 button in the panel above it -- one transition, two controls, and
                 the working one was the further from where anyone was looking.
 
-                Manual Push stays: an override belongs next to the discrepancy
-                breakdown it is overriding, which is only rendered here. */}
+                Manual Push stays: an override belongs next to the discrepancies
+                it overrides -- their count and the pill to them, here. */}
             {/* ⚠ anyStale IS HERE ON PURPOSE. Gated on anyRed alone, a stale
                 green rendered NEITHER button -- allGreen false, anyRed false --
                 leaving a blocked order with no override and no explanation. */}

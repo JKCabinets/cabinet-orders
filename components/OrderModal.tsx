@@ -18,7 +18,8 @@ import { useToast } from "./Toast";
 import { checkAttachmentGate } from "@/lib/stageGates";
 import { AttachmentsPanel, type AttachmentsPanelHandle } from "./AttachmentsPanel";
 import { useAttachmentsFor, refreshAttachments } from "@/lib/attachments";
-import { OrderDetails } from "./OrderDetails";
+import { FullOrderGroup } from "./FullOrderGroup";
+import { OrderHeaderCards } from "./OrderHeaderCards";
 import { DamageReportPanel } from "./DamageReportPanel";
 import { AcknowledgmentPanel, type AcknowledgmentPanelHandle } from "./AcknowledgmentPanel";
 import { consumeAckPicker, useAckStatus } from "@/lib/ackStatus";
@@ -1456,7 +1457,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                 by default: showing it wrongly is cosmetic, hiding it wrongly
                 means a missed manufacturer confirmation. */}
           {liveOrder.type !== "sample" && (
-            <AcknowledgmentPanel ref={ackPanelRef} orderId={liveOrder.id} orderName={liveOrder.name} eligible={ackEligible} uploadOfferedElsewhere={requirementsFor(liveOrder).some((r) => r.id === "ack_or_attachment")} onAdvanceOverride={() => { void overrideAckAdvance(); }} canAct={canEdit} lockedNote={`Claimed by ${claimOwnerName}. Ask them to release it` + `${isAdmin ? ", or use Edit order above" : ""}.`} />
+            <AcknowledgmentPanel ref={ackPanelRef} orderId={liveOrder.id} orderName={liveOrder.name} eligible={ackEligible} onViewDiscrepancies={() => { setTab("items"); setItemsGroupId(liveOrder.id); }} uploadOfferedElsewhere={requirementsFor(liveOrder).some((r) => r.id === "ack_or_attachment")} onAdvanceOverride={() => { void overrideAckAdvance(); }} canAct={canEdit} lockedNote={`Claimed by ${claimOwnerName}. Ask them to release it` + `${isAdmin ? ", or use Edit order above" : ""}.`} />
           )}
           {/* Notes and attachments as three cards in one row, collapsed to a
               summary line. This was two full-height textareas plus the
@@ -1675,22 +1676,18 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                       with a header per group -- reused, not reimplemented. It is
                       571 lines and it EDITS: adds and removes lines, saves them
                       back, resolves vendors, renders review flags. */}
-                  <OrderDetails
-                    orderId={open.id}
-                    doorStyle={open.door_style ?? ""}
-                    color={open.color ?? ""}
-                    skuItems={open.sku_items ?? []}
-                    productionStartDate={open.production_start_date}
-                    productionEstFinishDate={open.production_est_finish_date}
-                    scheduledDeliveryDate={open.scheduled_delivery_date}
-                    readOnly={readOnly || open.source === "Shopify"}
-                  />
+                  {/* ⚠ THE PDF'S HEADER, THEN THE LINES WITH THE ACKNOWLEDGMENT'S
+                      DISCREPANCIES ON THEM (Garrett, 2026-10-07). FullOrderGroup
+                      reads the group's acknowledgment itself: a hook cannot run
+                      inside this tab's inline function. */}
+                  <FullOrderGroup group={open} team={team} readOnly={readOnly || open.source === "Shopify"} />
                 </div>
               );
             }
 
             return (
               <div className="px-6 py-5">
+                <OrderHeaderCards order={liveOrder} team={team} />
                 <div className="rounded-brand overflow-hidden" style={{ border: "0.5px solid rgba(255,255,255,0.12)" }}>
                   <div className="grid grid-cols-[1.4fr_1.6fr_auto_auto] gap-3 px-4 py-2.5 text-[9px] uppercase tracking-wider text-cream/40"
                     style={{ background: "rgba(255,255,255,0.03)" }}>
