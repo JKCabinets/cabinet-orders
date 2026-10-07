@@ -122,8 +122,10 @@ export function ClaimDrafts({ onCompleted }: { onCompleted?: () => void }) {
             </p>
           </div>
           <div className="flex items-center gap-3">
+            {/* ⚠ EVERY ACTION IS A PILL (Garrett, 2026-10-07): underlined text is
+                too easily missed. The OMS's own styles, verbatim. */}
             <button onClick={() => { setNotice(""); setEmailOpen(true); }}
-              className="text-[11px] underline text-[rgba(232,227,218,0.70)] hover:text-cream">
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-cream/18 bg-white/4 text-[11px] uppercase tracking-wider text-cream/85 hover:bg-white/8 hover:border-terracotta/40 transition-all disabled:opacity-50">
               Claim from an email
             </button>
             <button onClick={() => void load()}
@@ -177,13 +179,10 @@ export function ClaimDrafts({ onCompleted }: { onCompleted?: () => void }) {
                 answered. A claim that has not got there yet says why, so nobody
                 waits on a reply that cannot come. `skipped` -- every claim from
                 before the push existed -- says nothing. */}
-            {d.helpscout_state === "sent" && (
-              <p className="text-[11px] mt-1 text-[rgba(232,227,218,0.55)]">
-                <a href={d.helpscout_url || `https://secure.helpscout.net/conversation/${d.helpscout_conversation_id}`}
-                   target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}
-                   className="underline hover:text-cream">In Help Scout</a>
-                {d.helpscout_last_error ? <span style={{ color: "#d4922a" }}> &middot; {d.helpscout_last_error}</span> : null}
-              </p>
+            {/* The link itself is a pill in the row below (2026-10-07): an action
+                inside the card would be a button inside a button. */}
+            {d.helpscout_state === "sent" && d.helpscout_last_error && (
+              <p className="text-[11px] mt-1" style={{ color: "#d4922a" }}>In Help Scout, but: {d.helpscout_last_error}</p>
             )}
             {d.helpscout_state === "pending" && (
               <p className="text-[11px] mt-1" style={{ color: d.helpscout_last_error ? "#d4922a" : "rgba(232,227,218,0.45)" }}>
@@ -221,15 +220,22 @@ export function ClaimDrafts({ onCompleted }: { onCompleted?: () => void }) {
             )}
             {!d.claimed_by && (
               <button onClick={() => void setClaim(d, true)} disabled={busy === d.id}
-                className="underline text-[rgba(232,227,218,0.70)] hover:text-cream disabled:opacity-50">
+                className="text-[10px] uppercase tracking-wider px-3 py-1 rounded-full transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30 disabled:opacity-40">
                 Claim
               </button>
             )}
             {d.claimed_by === me && (
               <button onClick={() => void setClaim(d, false)} disabled={busy === d.id}
-                className="underline text-[rgba(232,227,218,0.55)] hover:text-cream disabled:opacity-50">
+                className="text-[10px] uppercase tracking-wider px-3 py-1 rounded-full transition-all bg-white/5 border border-cream/20 text-cream/75 hover:bg-white/10 hover:text-cream disabled:opacity-40">
                 Release
               </button>
+            )}
+            {d.helpscout_state === "sent" && (
+              <a href={d.helpscout_url || `https://secure.helpscout.net/conversation/${d.helpscout_conversation_id}`}
+                target="_blank" rel="noopener noreferrer"
+                className="ml-auto text-[10px] uppercase tracking-wider px-3 py-1 rounded-full transition-all bg-white/5 border border-cream/20 text-cream/75 hover:bg-white/10 hover:text-cream disabled:opacity-40">
+                In Help Scout
+              </a>
             )}
           </div>
           </div>

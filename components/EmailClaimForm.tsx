@@ -102,9 +102,13 @@ export function EmailClaimForm({ onClose, onDone }: { onClose: () => void; onDon
         {error && <p className="text-[12px]" style={{ color: "#e0806a" }}>{error}</p>}
 
         <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="px-4 py-2 rounded-full text-[12px] text-[rgba(232,227,218,0.70)] hover:text-cream">Cancel</button>
+          {/* Pills, as every action in the OMS (Garrett, 2026-10-07). */}
+          <button type="button" onClick={onClose}
+            className="px-4 py-2 rounded-full text-[11px] uppercase tracking-wider transition-all bg-white/4 border border-white/12 text-cream/55 hover:bg-white/8 hover:text-cream/85">
+            Cancel
+          </button>
           <button type="submit" disabled={busy}
-            className="px-4 py-2 rounded-full text-[12px] text-cream border border-[rgba(232,227,218,0.35)] hover:border-cream disabled:opacity-50">
+            className="px-4 py-2 rounded-full text-[11px] uppercase tracking-wider transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30 disabled:opacity-40">
             {busy ? "Recording…" : "Record the claim"}
           </button>
         </div>

@@ -613,6 +613,7 @@ nothing on success, so silence is not a result.
 | An emailed claim ADOPTS its conversation (the website's item 7) | A second conversation is a second thread and a second confirmation for a claim the customer already sent. Tags are read and written back whole — the API has no add-one-tag call — so a tag added in that instant is lost. |
 | Requests up to 64 MB reach the app; the claims route refuses more with a 413 (2026-10-07) | Next CUTS OFF a body past its proxy buffer instead of refusing it. 64 MB clears a claim's largest legitimate request; past it, a clear 413 beats an unreadable form. |
 | Every claim refusal carries a machine key, and the file or field (the website's request, 2026-10-07) | The page can tell the customer exactly what to fix instead of offering the email route for everything. The Turnstile answers, which the page already acts on, are unchanged. |
+| Every action is a pill; nothing clickable sits inside another (Garrett, 2026-10-07) | Underlined text is too easily missed. One look across the OMS, from the styles it already uses. |
 
 ---
 
@@ -1645,7 +1646,22 @@ nothing on success, so silence is not a result.
     Turnstile answers unchanged; the emailed-claims suite rerun, all 12 cases
     identical. **The website's own question:** one 8 MB photo arrived as a 15 MB
     request — as if sent twice. Passed to them to check; CR-1003 earlier sent
-    one photo and stored one.
+    one photo and stored one. **Their answer, 2026-10-07:** the page cannot send
+    a file twice — that test most likely carried more than one photo. Their
+    10 MB and ours are the same number, 10,485,760 bytes, and ours refuses only
+    a file LARGER than that. Error keys are live on their page. Larger photos
+    confirmed working through the page and the OMS after the deploy. And
+    info@ now forwards into Help Scout — before 2026-10-07 an emailed claim
+    never reached the inbox at all.
+32. **Every action is a pill** (`patch_pill_actions.py`, 2026-10-07; Garrett's
+    rule, OMS-STATE §1). The warranty band's four underlined actions — Claim
+    from an email, In Help Scout, Claim, Release — and the email form's
+    borderless Cancel became pills in the OMS's own styles. "In Help Scout"
+    moved out of the card, which is itself a button, into the claim row.
+    **Proved:** no class list in either file underlines anything; the band and
+    the form rendered and driven, every action still doing what it did.
+    Screens not yet pulled were not checked; a repository-wide search lists
+    any underlined action left.
 
 ---
 
@@ -1965,6 +1981,8 @@ patch_emailed_claims.py
 patch_docs_emailed_claims.py
 patch_request_size_and_error_keys.py
 patch_docs_request_size_and_error_keys.py
+patch_pill_actions.py
+patch_docs_pill_actions.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it
