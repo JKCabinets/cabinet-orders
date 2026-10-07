@@ -2,7 +2,7 @@ import { supabase } from "@/lib/supabase";
 import { CLAIM_TYPE_LABEL } from "@/lib/customerFacing";
 import {
   addNote, createConversation, customerThreadId, findConversationByRef, getConversation,
-  helpScoutConfigured, HelpScoutError, mailboxId, setSubject, setTags, uploadAttachment,
+  helpScoutConfigured, HelpScoutError, mailboxId, setStatus, setSubject, setTags, uploadAttachment,
   type Conversation,
 } from "@/lib/helpscout";
 
@@ -255,8 +255,12 @@ export async function pushClaims(opts: { id?: string; limit?: number } = {}): Pr
 /** A queued claim event, as claim_helpscout_note_lease() hands it out. */
 export interface ClaimNoteEvent {
   id: number;
-  order_id: string;
-  event: "created" | "stage";
+  /** Null for `deleted`: the claim row is gone (2026-10-07). */
+  order_id: string | null;
+  event: "created" | "stage" | "deleted";
+  /** For `deleted` only: the conversation and the claim's number, read before the row went. */
+  conversation_id?: number | null;
+  claim_ref?: string | null;
   from_stage: string | null;
   to_stage: string;
   claimed_by: string | null;
@@ -277,9 +281,18 @@ function arizonaWhen(iso: string): string {
  */
 export function claimNoteEventHtml(n: ClaimNoteEvent, claimer: string | null): string {
   const when = arizonaWhen(n.happened_at);
+  // ⚠ CLOSED, NEVER DELETED (Garrett, 2026-10-07): the note says so, so whoever
+  // finds the closed conversation knows why, and that a reply reopens it.
+  if (n.event === "deleted") {
+    return `<p>Warranty claim ${esc(n.claim_ref ?? "")} (at ${esc(n.to_stage)}) was deleted in the OMS, ${when}.</p>\n`
+      + "<p>This conversation was closed; a reply from the customer reopens it.</p>";
+  }
+  // Always set for these two: claim_helpscout_notes_deleted_shape allows a null
+  // order_id on a `deleted` event only, which returned above.
+  const claim = n.order_id ?? n.claim_ref ?? "";
   const parts = [n.event === "created"
-    ? `Warranty claim ${esc(n.order_id)} created, at ${esc(n.to_stage)}, ${when}.`
-    : `Warranty claim ${esc(n.order_id)} moved to ${esc(n.to_stage)}${n.from_stage ? ` (from ${esc(n.from_stage)})` : ""}, ${when}.`];
+    ? `Warranty claim ${esc(claim)} created, at ${esc(n.to_stage)}, ${when}.`
+    : `Warranty claim ${esc(claim)} moved to ${esc(n.to_stage)}${n.from_stage ? ` (from ${esc(n.from_stage)})` : ""}, ${when}.`];
   parts.push(claimer ? `Claimed by ${esc(claimer)}.` : "Not claimed by anyone yet.");
   // The tracking number is news when the claim SHIPS; on later notes it is noise.
   if (n.event === "stage" && n.to_stage === "Shipped" && n.tracking) parts.push(`Tracking: ${esc(n.tracking)}.`);
@@ -292,11 +305,18 @@ export function claimNoteEventHtml(n: ClaimNoteEvent, claimer: string | null): s
  * has none.
  */
 async function conversationForClaim(orderId: string): Promise<{ id: number } | "none" | "waiting"> {
-  const { data } = await supabase
+  // ⚠ THE MOST RECENT PROMOTION, NOT .maybeSingle() (2026-10-07). A deleted
+  // claim's number is reused by the next claim on its order. Deleting now
+  // unlinks the old submission, but should two ever share a link, the newer
+  // is the right one -- and maybeSingle would have errored, read as "none",
+  // and skipped the claim's notes in silence.
+  const { data: rows } = await supabase
     .from("claim_submissions")
     .select("helpscout_state, helpscout_conversation_id")
     .eq("promoted_to_order_id", orderId)
-    .maybeSingle();
+    .order("promoted_at", { ascending: false })
+    .limit(1);
+  const data = rows?.[0];
   if (!data) return "none";
   if (data.helpscout_state === "sent" && data.helpscout_conversation_id) return { id: Number(data.helpscout_conversation_id) };
   if (data.helpscout_state === "pending") return "waiting";
@@ -313,9 +333,21 @@ export interface NoteResult { order_id: string; to_stage: string; outcome: "sent
  * retries it -- and the claim's later notes stay behind it, in order.
  */
 async function sendClaimNote(n: ClaimNoteEvent): Promise<NoteResult> {
-  const base = { order_id: n.order_id, to_stage: n.to_stage };
+  const base = { order_id: n.order_id ?? n.claim_ref ?? "?", to_stage: n.to_stage };
+  // Known once found, so a failure can ask whether the conversation still exists.
+  let convId: number | null = null;
   try {
-    const conv = await conversationForClaim(n.order_id);
+    // A deleted claim carries its conversation; it has no row to look through.
+    if (n.event === "deleted") {
+      convId = Number(n.conversation_id);
+      await addNote(convId, claimNoteEventHtml(n, null));
+      await setStatus(convId, "closed");
+      await supabase.from("claim_helpscout_notes")
+        .update({ state: "sent", sent_at: new Date().toISOString(), leased_at: null, last_error: null })
+        .eq("id", n.id);
+      return { ...base, outcome: "sent" };
+    }
+    const conv = await conversationForClaim(n.order_id ?? "");
     if (conv === "none") {
       // Promotion creates the claim BEFORE it marks the submission, so for a
       // few moments a promoted claim looks like one logged by hand. Give a
@@ -338,6 +370,7 @@ async function sendClaimNote(n: ClaimNoteEvent): Promise<NoteResult> {
       const { data: tm } = await supabase.from("team_members").select("name").eq("id", n.claimed_by).maybeSingle();
       claimer = (tm?.name as string | undefined) ?? "a team member";
     }
+    convId = conv.id;
     await addNote(conv.id, claimNoteEventHtml(n, claimer));
     await supabase.from("claim_helpscout_notes")
       .update({ state: "sent", sent_at: new Date().toISOString(), leased_at: null, last_error: null })
@@ -345,7 +378,21 @@ async function sendClaimNote(n: ClaimNoteEvent): Promise<NoteResult> {
     return { ...base, outcome: "sent" };
   } catch (e) {
     const message = ((e as Error).message || "unknown error").slice(0, 500);
-    console.error(`[helpscout] note for ${n.order_id} not sent: ${message}`);
+    // ⚠ A CONVERSATION DELETED IN HELP SCOUT IS SKIPPED, NOT RETRIED (2026-10-07).
+    // Someone may delete one there -- the website team removed their test
+    // claims -- and retrying a note to nowhere would raise the alarm within the
+    // hour. Asked only after a failure, and only "is it gone": Help Scout down
+    // answers with an error, not "gone", and stays a retry.
+    if (convId !== null) {
+      const still = await getConversation(convId).catch(() => undefined);
+      if (still === null) {
+        await supabase.from("claim_helpscout_notes")
+          .update({ state: "skipped", leased_at: null, last_error: "the conversation was deleted in Help Scout" })
+          .eq("id", n.id);
+        return { ...base, outcome: "skipped" };
+      }
+    }
+    console.error(`[helpscout] note for ${base.order_id} not sent: ${message}`);
     await supabase.from("claim_helpscout_notes").update({ last_error: message }).eq("id", n.id);
     return { ...base, outcome: "failed", error: message };
   }

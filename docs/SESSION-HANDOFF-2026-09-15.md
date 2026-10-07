@@ -617,6 +617,8 @@ nothing on success, so silence is not a result.
 | The Shopify product picker is removed from `NewOrderModal` (2026-10-07) | It only ever appeared on a custom job, which records choices room by room, and its catalogue was admin-only, so it listed nothing for the team. |
 | A claim's progress is queued by a database TRIGGER, not sent from each route (2026-10-07) | A stage changes by more than one path — a person, a tracking number, and whatever comes later. The trigger sees every one; a note sent from each route would miss the one forgotten. |
 | A claim's notes go strictly in order; a failed note holds its claim's later ones (2026-10-07) | A note saying Parts ordered landing before the one saying In review would mislead whoever answers the customer. Late is better than out of order. |
+| Deleting a claim closes its Help Scout conversation; nothing in Help Scout is ever deleted (Garrett, 2026-10-07) | The conversation is the record of what the customer was told. Closing says the claim is gone; a reply reopens it. |
+| A deleted claim's submission is unlinked, not left pointing at its number (2026-10-07) | Claim numbers are reused. A stale link would have sent a new claim's progress notes to another customer's conversation. |
 
 ---
 
@@ -1710,6 +1712,25 @@ nothing on success, so silence is not a result.
     itself — five of its modules were not pulled. Its hook was typechecked
     against the route's real variables (a misnamed one fails), and makes the
     exact call the tests drove. The first live stage move proves it.
+    ✅ **Verified live 2026-10-07:** CR-1009 promoted to WRN-1053-1 got its
+    "created" note at 1:29 pm and its move to In review at 1:30 pm, both `sent`
+    after one attempt — the PATCH route's part, proven in production.
+35. **Deleting a claim closes its Help Scout conversation**
+    (`patch_claim_delete_closes.py`, migration
+    `2026-10-07-claim-helpscout-close.sql`, run BEFORE the deploy). What it is:
+    OMS-STATE §2; the decision: OPERATIONS §10. **Proved** on 17.6, as
+    `service_role`: only a claim with a conversation queued a close; a claim
+    logged by hand and a cabinet order queued nothing; the deleted claim's
+    unsent notes went with it; its submission was unlinked with the reason;
+    the number reused got NO link; existing links to deleted claims unlinked
+    by the migration. Against a fake Help Scout: a deletion closed the
+    conversation after its last note, the conversation still there; a
+    conversation deleted in Help Scout skipped, its later notes and its close
+    too, without piling up; a deletion during an outage retried, then closed;
+    a reused number sending nothing to the old conversation; the sweep clean.
+    The part-2 suite rerun on the new code: 7 of 7, identical. Strict
+    typecheck. **Not driven:** the DELETE route — the same five modules; its
+    hook typechecked, the exact call the tests made.
 
 ---
 
@@ -1831,6 +1852,12 @@ trigger that fills it runs as the role updating `orders` — the API's
 `service_role` — so had those defaults been missing, every stage change on a
 warranty claim would have FAILED, not merely gone unnoted. Found because the
 test database has no such defaults. Grant a trigger's tables outright.
+
+**⚠ A STAND-IN'S MISSING CALL LOOKS LIKE A REAL FAILURE.** 2026-10-07: the
+notes sender's lookup moved to `.order().limit()`, which the Supabase
+stand-in did not have. The sender caught the TypeError and recorded a failed
+note — a plausible outcome, so the test read like a behaviour. When a test
+fails where it should not, check first that the stand-in supports every call.
 
 **⚠ `npx tsc --noEmit 2>&1 | grep -E "error TS"` inverts the exit code.** `grep`
 exits 1 when it finds nothing, so a **clean** typecheck looks like failure and a
@@ -2042,6 +2069,8 @@ patch_picker_removed_map_pills.py
 patch_docs_picker_removed_map_pills.py
 patch_claim_progress_notes.py
 patch_docs_claim_progress_notes.py
+patch_claim_delete_closes.py
+patch_docs_claim_delete_closes.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

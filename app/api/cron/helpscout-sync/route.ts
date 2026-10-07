@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
   const notes = await pushClaimNotes();
   const { data: stuckNotes } = await supabase
     .from("claim_helpscout_notes")
-    .select("order_id, to_stage, attempts, last_error")
+    .select("order_id, claim_ref, to_stage, attempts, last_error")
     .eq("state", "pending")
     .gte("attempts", ALARM_AFTER_ATTEMPTS);
 
@@ -60,7 +60,7 @@ export async function GET(req: NextRequest) {
   };
   const problems = [
     ...(stuck ?? []).map((s) => `${s.ref}: not in Help Scout after ${s.helpscout_attempts} attempts. Last: ${s.helpscout_last_error ?? "no reason recorded"}`),
-    ...(stuckNotes ?? []).map((s) => `${s.order_id}: the note for "${s.to_stage}" not in Help Scout after ${s.attempts} attempts. Last: ${s.last_error ?? "no reason recorded"}`),
+    ...(stuckNotes ?? []).map((s) => `${s.order_id ?? s.claim_ref}: the note for "${s.to_stage}" not in Help Scout after ${s.attempts} attempts. Last: ${s.last_error ?? "no reason recorded"}`),
   ];
   if (problems.length > 0) {
     return NextResponse.json(

@@ -1021,7 +1021,7 @@ export async function DELETE(
 
   const { data: order } = await supabase
     .from("orders")
-    .select("source, created_by, archived, project_id")
+    .select("source, created_by, archived, project_id, type")
     .eq("id", id)
     .single();
 
@@ -1064,6 +1064,12 @@ export async function DELETE(
   await supabase.from("order_activity").delete().eq("order_id", id);
   const { error } = await supabase.from("orders").delete().eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  // ⚠ A DELETED CLAIM CLOSES ITS CONVERSATION (2026-10-07). The trigger
+  // orders_claim_helpscout_close queued it before the row went; send it now.
+  // Not awaited; the 15-minute sweep sends whatever this does not.
+  if (order.type === "warranty") {
+    pushClaimNotes().catch((e) => console.error(`[helpscout] closing ${id}: ${(e as Error).message}`));
+  }
 
   // Audit-log every deletion
   try {

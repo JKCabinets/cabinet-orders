@@ -941,6 +941,12 @@ tracking number once it ships. The team sees where a claim stands where they
 answer the customer; the customer never sees these notes. A claim logged by
 hand has no conversation, so it gets none.
 
+**DELETING A CLAIM CLOSES ITS CONVERSATION; NOTHING IS DELETED IN HELP SCOUT**
+(Garrett, 2026-10-07). When a warranty claim is deleted in the OMS, its Help
+Scout conversation gets a last internal note saying so and its status becomes
+Closed. Every message stays, and a customer's reply reopens it. A conversation
+someone deletes in Help Scout simply gets no more notes.
+
 **Order value is stored at ingest, not queried live.** A metrics page that
 depends on Shopify is one that breaks when Shopify does, and 2026-08-20
 demonstrated how that goes. Custom orders are hand-entered, having no Shopify

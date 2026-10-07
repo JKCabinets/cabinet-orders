@@ -183,5 +183,14 @@ export async function addNote(id: number, text: string): Promise<void> {
   if (!res.ok) await refused(res, "adding the note");
 }
 
+/**
+ * PATCH /v2/conversations/{id}: replace the status (2026-10-07). The OMS only
+ * ever CLOSES -- when a claim is deleted -- and never deletes a conversation.
+ */
+export async function setStatus(id: number, status: "active" | "pending" | "closed"): Promise<void> {
+  const res = await call(`/conversations/${id}`, { method: "PATCH", json: { op: "replace", path: "/status", value: status } });
+  if (!res.ok) await refused(res, "changing the status");
+}
+
 /** For tests: forget the cached token. */
 export function _forgetToken(): void { cached = null; }
