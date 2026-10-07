@@ -618,6 +618,7 @@ nothing on success, so silence is not a result.
 | A claim's progress is queued by a database TRIGGER, not sent from each route (2026-10-07) | A stage changes by more than one path — a person, a tracking number, and whatever comes later. The trigger sees every one; a note sent from each route would miss the one forgotten. |
 | A claim's notes go strictly in order; a failed note holds its claim's later ones (2026-10-07) | A note saying Parts ordered landing before the one saying In review would mislead whoever answers the customer. Late is better than out of order. |
 | Deleting a claim closes its Help Scout conversation; nothing in Help Scout is ever deleted (Garrett, 2026-10-07) | The conversation is the record of what the customer was told. Closing says the claim is gone; a reply reopens it. |
+| Next and eslint-config-next pinned EXACTLY, at 16.4.0 (Garrett, 2026-10-07) | A caret let `npm update` move the framework a minor version unasked. Pinned, every framework upgrade is a decision with its own proof. 16.4.0 over 16.3.8: both carry every fix; 16.4.0 passed the same tests. |
 | A deleted claim's submission is unlinked, not left pointing at its number (2026-10-07) | Claim numbers are reused. A stale link would have sent a new claim's progress notes to another customer's conversation. |
 
 ---
@@ -1448,6 +1449,13 @@ nothing on success, so silence is not a result.
       no download. (A custom job's Files tab is the panel, Download included.)
     - ✅ ~~`xlsx` installs from `cdn.sheetjs.com/xlsx-latest/xlsx-latest.tgz`~~
       — pinned to 0.20.3 in item 36 (2026-10-07). OMS-STATE §7.
+    - **Held back 2026-10-07, each its own project:** Tailwind 4 (it alone
+      clears the last nine audit entries — `braces`, `micromatch`,
+      `postcss-selector-parser` and friends, all build-time, none shipped);
+      TypeScript 7 (a new compiler); ESLint 10 (ESLint 9 is out of support,
+      dev only); lucide-react 1.x (icon renames).
+    - Take Next **16.4.1** when it is released: 16.4.0 is pinned exactly and was
+      a day old when taken. Same proof as item 38.
     - ✅ ~~`NewOrderModal` styles one input with `var(--font-geist-mono,
       monospace)`~~ — the input was the picker's SKU search, removed with it in
       item 33 (2026-10-07).
@@ -1750,6 +1758,19 @@ nothing on success, so silence is not a result.
     from both. The public functions are unchanged, so no caller changed.
     `lib/attachments`' header, which said ackStatus did not take tickets, is
     corrected. Strict typecheck of both.
+38. **Dependencies upgraded; Next 16.4.0, pinned exactly** (2026-10-07; the
+    lockfile by `npm`, the docs by `patch_docs_deps_upgrade.py`). Why and what:
+    OMS-STATE §7. **Proved before committing:** on real Next 16.4.0 (and 16.3.8,
+    the alternative), a `proxy.ts` on every route with the 64 MB setting read a
+    15 MB form whole and cut a 70 MB one at 64 MB, no deprecation; the three
+    brand fonts compiled from the repo. On the box: the typecheck clean with
+    every upgrade; `npm audit --omit=dev` 0; `xlsx` still pinned; and the IMAGE
+    built from the working tree with its secrets —
+    `( set -a; . ./.env.kamal; set +a; ... docker build --secret id=X,env=X ...
+    -t cabinet-orders:upgrade-test . )` — because kamal builds from the last
+    commit. Two of my commands misled on the way: `npm install next@16.3.8`
+    recorded a caret and `npm update` then took 16.4.0; and `npm audit fix`
+    exits non-zero while anything remains, which stopped a `&&` chain.
 
 ---
 
@@ -2092,6 +2113,7 @@ patch_claim_delete_closes.py
 patch_docs_claim_delete_closes.py
 patch_ack_tickets.py
 patch_docs_xlsx_and_ack.py
+patch_docs_deps_upgrade.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it
