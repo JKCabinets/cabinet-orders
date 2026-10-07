@@ -12,13 +12,15 @@ import { invalidateEnrichment } from "@/lib/useOrderEnrichment";
  * adds a third view -- the custom job's Files tab with a tab per room. Two views
  * of one list that can disagree are two lists.
  *
- * ⚠ THE SHAPE OF lib/ackStatus, WITH TWO THINGS IT DOES NOT DO.
+ * ⚠ THE SHAPE OF lib/ackStatus, WITH TWO THINGS IT DID NOT DO -- the first of
+ * which it now does too (2026-10-07).
  *
  *   1. EVERY REQUEST TAKES A TICKET, AND ONLY THE NEWEST MAY WRITE. invalidateAck
- *      starts a second fetch without stopping the first, and the first still
- *      writes when it lands -- after the second, if the network says so -- and
- *      its `finally` then deletes the second's in-flight marker. Proven against
- *      the real module 2026-09-30. Here an upload or a delete applies the
+ *      started a second fetch without stopping the first, and the first still
+ *      wrote when it landed -- after the second, if the network said so -- and
+ *      its `finally` then deleted the second's in-flight marker. Proven against
+ *      the real module 2026-09-30, and fixed there the same way 2026-10-07.
+ *      Here an upload or a delete applies the
  *      server's answer and then starts a request with a NEW ticket, so a
  *      response that set off before the change can never land on top of it.
  *

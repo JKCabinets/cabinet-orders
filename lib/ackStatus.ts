@@ -37,7 +37,16 @@ const EMPTY: AckStatus = {
 // read the same cached status for an order, so a single /vendors fetch backs
 // all of them and invalidateAck() refreshes every mounted view at once.
 const cache = new Map<string, AckStatus>();
-const inflight = new Map<string, Promise<void>>();
+// ⚠ EVERY REQUEST TAKES A TICKET, AND ONLY THE NEWEST MAY WRITE (2026-10-07).
+// invalidateAck used to start a second fetch without stopping the first, and
+// the first still wrote when it landed -- AFTER the second, if the network
+// said so -- so the verdict from before an upload could replace the one after
+// it. Proven against the real module 2026-09-30: green on screen, then red.
+// Its `finally` also deleted the second fetch's in-flight marker. The same fix
+// as lib/attachments: the ticket a request set off with must still be the
+// newest when it answers, or the answer is dropped.
+const latestTicket = new Map<string, number>();
+const inflight = new Map<string, number>();          // orderId -> the ticket being fetched
 const subscribers = new Map<string, Set<() => void>>();
 
 function notify(orderId: string) {
@@ -61,28 +70,39 @@ function computeStatus(vendors: string[], ackByVendor: Record<string, AckSummary
   };
 }
 
-async function fetchInto(orderId: string): Promise<void> {
+async function fetchInto(orderId: string, ticket: number): Promise<void> {
+  let next: AckStatus;
   try {
     const res = await fetch("/api/orders/" + encodeURIComponent(orderId) + "/vendors");
     if (!res.ok) {
-      cache.set(orderId, { ...EMPTY, loading: false });
-      return;
+      next = { ...EMPTY, loading: false };
+    } else {
+      const data = await res.json();
+      const vendors: string[] = Array.isArray(data.vendors) ? data.vendors : [];
+      const ackByVendor = (data.ackByVendor ?? {}) as Record<string, AckSummary | null>;
+      next = computeStatus(vendors, ackByVendor);
     }
-    const data = await res.json();
-    const vendors: string[] = Array.isArray(data.vendors) ? data.vendors : [];
-    const ackByVendor = (data.ackByVendor ?? {}) as Record<string, AckSummary | null>;
-    cache.set(orderId, computeStatus(vendors, ackByVendor));
   } catch {
-    cache.set(orderId, { ...EMPTY, loading: false });
-  } finally {
-    notify(orderId);
+    next = { ...EMPTY, loading: false };
   }
+  // A newer request was set off after this one: its answer is the one to show.
+  if (latestTicket.get(orderId) !== ticket) return;
+  if (inflight.get(orderId) === ticket) inflight.delete(orderId);
+  cache.set(orderId, next);
+  notify(orderId);
+}
+
+/** Start a request that supersedes every earlier one for this order. */
+function start(orderId: string): void {
+  const ticket = (latestTicket.get(orderId) ?? 0) + 1;
+  latestTicket.set(orderId, ticket);
+  inflight.set(orderId, ticket);
+  void fetchInto(orderId, ticket);
 }
 
 function ensure(orderId: string): void {
   if (cache.has(orderId) || inflight.has(orderId)) return;
-  const p = fetchInto(orderId).finally(() => inflight.delete(orderId));
-  inflight.set(orderId, p);
+  start(orderId);
 }
 
 /**
@@ -92,9 +112,7 @@ function ensure(orderId: string): void {
  */
 export function invalidateAck(orderId: string): void {
   cache.delete(orderId);
-  inflight.delete(orderId);
-  const p = fetchInto(orderId).finally(() => inflight.delete(orderId));
-  inflight.set(orderId, p);
+  start(orderId);
 }
 
 /**

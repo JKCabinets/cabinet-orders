@@ -1434,7 +1434,7 @@ nothing on success, so silence is not a result.
       staff route cleans up) — which is where the 09-28→30 orphans came from.
     - ✅ ~~`promote` writes a customer's claim photos as `general`~~ — fixed in
       item 27, with the rows already written.
-    - ⚠ **The metadata scrubber dropped a JPEG's Orientation** with the rest of
+    - ✅ **The metadata scrubber dropped a JPEG's Orientation** with the rest of
       its Exif, from 2026-09-24: a phone's portrait photo then displayed on its
       side. And it scrubbed nothing from a PNG, GPS included. Both proven
       against the real function and fixed in item 27; HEIC, WEBP and GIF were
@@ -1442,16 +1442,12 @@ nothing on success, so silence is not a result.
     - ✅ ~~`AttachmentsPanel`: delete ignores the answer; not claim-aware;
       Receipt on custom jobs.~~ Fixed in item 24 step 2, with the Files tab's
       "Project tab" copy.
-    - ⚠ **`lib/ackStatus`'s `invalidateAck` race is PROVEN**, not only read: with
-      the real module, the newest verdict (green) was on screen and the older
-      one (red) landed after it and replaced it. After an acknowledgment upload,
-      the panel can show the verdict from before it. The fix is
-      `lib/attachments`' tickets.
+    - ✅ ~~`lib/ackStatus`'s `invalidateAck` race~~ — fixed with tickets in item
+      37 (2026-10-07), reproduced against the real module before the fix.
     - A Shopify project's Files tab (`ProjectFiles`) lists files it cannot open:
       no download. (A custom job's Files tab is the panel, Download included.)
-    - ⚠ `xlsx` installs from `cdn.sheetjs.com/xlsx-latest/xlsx-latest.tgz`: the
-      next dependency rebuild after a SheetJS release should fail `npm ci` on
-      the lockfile's integrity hash. Pin a versioned URL. OMS-STATE §7.
+    - ✅ ~~`xlsx` installs from `cdn.sheetjs.com/xlsx-latest/xlsx-latest.tgz`~~
+      — pinned to 0.20.3 in item 36 (2026-10-07). OMS-STATE §7.
     - ✅ ~~`NewOrderModal` styles one input with `var(--font-geist-mono,
       monospace)`~~ — the input was the picker's SKU search, removed with it in
       item 33 (2026-10-07).
@@ -1731,6 +1727,29 @@ nothing on success, so silence is not a result.
     The part-2 suite rerun on the new code: 7 of 7, identical. Strict
     typecheck. **Not driven:** the DELETE route — the same five modules; its
     hook typechecked, the exact call the tests made.
+    ✅ **Verified live 2026-10-07:** deleting WRN-1053-1 closed CR-1009's
+    conversation after its note, `sent` on the first attempt. The migration
+    unlinked EIGHT submissions (CR-1001 to CR-1008) already pointing at deleted
+    test claims.
+36. **`xlsx` pinned to 0.20.3** (2026-10-07, with item 37; the URL replaced by
+    a counted `sed`, the docs by `patch_docs_xlsx_and_ack.py`). The box hashed the
+    lockfile's expectation, the versioned file and "latest": all three
+    `sha512-oLDq3jw7…`, so the same bytes. `npm ci` on the box, which checks
+    the integrity against the new URL, passed before the commit. OMS-STATE §7.
+37. **The acknowledgment verdict race is fixed** (`patch_ack_tickets.py`,
+    2026-10-07). `invalidateAck` started a second request without stopping the
+    first, and whichever ANSWERED last won — so after an upload the panel could
+    show the verdict from before it, on the gate that decides whether an order
+    may advance; the first request's cleanup also deleted the second's
+    in-flight marker. Now every request takes a ticket and only the newest may
+    write, as `lib/attachments`; its cache-until-invalidated behaviour is kept.
+    **Proved** against the real module, old and new: a slow red answer landing
+    after a fast green one replaced it in the old (green, then red) and was
+    dropped in the new (green stays); loading, two views sharing one request,
+    invalidating, caching, a server error and no network gave identical output
+    from both. The public functions are unchanged, so no caller changed.
+    `lib/attachments`' header, which said ackStatus did not take tickets, is
+    corrected. Strict typecheck of both.
 
 ---
 
@@ -1796,7 +1815,7 @@ code fault: the same commit, the same unchanged lockfile under `npm ci
 --frozen-lockfile` (so the same packages), and nothing the commit touched
 anywhere near the error — leaving only what Google answered. **Read the build
 log's error and its import trace before reverting anything.** The fonts are in
-the repo now (OMS-STATE §7); `xlsx` still comes from a moving URL.
+the repo now (OMS-STATE §7), and `xlsx` is pinned (item 36).
 
 **⚠ A FIXTURE CARRIES PRODUCTION'S GRANTS, OR IT TESTS SOMETHING ELSE.**
 2026-10-01: the claims route answered 500 in the proof, because the test database
@@ -2071,6 +2090,8 @@ patch_claim_progress_notes.py
 patch_docs_claim_progress_notes.py
 patch_claim_delete_closes.py
 patch_docs_claim_delete_closes.py
+patch_ack_tickets.py
+patch_docs_xlsx_and_ack.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it
