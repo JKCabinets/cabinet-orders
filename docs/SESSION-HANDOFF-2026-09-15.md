@@ -611,6 +611,8 @@ nothing on success, so silence is not a result.
 | An emailed claim's report date is typed by staff from the email (Garrett, 2026-10-06) | Entered by hand, nothing read out of the email. Recorded with who entered it; never in the future. |
 | Photo checking and scrubbing live in ONE place, `lib/claimIntake` | Two routes now take claim photos. Two copies of a security step drift; the public route's answers were proven unchanged by the move. |
 | An emailed claim ADOPTS its conversation (the website's item 7) | A second conversation is a second thread and a second confirmation for a claim the customer already sent. Tags are read and written back whole — the API has no add-one-tag call — so a tag added in that instant is lost. |
+| Requests up to 64 MB reach the app; the claims route refuses more with a 413 (2026-10-07) | Next CUTS OFF a body past its proxy buffer instead of refusing it. 64 MB clears a claim's largest legitimate request; past it, a clear 413 beats an unreadable form. |
+| Every claim refusal carries a machine key, and the file or field (the website's request, 2026-10-07) | The page can tell the customer exactly what to fix instead of offering the email route for everything. The Turnstile answers, which the page already acts on, are unchanged. |
 
 ---
 
@@ -1626,6 +1628,24 @@ nothing on success, so silence is not a result.
     driven. A strict typecheck against the real store types.
     **Next:** the live test with the website team — one emailed claim, to see
     their workflow confirm in the customer's own thread.
+31. **Requests over 10 MB were cut off; claim refusals are keyed**
+    (`patch_request_size_and_error_keys.py`, 2026-10-07). The website reported
+    a 400, not mentioning Turnstile, for a claim with one 8 MB photo. The
+    proxy logged it as 15,009,757 bytes, and Next logged "Request body exceeded
+    10MB for /api/public/claims": `proxy.ts` runs on every route, Next buffers
+    each body for it up to `experimental.proxyClientMaxBodySize`, 10 MB by
+    default, and CUTS OFF the rest, so the form could not be read. The same cap
+    broke quotes and staff uploads over 10 MB. **Fixed:** 64 MB, and the claims
+    route refuses anything larger with 413 `photos_too_large_total` before
+    reading it. **Proved** on real Next 16.2.12 with a `proxy.ts` on every
+    route: a 15 MB form failed to parse under the default and logged the same
+    line, and was read whole with the setting; a 70 MB form was still cut off,
+    which is why the route checks the declared size first. The claims route
+    driven through every refusal, each key, field and file read back; the
+    Turnstile answers unchanged; the emailed-claims suite rerun, all 12 cases
+    identical. **The website's own question:** one 8 MB photo arrived as a 15 MB
+    request — as if sent twice. Passed to them to check; CR-1003 earlier sent
+    one photo and stored one.
 
 ---
 
@@ -1734,6 +1754,12 @@ two entries of one email answered 201 and 500, not 409: the route turns a
 unique-index violation (SQLSTATE 23505) into a clear 409, and the test's
 Supabase stand-in dropped the code that PostgREST sends. Fixed in the
 stand-in, not the route.
+
+**⚠ A FRAMEWORK DEFAULT IS A LIMIT TOO.** 2026-10-07: the claims route allowed
+six 10 MB photos, and Next silently allowed 10 MB in total, cutting off the
+rest because `proxy.ts` runs on every route. Nothing in the repo said 10 MB.
+When a request fails below its stated limits, read what the proxy and the app
+logged about it — here the request's real size, and Next's own warning.
 
 **⚠ `npx tsc --noEmit 2>&1 | grep -E "error TS"` inverts the exit code.** `grep`
 exits 1 when it finds nothing, so a **clean** typecheck looks like failure and a
@@ -1937,6 +1963,8 @@ patch_claim_submission_claims.py
 patch_docs_claim_submission_claims.py
 patch_emailed_claims.py
 patch_docs_emailed_claims.py
+patch_request_size_and_error_keys.py
+patch_docs_request_size_and_error_keys.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

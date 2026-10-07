@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { checkRateLimit, cleanInput } from "@/lib/auth";
-import { CLAIM_TYPES, checkClaimPhotos, normaliseOrderNumber, storeClaimPhotos } from "@/lib/claimIntake";
+import { CLAIM_MAX_REQUEST_BYTES, CLAIM_TYPES, checkClaimPhotos, normaliseOrderNumber, storeClaimPhotos } from "@/lib/claimIntake";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { pushClaims } from "@/lib/claimHelpScout";
 
@@ -100,7 +100,19 @@ export async function POST(req: NextRequest) {
    * in front, is what stops a script.
    */
   if (!await checkRateLimit(req, 10, 60_000, "claims:post")) {
-    return answer({ error: "Too many submissions. Please wait a minute and try again." }, 429, { "Retry-After": "60" });
+    return answer({ error: "rate_limited", message: "Too many submissions. Please wait a minute and try again." }, 429, { "Retry-After": "60" });
+  }
+
+  // ⚠ TOO LARGE IS REFUSED HERE, CLEARLY, BEFORE IT IS READ (2026-10-07). Next
+  // cuts a body longer than its proxy buffer off instead of refusing it, and a
+  // cut-off form only reads as "unreadable" -- which is what a customer with a
+  // 15 MB claim was told, until the buffer was raised to match this limit.
+  const declared = Number(req.headers.get("content-length") ?? "");
+  if (Number.isFinite(declared) && declared > CLAIM_MAX_REQUEST_BYTES) {
+    return answer({
+      error: "photos_too_large_total",
+      message: `This claim is larger than ${CLAIM_MAX_REQUEST_BYTES / (1024 * 1024)} MB. Photos may be up to 10 MB each, six at most.`,
+    }, 413);
   }
 
   let form: FormData;
@@ -108,7 +120,7 @@ export async function POST(req: NextRequest) {
     form = await req.formData();
   } catch {
     // ⚠ NO "turnstile" IN THIS 400. The page reads that word as "no token".
-    return answer({ error: "Invalid form submission" }, 400);
+    return answer({ error: "form_unreadable", message: "We could not read this submission." }, 400);
   }
 
   // ── Cloudflare Turnstile, FIRST ──────────────────────────────────────────
@@ -169,8 +181,14 @@ export async function POST(req: NextRequest) {
    * cannot reach them and cannot tell what they are claiming, a human has
    * nothing to work with; everything else can be chased.
    */
-  if (!orderNumberRaw || !name || !email || !CLAIM_TYPES.has(claimType)) {
-    return answer({ error: "Please give your order number, your name, your email and the type of claim." }, 422);
+  // The first field missing is named, so the page can point at it (2026-10-07).
+  const missing = !orderNumberRaw ? "order_number" : !name ? "name" : !email ? "email"
+    : !CLAIM_TYPES.has(claimType) ? "claim_type" : null;
+  if (missing) {
+    return answer({
+      error: "field_invalid", field: missing,
+      message: "Please give your order number, your name, your email and the type of claim.",
+    }, 422);
   }
 
   // Date-only, and only if it is one. A malformed date is dropped rather than
@@ -183,7 +201,9 @@ export async function POST(req: NextRequest) {
   // anonymous -- in lib/claimIntake, before anything is written.
   const files = form.getAll("photos").filter((f): f is File => f instanceof File && f.size > 0);
   const checked = await checkClaimPhotos(files);
-  if (!checked.ok) return answer({ error: checked.error }, checked.status);
+  if (!checked.ok) {
+    return answer({ error: checked.key, message: checked.message, ...(checked.file ? { file: checked.file } : {}) }, checked.status);
+  }
 
   // ── The row first, then the photos ───────────────────────────────────────
   //
@@ -212,7 +232,7 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (insertError || !row) {
-    return answer({ error: "We could not record your claim. Please call us so this is not delayed." }, 500);
+    return answer({ error: "save_failed", message: "We could not record your claim. Please call us so this is not delayed." }, 500);
   }
 
   // Scrubbed of location and stored, in lib/claimIntake.

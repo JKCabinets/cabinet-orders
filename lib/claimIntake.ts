@@ -16,6 +16,15 @@ import { stripImageMetadata } from "@/lib/stripExif";
 
 export const CLAIM_MAX_PHOTOS = 6;
 export const CLAIM_MAX_PHOTO_BYTES = 10 * 1024 * 1024;
+
+/**
+ * The largest claim REQUEST accepted: six 10 MB photos and the form, with room
+ * to spare (2026-10-07). ⚠ MUST EQUAL experimental.proxyClientMaxBodySize in
+ * next.config.mjs. Next CUTS OFF a longer body rather than refusing it, so the
+ * public route checks Content-Length against this first and answers a clear
+ * 413 `photos_too_large_total` instead of an unreadable form.
+ */
+export const CLAIM_MAX_REQUEST_BYTES = 64 * 1024 * 1024;
 const MAX_FILENAME_LEN = 200;
 const BUCKET = "claim-photos";
 
@@ -56,9 +65,14 @@ export function normaliseOrderNumber(raw: string): string | null {
 
 export interface CheckedPhoto { file: File; mime: string }
 
+/**
+ * A refusal says which rule, in words, and which file (2026-10-07): the
+ * website's page uses `key` and `file` to tell the customer exactly what to
+ * fix, and staff read `message`.
+ */
 export type PhotoCheck =
   | { ok: true; photos: CheckedPhoto[] }
-  | { ok: false; status: 413 | 415 | 422; error: string };
+  | { ok: false; status: 413 | 415 | 422; key: "too_many_photos" | "photo_too_large" | "photo_unreadable"; message: string; file?: string };
 
 /**
  * ⚠ TYPE COMES FROM THE FILE'S OWN BYTES, NEVER file.type. The public route is
@@ -68,17 +82,17 @@ export type PhotoCheck =
  */
 export async function checkClaimPhotos(files: File[]): Promise<PhotoCheck> {
   if (files.length > CLAIM_MAX_PHOTOS) {
-    return { ok: false, status: 422, error: `Please attach no more than ${CLAIM_MAX_PHOTOS} photos.` };
+    return { ok: false, status: 422, key: "too_many_photos", message: `Please attach no more than ${CLAIM_MAX_PHOTOS} photos.` };
   }
   const photos: CheckedPhoto[] = [];
   for (const file of files) {
     if (file.size > CLAIM_MAX_PHOTO_BYTES) {
-      return { ok: false, status: 413, error: `"${cleanInput(file.name)}" is larger than 10 MB.` };
+      return { ok: false, status: 413, key: "photo_too_large", message: `"${cleanInput(file.name)}" is larger than 10 MB.`, file: cleanInput(file.name) };
     }
     const head = new Uint8Array(await file.slice(0, SNIFF_BYTES).arrayBuffer());
     const mime = sniffMagicBytes(head);
     if (!mime || !CLAIM_PHOTO_TYPES.has(mime)) {
-      return { ok: false, status: 415, error: `"${cleanInput(file.name)}" is not a JPEG or PNG photo.` };
+      return { ok: false, status: 415, key: "photo_unreadable", message: `"${cleanInput(file.name)}" is not a JPEG or PNG photo.`, file: cleanInput(file.name) };
     }
     photos.push({ file, mime });
   }

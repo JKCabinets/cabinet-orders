@@ -71,6 +71,23 @@ const nextConfig = {
   // into a minimal node:alpine final stage.
   output: "standalone",
 
+  experimental: {
+    // ⚠ THE LARGEST REQUEST THE APP CAN RECEIVE (2026-10-07). proxy.ts runs on
+    // every route, and Next buffers each request body for it -- by default up
+    // to 10 MB, and a longer body is CUT OFF, not refused: the route then
+    // cannot read the form and answers 400. Proven in production: a claim
+    // arrived as 15,009,757 bytes, Next logged "Request body exceeded 10MB
+    // for /api/public/claims", and the customer was told to email instead.
+    // The same cap broke quotes over 10 MB (they allow 50) and staff uploads
+    // over 10 MB (they allow 20 per file).
+    //
+    // 64 MB clears the largest legitimate request -- a claim's six 10 MB
+    // photos and its fields -- with room to spare. MUST EQUAL
+    // CLAIM_MAX_REQUEST_BYTES in lib/claimIntake.ts, which refuses a larger
+    // claim with a clear 413 before Next can truncate it.
+    proxyClientMaxBodySize: 64 * 1024 * 1024,
+  },
+
   async headers() {
     return [
       {

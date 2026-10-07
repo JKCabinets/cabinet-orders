@@ -192,7 +192,7 @@ export async function POST(req: NextRequest) {
 
   const files = form.getAll("photos").filter((f): f is File => f instanceof File && f.size > 0);
   const checked = await checkClaimPhotos(files);
-  if (!checked.ok) return refuse(checked.error, checked.status);
+  if (!checked.ok) return refuse(checked.message, checked.status);
 
   // The one thing asked of Help Scout: is it a real conversation, in our inbox.
   if (!helpScoutConfigured()) return refuse("Help Scout is not configured, so the conversation cannot be checked.", 503);
