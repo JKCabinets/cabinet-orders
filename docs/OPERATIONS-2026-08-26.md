@@ -118,7 +118,10 @@ the vendor string exactly** or its orders ingest as standard.
 The process the acknowledgment gate exists to protect, recorded 2026-08-27
 because it lived nowhere:
 
-1. The designer pulls the **PDF order** out of the OMS.
+1. The designer pulls the **PDF order** out of the OMS. Since 2026-10-07 it
+   shows every line's door style and colour codes (what Waypoint orders by),
+   and flags in amber what would stop the order: a missing customer name (the
+   PO then has no last name), ship-to address, ZIP, phone or email.
 2. They enter it into the **manufacturer's own ordering system**.
 3. The manufacturer returns an **Excel acknowledgment** of what was ordered.
 4. That `.xlsx` is uploaded to the OMS, which **reconciles it against the

@@ -619,6 +619,7 @@ nothing on success, so silence is not a result.
 | A claim's notes go strictly in order; a failed note holds its claim's later ones (2026-10-07) | A note saying Parts ordered landing before the one saying In review would mislead whoever answers the customer. Late is better than out of order. |
 | Deleting a claim closes its Help Scout conversation; nothing in Help Scout is ever deleted (Garrett, 2026-10-07) | The conversation is the record of what the customer was told. Closing says the claim is gone; a reply reopens it. |
 | Next and eslint-config-next pinned EXACTLY, at 16.4.0 (Garrett, 2026-10-07) | A caret let `npm update` move the framework a minor version unasked. Pinned, every framework upgrade is a decision with its own proof. 16.4.0 over 16.3.8: both carry every fix; 16.4.0 passed the same tests. |
+| Every PDF line shows its door style and colour codes; order issues are flagged on the PDF (Garrett, 2026-10-07) | Waypoint orders by the codes, so the person entering the order needs them on every line. A missing name, address, ZIP, phone or email stops a vendor order, so the PDF says so before it is sent. |
 | A deleted claim's submission is unlinked, not left pointing at its number (2026-10-07) | Claim numbers are reused. A stale link would have sent a new claim's progress notes to another customer's conversation. |
 
 ---
@@ -1771,6 +1772,20 @@ nothing on success, so silence is not a result.
     commit. Two of my commands misled on the way: `npm install next@16.3.8`
     recorded a caret and `npm update` then took 16.4.0; and `npm audit fix`
     exits non-zero while anything remains, which stopped a `&&` chain.
+39. **The vendor PDF, redesigned** (`patch_vendor_pdf_design.py`, 2026-10-07;
+    Garrett's mockup and tweaks). What it shows: OMS-STATE §3. **Proved**
+    through the REAL route — its decoder, vendor lookup and data helpers; only
+    the database, sign-in and the mapping tables stood in — printed by
+    Chromium 141 under the route's own content-security policy (no refusals;
+    the inline logo drawn): SHO-1053 as the mockup; a 28-line, three-page order
+    (column heads repeat; no row split; every modifier visible); a combined PDF
+    without a vendor; an order with every issue, each flagged and the clean one
+    flagging none. Lato chosen by printing it beside DM Sans against the
+    mockup. Caught on the way: a footer fixed to the page HID a row at the foot
+    of page 2 (moved into the page margin); a rounded first header cell left a
+    pale seam (the table is rounded instead); the ZIP check passed every address
+    with a five-digit house number (moved to the end); the footer's time was
+    UTC. Strict typecheck.
 
 ---
 
@@ -2114,6 +2129,8 @@ patch_docs_claim_delete_closes.py
 patch_ack_tickets.py
 patch_docs_xlsx_and_ack.py
 patch_docs_deps_upgrade.py
+patch_vendor_pdf_design.py
+patch_docs_vendor_pdf_design.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it
