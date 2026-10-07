@@ -478,7 +478,7 @@ them from healthchecks.io and shrink `IGNORED_CHECKS` in
 | `production-complete` | In production → At cross dock |
 | `teams-digest` | Silent until `TEAMS_WEBHOOK_URL` is set — now safe to enable |
 | **`jk-webhook-health`** | **Shopify ingestion** — added 2026-08-20 |
-| **`helpscout-sync`** | **Website claims reaching Help Scout**, every 15 minutes; fails when a claim is unsent after four attempts — added 2026-10-05 |
+| **`helpscout-sync`** | **Website claims reaching Help Scout**, every 15 minutes; fails when a claim is unsent after four attempts; since 2026-10-07 also sends a claim's progress notes, and fails when one is unsent after four attempts — added 2026-10-05 |
 
 ## The ingestion check reconciles; it does not heartbeat
 
@@ -933,6 +933,13 @@ is the one format that could carry something harmful, and claims never need
 one. One claim per email conversation, though a customer may make several
 claims. The claim keeps the customer's own Help Scout conversation, so their
 confirmation arrives in their own thread.
+
+**A CLAIM'S PROGRESS SHOWS IN HELP SCOUT** (Garrett, 2026-10-07). Each time a
+warranty claim is created or moves stage, an internal note goes onto the
+customer's Help Scout conversation: the stage, when, who has the claim, and the
+tracking number once it ships. The team sees where a claim stands where they
+answer the customer; the customer never sees these notes. A claim logged by
+hand has no conversation, so it gets none.
 
 **Order value is stored at ingest, not queried live.** A metrics page that
 depends on Shopify is one that breaks when Shopify does, and 2026-08-20

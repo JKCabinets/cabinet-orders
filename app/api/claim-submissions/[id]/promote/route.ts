@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, rateLimitOr429, cleanInput } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import { createWarranty } from "@/lib/createWarranty";
+import { pushClaimNotes } from "@/lib/claimHelpScout";
 
 /**
  * POST /api/claim-submissions/[id]/promote — turn a public submission into a
@@ -277,6 +278,11 @@ export async function POST(
     .eq("id", id)
     // Only if still `new`, so two simultaneous promotions cannot both mark it.
     .eq("status", "new");
+
+  // The claim's "created" note, queued by the trigger when createWarranty
+  // inserted it; sent now that the submission names it (2026-10-07). Not
+  // awaited. Its conversation is found THROUGH the mark just made.
+  pushClaimNotes({ orderId: claimId }).catch((e) => console.error(`[helpscout] notes for ${claimId}: ${(e as Error).message}`));
 
   if (markErr) {
     // The claim exists and is correct; only the bookkeeping failed. Say so

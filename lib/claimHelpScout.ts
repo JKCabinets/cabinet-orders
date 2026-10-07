@@ -249,3 +249,127 @@ export async function pushClaims(opts: { id?: string; limit?: number } = {}): Pr
   }
   return results;
 }
+
+// ── A claim's progress, as internal notes (Help Scout part 2, 2026-10-07) ──
+
+/** A queued claim event, as claim_helpscout_note_lease() hands it out. */
+export interface ClaimNoteEvent {
+  id: number;
+  order_id: string;
+  event: "created" | "stage";
+  from_stage: string | null;
+  to_stage: string;
+  claimed_by: string | null;
+  tracking: string | null;
+  happened_at: string;
+}
+
+function arizonaWhen(iso: string): string {
+  return new Date(iso).toLocaleString("en-US", {
+    timeZone: "America/Phoenix", month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+  });
+}
+
+/**
+ * The note: what happened, when (Arizona time -- a note sent late still says
+ * when it happened), and who has the claim. Internal: the customer never sees
+ * it, so the stage names are the OMS's own.
+ */
+export function claimNoteEventHtml(n: ClaimNoteEvent, claimer: string | null): string {
+  const when = arizonaWhen(n.happened_at);
+  const parts = [n.event === "created"
+    ? `Warranty claim ${esc(n.order_id)} created, at ${esc(n.to_stage)}, ${when}.`
+    : `Warranty claim ${esc(n.order_id)} moved to ${esc(n.to_stage)}${n.from_stage ? ` (from ${esc(n.from_stage)})` : ""}, ${when}.`];
+  parts.push(claimer ? `Claimed by ${esc(claimer)}.` : "Not claimed by anyone yet.");
+  // The tracking number is news when the claim SHIPS; on later notes it is noise.
+  if (n.event === "stage" && n.to_stage === "Shipped" && n.tracking) parts.push(`Tracking: ${esc(n.tracking)}.`);
+  return parts.map((p) => `<p>${p}</p>`).join("\n");
+}
+
+/**
+ * The claim's conversation: the one its customer submission was sent to. A
+ * claim logged by hand, or promoted from a submission older than the push,
+ * has none.
+ */
+async function conversationForClaim(orderId: string): Promise<{ id: number } | "none" | "waiting"> {
+  const { data } = await supabase
+    .from("claim_submissions")
+    .select("helpscout_state, helpscout_conversation_id")
+    .eq("promoted_to_order_id", orderId)
+    .maybeSingle();
+  if (!data) return "none";
+  if (data.helpscout_state === "sent" && data.helpscout_conversation_id) return { id: Number(data.helpscout_conversation_id) };
+  if (data.helpscout_state === "pending") return "waiting";
+  return "none";
+}
+
+export interface NoteResult { order_id: string; to_stage: string; outcome: "sent" | "skipped" | "waiting" | "failed"; error?: string }
+
+/**
+ * Sends one queued note. Never throws: the outcome is recorded on the row.
+ *
+ * ⚠ ONLY `sent` AND `skipped` RELEASE THE LEASE. A note that failed, or is
+ * waiting for its conversation, keeps its ten-minute lease, so the next sweep
+ * retries it -- and the claim's later notes stay behind it, in order.
+ */
+async function sendClaimNote(n: ClaimNoteEvent): Promise<NoteResult> {
+  const base = { order_id: n.order_id, to_stage: n.to_stage };
+  try {
+    const conv = await conversationForClaim(n.order_id);
+    if (conv === "none") {
+      // Promotion creates the claim BEFORE it marks the submission, so for a
+      // few moments a promoted claim looks like one logged by hand. Give a
+      // new claim ten minutes before deciding it has no conversation.
+      if (Date.now() - new Date(n.happened_at).getTime() < 10 * 60_000) {
+        await supabase.from("claim_helpscout_notes").update({ last_error: "looking for the claim's conversation" }).eq("id", n.id);
+        return { ...base, outcome: "waiting" };
+      }
+      await supabase.from("claim_helpscout_notes")
+        .update({ state: "skipped", leased_at: null, last_error: "no customer conversation: logged by hand, or from before the push" })
+        .eq("id", n.id);
+      return { ...base, outcome: "skipped" };
+    }
+    if (conv === "waiting") {
+      await supabase.from("claim_helpscout_notes").update({ last_error: "waiting for the claim's own conversation" }).eq("id", n.id);
+      return { ...base, outcome: "waiting" };
+    }
+    let claimer: string | null = null;
+    if (n.claimed_by) {
+      const { data: tm } = await supabase.from("team_members").select("name").eq("id", n.claimed_by).maybeSingle();
+      claimer = (tm?.name as string | undefined) ?? "a team member";
+    }
+    await addNote(conv.id, claimNoteEventHtml(n, claimer));
+    await supabase.from("claim_helpscout_notes")
+      .update({ state: "sent", sent_at: new Date().toISOString(), leased_at: null, last_error: null })
+      .eq("id", n.id);
+    return { ...base, outcome: "sent" };
+  } catch (e) {
+    const message = ((e as Error).message || "unknown error").slice(0, 500);
+    console.error(`[helpscout] note for ${n.order_id} not sent: ${message}`);
+    await supabase.from("claim_helpscout_notes").update({ last_error: message }).eq("id", n.id);
+    return { ...base, outcome: "failed", error: message };
+  }
+}
+
+/**
+ * Sends what is due -- for one claim, or for all -- oldest first. Each lease
+ * hands out at most ONE note per claim, so the rounds walk a claim's notes in
+ * order and stop the moment one cannot go. Never throws.
+ */
+export async function pushClaimNotes(opts: { orderId?: string } = {}): Promise<NoteResult[]> {
+  if (!helpScoutConfigured()) return [];
+  const results: NoteResult[] = [];
+  for (let round = 0; round < 10; round++) {
+    const { data, error } = await supabase.rpc("claim_helpscout_note_lease", { p_order_id: opts.orderId ?? null, p_limit: 20 });
+    if (error) { console.error(`[helpscout] could not lease notes: ${error.message}`); break; }
+    if (!Array.isArray(data) || data.length === 0) break;
+    let progressed = false;
+    for (const n of data as ClaimNoteEvent[]) {
+      const r = await sendClaimNote(n);
+      results.push(r);
+      if (r.outcome === "sent" || r.outcome === "skipped") progressed = true;
+    }
+    if (!progressed) break;
+  }
+  return results;
+}

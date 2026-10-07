@@ -615,6 +615,8 @@ nothing on success, so silence is not a result.
 | Every claim refusal carries a machine key, and the file or field (the website's request, 2026-10-07) | The page can tell the customer exactly what to fix instead of offering the email route for everything. The Turnstile answers, which the page already acts on, are unchanged. |
 | Every action is a pill; nothing clickable sits inside another (Garrett, 2026-10-07) | Underlined text is too easily missed. One look across the OMS, from the styles it already uses. |
 | The Shopify product picker is removed from `NewOrderModal` (2026-10-07) | It only ever appeared on a custom job, which records choices room by room, and its catalogue was admin-only, so it listed nothing for the team. |
+| A claim's progress is queued by a database TRIGGER, not sent from each route (2026-10-07) | A stage changes by more than one path — a person, a tracking number, and whatever comes later. The trigger sees every one; a note sent from each route would miss the one forgotten. |
+| A claim's notes go strictly in order; a failed note holds its claim's later ones (2026-10-07) | A note saying Parts ordered landing before the one saying In review would mislead whoever answers the customer. Late is better than out of order. |
 
 ---
 
@@ -1690,6 +1692,24 @@ nothing on success, so silence is not a result.
     The admin mappings page's four underlined buttons (dismiss, try again, not
     needed, undo) are neutral pills; no class list on it underlines anything.
     A strict typecheck of both against the real store types.
+34. **A claim's progress as Help Scout notes** (`patch_claim_progress_notes.py`,
+    migration `2026-10-07-claim-helpscout-notes.sql`, run BEFORE the deploy;
+    Help Scout part 2). What it is: OMS-STATE §2; the decision: OPERATIONS §10.
+    **Proved** on 17.6, every statement as `service_role` on a database with no
+    hand-made grants: the trigger queued a creation, a move and a tracked move
+    to Shipped, and ignored a notes-only edit, a cabinet order's move and a
+    move to the same stage; the lease handed out only a claim's oldest note.
+    Through the real promote route (its `createWarranty` stand-in INSERTING the
+    row, so the trigger fired) and the real sweep, against a fake Help Scout:
+    the "created" note sent at once; three moves each sent at once, in order,
+    the tracking number on Shipped only; two moves during an outage held, then
+    sent in order; a claim logged by hand waiting ten minutes, then skipped; a
+    claim whose submission was not yet in Help Scout waiting; four failed
+    sweeps raising the alarm, naming the claim and the stage. The claimer's
+    name read from a real `team_members` table. **Not driven:** the PATCH route
+    itself — five of its modules were not pulled. Its hook was typechecked
+    against the route's real variables (a misnamed one fails), and makes the
+    exact call the tests drove. The first live stage move proves it.
 
 ---
 
@@ -1804,6 +1824,13 @@ six 10 MB photos, and Next silently allowed 10 MB in total, cutting off the
 rest because `proxy.ts` runs on every route. Nothing in the repo said 10 MB.
 When a request fails below its stated limits, read what the proxy and the app
 logged about it — here the request's real size, and Next's own warning.
+
+**⚠ A TRIGGER RUNS AS WHOEVER WRITES THE ROW.** 2026-10-07: the notes queue was
+first created relying on Supabase's default privileges for `service_role`. The
+trigger that fills it runs as the role updating `orders` — the API's
+`service_role` — so had those defaults been missing, every stage change on a
+warranty claim would have FAILED, not merely gone unnoted. Found because the
+test database has no such defaults. Grant a trigger's tables outright.
 
 **⚠ `npx tsc --noEmit 2>&1 | grep -E "error TS"` inverts the exit code.** `grep`
 exits 1 when it finds nothing, so a **clean** typecheck looks like failure and a
@@ -2013,6 +2040,8 @@ patch_pill_actions.py
 patch_docs_pill_actions.py
 patch_picker_removed_map_pills.py
 patch_docs_picker_removed_map_pills.py
+patch_claim_progress_notes.py
+patch_docs_claim_progress_notes.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

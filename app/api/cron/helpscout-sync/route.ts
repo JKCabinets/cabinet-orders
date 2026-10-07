@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyCronAuth } from "@/lib/cronAuth";
 import { supabase } from "@/lib/supabase";
 import { helpScoutConfigured } from "@/lib/helpscout";
-import { pushClaims } from "@/lib/claimHelpScout";
+import { pushClaims, pushClaimNotes } from "@/lib/claimHelpScout";
 
 /**
  * GET /api/cron/helpscout-sync -- every 15 minutes, from the box's crontab
@@ -34,6 +34,14 @@ export async function GET(req: NextRequest) {
   }
 
   const results = await pushClaims({ limit: 20 });
+  // A claim's progress (Help Scout part 2, 2026-10-07): every queued note --
+  // any a stage move or a promotion did not send at once.
+  const notes = await pushClaimNotes();
+  const { data: stuckNotes } = await supabase
+    .from("claim_helpscout_notes")
+    .select("order_id, to_stage, attempts, last_error")
+    .eq("state", "pending")
+    .gte("attempts", ALARM_AFTER_ATTEMPTS);
 
   const { data: stuck, error } = await supabase
     .from("claim_submissions")
@@ -47,12 +55,18 @@ export async function GET(req: NextRequest) {
   const detail = {
     sent: results.filter((r) => r.sent).map((r) => r.ref),
     retrying: results.filter((r) => !r.sent).map((r) => ({ ref: r.ref, error: r.error })),
+    notes_sent: notes.filter((n) => n.outcome === "sent").map((n) => `${n.order_id} -> ${n.to_stage}`),
+    notes_retrying: notes.filter((n) => n.outcome === "failed").map((n) => ({ claim: n.order_id, error: n.error })),
   };
-  if (stuck && stuck.length > 0) {
+  const problems = [
+    ...(stuck ?? []).map((s) => `${s.ref}: not in Help Scout after ${s.helpscout_attempts} attempts. Last: ${s.helpscout_last_error ?? "no reason recorded"}`),
+    ...(stuckNotes ?? []).map((s) => `${s.order_id}: the note for "${s.to_stage}" not in Help Scout after ${s.attempts} attempts. Last: ${s.last_error ?? "no reason recorded"}`),
+  ];
+  if (problems.length > 0) {
     return NextResponse.json(
       {
         ok: false,
-        problems: stuck.map((s) => `${s.ref}: not in Help Scout after ${s.helpscout_attempts} attempts. Last: ${s.helpscout_last_error ?? "no reason recorded"}`),
+        problems,
         ...detail,
       },
       { status: 500 },

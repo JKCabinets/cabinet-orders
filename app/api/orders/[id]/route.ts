@@ -7,6 +7,7 @@ import { ALLOWED_STAGES, isStageAllowedForType, isBackwardsMove, verifyAdminPin,
 import { isPaymentHoldStatus, paymentHoldLabel, paymentRecordOf, parseMoney, isStageOfferedForType, activityDate, type OrderType, type Stage } from "@/lib/data";
 import { purchaseOf, archivedVia, archivedReadOnly } from "@/lib/archived";
 import { trackingTargetStage, categoryHasTracking, type OrderCategory } from "@/lib/categories";
+import { pushClaimNotes } from "@/lib/claimHelpScout";
 import { orderAllVendorsGreen } from "@/lib/acknowledgments";
 import { requirementsFor, typeEverRequires } from "@/lib/requirements";
 
@@ -745,6 +746,15 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
   // and never called onStageChange. Realtime hid it by refreshing the row a
   // moment later -- the feature looked right and reported the wrong thing.
   const finalStage = (updates.stage as string | undefined) ?? currentStage;
+
+  // ⚠ HELP SCOUT PART 2 (2026-10-07). A warranty claim's stage change was just
+  // queued by the database trigger orders_claim_helpscout_note -- whatever moved
+  // it, a person or a tracking number. Send it now, not at the next 15-minute
+  // sweep. Not awaited: moving a stage never waits on Help Scout, and the sweep
+  // sends whatever this does not.
+  if (currentType === "warranty" && finalStage !== currentStage) {
+    pushClaimNotes({ orderId: id }).catch((e) => console.error(`[helpscout] notes for ${id}: ${(e as Error).message}`));
+  }
 
   // Log activity
   const today = activityDate();
