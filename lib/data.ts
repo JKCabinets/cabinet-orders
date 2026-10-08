@@ -883,6 +883,17 @@ export interface Project {
    */
   claimed_by?: string | null;
   claimed_at?: string | null;
+  /**
+   * The customer's agreement to our policies, as the website sent it
+   * (2026-10-07; migrations/2026-10-07-project-terms-consent.sql). Text, as
+   * sent -- lib/consent reads, explains and formats it. NULL terms_agreed: no
+   * consent recorded. ⚠ Declared in the same commit as the columns: a column
+   * the type did not know has bitten this file five times (above).
+   */
+  terms_agreed?: string | null;
+  terms_version?: string | null;
+  consent_wording?: string | null;
+  consent_source?: string | null;
 }
 
 /**

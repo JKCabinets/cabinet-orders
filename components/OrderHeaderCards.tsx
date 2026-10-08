@@ -1,7 +1,8 @@
 "use client";
 
 import { AlertTriangle } from "lucide-react";
-import { poReference, displayOrderNumber, type Order, type TeamMember } from "@/lib/data";
+import { poReference, displayOrderNumber, type Order, type Project, type TeamMember } from "@/lib/data";
+import { consentRequired, consentMissing, formatAgreed, CONSENT_WORDING } from "@/lib/consent";
 import { customerIssues, keyedByName, type AckIssues } from "@/lib/orderIssues";
 
 /**
@@ -34,7 +35,22 @@ const missing = <span className="italic" style={{ color: AMBER }}>Missing</span>
 const orDash = (v: unknown) => (String(v ?? "").trim() ? String(v) : "\u2014");
 const orMissing = (v: unknown) => (String(v ?? "").trim() ? String(v) : missing);
 
-export function OrderHeaderCards({ order, team, ack }: { order: Order; team: TeamMember[]; ack?: AckIssues | null }) {
+/**
+ * "No terms consent", for the modal's top line (2026-10-07): visible from every
+ * tab, so staff get consent before production. Nothing when consent is there
+ * or not required (lib/consent).
+ */
+export function ConsentMissingPill({ project }: { project: Project | null | undefined }) {
+  if (!consentMissing(project)) return null;
+  return (
+    <span className="inline-flex items-center gap-1 ml-2 px-2 py-px rounded-full text-[9px] uppercase tracking-wider font-medium align-middle"
+      style={{ color: AMBER, background: "rgba(224,168,72,0.10)", border: "0.5px solid rgba(224,168,72,0.45)" }}>
+      <AlertTriangle className="w-2.5 h-2.5" /> No terms consent
+    </span>
+  );
+}
+
+export function OrderHeaderCards({ order, team, ack, project }: { order: Order; team: TeamMember[]; ack?: AckIssues | null; project?: Project | null }) {
   const people = team;
   const issue = customerIssues(order);
   const keyedBy = keyedByName(order, (id) => people.find((m) => m.id === id)?.name)
@@ -43,6 +59,7 @@ export function OrderHeaderCards({ order, team, ack }: { order: Order; team: Tea
   const reasons = [
     ...(ack && ack.summary ? [ack.summary] : []),
     ...Object.values(issue).filter(Boolean),
+    ...(consentMissing(project) ? ["No terms consent: get it before production"] : []),
   ];
 
   return (
@@ -69,6 +86,24 @@ export function OrderHeaderCards({ order, team, ack }: { order: Order; team: Tea
               </>
             } />
           )}
+          {consentRequired(project) || project?.terms_agreed ? (
+            <Row label="Terms consent" small flag={consentMissing(project)} value={
+              project?.terms_agreed ? (
+                <>
+                  <span className="block">{formatAgreed(project.terms_agreed)}{project.consent_source ? ` \u00b7 ${project.consent_source}` : ""}</span>
+                  <span className="block text-cream/45">
+                    Wording {project.consent_wording || "\u2014"} {"\u00b7"} Terms {project.terms_version || "\u2014"}
+                  </span>
+                  {project.consent_wording && CONSENT_WORDING[project.consent_wording] && (
+                    <details className="mt-0.5">
+                      <summary className="cursor-pointer text-[10px] text-cream/45 hover:text-cream/70">What they agreed to</summary>
+                      <span className="block mt-1 text-[10px] text-cream/65 leading-relaxed">{CONSENT_WORDING[project.consent_wording]}</span>
+                    </details>
+                  )}
+                </>
+              ) : <span className="italic" style={{ color: AMBER }}>Missing: get consent before production</span>
+            } />
+          ) : null}
           <Row label="Delivery" small value={orDash(order.delivery_method)} />
           <Row label="Vendor" small value={orDash(order.vendor)} />
           <Row label="Shopify Id" small value={orDash(order.shopify_id) === "\u2014" ? displayOrderNumber(order) : String(order.shopify_id)} />

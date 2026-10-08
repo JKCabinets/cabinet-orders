@@ -6,6 +6,7 @@ import { decodeHtmlEntities } from "@/lib/htmlEntities";
 import { decodeSku, buildSkuFromAvisNamesDetailed, ensureSkuMaps, skuMapsUnavailable, modificationMap } from "@/lib/skuDecoder";
 import { parseModifications } from "@/lib/modifications";
 import type { ReviewReason } from "@/lib/data";
+import { readConsent, type TermsConsent } from "@/lib/consent";
 // isSampleVendor and lookupVendorsForSkus are no longer imported here.
 // Classification moved into lib/categories (one implementation, shared with
 // grouping), and the per-line vendor now comes from the payload rather than
@@ -439,6 +440,22 @@ function buildOrder(payload: Record<string, unknown>) {
     orderNumber: shopifyInput(orderNumber),
     decodedDoorStyle: shopifyInput(decodedDoorStyle),
     decodedColor: shopifyInput(decodedColor),
+    // The customer's agreement to our policies (2026-10-07): lib/consent.
+    consent: readConsent(payload.note_attributes),
+  };
+}
+
+/**
+ * The project's consent columns, or NOTHING. ⚠ Spread only when the payload
+ * carries consent, so an update without it can never clear what was recorded.
+ */
+function consentColumns(c: TermsConsent | null): Record<string, string | null> {
+  if (!c) return {};
+  return {
+    terms_agreed: shopifyInput(c.terms_agreed),
+    terms_version: c.terms_version === null ? null : shopifyInput(c.terms_version),
+    consent_wording: c.consent_wording === null ? null : shopifyInput(c.consent_wording),
+    consent_source: c.consent_source === null ? null : shopifyInput(c.consent_source),
   };
 }
 
@@ -627,7 +644,7 @@ export async function POST(req: NextRequest) {
     // load leaves skuMapsUnavailable() true and every line is flagged
     // decoder_unavailable, so the order still ingests.
     try { await ensureSkuMaps(); } catch { /* degrade to decoder_unavailable */ }
-    const { customerName, customerEmail, customerPhone, shipTo, deliveryMethod, skuItems, skuAnomalies, reviewNotes, notes, today, orderNumber } = buildOrder(payload);
+    const { customerName, customerEmail, customerPhone, shipTo, deliveryMethod, skuItems, skuAnomalies, reviewNotes, notes, today, orderNumber, consent } = buildOrder(payload);
     const projectId = orderNumber ? `SHO-${orderNumber}` : `SHO-${shopifyId.slice(-6)}`;
     // One timestamp for the project and every group, so the New SLA clock --
     // which measures from the order date -- is identical across them.
@@ -673,9 +690,14 @@ export async function POST(req: NextRequest) {
       customer_email: customerEmail,
       payment_status: payload.financial_status ?? null,
       ...projectMoney(payload),
+      ...consentColumns(consent),
       created_at: nowIso,
       updated_at: nowIso,
     });
+    // An order arriving WITHOUT consent is logged, not refused: the order is
+    // real either way, and the OMS flags it for staff (lib/consent). The log is
+    // how a website that stopped sending it gets noticed.
+    if (!projectError && !consent) logWebhook("no_terms_consent", { order_id: projectId, shopify_id: shopifyId });
 
     if (projectError) {
       // 23505 is the unique index on projects.shopify_id: two concurrent
@@ -805,7 +827,7 @@ export async function POST(req: NextRequest) {
     if (project) {
       const today = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "America/Phoenix" });
       try { await ensureSkuMaps(); } catch { /* degrade to decoder_unavailable */ }
-      const { skuItems, skuAnomalies, reviewNotes, notes, shipTo, customerPhone, customerEmail, deliveryMethod } = buildOrder(payload);
+      const { skuItems, skuAnomalies, reviewNotes, notes, shipTo, customerPhone, customerEmail, deliveryMethod, consent } = buildOrder(payload);
       const payloadLines = (payload.line_items as Array<Record<string, unknown>>) ?? [];
       const grouped = groupLinesByCategory(skuItems, payloadLines);
 
@@ -822,6 +844,9 @@ export async function POST(req: NextRequest) {
         customer_email: customerEmail,
         payment_status: payload.financial_status ?? null,
         ...projectMoney(payload),
+        // Added later -- say through "Additional details" -- it lands here.
+        // Absent, nothing is written: recorded consent is never cleared.
+        ...consentColumns(consent),
         updated_at: new Date().toISOString(),
       }).eq("id", project.id);
 

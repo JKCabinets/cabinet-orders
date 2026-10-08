@@ -19,7 +19,7 @@ import { checkAttachmentGate } from "@/lib/stageGates";
 import { AttachmentsPanel, type AttachmentsPanelHandle } from "./AttachmentsPanel";
 import { useAttachmentsFor, refreshAttachments } from "@/lib/attachments";
 import { FullOrderGroup, GroupIssueTag } from "./FullOrderGroup";
-import { OrderHeaderCards } from "./OrderHeaderCards";
+import { OrderHeaderCards, ConsentMissingPill } from "./OrderHeaderCards";
 import { DamageReportPanel } from "./DamageReportPanel";
 import { AcknowledgmentPanel, type AcknowledgmentPanelHandle } from "./AcknowledgmentPanel";
 import { consumeAckPicker, useAckStatus } from "@/lib/ackStatus";
@@ -847,6 +847,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
               {liveOrder.source === "Manual" ? "Custom" : liveOrder.source}
               <span className="mx-1.5">&middot;</span>
               {liveOrder.date}
+              <ConsentMissingPill project={purchaseOfRow} />
             </p>
             {/* ⚠ THE TWO FACTS A CONTROL-LESS MODAL OWES THE READER: who worked
                 this, and why nothing can be changed. The claim chip is gone
@@ -1687,7 +1688,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
 
             return (
               <div className="px-6 py-5">
-                <OrderHeaderCards order={liveOrder} team={team} />
+                <OrderHeaderCards order={liveOrder} team={team} project={purchaseOfRow} />
                 <div className="rounded-brand overflow-hidden" style={{ border: "0.5px solid rgba(255,255,255,0.12)" }}>
                   <div className="grid grid-cols-[1.4fr_1.6fr_auto_auto] gap-3 px-4 py-2.5 text-[9px] uppercase tracking-wider text-cream/40"
                     style={{ background: "rgba(255,255,255,0.03)" }}>

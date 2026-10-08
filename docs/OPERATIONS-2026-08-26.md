@@ -132,6 +132,12 @@ because it lived nowhere:
    (2026-10-07): the delivery company calls that number, and an order can sit
    waiting on one nobody answers.
 
+**An order flagged "No terms consent"** (2026-10-07) reached us without the
+customer ticking the policies box — every website checkout requires it, so
+this should be rare. Get their agreement in writing before production starts,
+by email through Help Scout, so the conversation is the record. The OMS cannot
+yet record consent obtained that way: the flag stays until it can.
+
 ⚠ **Only Waypoint has a parser.** HCI and J&K use different acknowledgment
 formats, and neither is implemented. Their orders satisfy the gate with an
 attached file instead.

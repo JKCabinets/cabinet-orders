@@ -623,6 +623,8 @@ nothing on success, so silence is not a result.
 | Acknowledgment discrepancies are shown on the lines they are about, on Full Order and the PDF; the Overview keeps a count and a pill (Garrett, 2026-10-07) | A list apart from the lines makes somebody match them up by eye. On the line, the fix is where the problem is. |
 | A wrong phone on the acknowledgment is RED (Garrett, 2026-10-07) | The delivery company contacts the customer on it; an order can sit waiting on a number nobody answers. |
 | The fingerprint gains the phone for new acknowledgments; staleness accepts either recipe (2026-10-07) | Covering the phone everywhere at once would have read every green acknowledgment stale and blocked every cabinet order. |
+| Terms consent is kept on the project as the four values Shopify sent, as text, and never cleared (2026-10-07) | It is evidence for chargebacks: what was sent is what counts, and nothing about it may fail or erase an order. |
+| A missing consent is flagged, not blocked (Garrett, 2026-10-07) | Every website checkout requires it, so a missing one is a website fault to fix, not an order to stop. |
 | A deleted claim's submission is unlinked, not left pointing at its number (2026-10-07) | Claim numbers are reused. A stale link would have sent a new claim's progress notes to another customer's conversation. |
 
 ---
@@ -1821,6 +1823,20 @@ nothing on success, so silence is not a result.
     showed no order has a phone in its own address, so no fingerprint moved.
     Left: an acknowledgment phone written with an extension ("ext 4") leaves
     that text in the address, which then differs — shown, not hidden.
+42. **Terms consent kept with every order** (`patch_terms_consent.py`,
+    migration `2026-10-07-project-terms-consent.sql`, run BEFORE the deploy;
+    the website team's request). What it is: OMS-STATE §3. **Proved:** the
+    real webhook driven with signed payloads — a create with consent stores all
+    four as sent; without, nothing, and logs `no_terms_consent` for that order
+    alone; an update without consent leaves it and writes no consent column;
+    an update adding it records it (names in any case, values trimmed); a blank
+    `Terms agreed` is none. The migration twice on 17.6 over an existing
+    project. On screen: recorded (21:15 UTC shown as 2:15 PM Arizona, the v1
+    wording readable), missing (pill, banner, row), before the cut-off and a
+    custom job (nothing). Strict typecheck; the control against the deployed
+    webhook and modal raises the same errors. Open: the cut-off is midnight
+    2026-10-07 Arizona until the website team says when each route started;
+    staff cannot yet record consent they obtain by email.
 
 ---
 
@@ -2181,6 +2197,8 @@ patch_discrepancies_full_order.py
 patch_docs_discrepancies_full_order.py
 patch_ack_explained_phone.py
 patch_docs_ack_explained_phone.py
+patch_terms_consent.py
+patch_docs_terms_consent.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

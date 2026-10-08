@@ -2,6 +2,7 @@
 
 import type { Order, TeamMember } from "@/lib/data";
 import { useAckStatus } from "@/lib/ackStatus";
+import { useStore } from "@/lib/store";
 import { ackIssues } from "@/lib/orderIssues";
 import { OrderDetails } from "./OrderDetails";
 import { OrderHeaderCards } from "./OrderHeaderCards";
@@ -41,9 +42,10 @@ export function GroupIssueTag({ group }: { group: Order }) {
 export function FullOrderGroup({ group, team, readOnly }: { group: Order; team: TeamMember[]; readOnly: boolean }) {
   const status = useAckStatus(group.id, group.type === "order");
   const ack = status.loading ? null : ackIssues(status.ackByVendor, group);
+  const { projects } = useStore();
   return (
     <div className="px-6 pt-3">
-      <OrderHeaderCards order={group} team={team} ack={ack} />
+      <OrderHeaderCards order={group} team={team} ack={ack} project={group.project_id ? projects[group.project_id] ?? null : null} />
       <OrderDetails
         orderId={group.id}
         doorStyle={group.door_style ?? ""}
