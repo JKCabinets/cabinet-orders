@@ -133,7 +133,7 @@ export async function GET(
   // latest per vendor this PDF covers. Each line that differs is told on its
   // line, as on the order modal's Full Order tab -- lib/orderIssues, one copy.
   const ack = ackIssues(await latestAckByVendor(
-    order.id, vendorFilter ? [vendorFilter] : vendorLookup.uniqueVendors, order));
+    order.id, vendorFilter ? [vendorFilter] : vendorLookup.uniqueVendors, order), order);
 
   // If the filter is set but doesn't match any vendor on this order, 404.
   // Defensive — protects against a stale UI sending a vendor that no longer
@@ -374,10 +374,8 @@ export async function GET(
       + reviewLines.map(i => `${h(i.sku || "\u2014")} (${h(REVIEW_LABEL[(i as ReviewFields).review_reason ?? ""] ?? "review")})`).join("; ")]
     : [];
   // The order's own issues join the lines' (2026-10-07).
-  const ackParts = ack.count > 0
-    ? [`${ack.count} acknowledgment discrepanc${ack.count === 1 ? "y" : "ies"}`
-       + (ack.stale ? " (the acknowledgment is older than the order's last change)" : "")]
-    : [];
+  // What is wrong, in a sentence when one says it all (2026-10-07): lib/orderIssues.
+  const ackParts = ack.summary ? [h(ack.summary)] : [];
   const bannerParts = [...reviewParts, ...ackParts, ...orderIssues.map((s) => h(s))];
   const needsReviewBanner = bannerParts.length > 0
     ? `<div class="review-banner">\u26a0 NEEDS REVIEW \u2014 ${bannerParts.join(" \u00b7 ")}</div>`
@@ -577,7 +575,7 @@ export async function GET(
       <table class="kv kv2"><tbody>
         <tr><td class="lbl${flag(issue.name || ack.fields.name || "")}">Customer Name:</td><td class="val${flag(issue.name || ack.fields.name || "")}">${shown(customerName)}${ack.fields.name ? `<span class="ack-note">${h(ack.fields.name)}</span>` : ""}</td></tr>
         <tr><td class="lbl${flag(issue.shipTo || ack.fields.address || "")}">Ship To Address:</td><td class="val${flag(issue.shipTo || ack.fields.address || "")}">${shown(shipToAddress)}${ack.fields.address ? `<span class="ack-note">${h(ack.fields.address)}</span>` : ""}</td></tr>
-        <tr><td class="lbl${flag(issue.phone)}">Customer Phone:</td><td class="val${flag(issue.phone)}">${shown(customerPhone)}</td></tr>
+        <tr><td class="lbl${flag(issue.phone || ack.fields.phone || "")}">Customer Phone:</td><td class="val${flag(issue.phone || ack.fields.phone || "")}">${shown(customerPhone)}${ack.fields.phone ? `<span class="ack-note">${h(ack.fields.phone)}</span>` : ""}</td></tr>
         <tr><td class="lbl">Special instructions:</td><td class="val">${text(specialInstructions)}</td></tr>
         <tr><td class="lbl${flag(issue.email)}">Customer Email:</td><td class="val${flag(issue.email)}">${shown(customerEmail)}</td></tr>
       </tbody></table>

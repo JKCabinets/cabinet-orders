@@ -41,9 +41,7 @@ export function OrderHeaderCards({ order, team, ack }: { order: Order; team: Tea
     || people.find((m) => m.initials && m.initials === order.member)?.name || order.member || "\u2014";
   const fields = ack?.fields ?? {};
   const reasons = [
-    ...(ack && ack.count > 0
-      ? [`${ack.count} acknowledgment discrepanc${ack.count === 1 ? "y" : "ies"}${ack.stale ? " (the acknowledgment is older than the order's last change)" : ""}`]
-      : []),
+    ...(ack && ack.summary ? [ack.summary] : []),
     ...Object.values(issue).filter(Boolean),
   ];
 
@@ -78,7 +76,7 @@ export function OrderHeaderCards({ order, team, ack }: { order: Order; team: Tea
         <div className="rounded-lg p-2" style={{ border: "0.5px solid rgba(255,255,255,0.12)" }}>
           <Row label="Customer" value={orMissing(order.name)} flag={!!(issue.name || fields.name)} note={fields.name} />
           <Row label="Ship to" value={orMissing(order.ship_to)} flag={!!(issue.shipTo || fields.address)} note={fields.address} />
-          <Row label="Phone" value={orMissing(order.customer_phone)} flag={!!issue.phone} />
+          <Row label="Phone" value={orMissing(order.customer_phone)} flag={!!(issue.phone || fields.phone)} note={fields.phone} />
           <Row label="Instructions" small value={orDash(order.notes)} />
           <Row label="Email" value={orMissing(order.customer_email)} flag={!!issue.email} />
         </div>

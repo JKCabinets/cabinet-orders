@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { decodeSku, type SkuItem } from "@/lib/skuDecoder";
-import { normName, normAddress, skuKey, type OrderLineItem } from "@/lib/reconcile";
+import { normName, normAddress, phoneKey, skuKey, type OrderLineItem } from "@/lib/reconcile";
 
 /**
  * ackFingerprint — is a green acknowledgment still about THIS order?
@@ -96,6 +96,11 @@ export function ackFingerprint(
   name: string,
   shipTo: string,
   lines: OrderLineItem[],
+  /**
+   * The order's phone (2026-10-07), now a gate. OMITTED gives the fingerprint as
+   * it was before -- what every acknowledgment uploaded until then stored.
+   */
+  phone?: string | null,
 ): string {
   const bySku = new Map<string, { qty: number; mods: string[] }>();
   for (const it of lines) {
@@ -117,6 +122,7 @@ export function ackFingerprint(
         v.qty,
         v.mods.map((m) => m.trim().toUpperCase()).sort(),
       ]),
+    ...(phone !== undefined ? { p: phoneKey(phone) } : {}),
   });
 
   return crypto.createHash("sha256").update(canonical).digest("hex");
@@ -134,13 +140,20 @@ export function ackFingerprint(
 export function ackIsStale(
   storedFingerprint: string | null | undefined,
   vendor: string,
-  order: { name: string | null; ship_to: string | null; sku_items: SkuItem[] },
+  // ⚠ customer_phone IS REQUIRED, ON PURPOSE (2026-10-07). A caller that left
+  // it out would recompute a NEW acknowledgment's fingerprint without the phone
+  // and read it stale -- blocking the order. Required, it fails the typecheck.
+  order: { name: string | null; ship_to: string | null; customer_phone: string | null; sku_items: SkuItem[] },
 ): boolean {
   if (!storedFingerprint) return false;
   const lines = linesForAckVendor(vendor, order.sku_items);
   if (lines === null) return false;
+  // ⚠ EITHER RECIPE. Acknowledgments uploaded before 2026-10-07 stored a
+  // fingerprint without the phone; requiring the new one would read every one
+  // of them stale and block every cabinet order. Stale only when NEITHER matches.
+  const name = order.name ?? "", shipTo = order.ship_to ?? "";
   return (
-    ackFingerprint(order.name ?? "", order.ship_to ?? "", lines) !==
-    storedFingerprint
+    ackFingerprint(name, shipTo, lines, order.customer_phone ?? "") !== storedFingerprint &&
+    ackFingerprint(name, shipTo, lines) !== storedFingerprint
   );
 }

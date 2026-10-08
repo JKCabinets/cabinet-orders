@@ -621,6 +621,8 @@ nothing on success, so silence is not a result.
 | Next and eslint-config-next pinned EXACTLY, at 16.4.0 (Garrett, 2026-10-07) | A caret let `npm update` move the framework a minor version unasked. Pinned, every framework upgrade is a decision with its own proof. 16.4.0 over 16.3.8: both carry every fix; 16.4.0 passed the same tests. |
 | Every PDF line shows its door style and colour codes; order issues are flagged on the PDF (Garrett, 2026-10-07) | Waypoint orders by the codes, so the person entering the order needs them on every line. A missing name, address, ZIP, phone or email stops a vendor order, so the PDF says so before it is sent. |
 | Acknowledgment discrepancies are shown on the lines they are about, on Full Order and the PDF; the Overview keeps a count and a pill (Garrett, 2026-10-07) | A list apart from the lines makes somebody match them up by eye. On the line, the fix is where the problem is. |
+| A wrong phone on the acknowledgment is RED (Garrett, 2026-10-07) | The delivery company contacts the customer on it; an order can sit waiting on a number nobody answers. |
+| The fingerprint gains the phone for new acknowledgments; staleness accepts either recipe (2026-10-07) | Covering the phone everywhere at once would have read every green acknowledgment stale and blocked every cabinet order. |
 | A deleted claim's submission is unlinked, not left pointing at its number (2026-10-07) | Claim numbers are reused. A stale link would have sent a new claim's progress notes to another customer's conversation. |
 
 ---
@@ -1801,6 +1803,24 @@ nothing on success, so silence is not a result.
     all seven files; the modal, among stand-ins for its unrelated imports,
     raises exactly the three errors the DEPLOYED modal raises among the same
     stand-ins — a control proving the change adds none.
+41. **Discrepancies explained; the phone a red check; a tag on Full Order**
+    (`patch_ack_explained_phone.py`, 2026-10-07; Garrett, after SHO-1054 was
+    acknowledged in the wrong colour and showed every cabinet "wrong"). What
+    it is: OMS-STATE §3. **Proved** with the real reconciler, display module
+    and fingerprint on SHO-1054 as it happened — six lines in Painted Linen
+    acknowledged in Painted Harbor, a wrong phone written with +1: ONE
+    headline, a colour note on each line, nothing "extra", the phone flagged
+    and the address not; a right phone written five ways green; an older
+    acknowledgment's phone split from its address; a door-style change named;
+    a real extra cabinet kept; addresses without a phone green. The
+    fingerprint: the old recipe reproduced exactly without the phone; neither
+    old nor new acknowledgments stale on an unchanged order; a phone change
+    stales only new ones. On screen and on the PDF through the real routes.
+    Strict typecheck of eleven files; the deployed-modal control again; a
+    caller without the phone FAILS (TS2741). ⚠ Before deploying, a query
+    showed no order has a phone in its own address, so no fingerprint moved.
+    Left: an acknowledgment phone written with an extension ("ext 4") leaves
+    that text in the address, which then differs — shown, not hidden.
 
 ---
 
@@ -1928,6 +1948,17 @@ notes sender's lookup moved to `.order().limit()`, which the Supabase
 stand-in did not have. The sender caught the TypeError and recorded a failed
 note — a plausible outcome, so the test read like a behaviour. When a test
 fails where it should not, check first that the stand-in supports every call.
+
+**⚠ ACCOUNT FOR EVERY COUNT.** 2026-10-07: two test cases each counted one
+discrepancy more than expected. Chasing that one found `phoneKey` falling back
+to an address's loose digits — house number and ZIP make ten — which would have
+turned every acknowledgment with such an address red. A number you cannot
+explain is a bug until it is explained.
+
+**⚠ A STAND-IN GENERATOR MUST NEVER TOUCH A REAL DECLARATION.** The same day a
+loosened condition appended `any` stand-ins onto the store's and the mappings'
+real types; `skipLibCheck` hid the duplicates, and the typecheck would have
+quietly checked less. Restored, and the generator skips any module that has one.
 
 **⚠ `npx tsc --noEmit 2>&1 | grep -E "error TS"` inverts the exit code.** `grep`
 exits 1 when it finds nothing, so a **clean** typecheck looks like failure and a
@@ -2148,6 +2179,8 @@ patch_vendor_pdf_design.py
 patch_docs_vendor_pdf_design.py
 patch_discrepancies_full_order.py
 patch_docs_discrepancies_full_order.py
+patch_ack_explained_phone.py
+patch_docs_ack_explained_phone.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

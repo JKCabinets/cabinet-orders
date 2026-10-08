@@ -38,7 +38,7 @@ export async function GET(
   const { data: order, error } = await supabase
     .from("orders")
     // name and ship_to feed the ack fingerprint — see latestAckByVendor.
-    .select("vendor, sku_items, name, ship_to")
+    .select("vendor, sku_items, name, ship_to, customer_phone")
     .eq("id", id)
     .single();
 

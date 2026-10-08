@@ -47,6 +47,8 @@ export interface OrderForReconcile {
   name: string;          // customer/order name
   ship_to: string;
   sku_items: OrderLineItem[];
+  /** The order's phone (2026-10-07): compared with the one in the acknowledgment's ship-to. */
+  customer_phone?: string | null;
 }
 
 export type LineStatus = "match" | "qty_mismatch" | "mod_mismatch" | "missing_from_ack" | "extra_in_ack";
@@ -113,7 +115,7 @@ export interface LineResult {
 }
 
 export interface FieldResult {
-  field: "name" | "address";
+  field: "name" | "address" | "phone";
   matched: boolean;
   order_value: string;
   ack_value: string;
@@ -129,6 +131,8 @@ export interface ReconcileResult {
   lines_ok: boolean;
   address_ok: boolean;
   name_ok: boolean;
+  /** Absent on results from before 2026-10-07, when the phone was not checked. */
+  phone_ok?: boolean;
 }
 
 /**
@@ -144,6 +148,40 @@ export function normName(s: string): string {
 }
 
 /**
+ * A phone number anywhere in a string, WITH an optional US country code
+ * (2026-10-07). Until then the pattern was ten digits only, so "+1 480 ..." or
+ * "1-480-..." left "+1" / "1-" behind and the ADDRESS failed: a wrong phone
+ * surfaced as an address, and a right phone written with +1 failed it too.
+ */
+//
+// ⚠ NEVER INSIDE A LONGER RUN OF DIGITS: "... AZ 85142 9123440008" read as
+// "142 9123440" -- the end of the ZIP and the start of the phone -- until the
+// edges were fenced with (?<!\d) and (?!\d) (caught in testing, 2026-10-07).
+const PHONE_RE = /(?<!\d)(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}(?!\d)/g;
+
+/** The phone as written in a string, or "". */
+export function phoneIn(s: string | null | undefined): string {
+  return String(s ?? "").match(new RegExp(PHONE_RE.source))?.[0]?.trim() ?? "";
+}
+
+/**
+ * A phone's last ten digits -- what two phones are compared on -- or "".
+ * ⚠ ONLY WHAT THE PHONE PATTERN MATCHES. Never a fallback to the string's loose
+ * digits: an address's house number and ZIP ("22792 ... 85142") are ten digits
+ * too, and read as a phone they failed every acknowledgment with no phone in
+ * it (caught in testing, 2026-10-07).
+ */
+export function phoneKey(s: string | null | undefined): string {
+  const digits = phoneIn(s).replace(/\D/g, "");
+  return digits.length >= 10 ? digits.slice(-10) : "";
+}
+
+/** A ship-to without its phone, for showing. */
+export function withoutPhone(s: string | null | undefined): string {
+  return String(s ?? "").replace(PHONE_RE, " ").replace(/\s+/g, " ").replace(/[\s,]+$/, "").trim();
+}
+
+/**
  * Strip an embedded phone number and normalize an address for comparison.
  *
  * Per policy, normalization removes formatting noise only — case, whitespace,
@@ -156,7 +194,7 @@ export function normName(s: string): string {
 export function normAddress(s: string): string {
   return (s ?? "")
     // remove phone-like sequences (480-219-9580, (480) 219 9580, 4802199580)
-    .replace(/\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/g, " ")
+    .replace(PHONE_RE, " ")
     // separator punctuation -> space
     .replace(/[.,]/g, " ")
     // collapse whitespace, trim, uppercase
@@ -194,6 +232,7 @@ export function reconcileAck(
       lines_ok: false,
       address_ok: false,
       name_ok: false,
+      phone_ok: false,
     };
   }
 
@@ -265,13 +304,24 @@ export function reconcileAck(
   // --- Gate 3: name (normalized, exact) ---
   const name_ok = normName(order.name) === normName(ack.ship_name);
 
+  // --- Gate 4: phone (2026-10-07) ---
+  // ⚠ A WRONG PHONE IS RED (Garrett): the delivery company calls it, and an order
+  // can sit waiting on a number nobody answers. The acknowledgment's phone is in
+  // its ship-to; the order's is its own field. Compared on the last ten digits,
+  // and only when both have one -- a phone missing from the order is flagged by
+  // the order's own checks.
+  const orderPhone = phoneKey(order.customer_phone);
+  const ackPhone = phoneKey(ack.ship_address);
+  const phone_ok = !orderPhone || !ackPhone || orderPhone === ackPhone;
+
   const fields: FieldResult[] = [
     { field: "name", matched: name_ok, order_value: order.name, ack_value: ack.ship_name },
     { field: "address", matched: address_ok, order_value: order.ship_to, ack_value: ack.ship_address },
+    { field: "phone", matched: phone_ok, order_value: order.customer_phone ?? "", ack_value: phoneIn(ack.ship_address) },
   ];
 
   const verdict: "green" | "red" =
-    lines_ok && address_ok && name_ok ? "green" : "red";
+    lines_ok && address_ok && name_ok && phone_ok ? "green" : "red";
 
   return {
     verdict,
@@ -282,5 +332,6 @@ export function reconcileAck(
     lines_ok,
     address_ok,
     name_ok,
+    phone_ok,
   };
 }

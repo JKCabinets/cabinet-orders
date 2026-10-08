@@ -2,12 +2,15 @@ import { supabase } from "@/lib/supabase";
 import { lookupVendorsForSkus } from "@/lib/vendorLookup";
 import { ackIsStale } from "@/lib/ackFingerprint";
 import type { SkuItem } from "@/lib/skuDecoder";
+import { doorStyleMap, colorMapAll } from "@/lib/skuDecoder";
 import type { ReconcileResult } from "@/lib/reconcile";
 
 /** The order fields a fingerprint is computed over. */
 export type AckOrderSnapshot = {
   name: string | null;
   ship_to: string | null;
+  /** Required (2026-10-07): the fingerprint covers the phone now -- see ackIsStale. */
+  customer_phone: string | null;
   sku_items: SkuItem[];
 };
 
@@ -21,7 +24,27 @@ export type AckSummary = {
    * when there is no basis to judge -- see ackIsStale.
    */
   stale: boolean;
+  /**
+   * Names for the door-style and colour codes in this acknowledgment and the
+   * order (2026-10-07), from the server's mapping tables, so the screen can say
+   * "Painted Harbor" rather than only "PH". Empty when the maps are not loaded.
+   */
+  names?: { door: Record<string, string>; color: Record<string, string> };
 };
+
+/** Door-style and colour names for the codes in these SKUs (read from the end: colour last). */
+function codeNames(skus: string[]): { door: Record<string, string>; color: Record<string, string> } {
+  const doors = doorStyleMap(), colors = colorMapAll();
+  const names = { door: {} as Record<string, string>, color: {} as Record<string, string> };
+  for (const s of skus) {
+    const p = String(s ?? "").split("-");
+    if (p.length < 3) continue;
+    const door = p[p.length - 2], color = p[p.length - 1];
+    if (doors[door]) names.door[door] = doors[door];
+    if (colors[color]) names.color[color] = colors[color];
+  }
+  return names;
+}
 
 /**
  * Latest acknowledgment per vendor for an order (newest row per vendor wins;
@@ -66,11 +89,15 @@ export function summariseAcks(
         verdict: r.verdict,
         uploaded_at: r.uploaded_at,
         result: r.result_json,
+        names: codeNames([
+          ...(r.result_json?.lines ?? []).map((l) => l.composite_sku),
+          ...(Array.isArray(order?.sku_items) ? order!.sku_items.map((i) => i.sku) : []),
+        ]),
         // ⚠ Without `order` there is nothing to compare against, so nothing is
         // stale. Callers that gate on this MUST pass it; callers that only
         // display can omit it and get today's behaviour.
         stale: order ? ackIsStale(r.lines_fingerprint, r.vendor, {
-          name: order.name, ship_to: order.ship_to,
+          name: order.name, ship_to: order.ship_to, customer_phone: order.customer_phone,
           sku_items: Array.isArray(order.sku_items) ? order.sku_items : [],
         }) : false,
       };
@@ -131,7 +158,7 @@ export async function orderAllVendorsGreen(orderId: string): Promise<boolean> {
     .from("orders")
     // ⚠ name and ship_to are here for the FINGERPRINT. reconcileAck gates on
     // them, so a change to either makes a green ack stale.
-    .select("vendor, sku_items, name, ship_to")
+    .select("vendor, sku_items, name, ship_to, customer_phone")
     .eq("id", orderId)
     .single();
   if (!order) return false;

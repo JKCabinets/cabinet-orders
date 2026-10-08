@@ -18,7 +18,7 @@ import { useToast } from "./Toast";
 import { checkAttachmentGate } from "@/lib/stageGates";
 import { AttachmentsPanel, type AttachmentsPanelHandle } from "./AttachmentsPanel";
 import { useAttachmentsFor, refreshAttachments } from "@/lib/attachments";
-import { FullOrderGroup } from "./FullOrderGroup";
+import { FullOrderGroup, GroupIssueTag } from "./FullOrderGroup";
 import { OrderHeaderCards } from "./OrderHeaderCards";
 import { DamageReportPanel } from "./DamageReportPanel";
 import { AcknowledgmentPanel, type AcknowledgmentPanelHandle } from "./AcknowledgmentPanel";
@@ -1709,7 +1709,10 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                       <button key={g.id} onClick={() => setItemsGroupId(g.id)}
                         className="w-full grid grid-cols-[1.4fr_1.6fr_auto_auto] gap-3 px-4 py-3 text-left transition-colors hover:bg-white/4"
                         style={{ borderTop: "0.5px solid rgba(255,255,255,0.08)" }}>
-                        <span className="text-[12px] text-cream/85">{GROUP_LABEL[g.type] ?? g.type}</span>
+                        <span className="text-[12px] text-cream/85 flex items-center gap-2">
+                          {GROUP_LABEL[g.type] ?? g.type}
+                          <GroupIssueTag group={g} />
+                        </span>
                         <span className="text-[11px] text-cream/55 truncate">
                           {vendors.length > 0 ? vendors.join(", ") : (g.vendor || "\u2014")}
                         </span>

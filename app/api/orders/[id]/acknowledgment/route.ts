@@ -152,7 +152,7 @@ export const POST = withClaimOverrideLog(async function POST(
   // ── Fetch the order named by the URL ────────────────────────────────────
   const { data: order, error: orderErr } = await supabase
     .from("orders")
-    .select("id, name, ship_to, sku_items, archived, project_id")
+    .select("id, name, ship_to, customer_phone, sku_items, archived, project_id")
     .eq("id", id)
     .single();
   if (orderErr || !order) {
@@ -196,6 +196,7 @@ export const POST = withClaimOverrideLog(async function POST(
     name: order.name ?? "",
     ship_to: order.ship_to ?? "",
     sku_items: ackLines,
+    customer_phone: order.customer_phone ?? "",
   };
 
   const result = reconcileAck(ack, orderForReconcile);
@@ -219,7 +220,7 @@ export const POST = withClaimOverrideLog(async function POST(
     // describes the order from one that describes lines since edited away.
     // Requires migrations/2026-08-27-ack-lines-fingerprint.sql.
     lines_fingerprint: ackFingerprint(
-      order.name ?? "", order.ship_to ?? "", ackLines,
+      order.name ?? "", order.ship_to ?? "", ackLines, order.customer_phone ?? "",
     ),
   });
   if (insErr) {

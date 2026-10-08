@@ -128,7 +128,9 @@ because it lived nowhere:
    order** and either gives a green light or lists every line that is off.
    Since 2026-10-07 each discrepancy shows on its own line — on the order's
    **Full Order** tab (the Overview's **View discrepancies** opens it) and on
-   the vendor PDF.
+   the vendor PDF. **A wrong phone on the acknowledgment turns it red**
+   (2026-10-07): the delivery company calls that number, and an order can sit
+   waiting on one nobody answers.
 
 ⚠ **Only Waypoint has a parser.** HCI and J&K use different acknowledgment
 formats, and neither is implemented. Their orders satisfy the gate with an

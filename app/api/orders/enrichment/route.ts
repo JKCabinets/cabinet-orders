@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
   // fingerprint was added to prevent.
   const { data: orderRows, error: orderErr } = await supabase
     .from("orders")
-    .select("id, type, stage, vendor, sku_items, name, ship_to")
+    .select("id, type, stage, vendor, sku_items, name, ship_to, customer_phone")
     .in("id", ids);
 
   if (orderErr) {
@@ -138,6 +138,7 @@ export async function POST(req: NextRequest) {
     const snapshot: AckOrderSnapshot = {
       name: (o.name as string | null) ?? null,
       ship_to: (o.ship_to as string | null) ?? null,
+      customer_phone: (o.customer_phone as string | null) ?? null,
       sku_items: items,
     };
 
