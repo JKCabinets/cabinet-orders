@@ -3,6 +3,7 @@
 import { AlertTriangle } from "lucide-react";
 import { poReference, displayOrderNumber, type Order, type Project, type TeamMember } from "@/lib/data";
 import { consentRequired, consentMissing, formatAgreed, CONSENT_WORDING } from "@/lib/consent";
+import { RecordConsentButton } from "./RecordConsent";
 import { customerIssues, keyedByName, type AckIssues } from "@/lib/orderIssues";
 
 /**
@@ -100,8 +101,23 @@ export function OrderHeaderCards({ order, team, ack, project }: { order: Order; 
                       <span className="block mt-1 text-[10px] text-cream/65 leading-relaxed">{CONSENT_WORDING[project.consent_wording]}</span>
                     </details>
                   )}
+                  {/* Consent STAFF recorded (2026-10-13): who, and the conversation that is the record. */}
+                  {project.consent_recorded_by && (
+                    <span className="block mt-0.5 text-[10px] text-cream/55">
+                      Recorded by {project.consent_recorded_by}
+                      {project.consent_evidence && (
+                        <> {"·"} <a href={project.consent_evidence} target="_blank" rel="noopener noreferrer"
+                          className="underline decoration-cream/30 hover:text-cream/85">Help Scout conversation</a></>
+                      )}
+                    </span>
+                  )}
                 </>
-              ) : <span className="italic" style={{ color: AMBER }}>Missing: get consent before production</span>
+              ) : (
+                <>
+                  <span className="italic" style={{ color: AMBER }}>Missing: get consent before production</span>
+                  {project && <span className="block"><RecordConsentButton project={project} /></span>}
+                </>
+              )
             } />
           ) : null}
           <Row label="Delivery" small value={orDash(order.delivery_method)} />

@@ -135,8 +135,11 @@ because it lived nowhere:
 **An order flagged "No terms consent"** (2026-10-07) reached us without the
 customer ticking the policies box — every website checkout requires it, so
 this should be rare. Get their agreement in writing before production starts,
-by email through Help Scout, so the conversation is the record. The OMS cannot
-yet record consent obtained that way: the flag stays until it can.
+by email through Help Scout, so the conversation is the record. Send them the
+wording shown under **Record consent** (on the order's Full Order tab, beside
+"Missing"); once they reply agreeing, press it, paste the conversation's link
+and the time their reply arrived. The flag clears, and the order shows who
+recorded it and the conversation. (Since 2026-10-13.)
 
 **The storage sweep** (admin, as needed). Deleting an order removes its files
 since 2026-10-13; the sweep clears anything left over from before or from a

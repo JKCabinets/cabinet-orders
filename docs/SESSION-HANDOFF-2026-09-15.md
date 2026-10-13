@@ -631,6 +631,7 @@ nothing on success, so silence is not a result.
 | A denied claim's files are removed, both copies; its details, notes and reason kept (Garrett, 2026-10-13) | A denial needs its reasons on record, not the customer's photos; promotion copied them, so one copy alone would keep them. |
 | A claim keeps its own rules: its dates and tracking are a record, and it moves only by its button (Garrett, 2026-10-13) | A claim's Shipped is not a sample's: entering a tracking number for a replacement part is a note, not the shipment. |
 | The production finish date is shown as "Ship from factory" on every type; the Shopify attribute keeps its name (2026-10-13) | It names what the date means in every case; the attribute is read outside the OMS. |
+| Consent staff obtain is recorded against its Help Scout conversation, checked to be ours (2026-10-13) | The conversation holds the customer's own words; a record that points at it can be shown in a dispute, and one that cannot be checked is just a claim. |
 | A deleted claim's submission is unlinked, not left pointing at its number (2026-10-07) | Claim numbers are reused. A stale link would have sent a new claim's progress notes to another customer's conversation. |
 
 ---
@@ -1849,8 +1850,8 @@ nothing on success, so silence is not a result.
     2026-10-07 Arizona, it flagged SHO-1054 to SHO-1056 — placed before the
     website's update (Garrett). SHO-1056 arrived at 21:39:32 UTC on 2026-10-08
     and SHO-1057's customer agreed at 21:56:42, so the update went live between
-    them: `CONSENT_REQUIRED_FROM` is 21:40 UTC on 2026-10-08. Open: staff
-    cannot yet record consent they obtain by email.
+    them: `CONSENT_REQUIRED_FROM` is 21:40 UTC on 2026-10-08. Staff record
+    consent they obtain by email since item 46.
 43. **Files go with their order; the storage sweep** (`patch_order_files.py`,
     migration `2026-10-13-storage-orphans.sql`, run BEFORE the deploy). What it
     is: OMS-STATE §3. **The orphan rule checked against production first:**
@@ -1905,6 +1906,20 @@ nothing on success, so silence is not a result.
     real categories and requirements: the same 11 stand-in errors as the
     deployed files, none new. ⚠ Open: a claim's Help Scout "Shipped" note
     carries tracking only if it was entered BEFORE the move — usually after.
+46. **Consent staff obtain by email, recorded** (`patch_record_consent.py`,
+    migration `2026-10-13-project-consent-evidence.sql`, run BEFORE the deploy).
+    What it is: OMS-STATE §3. **Proved:** the shared readers — real links in
+    every shape, look-alikes refused, 15:05 Arizona as 22:05 UTC, Feb 30,
+    10:75 and 25:00 refused (the claims route's copy read 10:75 as 11:15:
+    tightened when moved). The route: every refusal — not Help Scout, no
+    time, the future, no purchase, consent already there (left untouched),
+    Help Scout unconfigured or down, no conversation, another inbox —
+    writing nothing; recorded: the time, v1, email, who, the conversation,
+    the project returned, each group's activity. On screen: Missing with the
+    button; the dialog shows the wording, needs both fields, keeps a refusal
+    open; recorded shows who and the link, no button, no banner. The
+    migration twice over website consent, untouched. Strict typecheck: the
+    same 7 stand-in errors as the deployed files, none new.
 
 ---
 
@@ -2275,6 +2290,8 @@ patch_claim_close.py
 patch_docs_claim_close.py
 patch_claim_next_actions.py
 patch_docs_claim_next_actions.py
+patch_record_consent.py
+patch_docs_record_consent.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

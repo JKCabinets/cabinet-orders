@@ -66,6 +66,8 @@ interface StoreCtx {
   deleteOrder: (id: string) => Promise<void>;
   /** Close a warranty claim, Approved or Denied (2026-10-13). Resolves with the server's refusal, if any. */
   closeClaim: (id: string, outcome: "approved" | "denied", reason: string) => Promise<ArchiveResult>;
+  /** Record consent a customer gave by email, on their purchase (2026-10-13). */
+  recordConsent: (projectId: string, conversation: string, agreedAt: string) => Promise<ArchiveResult>;
   bulkAction: (
     ids: string[],
     action: { type: "archive"; archived: boolean } | { type: "delete" }
@@ -764,6 +766,29 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     await apiCall(`/api/orders/${id}`, "DELETE");
   }, []);
 
+  // ⚠ NOT OPTIMISTIC: the server checks the conversation with Help Scout, and
+  // a purchase shown as consented that is not would be the worst kind of wrong.
+  const recordConsent = useCallback(async (
+    projectId: string, conversation: string, agreedAt: string,
+  ): Promise<ArchiveResult> => {
+    let res: Response;
+    try {
+      res = await fetch(`/api/projects/${projectId}/consent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversation, agreed_at: agreedAt }),
+      });
+    } catch {
+      return { ok: false, error: "network_error" };
+    }
+    let body: { error?: string; message?: string; data?: Project } | null = null;
+    try { body = await res.json(); } catch { /* not JSON */ }
+    if (!res.ok || !body?.data) return { ok: false, error: body?.error ?? `HTTP ${res.status}`, message: body?.message };
+    const p = body.data;
+    setProjects(prev => ({ ...prev, [p.id]: p }));
+    return { ok: true };
+  }, []);
+
   // ⚠ NOT OPTIMISTIC (2026-10-13). A close can be refused -- a denial without
   // its reason, a claim somebody else holds -- and a claim shown archived that
   // is not would be worse than a moment's wait. The row updates on success.
@@ -1023,7 +1048,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     <Store.Provider value={{
       allOrders, allOrdersIncludingArchived: resolvedOrders,
       orders, warranties, samples, customs, hardware, projects, team, onlineUsers, loading,
-      addOrder, moveStage, updateNotes, updateInternalNotes, updateOrderDetails, archiveProject, claimProject, archiveOrder, unarchiveOrder, deleteOrder, closeClaim, bulkAction,
+      addOrder, moveStage, updateNotes, updateInternalNotes, updateOrderDetails, archiveProject, claimProject, archiveOrder, unarchiveOrder, deleteOrder, closeClaim, recordConsent, bulkAction,
       claimOrder, addTeamMember, updateTeamMember, deactivateTeamMember, deleteTeamMember,
       updateTeamMemberProfile, uploadAvatar,
     }}>

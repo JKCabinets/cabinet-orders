@@ -903,6 +903,14 @@ export interface Project {
   terms_version?: string | null;
   consent_wording?: string | null;
   consent_source?: string | null;
+  /**
+   * Consent STAFF recorded (2026-10-13; migrations/2026-10-13-project-consent-
+   * evidence.sql): the Help Scout conversation where the customer agreed by
+   * email, who recorded it, and when. NULL on consent the website sent.
+   */
+  consent_evidence?: string | null;
+  consent_recorded_by?: string | null;
+  consent_recorded_at?: string | null;
 }
 
 /**

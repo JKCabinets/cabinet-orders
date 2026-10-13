@@ -39,6 +39,13 @@ export const CONSENT_WORDING: Record<string, string> = {
 };
 
 /**
+ * The wording a customer is asked to agree to TODAY -- what staff send when
+ * they obtain consent by email (app/api/projects/[id]/consent), and what is
+ * recorded for it. Moves with the website's: v2 arrives from them.
+ */
+export const CURRENT_CONSENT_WORDING = "v1";
+
+/**
  * From when a Shopify order must carry consent: when the website started
  * sending it. ⚠ SET FROM THE ORDERS THEMSELVES (2026-10-13): SHO-1056 arrived
  * at 21:39:32 UTC on 2026-10-08 without it, placed before the website's update
