@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, rateLimitOr429 } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
+import { removeOrderFiles } from "@/lib/orderFiles";
 
 /**
  * Bulk actions — a CLEANUP tool, deliberately.
@@ -227,14 +228,6 @@ export async function POST(req: NextRequest) {
       //                  visible as "no attachments", and retryable.
       //
       // Files go when the job goes.
-      const { data: attachments, error: attErr } = await supabase
-        .from("order_attachments")
-        .select("file_path")
-        .eq("order_id", id);
-      if (attErr) {
-        results.push({ id, ok: false, error: `failed to list attachments: ${attErr.message}` });
-        continue;
-      }
       // ⚠ ARCHIVED IS READ-ONLY (2026-09-16). Restore it first, then delete.
       // Only custom rows reach here -- the branch above refuses every other
       // type -- and a custom row is standalone, so its own flag is the whole
@@ -247,16 +240,11 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      const paths = (attachments ?? [])
-        .map(a => a.file_path as string)
-        .filter(Boolean);
-      if (paths.length > 0) {
-        const { error: storageErr } = await supabase
-          .storage.from("order-attachments").remove(paths);
-        if (storageErr) {
-          results.push({ id, ok: false, error: `failed to delete files: ${storageErr.message}` });
-          continue;
-        }
+      // The files: lib/orderFiles, the copy every delete path uses (2026-10-13).
+      const files = await removeOrderFiles([id]);
+      if (!files.ok) {
+        results.push({ id, ok: false, error: files.error });
+        continue;
       }
 
       // Children, deleted first. ⚠ CORRECTED 2026-09-16: this said every one of

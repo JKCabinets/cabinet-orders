@@ -8,6 +8,7 @@ import { isPaymentHoldStatus, paymentHoldLabel, paymentRecordOf, parseMoney, isS
 import { purchaseOf, archivedVia, archivedReadOnly } from "@/lib/archived";
 import { trackingTargetStage, categoryHasTracking, type OrderCategory } from "@/lib/categories";
 import { pushClaimNotes } from "@/lib/claimHelpScout";
+import { removeOrderFiles } from "@/lib/orderFiles";
 import { orderAllVendorsGreen } from "@/lib/acknowledgments";
 import { requirementsFor, typeEverRequires } from "@/lib/requirements";
 
@@ -1060,6 +1061,13 @@ export async function DELETE(
       );
     }
   }
+
+  // ⚠ THE FILES GO WITH THE ORDER, AND FIRST (2026-10-13). The rows cascade;
+  // the files do not, and until this line every order deleted here left its
+  // attachments in storage -- 32 of 36 files when it was found. Storage first:
+  // a failure here leaves the order whole, to delete again. lib/orderFiles.
+  const files = await removeOrderFiles([id]);
+  if (!files.ok) return NextResponse.json({ error: files.error }, { status: 500 });
 
   await supabase.from("order_activity").delete().eq("order_id", id);
   const { error } = await supabase.from("orders").delete().eq("id", id);

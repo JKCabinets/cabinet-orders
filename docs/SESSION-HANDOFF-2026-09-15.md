@@ -625,6 +625,8 @@ nothing on success, so silence is not a result.
 | The fingerprint gains the phone for new acknowledgments; staleness accepts either recipe (2026-10-07) | Covering the phone everywhere at once would have read every green acknowledgment stale and blocked every cabinet order. |
 | Terms consent is kept on the project as the four values Shopify sent, as text, and never cleared (2026-10-07) | It is evidence for chargebacks: what was sent is what counts, and nothing about it may fail or erase an order. |
 | A missing consent is flagged, not blocked (Garrett, 2026-10-07) | Every website checkout requires it, so a missing one is a website fault to fix, not an order to stop. |
+| A Shopify cancel or delete removes the order's files too (Garrett, 2026-10-13) | Once the rows are gone nothing in the OMS can show or reach those files; kept, they are cost and customer data with no use. |
+| The storage sweep deletes only on a confirmed count from its own dry run (2026-10-13) | Deletion is final; a list that changed since it was read is not the list that was approved. |
 | A deleted claim's submission is unlinked, not left pointing at its number (2026-10-07) | Claim numbers are reused. A stale link would have sent a new claim's progress notes to another customer's conversation. |
 
 ---
@@ -1437,8 +1439,9 @@ nothing on success, so silence is not a result.
       scrubbed, and nothing under a wrong `.pdf` name. Item 27 step 6.
     - ✅ ~~The quote route tells a customer "(max 20 MB)"~~ — the message reads
       the limit from its constant since 2026-10-05.
-    - The quote route leaves the storage object when its row insert fails (the
-      staff route cleans up) — which is where the 09-28→30 orphans came from.
+    - ✅ ~~The quote route leaves the storage object when its row insert
+      fails~~ — removed with its failed row since item 43 (2026-10-13); the
+      sweep clears the 09-28→30 orphans.
     - ✅ ~~`promote` writes a customer's claim photos as `general`~~ — fixed in
       item 27, with the rows already written.
     - ✅ **The metadata scrubber dropped a JPEG's Orientation** with the rest of
@@ -1473,7 +1476,8 @@ nothing on success, so silence is not a result.
       `DMSans_wght300_600-s.p.0roqa3ab3xhnr.woff2`, the exact content-hashed name
       the verified build produced, and Garrett checked the screens by eye. No
       pixel comparison was run.
-    - Deleting an order leaves its files in storage (rows cascade, objects do not).
+    - ✅ ~~Deleting an order leaves its files in storage~~ — every delete path
+      removes them first since item 43 (2026-10-13).
     - ✅ ~~Two near-simultaneous promotes both create a claim~~ — fixed in item
       29 (2026-10-06). Shown first: two presses at once through the deployed
       route created TWO warranty claims; through the new one, one.
@@ -1830,7 +1834,8 @@ nothing on success, so silence is not a result.
     four as sent; without, nothing, and logs `no_terms_consent` for that order
     alone; an update without consent leaves it and writes no consent column;
     an update adding it records it (names in any case, values trimmed); a blank
-    `Terms agreed` is none. The migration twice on 17.6 over an existing
+    `Terms agreed` is none. The migration twice on PostgreSQL 16 (corrected
+    2026-10-13: this said 17.6, production's version) over an existing
     project. On screen: recorded (21:15 UTC shown as 2:15 PM Arizona, the v1
     wording readable), missing (pill, banner, row), before the cut-off and a
     custom job (nothing). Strict typecheck; the control against the deployed
@@ -1842,6 +1847,23 @@ nothing on success, so silence is not a result.
     and SHO-1057's customer agreed at 21:56:42, so the update went live between
     them: `CONSENT_REQUIRED_FROM` is 21:40 UTC on 2026-10-08. Open: staff
     cannot yet record consent they obtain by email.
+43. **Files go with their order; the storage sweep** (`patch_order_files.py`,
+    migration `2026-10-13-storage-orphans.sql`, run BEFORE the deploy). What it
+    is: OMS-STATE §3. **The orphan rule checked against production first:**
+    32 of 36 attachment files unreferenced; all 4 live attachments matched
+    their file, none was missing one, no orphan sat in the folder of a living
+    order; claim photos had none. **Proved:** the helper (230 files in batches
+    of 100, a URL skipped, both failures reported); the single delete (files,
+    then activity, then the order; storage failing: 500, the order kept); bulk
+    (an archived job refused before storage is touched); a Shopify cancel
+    through the real webhook (files before every row; storage failing: a
+    retryable 500 and no row touched); claim photos not recorded (removed, all
+    reported); the sweep (403 for a member; the dry run removes nothing; no
+    confirm 400; a stale count 409; confirmed, each bucket's own). The function
+    on PostgreSQL 16: exactly the orphans — live files, an upload minutes old
+    and avatars kept — with `photo_paths` as jsonb or text[], twice, callable
+    by `service_role` only. Strict typecheck: the same 17 stand-in errors as
+    the deployed files, none new.
 
 ---
 
@@ -2206,6 +2228,8 @@ patch_terms_consent.py
 patch_docs_terms_consent.py
 patch_consent_cutoff.py
 patch_docs_consent_cutoff.py
+patch_order_files.py
+patch_docs_order_files.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

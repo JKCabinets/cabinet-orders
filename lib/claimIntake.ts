@@ -130,10 +130,18 @@ export async function storeClaimPhotos(submissionId: string, photos: CheckedPhot
   }
 
   if (paths.length > 0) {
-    await supabase
+    const { error: recordError } = await supabase
       .from("claim_submissions")
       .update({ photo_paths: paths })
       .eq("id", submissionId);
+    // ⚠ A PHOTO NOTHING RECORDS IS A PHOTO NOBODY SEES (2026-10-13). The
+    // update's result was never read, so a failure left the photos stored and
+    // referenced by nothing. Now they are removed and reported failed: the
+    // staff route says so, and staff simply try again.
+    if (recordError) {
+      await supabase.storage.from(BUCKET).remove(paths).then(() => {}, () => {});
+      return { paths: [], failed: photos.map((p) => cleanInput(p.file.name)) };
+    }
   }
   return { paths, failed };
 }

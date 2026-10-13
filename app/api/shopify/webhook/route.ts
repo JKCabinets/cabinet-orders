@@ -7,6 +7,7 @@ import { decodeSku, buildSkuFromAvisNamesDetailed, ensureSkuMaps, skuMapsUnavail
 import { parseModifications } from "@/lib/modifications";
 import type { ReviewReason } from "@/lib/data";
 import { readConsent, type TermsConsent } from "@/lib/consent";
+import { removeOrderFiles } from "@/lib/orderFiles";
 // isSampleVendor and lookupVendorsForSkus are no longer imported here.
 // Classification moved into lib/categories (one implementation, shared with
 // grouping), and the per-line vendor now comes from the payload rather than
@@ -1147,15 +1148,28 @@ export async function POST(req: NextRequest) {
       // `orders.about_order_id`. Kept because they are harmless and explicit;
       // the comment is what needed fixing.
       //
-      // NOTE: deleting order_attachments rows leaves their storage objects
-      // behind, since file_path carries no foreign key. Deliberate for now --
-      // silently destroying a customer's uploaded files on a Shopify cancel
-      // is a decision, not an implementation detail.
+      // ⚠ THE FILES GO TOO (Garrett, 2026-10-13). This said leaving them was
+      // deliberate -- "silently destroying a customer's uploaded files on a
+      // Shopify cancel is a decision" -- and the decision is: once these rows
+      // are gone nothing in the OMS can show or reach those files, so they go
+      // with the order, FIRST (below).
       //
       // ⚠ EVERY ERROR IS CHECKED AND RETURNED. Six of these discarded their
       // error, so a rejected delete was indistinguishable from a completed
       // one. A 5xx here is correct: these failures ARE retryable, unlike the
       // warranty case above.
+      const files = await removeOrderFiles(ids);
+      if (!files.ok) {
+        logWebhook("delete_failed", {
+          order_id: project.id, shopify_id: shopifyId, topic,
+          table: "storage", message: files.error,
+        });
+        return NextResponse.json(
+          { error: "delete_failed", table: "storage", message: files.error },
+          { status: 500 },
+        );
+      }
+
       for (const step of [
         { table: "order_activity", column: "order_id" },
         { table: "order_acknowledgments", column: "order_id" },

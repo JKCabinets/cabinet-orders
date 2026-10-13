@@ -517,9 +517,12 @@ export async function POST(req: NextRequest) {
     });
 
     if (dbError) {
+      // ⚠ THE FILE GOES WITH ITS FAILED ROW (2026-10-13). It was left in
+      // storage with nothing pointing at it -- the leak the handoff named.
+      await supabase.storage.from(STORAGE_BUCKET).remove([filePath]).then(() => {}, () => {});
       await supabase.from("order_activity").insert({
         order_id: orderId,
-        text: `⚠️ File "${cleanInput(file.name)}" uploaded but DB row failed: ${cleanInput(dbError.message)}`,
+        text: `⚠️ File "${cleanInput(file.name)}" could not be saved: ${cleanInput(dbError.message)}`,
         time: today,
       });
       continue;

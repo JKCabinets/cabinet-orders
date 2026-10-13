@@ -138,6 +138,15 @@ this should be rare. Get their agreement in writing before production starts,
 by email through Help Scout, so the conversation is the record. The OMS cannot
 yet record consent obtained that way: the flag stays until it can.
 
+**The storage sweep** (admin, as needed). Deleting an order removes its files
+since 2026-10-13; the sweep clears anything left over from before or from a
+failure. Signed in as an admin, open `/api/admin/storage-sweep`: a dry run
+listing every orphaned file and its count. To delete them, run in the browser
+console on that page `fetch(location.href, {method: "POST", body:
+JSON.stringify({confirm: N})}).then(r => r.json()).then(console.log)` with N the
+dry run's count. If anything changed in between it refuses — run the dry run
+again.
+
 ⚠ **Only Waypoint has a parser.** HCI and J&K use different acknowledgment
 formats, and neither is implemented. Their orders satisfy the gate with an
 attached file instead.
