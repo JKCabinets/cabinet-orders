@@ -26,6 +26,7 @@ import { AcknowledgmentPanel, type AcknowledgmentPanelHandle } from "./Acknowled
 import { consumeAckPicker, useAckStatus } from "@/lib/ackStatus";
 import { STAGE_ACCENT } from "@/lib/data";
 import { typeCarriesTracking } from "@/lib/categories";
+import type { DateFields } from "./NextActionPanel";
 import { requirementsFor } from "@/lib/requirements";
 import { formatMDY } from "@/lib/dates";
 import { useOrderEnrichment } from "@/lib/useOrderEnrichment";
@@ -1850,11 +1851,7 @@ function StageInputsCard({
   order: Order;
   /** Archived: the dates and the tracking show, nothing offers to change them. */
   readOnly?: boolean;
-  updateOrderDetails: (id: string, details: {
-    production_start_date?: string | null;
-    production_est_finish_date?: string | null;
-    scheduled_delivery_date?: string | null;
-  }) => Promise<void>;
+  updateOrderDetails: (id: string, details: DateFields) => Promise<void>;
   onStageChange: (stage: Stage) => void;
   /** False when another member holds the claim. The fields still show. */
   canEdit?: boolean;
@@ -1875,11 +1872,15 @@ function StageInputsCard({
   }, [order.production_start_date, order.production_est_finish_date, order.scheduled_delivery_date]);
 
   /**
-   * ⚠ WARRANTY RUNS ON NEITHER. A claim has no production dates and no
-   * delivery target; showing empty ones with a Modify button would invite
-   * somebody to set a field nothing reads.
+   * ⚠ A CLAIM RECORDS ITS DATES AND TRACKING NUMBER (Garrett, 2026-10-13).
+   * This said a claim had none and hid Modify, so nobody set a field nothing
+   * read; the claim's next action now asks for them -- production dates or the
+   * ship-from-factory date, then the tracking number or delivery date -- so
+   * they are shown and correctable here. A record only: a claim moves by its
+   * buttons, never on these.
    */
   const isWarranty = order.type === "warranty";
+  const [trackingNum, setTrackingNum] = useState(order.tracking_number ?? "");
 
   async function saveDates() {
     setSaving(true);
@@ -1888,6 +1889,7 @@ function StageInputsCard({
         production_start_date: prodStart || null,
         production_est_finish_date: prodFinish || null,
         scheduled_delivery_date: deliveryDate || null,
+        ...(isWarranty ? { tracking_number: trackingNum.trim() || null } : {}),
       });
       setEditing(false);
     } finally {
@@ -1912,13 +1914,13 @@ function StageInputsCard({
                 stock "what this advances on" was false precisely where
                 somebody might act on it. */}
             <p className="text-[10px] text-cream/45">
-              {order.type === "custom"
+              {order.type === "custom" || isWarranty
                 ? "Recorded for scheduling \u2014 nothing advances on these"
                 : "What this group's stages run on"}
             </p>
           </div>
         </div>
-        {!isWarranty && canEdit && !readOnly && (
+        {canEdit && !readOnly && (
           <button
             onClick={() => setEditing((v) => !v)}
             className="text-[10px] uppercase tracking-wider px-3 py-1 rounded-full transition-all flex-shrink-0 bg-white/5 border border-cream/20 text-cream/75 hover:bg-white/10 hover:text-cream"
@@ -1943,7 +1945,7 @@ function StageInputsCard({
         <div className="grid grid-cols-2 gap-x-4 gap-y-3 mt-2">
           <div>
             {/* Start and estimated finish read as a span, not two facts. */}
-            <p className={LABEL + " mb-1"}>Production dates</p>
+            <p className={LABEL + " mb-1"}>Production {"\u2192"} ship from factory</p>
             <p className={VALUE}>
               {order.production_start_date || order.production_est_finish_date
                 ? `${formatMDY(order.production_start_date) || "?"} \u2192 ${formatMDY(order.production_est_finish_date) || "?"}`
@@ -1958,10 +1960,16 @@ function StageInputsCard({
               {formatMDY(order.scheduled_delivery_date || order.delivery_date) || "Not set"}
             </p>
           </div>
+          {isWarranty && (
+            <div>
+              <p className={LABEL + " mb-1"}>Tracking number</p>
+              <p className={VALUE + " font-mono truncate"}>{order.tracking_number || "Not set"}</p>
+            </div>
+          )}
         </div>
       )}
 
-      {editing && !isWarranty && canEdit && (
+      {editing && canEdit && (
         <div className="mt-3 pt-3" style={{ borderTop: "0.5px solid rgba(255,255,255,0.10)" }}>
           {carriesTracking ? (
             <TrackingEntry
@@ -1975,9 +1983,14 @@ function StageInputsCard({
                 title="Production starts" aria-label="Production start date" style={CARD_DATE_INPUT} />
               <span className="text-cream/30 text-[11px]">&rarr;</span>
               <input type="date" value={prodFinish} onChange={(e) => setProdFinish(e.target.value)}
-                title="Estimated finish" aria-label="Estimated finish date" style={CARD_DATE_INPUT} />
+                title="Ship from factory" aria-label="Ship from factory date" style={CARD_DATE_INPUT} />
               <input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)}
                 title="Delivery target" aria-label="Delivery target" style={CARD_DATE_INPUT} />
+              {isWarranty && (
+                <input type="text" value={trackingNum} onChange={(e) => setTrackingNum(e.target.value)}
+                  placeholder="Tracking number" title="Tracking number" aria-label="Tracking number"
+                  maxLength={100} style={CARD_DATE_INPUT} />
+              )}
               <button
                 onClick={saveDates}
                 disabled={saving}

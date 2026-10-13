@@ -774,7 +774,7 @@ function StatusLabel({ order, stage, claimedBy }: {
       return (
         <div className="flex flex-col gap-0.5 text-[10px] leading-tight">
           {start && <span className="text-cream/65">Start <span className="text-cream/85">{start}</span></span>}
-          {finish && <span className="text-cream/65">Finish <span className="text-cream/85">{finish}</span></span>}
+          {finish && <span className="text-cream/65">Ship from factory <span className="text-cream/85">{finish}</span></span>}
         </div>
       );
     }
@@ -1087,8 +1087,8 @@ function UpdateStatusActions({
       const msg = isPastFinish
         ? `Move "${displayName}" to At cross dock now?`
         : finish
-        ? `Production isn't scheduled to finish until ${finish}.\n\nPush "${displayName}" to At cross dock anyway?`
-        : `No estimated finish date set.\n\nPush "${displayName}" to At cross dock now?`;
+        ? `It isn't scheduled to ship from the factory until ${finish}.\n\nPush "${displayName}" to At cross dock anyway?`
+        : `No ship-from-factory date set.\n\nPush "${displayName}" to At cross dock now?`;
       if (typeof window !== "undefined" && !window.confirm(msg)) return Promise.resolve();
       return moveStage(order.id, "At cross dock");
     }
@@ -1103,7 +1103,7 @@ function UpdateStatusActions({
               ? "bg-terracotta/20 border-terracotta/45 text-terracotta hover:bg-terracotta/30"
               : "bg-white/6 border-cream/15 text-cream/85 hover:bg-white/10"
           )}
-          title={isPastFinish ? "Move to At cross dock" : "Push to At cross dock before est finish"}
+          title={isPastFinish ? "Move to At cross dock" : "Push to At cross dock before it ships from the factory"}
         >
           {busy ? "..." : isPastFinish ? (mobile ? "Cross dock" : "Mark Cross-dock") : "Early Push"}
         </button>

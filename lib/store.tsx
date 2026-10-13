@@ -70,7 +70,7 @@ interface StoreCtx {
     ids: string[],
     action: { type: "archive"; archived: boolean } | { type: "delete" }
   ) => Promise<{ succeeded: number; failed: number; results: { id: string; ok: boolean; error?: string }[] } | null>;
-  updateOrderDetails: (id: string, details: { door_style?: string; color?: string; sku_items?: { sku: string; quantity: number; description?: string }[]; production_start_date?: string | null; production_est_finish_date?: string | null; scheduled_delivery_date?: string | null }) => Promise<void>;
+  updateOrderDetails: (id: string, details: { door_style?: string; color?: string; sku_items?: { sku: string; quantity: number; description?: string }[]; production_start_date?: string | null; production_est_finish_date?: string | null; scheduled_delivery_date?: string | null; tracking_number?: string | null }) => Promise<void>;
   /**
    * Claim or release the order. When `claimedBy` is non-null, attempts
    * to claim; when null, releases. Returns the actual server state so
@@ -753,7 +753,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const unarchiveOrder = useCallback(
     (id: string) => setOrderArchived(id, false), [setOrderArchived]);
 
-  const updateOrderDetails = useCallback(async (id: string, details: { door_style?: string; color?: string; sku_items?: { sku: string; quantity: number; description?: string }[]; production_start_date?: string | null; production_est_finish_date?: string | null; scheduled_delivery_date?: string | null }) => {
+  const updateOrderDetails = useCallback(async (id: string, details: { door_style?: string; color?: string; sku_items?: { sku: string; quantity: number; description?: string }[]; production_start_date?: string | null; production_est_finish_date?: string | null; scheduled_delivery_date?: string | null; tracking_number?: string | null }) => {
     const update = (list: Order[]) => list.map(o => o.id === id ? { ...o, ...details } : o);
     setRawOrders(prev => update(prev));
     await apiCall(`/api/orders/${id}`, "PATCH", details);

@@ -629,6 +629,8 @@ nothing on success, so silence is not a result.
 | The storage sweep deletes only on a confirmed count from its own dry run (2026-10-13) | Deletion is final; a list that changed since it was read is not the list that was approved. |
 | A warranty claim is closed — Approved or Denied — never deleted (Garrett, 2026-10-13) | It is the record of what a customer reported and what we decided; deleting it left its submission pointing at nothing. |
 | A denied claim's files are removed, both copies; its details, notes and reason kept (Garrett, 2026-10-13) | A denial needs its reasons on record, not the customer's photos; promotion copied them, so one copy alone would keep them. |
+| A claim keeps its own rules: its dates and tracking are a record, and it moves only by its button (Garrett, 2026-10-13) | A claim's Shipped is not a sample's: entering a tracking number for a replacement part is a note, not the shipment. |
+| The production finish date is shown as "Ship from factory" on every type; the Shopify attribute keeps its name (2026-10-13) | It names what the date means in every case; the attribute is read outside the OMS. |
 | A deleted claim's submission is unlinked, not left pointing at its number (2026-10-07) | Claim numbers are reused. A stale link would have sent a new claim's progress notes to another customer's conversation. |
 
 ---
@@ -1889,6 +1891,20 @@ nothing on success, so silence is not a result.
     unchanged. The dialog: a denial needs its reason, trimmed; a refusal shown,
     the dialog kept. Strict typecheck against the REAL store: the same 13
     stand-in errors as the deployed files, none new; all ten read.
+45. **A claim's next actions; "Ship from factory"** (`patch_claim_next_actions.py`;
+    Garrett, after WRN-1059-1 at Parts ordered had a sentence and no way on).
+    What it is: OMS-STATE §3. **Proved**, the panel rendered: a claim at Parts
+    ordered gets the sentence, Enter dates and Move to Shipped, the fields
+    read Production starts → Ship from factory, the ship-from-factory date
+    alone saves, then "Ready to move to Shipped"; at Shipped, Enter dates
+    opens tracking and delivery date, the tracking number alone saves
+    (trimmed), then "Ready to move to Resolved"; a sample about to ship and
+    cabinets at Entered UNCHANGED. The real order PATCH: a claim's tracking
+    number saved at both stages with the stage untouched; a custom job still
+    refused; a sample still shipped by its number. Strict typecheck with the
+    real categories and requirements: the same 11 stand-in errors as the
+    deployed files, none new. ⚠ Open: a claim's Help Scout "Shipped" note
+    carries tracking only if it was entered BEFORE the move — usually after.
 
 ---
 
@@ -2257,6 +2273,8 @@ patch_order_files.py
 patch_docs_order_files.py
 patch_claim_close.py
 patch_docs_claim_close.py
+patch_claim_next_actions.py
+patch_docs_claim_next_actions.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

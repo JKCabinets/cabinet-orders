@@ -171,7 +171,7 @@ export const REQUIREMENTS: Record<OrderType, Record<string, Requirement[]>> = {
     "In production": [
       rowReq(
         "production_dates", "production dates",
-        "Set the production start and estimated finish dates",
+        "Set the production start and ship-from-factory dates",
         // ⚠ BOTH, matching sla.ts's productionDatesMissing exactly. A missing
         // finish date strands the row -- production-complete advances on
         // `production_est_finish_date <= today` -- and a missing start date
@@ -336,10 +336,21 @@ const DATE_CONTROL_BY_STAGE: Record<string, DateControl> = {
   "At cross dock": "delivery",
 };
 
+/**
+ * ⚠ A CLAIM KEEPS ITS OWN RULES (Garrett, 2026-10-13), keyed to the TYPE: its
+ * "Shipped" is not a sample's. At Parts ordered it records the production
+ * dates or the ship-from-factory date; at Shipped, the tracking number or the
+ * delivery date. Record only -- a claim moves by its buttons.
+ */
+const CLAIM_DATE_CONTROL_BY_STAGE: Record<string, DateControl> = {
+  "Parts ordered": "production",
+  "Shipped": "delivery",
+};
+
 export function dateControlsFor(o: Pick<Order, "type" | "stage">): DateControl[] {
   const table = REQUIREMENTS[o.type as OrderType];
   if (!table || !(o.stage in table)) return [];
-  const control = DATE_CONTROL_BY_STAGE[o.stage];
+  const control = o.type === "warranty" ? CLAIM_DATE_CONTROL_BY_STAGE[o.stage] : DATE_CONTROL_BY_STAGE[o.stage];
   return control ? [control] : [];
 }
 

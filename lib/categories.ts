@@ -238,6 +238,19 @@ export function typeCarriesTracking(type: string | null | undefined): boolean {
 }
 
 /**
+ * May this TYPE hold a tracking number at all? (2026-10-13)
+ *
+ * ⚠ A DIFFERENT QUESTION FROM typeCarriesTracking, ON PURPOSE. That one asks
+ * whether a tracking number IS the shipment -- the field that moves a sample
+ * or hardware to Shipped. A warranty claim keeps its OWN rules (Garrett): it
+ * records the replacement's tracking number at Shipped, and moves only by its
+ * buttons, so trackingTargetStage stays null for it and nothing advances.
+ */
+export function typeRecordsTracking(type: string | null | undefined): boolean {
+  return typeCarriesTracking(type) || type === "warranty";
+}
+
+/**
  * The stage a fulfilment advances a group to.
  *
  * ⚠ SAMPLES GO TO "Shipped", NOT "Delivered" -- corrected 2026-08-25 with the

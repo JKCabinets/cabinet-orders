@@ -5,6 +5,7 @@ import { Calendar, Check, Send, Upload, Zap } from "lucide-react";
 import { nextStageFor, type Order, type PaymentFields } from "@/lib/data";
 import { requirementsFor, dateControlsFor, type RequirementEnrichment, type RequirementState } from "@/lib/requirements";
 import { productionAutoAdvance } from "@/lib/autoAdvance";
+import { typeCarriesTracking } from "@/lib/categories";
 import { formatMDY } from "@/lib/dates";
 
 /**
@@ -94,6 +95,8 @@ export type DateFields = {
   production_start_date?: string | null;
   production_est_finish_date?: string | null;
   scheduled_delivery_date?: string | null;
+  /** A claim's, saved with its delivery date (2026-10-13). */
+  tracking_number?: string | null;
 };
 
 /** Requirements the production-date pair satisfies, at either stage. */
@@ -206,7 +209,14 @@ export function NextActionPanel({
   const [prodStart, setProdStart] = useState(order.production_start_date ?? "");
   const [prodFinish, setProdFinish] = useState(order.production_est_finish_date ?? "");
   const [deliveryDate, setDeliveryDate] = useState(order.scheduled_delivery_date ?? "");
+  const [trackingNum, setTrackingNum] = useState(order.tracking_number ?? "");
   const [saving, setSaving] = useState(false);
+  /**
+   * ⚠ A CLAIM KEEPS ITS OWN RULES (Garrett, 2026-10-13). Its dates and its
+   * tracking number are a RECORD -- either one of a pair is enough -- and it
+   * moves only by the move button; the tracking number never moves it.
+   */
+  const isClaim = order.type === "warranty";
   /**
    * ⚠ THE FIELDS OPEN FROM A BUTTON. Two empty date boxes and an arrow sat in
    * the row permanently, so the commonest state of the slot -- nothing to type
@@ -238,14 +248,18 @@ export function NextActionPanel({
   const prodDemanded = outstanding.some((o) => PRODUCTION_DATE_IDS.has(o.req.id));
   const prodIsRecordOnly = !requirements.some((r) => PRODUCTION_DATE_IDS.has(r.id));
   const needsProdDates = controls.includes("production")
-    && (prodDemanded
-        || (prodIsRecordOnly
-            && !(order.production_start_date && order.production_est_finish_date)));
+    && (isClaim
+        ? !(order.production_start_date || order.production_est_finish_date)
+        : (prodDemanded
+            || (prodIsRecordOnly
+                && !(order.production_start_date && order.production_est_finish_date))));
 
   const deliveryDemanded = outstanding.some((o) => o.req.id === "delivery_date");
   const deliveryIsRecordOnly = !requirements.some((r) => r.id === "delivery_date");
   const needsDeliveryDate = controls.includes("delivery")
-    && (deliveryDemanded || (deliveryIsRecordOnly && !order.scheduled_delivery_date));
+    && (isClaim
+        ? !(order.scheduled_delivery_date || order.tracking_number)
+        : (deliveryDemanded || (deliveryIsRecordOnly && !order.scheduled_delivery_date)));
 
   /**
    * ⚠ THE FIELD IS THE ACTION on two transitions, and there the button is
@@ -264,7 +278,11 @@ export function NextActionPanel({
    */
   const autoAdvance = productionAutoAdvance(order, project);
 
-  const trackingIsTheAction = next === "Shipped";
+  // ⚠ ONLY WHERE A TRACKING NUMBER IS THE SHIPMENT (samples, hardware). A
+  // claim's next stage is also called Shipped, and this said "enter the
+  // tracking number" to a claim that had no tracking field and no button --
+  // a dead end (Garrett, 2026-10-13).
+  const trackingIsTheAction = next === "Shipped" && typeCarriesTracking(order.type);
   const datesAreTheAction = order.stage === "Entered" && next === "In production";
   const showMoveButton = !!next && !trackingIsTheAction && !(datesAreTheAction && !ready);
 
@@ -275,8 +293,14 @@ export function NextActionPanel({
    * with two outstanding requirements there are two instructions and only one
    * headline.
    */
+  const claimHeadline = !isClaim ? null
+    : needsProdDates ? "Enter the production dates or ship-from-factory date."
+    : needsDeliveryDate ? "Enter the tracking number or delivery date."
+    : null;
   const headline = !next
     ? "Nothing further \u2014 this is the last stage."
+    : claimHeadline
+    ? claimHeadline
     : trackingIsTheAction
       ? "Enter the tracking number to mark this shipped."
       : datesAreTheAction && !ready
@@ -367,7 +391,7 @@ export function NextActionPanel({
               title="Production starts" aria-label="Production start date" autoFocus style={DATE_INPUT} />
             <span className="text-cream/30 text-[11px]">&rarr;</span>
             <input type="date" value={prodFinish} onChange={(e) => setProdFinish(e.target.value)}
-              title="Estimated finish" aria-label="Estimated finish date" style={DATE_INPUT} />
+              title="Ship from factory" aria-label="Ship from factory date" style={DATE_INPUT} />
             {/* ⚠ BOTH DATES, THOUGH ONLY THE START ONE GATES. The start date
                 advances the row; the estimated finish is what
                 `production-complete` later advances ON, so a row saved with
@@ -377,10 +401,12 @@ export function NextActionPanel({
             <button
               onClick={() => save({ production_start_date: prodStart || null,
                                     production_est_finish_date: prodFinish || null })}
-              disabled={saving || !prodStart}
-              title={prodStart
-                ? (datesAreTheAction ? "Save the dates and move to In production" : "Save the production dates")
-                : "A production start date is what advances the order"}
+              disabled={saving || (isClaim ? !(prodStart || prodFinish) : !prodStart)}
+              title={isClaim
+                ? "Save the dates on this claim"
+                : prodStart
+                  ? (datesAreTheAction ? "Save the dates and move to In production" : "Save the production dates")
+                  : "A production start date is what advances the order"}
               className={PILL_QUIET}
             >
               {saving ? "\u2026" : "Save"}
@@ -394,11 +420,19 @@ export function NextActionPanel({
 
         {openDate === "delivery" && (
           <div className="flex items-center gap-1.5">
+            {isClaim && (
+              <input type="text" value={trackingNum} onChange={(e) => setTrackingNum(e.target.value)}
+                placeholder="Tracking number" title="Tracking number" aria-label="Tracking number"
+                autoFocus maxLength={100} style={DATE_INPUT} />
+            )}
             <input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)}
-              title="Delivery date" aria-label="Delivery date" autoFocus style={DATE_INPUT} />
+              title="Delivery date" aria-label="Delivery date" autoFocus={!isClaim} style={DATE_INPUT} />
             <button
-              onClick={() => save({ scheduled_delivery_date: deliveryDate || null })}
-              disabled={saving || !deliveryDate}
+              onClick={() => save({
+                scheduled_delivery_date: deliveryDate || null,
+                ...(isClaim ? { tracking_number: trackingNum.trim() || null } : {}),
+              })}
+              disabled={saving || (isClaim ? !(deliveryDate || trackingNum.trim()) : !deliveryDate)}
               className={PILL_QUIET}
             >
               {saving ? "\u2026" : "Save"}
@@ -415,13 +449,13 @@ export function NextActionPanel({
 
           {needsProdDates && openDate !== "production" && (
             <button onClick={() => setOpenDate("production")} className={PILL_QUIET}>
-              <Calendar className="w-3 h-3" /> Set production dates
+              <Calendar className="w-3 h-3" /> {isClaim ? "Enter dates" : "Set production dates"}
             </button>
           )}
 
           {needsDeliveryDate && openDate !== "delivery" && (
             <button onClick={() => setOpenDate("delivery")} className={PILL_QUIET}>
-              <Calendar className="w-3 h-3" /> Set delivery date
+              <Calendar className="w-3 h-3" /> {isClaim ? "Enter dates" : "Set delivery date"}
             </button>
           )}
 

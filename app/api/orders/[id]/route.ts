@@ -6,7 +6,7 @@ import { mergeTags } from "@/lib/shopifyStageSync";
 import { ALLOWED_STAGES, isStageAllowedForType, isBackwardsMove, verifyAdminPin, fieldsToClearOnBackwardMove, describeFieldsCleared } from "@/lib/stageGuards";
 import { isPaymentHoldStatus, paymentHoldLabel, paymentRecordOf, parseMoney, isStageOfferedForType, activityDate, type OrderType, type Stage } from "@/lib/data";
 import { purchaseOf, archivedVia, archivedReadOnly } from "@/lib/archived";
-import { trackingTargetStage, categoryHasTracking, type OrderCategory } from "@/lib/categories";
+import { trackingTargetStage, typeRecordsTracking, type OrderCategory } from "@/lib/categories";
 import { pushClaimNotes } from "@/lib/claimHelpScout";
 import { removeOrderFiles } from "@/lib/orderFiles";
 import { orderAllVendorsGreen } from "@/lib/acknowledgments";
@@ -584,7 +584,10 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
   if (typeof body.tracking_number === "string") {
     const num = cleanInput(body.tracking_number).trim().slice(0, 100);
     const cat = currentType as OrderCategory;
-    if (num && !categoryHasTracking(cat)) {
+    // ⚠ typeRecordsTracking, not categoryHasTracking (2026-10-13): a claim
+    // RECORDS a tracking number. trackingTargetStage stays null for it, below,
+    // so the number never moves a claim -- its own rules.
+    if (num && !typeRecordsTracking(currentType)) {
       return NextResponse.json(
         {
           error: "tracking_not_applicable",

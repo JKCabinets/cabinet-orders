@@ -156,6 +156,14 @@ Help Scout conversation gets the outcome as an internal note and is closed.
 Restoring a closed claim from the archive reopens it. A denied claim's files
 cannot come back.
 
+**A claim's dates and tracking** (2026-10-13). At **Parts ordered**, record the
+production dates or the ship-from-factory date (**Enter dates**), and **Move to
+Shipped** when it ships; at **Shipped**, record the tracking number or the
+delivery date, and **Move to Resolved**. They are a record — entering them
+never moves the claim — and they can be corrected on the Production & delivery
+card. "Ship from factory" is the date the parts leave production, on every
+order type.
+
 ⚠ **Only Waypoint has a parser.** HCI and J&K use different acknowledgment
 formats, and neither is implemented. Their orders satisfy the gate with an
 attached file instead.
