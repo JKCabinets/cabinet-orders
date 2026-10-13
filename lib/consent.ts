@@ -39,11 +39,14 @@ export const CONSENT_WORDING: Record<string, string> = {
 };
 
 /**
- * From when a Shopify order must carry consent. ⚠ 2026-10-07 at midnight in
- * Arizona until the website team says when each route started sending it:
- * an order placed before then cannot have it, and flagging it would be noise.
+ * From when a Shopify order must carry consent: when the website started
+ * sending it. ⚠ SET FROM THE ORDERS THEMSELVES (2026-10-13): SHO-1056 arrived
+ * at 21:39:32 UTC on 2026-10-08 without it, placed before the website's update
+ * (Garrett), and SHO-1057's customer agreed at 21:56:42 -- so the update went
+ * live between the two. An order placed before cannot have consent, and
+ * flagging it would be noise. (Until then: midnight 2026-10-07 Arizona.)
  */
-export const CONSENT_REQUIRED_FROM = "2026-10-07T07:00:00Z";
+export const CONSENT_REQUIRED_FROM = "2026-10-08T21:40:00Z";
 
 const key = (s: unknown) => String(s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
 

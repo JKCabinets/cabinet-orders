@@ -1834,9 +1834,14 @@ nothing on success, so silence is not a result.
     project. On screen: recorded (21:15 UTC shown as 2:15 PM Arizona, the v1
     wording readable), missing (pill, banner, row), before the cut-off and a
     custom job (nothing). Strict typecheck; the control against the deployed
-    webhook and modal raises the same errors. Open: the cut-off is midnight
-    2026-10-07 Arizona until the website team says when each route started;
-    staff cannot yet record consent they obtain by email.
+    webhook and modal raises the same errors. **Confirmed live** (2026-10-13):
+    SHO-1057 to SHO-1059, both routes, all four values as sent. **The cut-off,
+    set from the orders** (`patch_consent_cutoff.py`): at first midnight
+    2026-10-07 Arizona, it flagged SHO-1054 to SHO-1056 — placed before the
+    website's update (Garrett). SHO-1056 arrived at 21:39:32 UTC on 2026-10-08
+    and SHO-1057's customer agreed at 21:56:42, so the update went live between
+    them: `CONSENT_REQUIRED_FROM` is 21:40 UTC on 2026-10-08. Open: staff
+    cannot yet record consent they obtain by email.
 
 ---
 
@@ -2199,6 +2204,8 @@ patch_ack_explained_phone.py
 patch_docs_ack_explained_phone.py
 patch_terms_consent.py
 patch_docs_terms_consent.py
+patch_consent_cutoff.py
+patch_docs_consent_cutoff.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it
