@@ -627,6 +627,8 @@ nothing on success, so silence is not a result.
 | A missing consent is flagged, not blocked (Garrett, 2026-10-07) | Every website checkout requires it, so a missing one is a website fault to fix, not an order to stop. |
 | A Shopify cancel or delete removes the order's files too (Garrett, 2026-10-13) | Once the rows are gone nothing in the OMS can show or reach those files; kept, they are cost and customer data with no use. |
 | The storage sweep deletes only on a confirmed count from its own dry run (2026-10-13) | Deletion is final; a list that changed since it was read is not the list that was approved. |
+| A warranty claim is closed — Approved or Denied — never deleted (Garrett, 2026-10-13) | It is the record of what a customer reported and what we decided; deleting it left its submission pointing at nothing. |
+| A denied claim's files are removed, both copies; its details, notes and reason kept (Garrett, 2026-10-13) | A denial needs its reasons on record, not the customer's photos; promotion copied them, so one copy alone would keep them. |
 | A deleted claim's submission is unlinked, not left pointing at its number (2026-10-07) | Claim numbers are reused. A stale link would have sent a new claim's progress notes to another customer's conversation. |
 
 ---
@@ -1864,6 +1866,29 @@ nothing on success, so silence is not a result.
     and avatars kept — with `photo_paths` as jsonb or text[], twice, callable
     by `service_role` only. Strict typecheck: the same 17 stand-in errors as
     the deployed files, none new.
+    **Afterwards (2026-10-13, by hand):** the ten test claim submissions,
+    CR-1001 to CR-1010 — each `promoted` with its claim deleted, invisible —
+    were deleted (nothing references `claim_submissions`: checked first) and
+    the sweep removed their 26 photos. Storage: `claim-photos` 0,
+    `order-attachments` 4 (the live orders'), `team-avatars` 1.
+44. **A claim is closed, never deleted** (`patch_claim_close.py`, migration
+    `2026-10-13-claim-close.sql`, run BEFORE the deploy; Garrett, after the
+    test claims left their submissions pointing at nothing). What it is:
+    OMS-STATE §3. **Proved:** the migration over the two claim Help Scout
+    migrations, twice, on PostgreSQL 16 — a denial without a reason and an
+    outcome on a custom job refused by the constraint; closing queues
+    `closed` with outcome, reason and who, restoring `reopened` with what it
+    had been; a stage move unchanged; the old delete path intact. The routes,
+    recorded in order: approved touches no file; denied removes the claim's 2
+    files, then the submission's 3 originals, then the rows, then closes;
+    storage failing leaves it open; a claim somebody else holds is refused
+    before any file; already closed, not a claim, no outcome refused; DELETE
+    and a bare archive of a claim refused; a restore clears every closing
+    field; bulk skips the claim. The sender through its queue: the DENIED and
+    APPROVED notes set Closed, the reopened note sets Active, a stage note
+    unchanged. The dialog: a denial needs its reason, trimmed; a refusal shown,
+    the dialog kept. Strict typecheck against the REAL store: the same 13
+    stand-in errors as the deployed files, none new; all ten read.
 
 ---
 
@@ -2230,6 +2255,8 @@ patch_consent_cutoff.py
 patch_docs_consent_cutoff.py
 patch_order_files.py
 patch_docs_order_files.py
+patch_claim_close.py
+patch_docs_claim_close.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

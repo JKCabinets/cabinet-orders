@@ -231,6 +231,14 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
     if (typeof body.archived !== "boolean") {
       return NextResponse.json({ error: "archived (boolean) required" }, { status: 422 });
     }
+    // ⚠ A CLAIM ENTERS THE ARCHIVE BY BEING CLOSED (2026-10-13), with its
+    // outcome -- never archived bare. Its restore stays here, and reopens it.
+    if (body.archived === true && currentRow.type === "warranty") {
+      return NextResponse.json(
+        { error: "close_claim_instead", message: "Close the claim instead, as Approved or Denied: that is how a claim goes into the archive." },
+        { status: 422 },
+      );
+    }
     if (currentRow.project_id) {
       return NextResponse.json(
         {
@@ -647,6 +655,14 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
   if (body.archived !== undefined) {
     updates.archived    = body.archived;
     updates.archived_at = body.archived ? new Date().toISOString() : null;
+    // Restoring a closed claim REOPENS it (2026-10-13): the outcome clears, and
+    // the orders_claim_close_note trigger tells Help Scout.
+    if (body.archived === false && currentRow.type === "warranty") {
+      updates.claim_outcome = null;
+      updates.closed_at     = null;
+      updates.closed_by     = null;
+      updates.closed_reason = null;
+    }
   }
   if (body.member)                 updates.member     = body.member;
   if (body.door_style !== undefined) updates.door_style = cleanInput(body.door_style as string);
@@ -1028,6 +1044,16 @@ export async function DELETE(
 
   if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 });
 
+  // ⚠ A WARRANTY CLAIM IS CLOSED, NEVER DELETED (Garrett, 2026-10-13). It is
+  // the record of what a customer reported and what we decided; its submission
+  // points at it. POST /api/orders/[id]/close: Approved or Denied.
+  if (order.type === "warranty") {
+    return NextResponse.json(
+      { error: "claims_are_closed", message: "A warranty claim is closed, not deleted: use Close claim, as Approved or Denied." },
+      { status: 409 },
+    );
+  }
+
   // ⚠ ARCHIVED IS READ-ONLY, AND DELETE IS THE MOST FINAL EDIT OF ALL. The
   // archive is the history; deleting out of it removes the record of work that
   // happened. Restore it first, then delete -- two deliberate steps rather
@@ -1072,12 +1098,9 @@ export async function DELETE(
   await supabase.from("order_activity").delete().eq("order_id", id);
   const { error } = await supabase.from("orders").delete().eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  // ⚠ A DELETED CLAIM CLOSES ITS CONVERSATION (2026-10-07). The trigger
-  // orders_claim_helpscout_close queued it before the row went; send it now.
-  // Not awaited; the 15-minute sweep sends whatever this does not.
-  if (order.type === "warranty") {
-    pushClaimNotes().catch((e) => console.error(`[helpscout] closing ${id}: ${(e as Error).message}`));
-  }
+  // (A claim never reaches here since 2026-10-13: it is closed, not deleted,
+  // above. The orders_claim_helpscout_close trigger still covers a claim
+  // deleted outside the app.)
 
   // Audit-log every deletion
   try {

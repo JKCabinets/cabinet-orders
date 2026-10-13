@@ -64,6 +64,8 @@ interface StoreCtx {
   archiveOrder: (id: string) => Promise<ArchiveResult>;
   unarchiveOrder: (id: string) => Promise<ArchiveResult>;
   deleteOrder: (id: string) => Promise<void>;
+  /** Close a warranty claim, Approved or Denied (2026-10-13). Resolves with the server's refusal, if any. */
+  closeClaim: (id: string, outcome: "approved" | "denied", reason: string) => Promise<ArchiveResult>;
   bulkAction: (
     ids: string[],
     action: { type: "archive"; archived: boolean } | { type: "delete" }
@@ -762,6 +764,33 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     await apiCall(`/api/orders/${id}`, "DELETE");
   }, []);
 
+  // ⚠ NOT OPTIMISTIC (2026-10-13). A close can be refused -- a denial without
+  // its reason, a claim somebody else holds -- and a claim shown archived that
+  // is not would be worse than a moment's wait. The row updates on success.
+  const closeClaim = useCallback(async (
+    id: string, outcome: "approved" | "denied", reason: string,
+  ): Promise<ArchiveResult> => {
+    let res: Response;
+    try {
+      res = await fetch(`/api/orders/${id}/close`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ outcome, reason }),
+      });
+    } catch {
+      return { ok: false, error: "network_error" };
+    }
+    let body: { error?: string; message?: string; closed_by?: string; closed_at?: string } | null = null;
+    try { body = await res.json(); } catch { /* not JSON */ }
+    if (!res.ok) return { ok: false, error: body?.error ?? `HTTP ${res.status}`, message: body?.message };
+    setRawOrders(prev => prev.map(o => o.id !== id ? o : {
+      ...o, archived: true, archived_at: body?.closed_at ?? new Date().toISOString(),
+      claim_outcome: outcome, closed_at: body?.closed_at ?? null, closed_by: body?.closed_by ?? null,
+      closed_reason: reason || null,
+    }));
+    return { ok: true };
+  }, []);
+
   const bulkAction = useCallback(async (
     ids: string[],
     action: { type: "archive"; archived: boolean } | { type: "delete" }
@@ -994,7 +1023,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     <Store.Provider value={{
       allOrders, allOrdersIncludingArchived: resolvedOrders,
       orders, warranties, samples, customs, hardware, projects, team, onlineUsers, loading,
-      addOrder, moveStage, updateNotes, updateInternalNotes, updateOrderDetails, archiveProject, claimProject, archiveOrder, unarchiveOrder, deleteOrder, bulkAction,
+      addOrder, moveStage, updateNotes, updateInternalNotes, updateOrderDetails, archiveProject, claimProject, archiveOrder, unarchiveOrder, deleteOrder, closeClaim, bulkAction,
       claimOrder, addTeamMember, updateTeamMember, deactivateTeamMember, deleteTeamMember,
       updateTeamMemberProfile, uploadAvatar,
     }}>

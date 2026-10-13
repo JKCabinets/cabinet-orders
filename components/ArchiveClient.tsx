@@ -6,6 +6,7 @@ import { Order, Project, OrderType } from "@/lib/data";
 import { PageHeader } from "@/components/AppShell";
 import { OrderModal } from "@/components/OrderModal";
 import { StagePill } from "@/components/OrderTable";
+import { ClaimOutcomePill } from "@/components/ClaimClose";
 import { Search, RotateCcw, Loader2, Archive as ArchiveIcon } from "lucide-react";
 import clsx from "clsx";
 
@@ -237,7 +238,7 @@ export function ArchiveClient() {
                             <StagePill stage={g.stage} type={g.type} />
                           </button>
                         ))
-                      ) : (
+                      ) : (<>
                         <button
                           onClick={() => setSelected(e.order)}
                           className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/4 border border-white/8 hover:border-cream/20 transition-colors"
@@ -245,7 +246,9 @@ export function ArchiveClient() {
                         >
                           <StagePill stage={e.order.stage} type={e.order.type} />
                         </button>
-                      )}
+                        {/* Closed · Approved / Denied, and why (2026-10-13). */}
+                        <ClaimOutcomePill order={e.order} withReason />
+                      </>)}
                     </div>
 
                     {refusal[e.id] && (

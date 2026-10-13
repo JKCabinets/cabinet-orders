@@ -257,7 +257,11 @@ export interface ClaimNoteEvent {
   id: number;
   /** Null for `deleted`: the claim row is gone (2026-10-07). */
   order_id: string | null;
-  event: "created" | "stage" | "deleted";
+  event: "created" | "stage" | "deleted" | "closed" | "reopened";
+  /** For `closed`: approved or denied, why, and who (2026-10-13). For `reopened`: what it had been closed as. */
+  outcome?: string | null;
+  reason?: string | null;
+  actor?: string | null;
   /** For `deleted` only: the conversation and the claim's number, read before the row went. */
   conversation_id?: number | null;
   claim_ref?: string | null;
@@ -290,6 +294,19 @@ export function claimNoteEventHtml(n: ClaimNoteEvent, claimer: string | null): s
   // Always set for these two: claim_helpscout_notes_deleted_shape allows a null
   // order_id on a `deleted` event only, which returned above.
   const claim = n.order_id ?? n.claim_ref ?? "";
+  // ⚠ CLOSED, NOT DELETED (Garrett, 2026-10-13): the outcome, who, and why --
+  // an internal note, so the reason is for the team, never the customer.
+  if (n.event === "closed") {
+    const what = n.outcome === "denied" ? "DENIED" : "APPROVED";
+    return [
+      `Warranty claim ${esc(claim)} was closed in the OMS as ${what}${n.actor ? ` by ${esc(n.actor)}` : ""}, ${when} (at ${esc(n.to_stage)}).`,
+      ...(n.reason ? [`Reason: ${esc(n.reason).replace(/\n/g, "<br>")}`] : []),
+      "This conversation was closed; a reply from the customer reopens it.",
+    ].map((p) => `<p>${p}</p>`).join("\n");
+  }
+  if (n.event === "reopened") {
+    return `<p>Warranty claim ${esc(claim)} was reopened in the OMS, ${when}${n.outcome ? `; it had been closed as ${esc(n.outcome)}` : ""}.</p>`;
+  }
   const parts = [n.event === "created"
     ? `Warranty claim ${esc(claim)} created, at ${esc(n.to_stage)}, ${when}.`
     : `Warranty claim ${esc(claim)} moved to ${esc(n.to_stage)}${n.from_stage ? ` (from ${esc(n.from_stage)})` : ""}, ${when}.`];
@@ -372,6 +389,8 @@ async function sendClaimNote(n: ClaimNoteEvent): Promise<NoteResult> {
     }
     convId = conv.id;
     await addNote(conv.id, claimNoteEventHtml(n, claimer));
+    if (n.event === "closed") await setStatus(conv.id, "closed");
+    if (n.event === "reopened") await setStatus(conv.id, "active");
     await supabase.from("claim_helpscout_notes")
       .update({ state: "sent", sent_at: new Date().toISOString(), leased_at: null, last_error: null })
       .eq("id", n.id);

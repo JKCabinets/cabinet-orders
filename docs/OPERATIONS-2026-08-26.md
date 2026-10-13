@@ -147,6 +147,15 @@ JSON.stringify({confirm: N})}).then(r => r.json()).then(console.log)` with N the
 dry run's count. If anything changed in between it refuses — run the dry run
 again.
 
+**Closing a warranty claim** (2026-10-13). A claim is never deleted: **Close
+claim** on the claim, at any stage, as **Approved** (the claim was honoured;
+everything is kept) or **Denied** (a reason is required; the claim's photos and
+files are REMOVED for good, its details, notes and the reason kept). Either way
+it moves to the archive, marked Closed · Approved or Closed · Denied, and its
+Help Scout conversation gets the outcome as an internal note and is closed.
+Restoring a closed claim from the archive reopens it. A denied claim's files
+cannot come back.
+
 ⚠ **Only Waypoint has a parser.** HCI and J&K use different acknowledgment
 formats, and neither is implemented. Their orders satisfy the gate with an
 attached file instead.

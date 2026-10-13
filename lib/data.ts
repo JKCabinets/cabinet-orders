@@ -426,6 +426,15 @@ export interface Order {
    * lands. The rules fall back to created_at when it is absent.
    */
   reported_at?: string | null;
+  /**
+   * A closed warranty claim (2026-10-13; migrations/2026-10-13-claim-close.sql):
+   * approved or denied, by whom, when, why. NULL while the claim is open; a
+   * restore clears them. A denial always carries its reason.
+   */
+  claim_outcome?: "approved" | "denied" | null;
+  closed_at?: string | null;
+  closed_by?: string | null;
+  closed_reason?: string | null;
 }
 
 /**

@@ -164,6 +164,12 @@ export async function POST(req: NextRequest) {
         });
         continue;
       }
+      // ⚠ CLAIMS ONE AT A TIME (2026-10-13): one closes with an outcome --
+      // Approved or Denied -- and reopens on its own restore.
+      if (order.type === "warranty") {
+        results.push({ id, ok: false, error: "close_claim_instead: a claim is closed (Approved or Denied) or reopened one at a time" });
+        continue;
+      }
 
       if (!isAdmin) {
         if (order.source !== "Manual") {

@@ -20,6 +20,7 @@ import { AttachmentsPanel, type AttachmentsPanelHandle } from "./AttachmentsPane
 import { useAttachmentsFor, refreshAttachments } from "@/lib/attachments";
 import { FullOrderGroup, GroupIssueTag } from "./FullOrderGroup";
 import { OrderHeaderCards, ConsentMissingPill } from "./OrderHeaderCards";
+import { ClaimCloseButton, ClaimOutcomePill } from "./ClaimClose";
 import { DamageReportPanel } from "./DamageReportPanel";
 import { AcknowledgmentPanel, type AcknowledgmentPanelHandle } from "./AcknowledgmentPanel";
 import { consumeAckPicker, useAckStatus } from "@/lib/ackStatus";
@@ -848,6 +849,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
               <span className="mx-1.5">&middot;</span>
               {liveOrder.date}
               <ConsentMissingPill project={purchaseOfRow} />
+              <ClaimOutcomePill order={liveOrder} />
             </p>
             {/* ⚠ THE TWO FACTS A CONTROL-LESS MODAL OWES THE READER: who worked
                 this, and why nothing can be changed. The claim chip is gone
@@ -922,7 +924,13 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                 was archived twice over. And only where the viewer can act:
                 somebody else's claim refuses this server-side, and the table
                 already withholds its archive buttons from those rows. */}
-            {!readOnly && isCompleted && archivesAsOrder(liveOrder) && canEdit && (
+            {/* ⚠ A CLAIM IS CLOSED, NOT ARCHIVED OR DELETED (2026-10-13): Approved
+                or Denied, at any stage -- a claim can be denied the day it
+                arrives. The only way a claim goes into the archive. */}
+            {!readOnly && liveOrder.type === "warranty" && !liveOrder.archived && canEdit && (
+              <ClaimCloseButton order={liveOrder} onClosed={onClose} />
+            )}
+            {!readOnly && liveOrder.type !== "warranty" && isCompleted && archivesAsOrder(liveOrder) && canEdit && (
               <button
                 onClick={() => { void handleArchive(); }}
                 disabled={archiveBusy}
@@ -936,7 +944,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                     : <><Archive className="w-3 h-3" /> Archive</>}
               </button>
             )}
-            {!readOnly && liveOrder.source === "Manual" && (
+            {!readOnly && liveOrder.source === "Manual" && liveOrder.type !== "warranty" && (
               <button
                 onClick={handleDelete}
                 title="Delete order"

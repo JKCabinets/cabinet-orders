@@ -18,6 +18,7 @@ import { supabase } from "@/lib/supabase";
  */
 
 export const ATTACHMENT_BUCKET = "order-attachments";
+export const CLAIM_PHOTO_BUCKET = "claim-photos";
 
 /** The storage API removes at most this many paths per call. */
 const REMOVE_BATCH = 100;
@@ -46,4 +47,34 @@ export async function removeOrderFiles(orderIds: string[]): Promise<RemoveFilesR
     if (rmErr) return { ok: false, error: `failed to delete files: ${rmErr.message}` };
   }
   return { ok: true, removed: paths.length };
+}
+
+/**
+ * A DENIED claim's original photos (2026-10-13): the copies its customer
+ * uploaded, kept with the submission in `claim-photos` -- promotion COPIED
+ * them into the claim's attachments, so removing the claim's files alone
+ * would keep them. Storage first, then the submission's list is emptied; the
+ * submission itself stays, pointing at the closed claim.
+ */
+export async function removeClaimSubmissionPhotos(claimId: string): Promise<RemoveFilesResult> {
+  const { data, error } = await supabase
+    .from("claim_submissions")
+    .select("id, photo_paths")
+    .eq("promoted_to_order_id", claimId);
+  if (error) return { ok: false, error: `failed to list claim photos: ${error.message}` };
+  let removed = 0;
+  for (const s of data ?? []) {
+    const paths = (Array.isArray(s.photo_paths) ? (s.photo_paths as unknown[]) : [])
+      .filter((p): p is string => typeof p === "string" && p.length > 0);
+    for (let i = 0; i < paths.length; i += REMOVE_BATCH) {
+      const { error: rmErr } = await supabase.storage
+        .from(CLAIM_PHOTO_BUCKET).remove(paths.slice(i, i + REMOVE_BATCH));
+      if (rmErr) return { ok: false, error: `failed to delete claim photos: ${rmErr.message}` };
+    }
+    const { error: upErr } = await supabase
+      .from("claim_submissions").update({ photo_paths: [] }).eq("id", s.id);
+    if (upErr) return { ok: false, error: `failed to clear claim photos: ${upErr.message}` };
+    removed += paths.length;
+  }
+  return { ok: true, removed };
 }
