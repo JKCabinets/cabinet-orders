@@ -1,5 +1,10 @@
 # SESSION HANDOFF — 2026-09-15
 
+⚠ **SUCCEEDED 2026-10-13 by `docs/SESSION-HANDOFF-2026-10-13.md` — start there.**
+This file stays as the detailed record: items 0–47, the decisions and the
+process lessons are still true wherever that file does not say otherwise. Its
+Open list CONTINUES there, re-sorted.
+
 Covers work from 2026-09-09 through 2026-09-30. Where a date is given below
 it is the date of the **decision**, taken from the commit trail; the
 conversation that produced it may have run across a day boundary.
@@ -383,8 +388,8 @@ handler logged `{"outcome":"removed","groups":2}` both times while removing
 nothing. Six `.delete()` calls discarded their errors and the success log ran
 unconditionally.
 
-The blocker was `orders.about_order_id → orders`, the **one `NO ACTION` edge
-left** on these tables: `WRN-1051-1`, a warranty claim about `SHO-1051-CAB`.
+The blocker was `orders.about_order_id → orders`, **one of the two `NO ACTION`
+edges** on these tables (item 14): `WRN-1051-1`, a warranty claim about `SHO-1051-CAB`.
 A claim is standalone, so it is never among the group ids being deleted and
 never gets cleared.
 
@@ -617,7 +622,7 @@ nothing on success, so silence is not a result.
 | The Shopify product picker is removed from `NewOrderModal` (2026-10-07) | It only ever appeared on a custom job, which records choices room by room, and its catalogue was admin-only, so it listed nothing for the team. |
 | A claim's progress is queued by a database TRIGGER, not sent from each route (2026-10-07) | A stage changes by more than one path — a person, a tracking number, and whatever comes later. The trigger sees every one; a note sent from each route would miss the one forgotten. |
 | A claim's notes go strictly in order; a failed note holds its claim's later ones (2026-10-07) | A note saying Parts ordered landing before the one saying In review would mislead whoever answers the customer. Late is better than out of order. |
-| Deleting a claim closes its Help Scout conversation; nothing in Help Scout is ever deleted (Garrett, 2026-10-07) | The conversation is the record of what the customer was told. Closing says the claim is gone; a reply reopens it. |
+| Deleting a claim closes its Help Scout conversation; nothing in Help Scout is ever deleted (Garrett, 2026-10-07) | The conversation is the record of what the customer was told. Closing says the claim is gone; a reply reopens it. ⚠ Superseded 2026-10-13: a claim is closed, never deleted (item 44). |
 | Next and eslint-config-next pinned EXACTLY, at 16.4.0 (Garrett, 2026-10-07) | A caret let `npm update` move the framework a minor version unasked. Pinned, every framework upgrade is a decision with its own proof. 16.4.0 over 16.3.8: both carry every fix; 16.4.0 passed the same tests. |
 | Every PDF line shows its door style and colour codes; order issues are flagged on the PDF (Garrett, 2026-10-07) | Waypoint orders by the codes, so the person entering the order needs them on every line. A missing name, address, ZIP, phone or email stops a vendor order, so the PDF says so before it is sent. |
 | Acknowledgment discrepancies are shown on the lines they are about, on Full Order and the PDF; the Overview keeps a count and a pill (Garrett, 2026-10-07) | A list apart from the lines makes somebody match them up by eye. On the line, the fix is where the problem is. |
@@ -633,11 +638,14 @@ nothing on success, so silence is not a result.
 | The production finish date is shown as "Ship from factory" on every type; the Shopify attribute keeps its name (2026-10-13) | It names what the date means in every case; the attribute is read outside the OMS. |
 | Consent staff obtain is recorded against its Help Scout conversation, checked to be ours (2026-10-13) | The conversation holds the customer's own words; a record that points at it can be shown in a dispute, and one that cannot be checked is just a claim. |
 | A standard Shopify order is removed in Shopify, never in the OMS (Garrett, 2026-10-13) | Shopify owns it; deleting it here left the purchase behind, and removing that too would have read as lost ingestion. One place to remove it, and the webhook follows. |
-| A deleted claim's submission is unlinked, not left pointing at its number (2026-10-07) | Claim numbers are reused. A stale link would have sent a new claim's progress notes to another customer's conversation. |
+| A deleted claim's submission is unlinked, not left pointing at its number (2026-10-07) | Claim numbers are reused. A stale link would have sent a new claim's progress notes to another customer's conversation. ⚠ Since item 44 the app deletes no claim; this holds for one deleted outside it. |
 
 ---
 
 ## Open — not done, deliberately
+
+⚠ **CONTINUED in `SESSION-HANDOFF-2026-10-13.md` §6** (2026-10-13), which holds
+the open list from now on; the entries below are the record of each.
 
 0. ✅ **PROJECTS HOLD THE TRUTH FOR ARCHIVING — decided 2026-09-15, deployed 2026-09-16 as `76115c7`.**
 
@@ -726,7 +734,9 @@ nothing on success, so silence is not a result.
    trail's `time` is a display string — `"Aug 24"`, no clock time. Either the
    PATCH route starts writing a real timestamp per transition (better, and
    useful beyond the rail) or the rail shows dates only. Deferred by Garrett.
-3. **The warranty-vs-custom exclusion is not documented in the picker.**
+3. ✅ ~~**The warranty-vs-custom exclusion is not documented in the picker.**~~
+   It is: `WarrantyClaimModal`'s picker says why above the line that excludes
+   both (checked 2026-10-13).
    Decided and recorded in OPERATIONS §12; the picker's own comment is still
    missing, and an unexplained exclusion reads as an oversight.
 4. **Orphaned claims are unchecked.** `projects.claimed_by` holds two id formats
@@ -994,7 +1004,7 @@ nothing on success, so silence is not a result.
     blanking rolls back with it — all or nothing. The backfill route, run
     before and after against a recording database, moved from writing a group
     and a project-less row to writing only projects.
-20. **The Archive as its own section** (decided 2026-09-16, in progress). The
+20. **The Archive as its own section** (decided 2026-09-16; ✅ done). The
     projects hub is an ACTIVE-work hub; the archive is history and belongs
     somewhere else. Four tabs — All, Shopify Orders, Custom Orders, Warranty
     Orders — one line per archived PURCHASE showing its parts and the stage
@@ -1501,22 +1511,25 @@ nothing on success, so silence is not a result.
       It matters the day a policy filters on `sub`.
     - `lib/useRealtimeOrders.ts` opens by saying it feeds `setOrders` /
       `setWarranties`, which no longer exist.
-26. **Documents known wrong, found 2026-09-30, NOT corrected** — each wants its
-    own look rather than a line in somebody else's commit.
+26. ✅ **Documents known wrong, found 2026-09-30 — all corrected 2026-10-13**
+    — each wanted its own look rather than a line in somebody else's commit.
     - ✅ ~~OPERATIONS §5: `QUOTE_WEBHOOK_SECRET` "Deliberately EMPTY"~~ —
       corrected 2026-10-01, the table row and the empty-by-design list both.
-    - OPERATIONS §2 says `POST /api/public/lookup` is "not built yet", and §12 that
-      the warranty question "blocks the public intake work". Both routes exist.
+    - ✅ ~~OPERATIONS §2 says `POST /api/public/lookup` is "not built yet", and §12
+      that the warranty question "blocks the public intake work".~~ Corrected
+      2026-10-13; both routes exist.
     - ✅ ~~OPERATIONS §2 disagreed with `lib/customerFacing.ts`~~ — corrected
       2026-10-01 from the code: Entered → "Order has been processed", At cross
       dock → "Arrived at our delivery partner".
-    - "Four checks … of eleven" (OMS-STATE §6, OPERATIONS §3 and §6) predates
-      `check-registry-token.sh`; OPERATIONS §7 has no Monday 15:00 row for it.
-    - OPERATIONS §5 puts the Graph secret in `.env.kamal`; §12 says it is not there.
-    - Item 9 and OPERATIONS §9 say "the one NO ACTION edge"; item 14, read from
-      the database later, names two.
-    - Item 20 still reads "in progress" with every step done; Open item 1's "see
-      below" points above.
+    - ✅ ~~"Four checks … of eleven" (OMS-STATE §6, OPERATIONS §3 and §6)~~ —
+      corrected 2026-10-13 against the crontab and the account: six checks of
+      thirteen; OPERATIONS §7 has the registry-token and helpscout-sync rows.
+    - ✅ ~~OPERATIONS §5 puts the Graph secret in `.env.kamal`~~ — checked
+      2026-10-13, it is not on the box; §5 corrected, §12 was right.
+    - ✅ ~~Item 9 and OPERATIONS §9 say "the one NO ACTION edge"~~ — both name
+      it one of item 14's two since 2026-10-13.
+    - ✅ ~~Item 20 still reads "in progress"~~ — done, 2026-10-13. The "see
+      below" had already been corrected: Open item 5 reads "above".
 27. **The claims endpoint, to the website's 2026-10-01 contract**
     (`website-to-oms-open-items-2026-10-01.md`; the only item left on the
     website's critical path to launch). Decisions, all Garrett's, 2026-10-01: a
@@ -2307,6 +2320,7 @@ patch_record_consent.py
 patch_docs_record_consent.py
 patch_shopify_removal.py
 patch_docs_shopify_removal.py
+patch_docs_handoff_2026_10_13.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

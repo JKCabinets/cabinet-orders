@@ -2,6 +2,12 @@
 
 **As of 2026-09-15 · supersedes OPERATIONS-2026-08-18.md**
 
+⚠ **AMENDED 2026-10-13.** Every statement the 2026-09-30 note listed as wrong
+is corrected in place: §2's public lookup, §3's and §6's check count (six of
+thirteen), §5's Graph secret, §7's missing jobs, §9's NO ACTION edge, §12's
+intake question. §10 records this session's decisions; §13 what a website
+order now carries for a dispute; "estimated finish" reads "ship from factory".
+
 ⚠ **AMENDED 2026-10-05.** §5 records the Help Scout app's credentials; §6 the
 fifth check, `helpscout-sync`; §10 that every website claim becomes a Help
 Scout conversation.
@@ -13,9 +19,8 @@ Help Scout handles every customer reply.
 
 ⚠ **AMENDED 2026-09-30.** §10 records why a custom job's specifications save
 one room at a time; §12 adds `order_attachments` to the tables with no creating
-migration. ⚠ **Several statements in this document were found wrong that day
-and are NOT yet corrected** — they are listed in the session handoff, Open item
-26. Check there before relying on §2, §3, §5, §6, §7, §9 or §12. §2 now records
+migration. ⚠ **Several statements in this document were found wrong that day** —
+corrected 2026-10-13 (the 2026-09-15 session handoff, Open item 26). §2 now records
 the second read policy Realtime needed.
 
 ⚠ **AMENDED 2026-09-15.** The `override_ack` inconsistency in §10 is closed,
@@ -228,7 +233,7 @@ receipt that backs it.
 
 Each requires a staff **confirm/deny prompt**:
 
-1. Estimated production finish date set
+1. Ship-from-factory date set (the production finish)
 2. Production date changed
 3. Estimated delivery date scheduled, with what to prepare for
 4. Delivery date changed
@@ -277,8 +282,9 @@ not customer-visible: a customer never looks one up.
 
 ## ⚠ The public lookup contract
 
-`POST /api/public/lookup` is **not built yet**, and this is what it has to
-honour. It lives here rather than in a build document because it is a promise to
+`POST /api/public/lookup` is **built** (`app/api/public/lookup`), and this is
+what it has to honour. It lives here rather than in a build document because
+it is a promise to
 a customer, not an implementation detail.
 
 ⚠ **A LOOKUP RETURNS A PROJECT, NOT AN ORDER.** A checkout is one project with
@@ -321,7 +327,7 @@ stripping `#`, trimming, uppercasing, prepending `SHO-`.
 | **`jk-sku-builder`** | ⚠ A SECOND application — see below | | **~$17 total** — $7.00 host + $9.91 Supabase compute, the latter already inside the Supabase row above |
 | **Upstash Redis** | Rate limiting (`rateLimitOr429`) | **Free tier** | $0.00 |
 | **GitHub + GHCR** | Repo and container registry | **Free** | $0.00 |
-| **healthchecks.io** | Dead-man's switch. **4 real checks of 11 on the account** — see §6 | **Free** | $0.00 |
+| **healthchecks.io** | Dead-man's switch. **6 real checks of 13 on the account** — see §6 | **Free** | $0.00 |
 | **GoDaddy** | Two domains — see §4 | | annual |
 | **Microsoft 365** | Tenant, Outlook, `no-reply@` shared mailbox | Shared mailboxes need no licence | existing |
 | **Avis Plus API** | Waypoint option catalogue, 60 req/min | | |
@@ -364,7 +370,7 @@ Also held, not in use by these systems: `jkkitchencabinets2you.com`,
 
 | Credential | Lives in | Expiry | Symptom when it dies |
 |---|---|---|---|
-| **Microsoft Graph client secret** | Entra → `.env.kamal` | ⚠ **RECORD THE DATE** — max 24 months | Customer notifications silently stop |
+| **Microsoft Graph client secret** | Entra only — **not on the box**: no Graph credential in `.env.kamal` or `.kamal/secrets` (checked 2026-09-08 and 2026-10-13) | ⚠ **RECORD THE DATE** — max 24 months | Nothing on the box uses it today |
 | **GHCR token** (GitHub PAT, classic) | `.env.kamal` | Expired 2026-08-18 **and again 2026-09-16**. **Checked weekly since 2026-09-16** — `check-registry-token.sh` logs the expiry date and alarms 14 days ahead (§6) | `kamal deploy` → **`denied: denied`** at docker login |
 | **`SHOPIFY_WEBHOOK_SECRET`** | `.env.kamal` | No expiry | Webhook HMAC fails closed — **orders stop ingesting** |
 | **`SHOPIFY_WEBHOOK_SECRET_FALLBACK`** | `.env.kamal` | Empty when idle | Rotation slot — see below |
@@ -510,8 +516,9 @@ is passed to curl on stdin, never on its command line, and never logged.
 webhook can be recreated whenever wanted. The stale note would have sent
 someone hunting for a restriction that does not exist.
 
-**Five checks**, one per cron job — out of **twelve on the account** (the
-fifth, `helpscout-sync`, added 2026-10-05). The
+**Six checks**, one per cron job — out of **thirteen on the account**
+(`registry-token` since 2026-09-16, `helpscout-sync` since 2026-10-05; counted
+against the crontab and the account 2026-10-13). The
 other seven are strays listed for deletion in §12, each with a 365-day period so
 they report "up" forever whatever happens.
 
@@ -526,8 +533,9 @@ them from healthchecks.io and shrink `IGNORED_CHECKS` in
 | `sync-avis-catalog` | Nightly Avis reconciliation |
 | `production-complete` | In production → At cross dock |
 | `teams-digest` | Silent until `TEAMS_WEBHOOK_URL` is set — now safe to enable |
-| **`jk-webhook-health`** | **Shopify ingestion** — added 2026-08-20 |
+| **`jk-webhook-health`** | **Shopify ingestion** — added 2026-08-20; skips cancelled orders since 2026-10-13 |
 | **`helpscout-sync`** | **Website claims reaching Help Scout**, every 15 minutes; fails when a claim is unsent after four attempts; since 2026-10-07 also sends a claim's progress notes, and fails when one is unsent after four attempts — added 2026-10-05 |
+| **`registry-token`** | **The GHCR registry token** — Mondays 15:00 UTC, `check-registry-token.sh`; fails 14 days before it expires |
 
 ## The ingestion check reconciles; it does not heartbeat
 
@@ -574,9 +582,11 @@ the reason — previously `curl -f` discarded it and logged only `error: 500`.
 | UTC | Phoenix | Job | What it does |
 |---|---|---|---|
 | 07:30 daily | 12:30am | `sync-avis-catalog` | Reconciles the option catalogue. Never writes a SKU code, never deletes, refuses an empty catalogue. |
-| 08:00 daily | 1:00am | `production-complete` | In production → At cross dock once the estimated finish date passes. Sole owner of that transition. |
+| 08:00 daily | 1:00am | `production-complete` | In production → At cross dock once the ship-from-factory date passes. Sole owner of that transition. |
 | 14:00 weekdays | 7:00am | `teams-digest` | **Posts nothing** — see below |
 | **hourly at :20** | | **`webhook-health`** | **Reconciles Shopify's orders against the OMS** |
+| every 15 min | | `helpscout-sync` | Website claims, and each claim's progress notes, to Help Scout (§6) |
+| 15:00 Mondays | 8:00am | `check-registry-token.sh` | The registry token: alarms 14 days before it expires (§6). A script, not a route |
 
 **`teams-digest` is silent** because `TEAMS_WEBHOOK_URL` is empty — but it is
 now **safe to configure**. It uses the same SLA rules as the app and reports
@@ -675,8 +685,9 @@ SHO-1051 was deleted in Shopify, and the handler logged
 discarded their errors and the success log ran unconditionally, so Shopify
 got a 200 and never retried.
 
-The blocker was `orders.about_order_id → orders`, the one `NO ACTION`
-foreign key left on these tables: a warranty claim about `SHO-1051-CAB`. A
+The blocker was `orders.about_order_id → orders`, one of the two `NO ACTION`
+foreign keys on these tables (the other, `orders.project_id → projects`): a
+warranty claim about `SHO-1051-CAB`. A
 claim is standalone, so it is never among the group ids being deleted and
 never gets cleared; Postgres rejected the orders delete and the projects
 delete failed behind it.
@@ -994,7 +1005,37 @@ hand has no conversation, so it gets none.
 (Garrett, 2026-10-07). When a warranty claim is deleted in the OMS, its Help
 Scout conversation gets a last internal note saying so and its status becomes
 Closed. Every message stays, and a customer's reply reopens it. A conversation
-someone deletes in Help Scout simply gets no more notes.
+someone deletes in Help Scout simply gets no more notes. ⚠ **SUPERSEDED
+2026-10-13:** a claim is no longer deleted in the OMS — the next entry.
+
+**A WARRANTY CLAIM IS CLOSED, NEVER DELETED** (Garrett, 2026-10-13). Closed ·
+Approved keeps everything; Closed · Denied needs a reason and removes the
+claim's photos and files, both copies; either way it moves to the archive, and
+restoring it reopens it. A claim is the record of what a customer reported and
+what we decided — deleting one left its submission pointing at nothing.
+
+**A WRONG PHONE ON AN ACKNOWLEDGMENT IS RED** (Garrett, 2026-10-07). The
+delivery company calls that number; an order can sit waiting on one nobody
+answers. Discrepancies are told on the lines they are about, and say WHAT
+differs — one wrong colour made every cabinet look wrong.
+
+**TERMS CONSENT IS KEPT WITH EVERY WEBSITE ORDER** (website team and Garrett,
+2026-10-07). As Shopify sent it, never cleared; a missing one is flagged, not
+blocked — the website refuses a checkout without it. Consent obtained by email
+is recorded against its Help Scout conversation (2026-10-13).
+
+**A STANDARD SHOPIFY ORDER IS REMOVED IN SHOPIFY, NEVER IN THE OMS** (Garrett,
+2026-10-13). Shopify owns it; cancel or delete it there and the OMS removes it,
+files and all. Only a custom job is deleted in the OMS.
+
+**AN ORDER'S FILES GO WITH IT** (Garrett, 2026-10-13). Once its rows are gone
+nothing can show or reach its files; kept, they are cost and customer data
+with no use.
+
+**A CLAIM KEEPS ITS OWN RULES; "SHIP FROM FACTORY"** (Garrett, 2026-10-13). A
+claim's dates and tracking number are a record and it moves only by its
+button. The production finish date is called "Ship from factory" on every
+type — it covers every case.
 
 **Order value is stored at ingest, not queried live.** A metrics page that
 depends on Shopify is one that breaks when Shopify does, and 2026-08-20
@@ -1143,8 +1184,11 @@ covers the box, not the database, and the database is where the orders are.
   and a warranty claim is standalone — it has none. Custom is explicitly carved
   out as never looked up; warranty is not. **Decide before public intake is
   built:** lookup by claim number, or those five rows have no delivery vehicle.
-  A product decision, not a documentation one, and it blocks the public intake
-  work.
+  A product decision, not a documentation one, and it blocked the public
+  intake work. ⚠ **OVERTAKEN 2026-10-13:** both public routes exist — the
+  lookup, and the claims endpoint (2026-10-01) — and a claim reaches its
+  customer through its Help Scout conversation, where staff answer
+  (2026-10-05). Whether the lookup should also answer by claim number is open.
 - **⚠ Garrett is the sole admin on every service.** Confirmed 2026-08-18: OMS,
   Shopify, Supabase, Hetzner, GitHub, Microsoft 365, Help Scout, GoDaddy. No
   second holder of any credential, no break-glass procedure. **The largest
@@ -1252,13 +1296,16 @@ recorded on the custom block of `lib/requirements.ts`). Somebody assembling
 evidence for a custom dispute from this list would find half of it missing
 and conclude the file was incomplete.
 
-Terms acceptance record (timestamp, IP, exact text, policy version) · order
+Terms acceptance record — **kept on every website order since 2026-10-07**: the
+time, the Terms version and the wording version, on the order's Full Order tab
+(`projects.terms_*`), or the Help Scout conversation where staff recorded it by
+email; ⚠ the customer's IP is NOT captured · order
 confirmation email and its delivery confirmation · AVS and CVV results · 3DS
 result where applicable · signed design approval · **signed proof of delivery —
-now captured by the OMS delivery gate** · communication log (Help Scout, once
-live) · record of any replacement offered · prior order history.
+now captured by the OMS delivery gate** · communication log (the order's Help
+Scout conversation) · record of any replacement offered · prior order history.
 
 **Two are cheap and disproportionately valuable:** logging the checkout terms
 acceptance against the order, and **snapshotting the policy version with the
-order**. Defending a December order in February by linking to a page that has
-since changed is weak evidence.
+order**. ✅ Both done 2026-10-07. Defending a December order in February by
+linking to a page that has since changed is weak evidence.
