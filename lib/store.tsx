@@ -7,10 +7,13 @@ import React, {
 import { useSession } from "next-auth/react";
 import {
   Order, OrderType, Stage, TeamMember,
-  Member, Source, ORDER_STAGES, WARRANTY_STAGES, AvatarColor, Role,
-  ID_PREFIX_BY_TYPE, ORDER_TYPES, shapeOrder, withPurchasePayment, activityDate,
+  AvatarColor, Role,
+  ORDER_TYPES, shapeOrder, withPurchasePayment, activityDate,
   type Project,
 } from "./data";
+// (2026-10-14) Member, Source, ORDER_STAGES, WARRANTY_STAGES and
+// ID_PREFIX_BY_TYPE left this import with the row addOrder used to fabricate
+// after a failed create; nothing else here read them.
 import { fieldsToClearOnBackwardMove } from "./stageLogic";
 import { useRealtimeOrders, useRealtimeProjects, useRealtimeActivity } from "./useRealtimeOrders";
 import { usePresence } from "./usePresence";
@@ -21,6 +24,21 @@ export interface ArchiveResult {
   /** The server's error code, or "network_error". */
   error?: string;
   /** The server's own sentence, when it sent one. Meant for a toast. */
+  message?: string;
+}
+
+/**
+ * What addOrder resolves with (2026-10-14). Until then it resolved with
+ * nothing, so no caller could tell a created job from a refused one -- and on
+ * a refusal the store made one up (see addOrder).
+ */
+export interface AddOrderResult {
+  ok: boolean;
+  /** The row the server created, shaped. Present when ok. */
+  order?: Order;
+  /** The server's error code or text, or the network's. */
+  error?: string;
+  /** The server's own sentence, when it sent one. Meant for the person. */
   message?: string;
 }
 
@@ -44,7 +62,9 @@ interface StoreCtx {
   team: TeamMember[];
   onlineUsers: string[];
   loading: boolean;
-  addOrder: (o: Partial<Order> & { type: OrderType }) => Promise<void>;
+  /** Creates a custom job or a warranty claim. Nothing is added locally
+   *  unless the server created the row; a refusal is returned, not hidden. */
+  addOrder: (o: Partial<Order> & { type: OrderType }) => Promise<AddOrderResult>;
   /** `overrideAck` is the REASON for skipping the acknowledgment gate, not a
    *  flag: the route refuses an empty one and writes it to the activity
    *  trail. Same contract as `overrideDeliveryProof`. */
@@ -124,11 +144,17 @@ async function apiCall(url: string, method = "GET", body?: unknown) {
       // instead of silently swallowing the failure. Falls back to the
       // HTTP status text if the body isn\'t JSON.
       let message = res.statusText || `Request failed (${res.status})`;
+      // The server's sentence as well as its code, when it sends both
+      // (2026-10-14): `error` is often a key like type_not_manually_creatable,
+      // and `message` is what a person should read. Callers that read only
+      // __error are unaffected.
+      let sentence: string | undefined;
       try {
         const errBody = await res.json();
         if (errBody?.error) message = String(errBody.error);
+        if (typeof errBody?.message === "string" && errBody.message) sentence = errBody.message;
       } catch { /* non-JSON error body */ }
-      return { __error: message };
+      return sentence ? { __error: message, __message: sentence } : { __error: message };
     }
     return await res.json();
   } catch (err) {
@@ -137,8 +163,9 @@ async function apiCall(url: string, method = "GET", body?: unknown) {
 }
 
 
-// ID_PREFIX_BY_TYPE now lives in lib/data.ts, shared with the API insert
-// in app/api/orders/route.ts so the two cannot drift apart.
+// ID_PREFIX_BY_TYPE lives in lib/data.ts. The store no longer reads it
+// (2026-10-14): the server allocates every id, and a row the server did not
+// create is never shown.
 
 /**
  * Replace the rows of each successfully-fetched type, leaving every other
@@ -443,7 +470,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // the same untruth in the other direction. See activityDate.
   const today = () => activityDate();
 
-  const addOrder = useCallback(async (partial: Partial<Order> & { type: OrderType }) => {
+  const addOrder = useCallback(async (partial: Partial<Order> & { type: OrderType }): Promise<AddOrderResult> => {
     // ⚠ SPREAD, NOT A WHITELIST -- and that is the fix, not laziness.
     //
     // This used to list every field by hand, so a field not named was
@@ -455,34 +482,36 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // object from the body: keys it does not recognise are ignored, never
     // written. The whitelist protected nothing and cost a field.
     const res = await apiCall("/api/orders", "POST", { ...partial });
-    if (res?.data) {
-      const newItem = shapeOrder(res.data);
-      setRawOrders(prev => [newItem, ...prev]);
-    } else {
-      // NOTE: this fabricates a local row after a FAILED post, so it
-      // disappears on the next refetch. Same anti-pattern addTeamMember
-      // was fixed for (see its comment). Preserved verbatim here --
-      // removing it is a behaviour change and deserves its own commit.
-      const t = today();
-      const isWarranty = partial.type === "warranty";
-      const newItem: Order = {
-        // Warranty ids keep their existing 4-digit short form.
-        id: isWarranty
-          ? `WRN-${String(Date.now()).slice(-4)}`
-          : `${ID_PREFIX_BY_TYPE[partial.type] ?? "ORD"}-${Date.now()}`,
-        type: partial.type, name: partial.name || "Unknown",
-        source: (partial.source as Source) || "Manual",
-        detail: partial.detail || "—",
-        // Only warranties start outside the order flow. Samples and
-        // custom orders both start at "New" -- ORDER_STAGES[0] for a
-        // sample, CUSTOM_STAGES[0] for a custom order, same string.
-        stage: isWarranty ? WARRANTY_STAGES[0] : ORDER_STAGES[0],
-        member: (partial.member as Member) || "AX",
-        date: t, sku: partial.sku || "—", notes: partial.notes || "",
-        activity: [{ text: "Order logged", time: t }], archived: false,
-      };
-      setRawOrders(prev => [newItem, ...prev]);
+    if (!res?.data) {
+      // (2026-10-14) A failed create used to FABRICATE a row here -- a made-up
+      // id, "Order logged" on its trail -- which sat on the board as if saved
+      // until the next refetch. Removed, as addTeamMember's was: nothing is
+      // added, and the refusal goes back to the caller to show.
+      return { ok: false, error: res?.__error ?? "request_failed", message: res?.__message };
     }
+    const created = shapeOrder(res.data);
+    // ⚠ REALTIME USUALLY GETS HERE FIRST (2026-10-14). The row's INSERT event
+    // often arrives before this POST's own answer, and this used to prepend
+    // regardless -- so a new job showed TWICE until a reload, while the
+    // database held one. One row per id, as onInsert already insists.
+    //
+    // ⚠ BUT NOT "SKIP IF PRESENT". A realtime row carries no trail
+    // (shapeOrder gives it `activity: []`), and its "Order logged by …" entry
+    // comes on another channel, in no guaranteed order: if that entry arrives
+    // before the row, useRealtimeActivity finds nothing to attach it to and it
+    // is lost. So the row already here is kept -- a realtime UPDATE may have
+    // landed on it since -- and this answer's entries it lacks are put in
+    // front: the creation entry is always the first. Deduped on text and
+    // time, as the activity merge is.
+    setRawOrders(prev => {
+      const existing = prev.find(o => o.id === created.id);
+      if (!existing) return [created, ...prev];
+      const missing = created.activity.filter(a =>
+        !existing.activity.some(e => e.text === a.text && e.time === a.time));
+      if (missing.length === 0) return prev;
+      return prev.map(o => (o.id === created.id ? { ...o, activity: [...missing, ...o.activity] } : o));
+    });
+    return { ok: true, order: created };
   }, []);
 
   const moveStage = useCallback(async (

@@ -82,21 +82,39 @@ export function NewOrderModal({ type: orderType, onClose }: NewOrderModalProps) 
   const overlayRef = useRef<HTMLDivElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
 
+  /**
+   * ⚠ ONE CREATE AT A TIME, AND THE MODAL WAITS FOR IT (2026-10-14). It used to
+   * call addOrder without waiting and close at once, so a refusal had nowhere
+   * to be shown -- and the store hid it behind a made-up row. Now it closes
+   * only once the job exists; a refusal stays on screen with everything typed.
+   * `inFlight` is the guard -- a ref, so a second press in the same instant
+   * sees it -- and `submitting` is what the screen shows. While a create is
+   * out, closing is refused too: the answer would have nowhere to land.
+   */
+  const inFlight = useRef(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const close = () => { if (!inFlight.current) onClose(); };
+
   useEffect(() => {
     nameRef.current?.focus();
-    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape" && !inFlight.current) onClose(); };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [onClose]);
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (inFlight.current) return;
     if (!name.trim()) return;
     // ⚠ The server refuses this too (422 about_order_id_required). Stopping
     // here as well means the person sees which field is missing rather than an
     // error after everything else they typed.
     if (orderType === "warranty" && !aboutOrderId) return;
-    addOrder({
+    inFlight.current = true;
+    setSubmitting(true);
+    setSubmitError(null);
+    const result = await addOrder({
       type: orderType,
       // Only ever set on a claim; undefined is dropped by the route's explicit
       // newOrder object for every other type.
@@ -114,7 +132,10 @@ export function NewOrderModal({ type: orderType, onClose }: NewOrderModalProps) 
       // anything else, and an empty string parses to null server-side.
       total_price: orderType === "custom" ? totalPrice : undefined,
     });
-    onClose();
+    if (result.ok) { onClose(); return; }   // still in flight: the modal is going
+    inFlight.current = false;
+    setSubmitting(false);
+    setSubmitError(result.message ?? result.error ?? "The job could not be created.");
   }
 
   /**
@@ -147,7 +168,7 @@ export function NewOrderModal({ type: orderType, onClose }: NewOrderModalProps) 
   return (
     <div
       ref={overlayRef}
-      onClick={(e) => e.target === overlayRef.current && onClose()}
+      onClick={(e) => e.target === overlayRef.current && close()}
       className="fixed inset-0 z-50 flex items-end md:items-center justify-center animate-fade-in"
       style={{ background: "rgba(0,0,0,0.60)" }}
     >
@@ -164,8 +185,9 @@ export function NewOrderModal({ type: orderType, onClose }: NewOrderModalProps) 
             {ui.createTitle}
           </h2>
           <button
-            onClick={onClose}
-            className="p-1 rounded-lg transition-all hover:text-[#e8e3da]"
+            onClick={close}
+            disabled={submitting}
+            className="p-1 rounded-lg transition-all hover:text-[#e8e3da] disabled:opacity-40"
             style={{ color: "rgba(232,227,218,0.60)" }}
           >
             <X className="w-4 h-4" />
@@ -373,12 +395,19 @@ export function NewOrderModal({ type: orderType, onClose }: NewOrderModalProps) 
             />
           </Field>
 
+          {submitError && (
+            <p role="alert" className="text-[11px] text-red-400">
+              {submitError}
+            </p>
+          )}
+
           {/* Footer buttons */}
           <div className="flex gap-2.5 pt-1">
             <button
               type="button"
-              onClick={onClose}
-              className="flex-1 py-2 rounded-lg text-xs transition-all hover:text-[#e8e3da]"
+              onClick={close}
+              disabled={submitting}
+              className="flex-1 py-2 rounded-lg text-xs transition-all hover:text-[#e8e3da] disabled:opacity-40"
               style={{
                 background: "rgba(255,255,255,0.03)",
                 border: "0.5px solid rgba(255,255,255,0.18)",
@@ -389,7 +418,8 @@ export function NewOrderModal({ type: orderType, onClose }: NewOrderModalProps) 
             </button>
             <button
               type="submit"
-              className="flex-1 py-2 rounded-lg text-xs font-semibold transition-all hover:brightness-110"
+              disabled={submitting}
+              className="flex-1 py-2 rounded-lg text-xs font-semibold transition-all hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed"
               style={{
                 background: "rgba(86,100,72,0.22)",
                 border: "0.5px solid rgba(86,100,72,0.70)",
@@ -397,7 +427,7 @@ export function NewOrderModal({ type: orderType, onClose }: NewOrderModalProps) 
                 color: "#a0b890",
               }}
             >
-              {ui.createCta}
+              {submitting ? "Saving…" : ui.createCta}
             </button>
           </div>
         </form>

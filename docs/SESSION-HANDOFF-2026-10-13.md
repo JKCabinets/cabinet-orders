@@ -113,6 +113,11 @@ Add these to the old handoff's "Process" list when it is next touched.
   and the script refused its own re-run.
 - **A miss test must actually break the anchor.** Appending text after an
   anchor leaves it a substring; change a character INSIDE it.
+- **A guard read from React state is not a guard** (2026-10-14). A handler
+  sees the state of the render it was made in, so two events before a
+  re-render both pass a `saving` or `canSave` check. Guard with a ref; let
+  state drive the screen. And a "two presses" test must land both before a
+  re-render, or it tests the button's `disabled` attribute instead.
 - **Tooling traps:** `cut -c` splits UTF-8 (read with Python); brace expansion
   and process substitution need `bash`, not `sh`; the sandbox's Postgres stops
   between steps (start it each time) and is 16 — production is 17.6.
@@ -196,7 +201,8 @@ Each line points at the section that owns the detail.
 
 ### Bugs
 
-1. **A new custom order shows TWICE** (found by Garrett 2026-10-13). ⚠ The
+1. ✅ **A new custom order shows TWICE** (found by Garrett 2026-10-13; fixed
+   2026-10-14, record below). ⚠ The
    database holds ONE row — a query for custom orders sharing a name and
    creation second returned nothing — so the duplicate is on screen. The
    cause, from the code: the store's `addOrder` prepends the created row with
@@ -210,6 +216,38 @@ Each line points at the section that owns the detail.
    `handleSubmit` has no in-flight guard (it calls `addOrder` and closes at
    once) — disable submit until it resolves. Prove: reproduce on screen first;
    a reload shows one.
+
+   **Fixed 2026-10-14** (`patch_created_row_once.py`). Reproduced first,
+   through the real store and both modals with recording stand-ins: realtime
+   first gave TWO rows on screen, a fresh mount one. Three things the diagnosis
+   above did not have:
+   - ⚠ **Not "skip if present".** A realtime row carries no trail, and its
+     "Order logged by …" entry comes on another channel in no set order. Entry
+     first, `onEntry` found no row and dropped it, and the second row on screen
+     had an EMPTY trail. `addOrder` keeps the row already there and puts in
+     front the answer's trail entries it lacks.
+   - ⚠ **The missing guard was a gap of its own.** Two submits before a
+     re-render sent TWO POSTs — two jobs, not one shown twice. Two separate
+     presses sent one, because the modal closed in between; that was all the
+     first test checked.
+   - ⚠ **`WarrantyClaimModal` calls `addOrder` too** (a claim logged by hand),
+     and closed whatever happened. With the made-up row gone, a refused claim
+     would have vanished without a word. It now throws a refusal into its own
+     catch, as its promote branch does, and takes the same ref guard: two
+     clicks in one instant created `WRN-…-1` AND `-2`.
+
+   `addOrder` resolves `{ ok, order?, error?, message? }` (`AddOrderResult`);
+   `apiCall` keeps the server's `message` beside its `error`. `NewOrderModal`
+   waits for the answer: "Saving…", closing refused while a create is out, a
+   refusal shown with everything typed kept. The five imports only the made-up
+   row used are gone.
+   **Proved:** 17 scenarios, the deployed files and the fixed ones through the
+   same harness — every order of row, trail entry and answer; 409, 422, 500 and
+   a dropped connection; double submits in both modals; closing while saving; a
+   refusal retried. Request logs identical wherever behaviour should not change;
+   no `console.error` in either run. Strict typecheck with every module real,
+   none stood in: 0 errors in both trees, a planted error caught in each of the
+   three changed files, and a misuse of the result type caught.
 2. **A claim's Help Scout "Shipped" note misses its tracking number** when the
    number is entered after the move — which, for claims, is usual (item 45).
    A short note when a tracking number is added to a claim already at Shipped.

@@ -161,6 +161,13 @@ export function WarrantyClaimModal({ onClose, submission, onDone }: Props) {
   const [prodFinish, setProdFinish] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  /**
+   * ⚠ THE GUARD IS A REF (2026-10-14). `canSave` reads `saving` from the render
+   * a click was handled in, so two clicks landing before a re-render both
+   * passed it and created two claims. A ref is seen by the second at once.
+   * `saving` stays what the screen shows.
+   */
+  const inFlight = useRef(false);
 
   const searchRef = useRef<HTMLInputElement>(null);
   useEffect(() => { searchRef.current?.focus(); }, []);
@@ -250,7 +257,8 @@ export function WarrantyClaimModal({ onClose, submission, onDone }: Props) {
   }
 
   async function handleCreate() {
-    if (!canSave || !group) return;
+    if (!canSave || !group || inFlight.current) return;
+    inFlight.current = true;
     setSaving(true);
     setError("");
 
@@ -295,7 +303,7 @@ export function WarrantyClaimModal({ onClose, submission, onDone }: Props) {
         return;
       }
 
-      await addOrder({
+      const result = await addOrder({
         type: "warranty",
         about_order_id: group.id,
         name: name.trim(),
@@ -318,8 +326,14 @@ export function WarrantyClaimModal({ onClose, submission, onDone }: Props) {
         production_start_date: isCabinetClaim ? (prodStart || null) : null,
         production_est_finish_date: isCabinetClaim ? (prodFinish || null) : null,
       } as Parameters<typeof addOrder>[0]);
+      // ⚠ addOrder REPORTS A REFUSAL; IT DOES NOT THROW (2026-10-14). This
+      // closed the modal whatever happened, and the store covered a refusal
+      // with a made-up WRN- row. Now the store adds nothing, so a refusal is
+      // thrown here into the catch below, as the promote branch's is.
+      if (!result.ok) throw new Error(result.message ?? result.error ?? "Could not create the claim.");
       onClose();
     } catch (e) {
+      inFlight.current = false;
       setError(e instanceof Error ? e.message : "Could not create the claim.");
       setSaving(false);
     }
