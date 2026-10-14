@@ -141,6 +141,12 @@ wording shown under **Record consent** (on the order's Full Order tab, beside
 and the time their reply arrived. The flag clears, and the order shows who
 recorded it and the conversation. (Since 2026-10-13.)
 
+**Removing an order that came from Shopify** (2026-10-13): cancel it — or delete
+it — in Shopify. The OMS removes it with its files on its own. It cannot be
+deleted in the OMS: only custom jobs are deleted there, and claims are closed.
+Test orders deleted in the OMS before this left their purchase record behind;
+cancelling them in Shopify clears it.
+
 **The storage sweep** (admin, as needed). Deleting an order removes its files
 since 2026-10-13; the sweep clears anything left over from before or from a
 failure. Signed in as an admin, open `/api/admin/storage-sweep`: a dry run

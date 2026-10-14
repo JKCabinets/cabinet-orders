@@ -52,6 +52,8 @@ interface ShopifyOrder {
   numericId: string;
   name: string;
   createdAt: string;
+  /** Set when the order was cancelled; the webhook then removed its project. */
+  cancelledAt: string | null;
 }
 
 async function graphql(domain: string, token: string, query: string): Promise<unknown> {
@@ -68,7 +70,7 @@ async function graphql(domain: string, token: string, query: string): Promise<un
 async function recentShopifyOrders(domain: string, token: string): Promise<ShopifyOrder[]> {
   const q = `query {
     orders(first: ${SAMPLE_SIZE}, sortKey: CREATED_AT, reverse: true) {
-      edges { node { id name createdAt } }
+      edges { node { id name createdAt cancelledAt } }
     }
   }`;
   const body = await graphql(domain, token, q);
@@ -84,6 +86,7 @@ async function recentShopifyOrders(domain: string, token: string): Promise<Shopi
       numericId: gid.split("/").pop() ?? "",
       name: String(e?.node?.name ?? ""),
       createdAt: String(e?.node?.createdAt ?? ""),
+      cancelledAt: e?.node?.cancelledAt ? String(e.node.cancelledAt) : null,
     };
   }).filter((o: ShopifyOrder) => o.numericId);
 }
@@ -160,9 +163,17 @@ export async function GET(req: NextRequest) {
 
   // An order still inside the grace window may simply be in flight, or
   // awaiting a Shopify retry. Not a failure yet.
+  //
+  // ⚠ A CANCELLED ORDER IS SKIPPED (2026-10-13). A Shopify cancel removes the
+  // whole purchase from the OMS, project included -- and a cancelled order
+  // still EXISTS in Shopify, so this read the cancel as lost ingestion and
+  // failed the cron for as long as it stayed among the newest ten. No project
+  // is the right state for one.
+  const cancelled = orders.filter(o => o.cancelledAt);
+  detail.cancelled_skipped = cancelled.length;
   const settled = orders.filter(o => {
     const t = Date.parse(o.createdAt);
-    return Number.isFinite(t) && t < cutoff;
+    return Number.isFinite(t) && t < cutoff && !o.cancelledAt;
   });
   detail.settled_orders_checked = settled.length;
   if (settled.length === 0) {

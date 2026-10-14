@@ -1057,6 +1057,20 @@ export async function DELETE(
     );
   }
 
+  // ⚠ A SHOPIFY ORDER IS REMOVED IN SHOPIFY, NOT HERE (Garrett, 2026-10-13) --
+  // the rule bulk delete already kept. Deleting a group here left its project
+  // behind with the customer's details, and the purchase still in Shopify; the
+  // project could not go too, because webhook-health reads a Shopify order with
+  // no project as lost ingestion. Cancel or delete it in Shopify and the
+  // webhook removes all of it: groups, files and project. Only a custom job,
+  // whose truth is here, is deleted here.
+  if (order.type !== "custom") {
+    return NextResponse.json(
+      { error: "shopify_owned", message: "This order belongs to Shopify: cancel or delete it there, and the OMS removes it with its files." },
+      { status: 409 },
+    );
+  }
+
   // ⚠ ARCHIVED IS READ-ONLY, AND DELETE IS THE MOST FINAL EDIT OF ALL. The
   // archive is the history; deleting out of it removes the record of work that
   // happened. Restore it first, then delete -- two deliberate steps rather

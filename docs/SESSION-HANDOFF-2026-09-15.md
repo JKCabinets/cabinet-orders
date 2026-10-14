@@ -632,6 +632,7 @@ nothing on success, so silence is not a result.
 | A claim keeps its own rules: its dates and tracking are a record, and it moves only by its button (Garrett, 2026-10-13) | A claim's Shipped is not a sample's: entering a tracking number for a replacement part is a note, not the shipment. |
 | The production finish date is shown as "Ship from factory" on every type; the Shopify attribute keeps its name (2026-10-13) | It names what the date means in every case; the attribute is read outside the OMS. |
 | Consent staff obtain is recorded against its Help Scout conversation, checked to be ours (2026-10-13) | The conversation holds the customer's own words; a record that points at it can be shown in a dispute, and one that cannot be checked is just a claim. |
+| A standard Shopify order is removed in Shopify, never in the OMS (Garrett, 2026-10-13) | Shopify owns it; deleting it here left the purchase behind, and removing that too would have read as lost ingestion. One place to remove it, and the webhook follows. |
 | A deleted claim's submission is unlinked, not left pointing at its number (2026-10-07) | Claim numbers are reused. A stale link would have sent a new claim's progress notes to another customer's conversation. |
 
 ---
@@ -1920,6 +1921,18 @@ nothing on success, so silence is not a result.
     open; recorded shows who and the link, no button, no banner. The
     migration twice over website consent, untouched. Strict typecheck: the
     same 7 stand-in errors as the deployed files, none new.
+47. **Shopify orders are removed in Shopify; webhook-health skips cancels**
+    (`patch_shopify_removal.py`; Garrett, after deleting SHO-1054 to SHO-1056
+    in the OMS left their purchase records behind). What it is: OMS-STATE §3.
+    **Proved:** the real delete — cabinets, samples and hardware refused
+    `shopify_owned` touching nothing, a claim still `claims_are_closed`, a
+    custom job deleted with its file first. webhook-health against a Shopify
+    of three settled orders — one cancelled with no project, one with its
+    project, one MISSING its project: the deployed job failed naming the
+    cancelled #1070 as lost ingestion beside the real #1072 (the control: the
+    false alarm is real); the fixed job named #1072 alone and skipped one
+    cancel; with every project present, green. Strict typecheck: the same 11
+    stand-in errors as the deployed files, none new.
 
 ---
 
@@ -2292,6 +2305,8 @@ patch_claim_next_actions.py
 patch_docs_claim_next_actions.py
 patch_record_consent.py
 patch_docs_record_consent.py
+patch_shopify_removal.py
+patch_docs_shopify_removal.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

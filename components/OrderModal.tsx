@@ -945,7 +945,9 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                     : <><Archive className="w-3 h-3" /> Archive</>}
               </button>
             )}
-            {!readOnly && liveOrder.source === "Manual" && liveOrder.type !== "warranty" && (
+            {/* Custom jobs only (2026-10-13): a Shopify order is removed in
+                Shopify, and a claim is closed, never deleted. */}
+            {!readOnly && liveOrder.source === "Manual" && liveOrder.type === "custom" && (
               <button
                 onClick={handleDelete}
                 title="Delete order"
