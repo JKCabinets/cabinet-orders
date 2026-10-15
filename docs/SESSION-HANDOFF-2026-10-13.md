@@ -113,6 +113,15 @@ Add these to the old handoff's "Process" list when it is next touched.
   and the script refused its own re-run.
 - **A miss test must actually break the anchor.** Appending text after an
   anchor leaves it a substring; change a character INSIDE it.
+- **A migration that queues a NEW KIND of work runs after the code that
+  understands it** (2026-10-14). Run first, it hands the new rows to the old
+  code, which does whatever it does with an unknown kind — here, word it as a
+  stage move. Prove the order: old code over the new database, and new code
+  over the old one.
+- **Check the checks** (2026-10-14). Two empty listings compare equal, so an
+  "unchanged" check must refuse an empty side; and a glob runs migrations
+  ALPHABETICALLY, not in the order they ran — `…-close` before `…-notes`, and
+  a `for` loop's exit status hid the failure. Name them in order.
 - **A guard read from React state is not a guard** (2026-10-14). A handler
   sees the state of the render it was made in, so two events before a
   re-render both pass a `saving` or `canSave` check. Guard with a ref; let
@@ -202,7 +211,7 @@ Each line points at the section that owns the detail.
 ### Bugs
 
 1. ✅ **A new custom order shows TWICE** (found by Garrett 2026-10-13; fixed
-   2026-10-14, record below). ⚠ The
+   2026-10-14 in `2f258b5`, record below). ⚠ The
    database holds ONE row — a query for custom orders sharing a name and
    creation second returned nothing — so the duplicate is on screen. The
    cause, from the code: the store's `addOrder` prepends the created row with
@@ -248,9 +257,34 @@ Each line points at the section that owns the detail.
    no `console.error` in either run. Strict typecheck with every module real,
    none stood in: 0 errors in both trees, a planted error caught in each of the
    three changed files, and a misuse of the result type caught.
-2. **A claim's Help Scout "Shipped" note misses its tracking number** when the
+2. ✅ **A claim's Help Scout "Shipped" note misses its tracking number** when the
    number is entered after the move — which, for claims, is usual (item 45).
    A short note when a tracking number is added to a claim already at Shipped.
+
+   **Fixed 2026-10-14** (`patch_claim_tracking_note.py`, migration
+   `2026-10-14-claim-tracking-note.sql`). Reproduced end to end first — the
+   box's three migrations on real Postgres, the REAL `lib/claimHelpScout` and
+   `lib/helpscout`, `fetch` recorded: the Shipped note went without a number
+   and nothing followed when it came. The trigger fired only on `stage`, and a
+   claim's number never moves its stage (2026-10-13), so nothing was queued.
+   **Decided by Garrett 2026-10-14:** a note when the number is ADDED,
+   CORRECTED (old and new) or CLEARED on a claim at Shipped OR Resolved; none
+   for a carrier changed alone; sent by the 15-minute sweep, the route
+   unchanged. A closed claim gets none. The trigger now also fires on
+   `tracking_number` and queues a `tracking` event (`tracking_before` holds the
+   old number), except on a move INTO Shipped, whose stage note carries it.
+   ⚠ **DEPLOYED CODE FIRST, MIGRATION SECOND — the reverse of the usual
+   order, shown, not assumed:** the old sender words any event but `created`
+   as a stage move, so with the migration first it put "moved to Shipped" into
+   Help Scout for a number saved, in 7 of 16 cases; the new sender before the
+   migration is identical to the old.
+   **Proved:** 16 cases, four configurations (both versions, both deploy
+   orders) — added, corrected, cleared, at Resolved, carrier alone, the same
+   number, padded and empty, a closed claim, a move to Resolved with a new
+   number, a move back into Shipped, a claim logged by hand, a sample; closing,
+   reopening and deleting unchanged. Migration run twice over existing rows:
+   identical checks, nothing backfilled, every existing row unchanged. Strict
+   typecheck: 0 errors in both versions, a planted error caught.
 3. **The attachment DELETE skips its archived check if its `orders` read
    fails.**
 4. **A Shopify project's Files tab (`ProjectFiles`) lists files it cannot
@@ -317,6 +351,21 @@ Each line points at the section that owns the detail.
     1.x (icon renames).
 27. **Renaming the Shopify attribute "Est. Production Finish"** to match "Ship
     from factory" — only with the website team, who may read it.
+
+### Found 2026-10-14
+
+28. **`WarrantyClaimModal` can be closed while it saves** (Escape, Cancel, X,
+    the backdrop), so a refusal that arrives after is lost from view. Nothing
+    is created wrongly. `NewOrderModal` refuses to close while saving.
+29. **Both create modals' Cancel and Create are not pills** — the 2026-10-07
+    rule. `NewOrderModal` uses `rounded-lg`.
+30. **A claim closed and moved in ONE update gets its notes out of order:**
+    "closed" before "moved to Resolved". Postgres fires the two triggers
+    alphabetically (`orders_claim_close_note` first). Seen in a test that wrote
+    both at once; whether the close route ever does is not yet read.
+31. **The sweep's alarm names a stuck note by its stage** (`the note for
+    "Shipped"`), so a stuck tracking note reads like the stage note. It still
+    names the claim.
 
 ## 7. Facts that cost something to learn
 

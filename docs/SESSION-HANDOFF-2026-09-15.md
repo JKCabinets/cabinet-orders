@@ -2323,6 +2323,8 @@ patch_docs_shopify_removal.py
 patch_docs_handoff_2026_10_13.py
 patch_created_row_once.py
 patch_docs_created_row_once.py
+patch_claim_tracking_note.py
+patch_docs_claim_tracking_note.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

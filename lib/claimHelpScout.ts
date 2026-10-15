@@ -257,7 +257,9 @@ export interface ClaimNoteEvent {
   id: number;
   /** Null for `deleted`: the claim row is gone (2026-10-07). */
   order_id: string | null;
-  event: "created" | "stage" | "deleted" | "closed" | "reopened";
+  /** `tracking` (2026-10-14): the number added, changed or cleared on a claim
+   *  at Shipped or Resolved, its stage unchanged. See the migration. */
+  event: "created" | "stage" | "deleted" | "closed" | "reopened" | "tracking";
   /** For `closed`: approved or denied, why, and who (2026-10-13). For `reopened`: what it had been closed as. */
   outcome?: string | null;
   reason?: string | null;
@@ -269,6 +271,8 @@ export interface ClaimNoteEvent {
   to_stage: string;
   claimed_by: string | null;
   tracking: string | null;
+  /** For `tracking`: "UPS 1Z…" as it was before the change; null when added. */
+  tracking_before?: string | null;
   happened_at: string;
 }
 
@@ -306,6 +310,20 @@ export function claimNoteEventHtml(n: ClaimNoteEvent, claimer: string | null): s
   }
   if (n.event === "reopened") {
     return `<p>Warranty claim ${esc(claim)} was reopened in the OMS, ${when}${n.outcome ? `; it had been closed as ${esc(n.outcome)}` : ""}.</p>`;
+  }
+  // ⚠ A NUMBER THAT CAME AFTER THE MOVE (2026-10-14). A claim's number usually
+  // arrives after it is moved to Shipped, and the Shipped note had already gone
+  // without one. Added, corrected or cleared: the note says which, and gives
+  // the old number on a correction -- whoever answers may have quoted it.
+  if (n.event === "tracking") {
+    const at = `(at ${esc(n.to_stage)})`;
+    const first = n.tracking && n.tracking_before
+      ? `Tracking number on warranty claim ${esc(claim)} changed ${at}, ${when}: now ${esc(n.tracking)}, was ${esc(n.tracking_before)}.`
+      : n.tracking
+        ? `Tracking number added to warranty claim ${esc(claim)} ${at}, ${when}: ${esc(n.tracking)}.`
+        : `Tracking number removed from warranty claim ${esc(claim)} ${at}, ${when}. It was ${esc(n.tracking_before ?? "")}; it has none now.`;
+    return [first, claimer ? `Claimed by ${esc(claimer)}.` : "Not claimed by anyone yet."]
+      .map((p) => `<p>${p}</p>`).join("\n");
   }
   const parts = [n.event === "created"
     ? `Warranty claim ${esc(claim)} created, at ${esc(n.to_stage)}, ${when}.`
