@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyCronAuth } from "@/lib/cronAuth";
 import { supabase } from "@/lib/supabase";
 import { getShopifyToken, isValidShopifyDomain } from "@/lib/shopify";
+import { removeShopifyPurchase } from "@/lib/shopifyRemoval";
 
 /**
  * Ingestion health — does the OMS have the orders Shopify has?
@@ -40,12 +41,51 @@ import { getShopifyToken, isValidShopifyDomain } from "@/lib/shopify";
  * SUBSCRIPTIONS ARE REPORTED, NOT JUDGED
  *   The topic list is still included for diagnosis, because it is useful when
  *   something IS wrong. It no longer decides the outcome.
+ *
+ * ⚠ AND THE REVERSE (2026-10-19): DOES SHOPIFY STILL HAVE WHAT WE HOLD?
+ *   The check above catches an order Shopify has and we lack. It could not see
+ *   the opposite -- a purchase still here after Shopify deleted or cancelled
+ *   it, its webhook lost -- because a poll of current orders never notices an
+ *   absence: that is the SHO-1051 shape. Every project with a Shopify id is now
+ *   asked about by id (`nodes`, 250 at a time). One that is GONE, or cancelled
+ *   longer ago than the grace window, is removed exactly as the webhook would
+ *   have removed it -- `removeShopifyPurchase`, one implementation -- and the
+ *   check goes RED, naming it: a removal here means a webhook was missed
+ *   (Garrett, 2026-10-19). Logged to `webhook_events` as `reconcile/deleted` or
+ *   `reconcile/cancelled`.
+ *
+ *   ⚠ IT ACTS ONLY ON AN ANSWER THAT CHECKS OUT: HTTP 200, no `errors`, one
+ *   node per id asked, every present node the id that was asked. Anything else
+ *   removes nothing and goes red. A wrong store or token answers "gone" for
+ *   everything, so:
+ *
+ *   ⚠ MORE THAN ONE GONE IN ONE RUN REMOVES NONE (Garrett, 2026-10-19). All are
+ *   named and a person looks. A purchase a warranty claim refers to is never
+ *   removed (as the webhook refuses it) and stays red until a person decides --
+ *   and, still "gone", it counts toward that one.
  */
 
 const API_VERSION = "2026-04";
 
 /** How many recent Shopify orders to reconcile. */
 const SAMPLE_SIZE = 10;
+
+/** Ids per `nodes` query: Shopify's limit. */
+const NODES_BATCH = 250;
+
+/** More purchases than this gone in one run, and none is removed (Garrett, 2026-10-19). */
+const MAX_REMOVALS_PER_RUN = 1;
+
+/** A page of projects read from the database. */
+const PROJECT_PAGE = 1000;
+
+interface GoneFromShopify {
+  projectId: string;
+  shopifyId: string;
+  how: "deleted" | "cancelled";
+  /** Shopify's order name, when it still has the order (a cancel). */
+  name?: string;
+}
 
 interface ShopifyOrder {
   gid: string;
@@ -89,6 +129,57 @@ async function recentShopifyOrders(domain: string, token: string): Promise<Shopi
       cancelledAt: e?.node?.cancelledAt ? String(e.node.cancelledAt) : null,
     };
   }).filter((o: ShopifyOrder) => o.numericId);
+}
+
+/** Every project with a Shopify id. Throws if the database cannot be read. */
+async function heldPurchases(): Promise<{ id: string; shopify_id: string }[]> {
+  const out: { id: string; shopify_id: string }[] = [];
+  for (let from = 0; ; from += PROJECT_PAGE) {
+    const { data, error } = await supabase
+      .from("projects").select("id, shopify_id")
+      .not("shopify_id", "is", null).order("id").range(from, from + PROJECT_PAGE - 1);
+    if (error) throw new Error(`could not read projects from the database: ${error.message}`);
+    for (const r of data ?? []) out.push({ id: String(r.id), shopify_id: String(r.shopify_id) });
+    if (!data || data.length < PROJECT_PAGE) return out;
+  }
+}
+
+/**
+ * Which held purchases Shopify no longer has, or has cancelled before `cutoff`.
+ * THROWS on any answer that does not check out -- the caller then removes
+ * nothing.
+ */
+async function goneFromShopify(
+  domain: string, token: string, held: { id: string; shopify_id: string }[], cutoff: number,
+): Promise<{ gone: GoneFromShopify[]; recentCancels: number; unusableIds: number }> {
+  const gone: GoneFromShopify[] = [];
+  let recentCancels = 0;
+  const usable = held.filter(p => /^\d+$/.test(p.shopify_id));
+  for (let i = 0; i < usable.length; i += NODES_BATCH) {
+    const batch = usable.slice(i, i + NODES_BATCH);
+    const asked = batch.map(p => `gid://shopify/Order/${p.shopify_id}`);
+    const q = `query {
+      nodes(ids: [${asked.map(id => JSON.stringify(id)).join(", ")}]) { ... on Order { id name cancelledAt } }
+    }`;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const body = (await graphql(domain, token, q)) as any;
+    if (body?.errors) throw new Error(`Shopify answered with errors: ${JSON.stringify(body.errors).slice(0, 200)}`);
+    const nodes = body?.data?.nodes;
+    if (!Array.isArray(nodes) || nodes.length !== batch.length) {
+      throw new Error(`Shopify answered ${Array.isArray(nodes) ? nodes.length : "no list"} for ${batch.length} ids asked`);
+    }
+    nodes.forEach((node, k) => {
+      const p = batch[k];
+      if (node === null) { gone.push({ projectId: p.id, shopifyId: p.shopify_id, how: "deleted" }); return; }
+      if (node?.id !== asked[k]) throw new Error(`Shopify answered ${String(node?.id)} where ${asked[k]} was asked`);
+      if (!node.cancelledAt) return;
+      // A cancel still inside the grace window is the webhook's to remove.
+      const t = Date.parse(String(node.cancelledAt));
+      if (Number.isFinite(t) && t < cutoff) gone.push({ projectId: p.id, shopifyId: p.shopify_id, how: "cancelled", name: String(node.name ?? "") });
+      else recentCancels++;
+    });
+  }
+  return { gone, recentCancels, unusableIds: held.length - usable.length };
 }
 
 async function subscriptionTopics(domain: string, token: string): Promise<string[]> {
@@ -150,16 +241,21 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  detail.shopify_orders_checked = orders.length;
-  if (orders.length === 0) {
-    // A store with no orders has nothing to miss. Quiet, correctly.
-    return NextResponse.json({ ok: true, note: "no orders in Shopify to reconcile", ...detail });
-  }
-
   const graceMin = Number(process.env.WEBHOOK_RECONCILE_GRACE_MINUTES ?? "15");
   const grace = Number.isFinite(graceMin) && graceMin > 0 ? graceMin : 15;
   const cutoff = Date.now() - grace * 60 * 1000;
   detail.grace_minutes = grace;
+
+  detail.shopify_orders_checked = orders.length;
+  // ⚠ THE EARLY "OK" RETURNS BELOW ARE NOTES NOW (2026-10-19): returning
+  // there skipped the reverse check, and a store whose every order was deleted
+  // is exactly when it matters.
+  forward: {
+  if (orders.length === 0) {
+    // A store with no orders has nothing to miss. Quiet, correctly.
+    detail.note = "no orders in Shopify to reconcile";
+    break forward;
+  }
 
   // An order still inside the grace window may simply be in flight, or
   // awaiting a Shopify retry. Not a failure yet.
@@ -177,7 +273,8 @@ export async function GET(req: NextRequest) {
   });
   detail.settled_orders_checked = settled.length;
   if (settled.length === 0) {
-    return NextResponse.json({ ok: true, note: "all recent orders still inside the grace window", ...detail });
+    detail.note = "all recent orders still inside the grace window";
+    break forward;
   }
 
   // Reconcile against PROJECTS, not orders.
@@ -213,6 +310,50 @@ export async function GET(req: NextRequest) {
       + `${missing.map(o => o.name).join(", ")}. Ingestion is not working. `
       + `Check: docker logs <container> | grep shopify-webhook`
     );
+  }
+  } // forward
+
+  // ── The reverse: does Shopify still have the purchases we hold? ──────
+  try {
+    const held = await heldPurchases();
+    detail.oms_purchases_checked = held.length;
+    const { gone, recentCancels, unusableIds } = await goneFromShopify(domain, token, held, cutoff);
+    detail.recent_cancels_left_to_the_webhook = recentCancels;
+    if (unusableIds > 0) detail.unusable_shopify_ids = unusableIds;
+    detail.gone_from_shopify = gone.map(g => ({ project: g.projectId, how: g.how, ...(g.name ? { name: g.name } : {}) }));
+    const named = gone.map(g => `${g.projectId} (${g.how})`).join(", ");
+
+    if (gone.length > MAX_REMOVALS_PER_RUN) {
+      problems.push(
+        `${gone.length} purchases in the OMS look gone from Shopify: ${named}. More than `
+        + `${MAX_REMOVALS_PER_RUN} at once, so NOTHING was removed -- check the store and token `
+        + `first; a wrong one makes every order look gone.`
+      );
+    } else if (gone.length === 1) {
+      const g = gone[0];
+      const r = await removeShopifyPurchase(g.shopifyId, `reconcile/${g.how}`);
+      if (r.outcome === "removed") {
+        detail.reconciled_removed = { project: r.projectId, how: g.how, groups: r.groups };
+        problems.push(
+          `Removed ${r.projectId}: its Shopify order was ${g.how} and the webhook never removed it. `
+          + `A webhook was missed. Check: docker logs <container> | grep shopify-webhook`
+        );
+      } else if (r.outcome === "blocked") {
+        problems.push(
+          `${r.projectId} is ${g.how} in Shopify, but warranty claim(s) ${r.blockedBy.join(", ")} `
+          + `refer to it, so nothing was removed. A person decides.`
+        );
+      } else if (r.outcome === "failed") {
+        problems.push(
+          `${g.projectId} is ${g.how} in Shopify; removing it failed at ${r.table}: ${r.message}. `
+          + `It is tried again next hour.`
+        );
+      } else {
+        detail.reconciled_note = `${g.projectId} was already gone -- the webhook got there first`;
+      }
+    }
+  } catch (err) {
+    problems.push(`Could not check the OMS's purchases against Shopify, so nothing was removed: ${String(err)}`);
   }
 
   if (problems.length > 0) {

@@ -7,7 +7,8 @@ import { decodeSku, buildSkuFromAvisNamesDetailed, ensureSkuMaps, skuMapsUnavail
 import { parseModifications } from "@/lib/modifications";
 import type { ReviewReason } from "@/lib/data";
 import { readConsent, type TermsConsent } from "@/lib/consent";
-import { removeOrderFiles } from "@/lib/orderFiles";
+import { logWebhook } from "@/lib/webhookLog";
+import { removeShopifyPurchase } from "@/lib/shopifyRemoval";
 // isSampleVendor and lookupVendorsForSkus are no longer imported here.
 // Classification moved into lib/categories (one implementation, shared with
 // grouping), and the per-line vendor now comes from the payload rather than
@@ -20,72 +21,9 @@ import {
 
 const SHOPIFY_SECRET = process.env.SHOPIFY_WEBHOOK_SECRET ?? "";
 
-/**
- * Log a webhook outcome so an order that fails to appear is diagnosable.
- *
- * This route previously logged nothing at all, which meant "Shopify never
- * called us", "called and the insert was rejected" and "called with a bad
- * HMAC" were indistinguishable from the box -- and the Shopify admin
- * webhook page shows stale delivery data.
- *
- *   docker logs <container> | grep shopify-webhook
- *
- * METADATA ONLY. Never customer names, addresses or line detail.
- */
-/**
- * Record what this delivery did.
- *
- * ⚠ TWO DESTINATIONS ON PURPOSE. The row in `webhook_events` is the durable
- * record -- console output lives in a container that is replaced on every
- * deploy, which is why the SHO-1051 deletion bug survived two attempts and
- * was nearly impossible to diagnose. The console line stays because it is
- * what you can still read during a deploy, before the container is healthy,
- * or when the database is the thing that is broken.
- *
- * ⚠ THE INSERT IS NOT AWAITED. A webhook handler must not fail or slow
- * because logging failed: Shopify retries on a non-2xx, so an error here
- * would become a redelivery loop for a webhook that already did its work.
- * This runs in a long-lived container, so the promise settles after the
- * response rather than being discarded.
- *
- * ⚠ IT FALLS BACK TO stderr IF THE WRITE FAILS. A log table that quietly
- * stops recording is the same shape as the bug this replaces -- something
- * reporting success while doing nothing.
- */
-function logWebhook(outcome: string, extra?: Record<string, unknown>) {
-  console.warn("[shopify-webhook]", JSON.stringify({ outcome, ...extra }));
-
-  // The three fields every caller means are columns; the rest is per-outcome
-  // and stays in `detail` -- `blocked_by` on a refused deletion, `table` and
-  // `message` on a failed one, `groups` on a success.
-  const { topic, shopify_id, order_id, ...detail } = (extra ?? {}) as {
-    topic?: unknown; shopify_id?: unknown; order_id?: unknown;
-    [k: string]: unknown;
-  };
-
-  void supabase
-    .from("webhook_events")
-    .insert({
-      source: "shopify",
-      topic: typeof topic === "string" ? topic : null,
-      outcome,
-      shopify_id: shopify_id == null ? null : String(shopify_id),
-      order_id: typeof order_id === "string" ? order_id : null,
-      detail: Object.keys(detail).length > 0 ? detail : null,
-    })
-    .then(
-      ({ error }) => {
-        if (error) {
-          console.warn("[shopify-webhook] log_insert_failed", JSON.stringify({
-            outcome, message: error.message,
-          }));
-        }
-      },
-      (err: unknown) => {
-        console.warn("[shopify-webhook] log_insert_threw", String(err));
-      },
-    );
-}
+// ⚠ logWebhook LIVES IN lib/webhookLog (2026-10-19), moved there unchanged so
+// the hourly reconciler records a removal in the same table and shape. Read
+// its comment there: why two destinations, why the insert is not awaited.
 
 // Reject payloads larger than 5 MB — Shopify's largest legitimate order payloads
 // are well under 1 MB; anything larger is either malformed or an abuse attempt.
@@ -1093,121 +1031,29 @@ export async function POST(req: NextRequest) {
 
   // ─── Order cancelled ──────────────────────────────────────────────────────
   if (topic === "orders/cancelled" || topic === "orders/delete" || topic === "orders/deleted") {
-    const { data: project } = await supabase
-      .from("projects").select("id").eq("shopify_id", shopifyId).maybeSingle();
-
-    // ⚠ A DELETION WE CANNOT MATCH USED TO VANISH. `if (project)` had no else,
-    // so an unknown shopify_id returned 200 and logged nothing at all -- the
-    // same silence as a delete that failed.
-    if (!project) {
-      logWebhook("delete_no_project", { shopify_id: shopifyId, topic });
+    // ⚠ THE REMOVAL IS lib/shopifyRemoval (2026-10-19): moved there so the
+    // hourly reconciler in webhook-health removes a purchase whose webhook was
+    // lost exactly as this does. It decides and logs; this answers Shopify.
+    const removal = await removeShopifyPurchase(shopifyId, topic);
+    if (removal.outcome === "no_project") {
       return NextResponse.json({ received: true, skipped: "no_matching_project" });
     }
-
-    const { data: groups } = await supabase
-      .from("orders").select("id").eq("project_id", project.id);
-    const ids = (groups ?? []).map(g => g.id);
-
-    // ⚠ WARRANTY CLAIMS HOLD THE ONE NO ACTION EDGE LEFT.
-    // `orders.about_order_id -> orders` is NO ACTION, and a claim is
-    // standalone -- it has no project_id, so it is never among `ids` and never
-    // gets cleared. Postgres rejects the orders delete, the projects delete
-    // fails behind it, and before this commit both errors were discarded and
-    // the handler logged "removed". SHO-1051 sat in the OMS through two
-    // deletions that way.
-    //
-    // Refused rather than resolved: nulling about_order_id orphans the claim
-    // and deleting it destroys real work because somebody tidied up Shopify.
-    // A warranty claim is evidence and should outlive the purchase record, so
-    // a person decides. 200 rather than 5xx because retrying cannot clear a
-    // claim -- Shopify would just redeliver this forever.
-    if (ids.length > 0) {
-      const { data: referrers } = await supabase
-        .from("orders").select("id, type").in("about_order_id", ids);
-      const blocking = (referrers ?? []).filter(r => !ids.includes(r.id));
-      if (blocking.length > 0) {
-        logWebhook("delete_blocked", {
-          order_id: project.id, shopify_id: shopifyId, topic,
-          blocked_by: blocking.map(r => r.id),
-        });
-        return NextResponse.json({
-          received: true,
-          skipped: "blocked_by_references",
-          blocked_by: blocking.map(r => r.id),
-        });
-      }
-    }
-
-    if (ids.length > 0) {
-      // ⚠ THESE FOUR ARE BELT TO CASCADE'S BRACES, NOT THE LOAD-BEARING STEP.
-      // The comment here used to say every foreign key on these tables was
-      // NO ACTION and that children therefore had to go first. They are all
-      // CASCADE today -- damage_reports, order_acknowledgments, order_activity
-      // and order_attachments -- and that stale claim is what sent the
-      // 2026-09-14 investigation hunting a child table when the blocker was
-      // `orders.about_order_id`. Kept because they are harmless and explicit;
-      // the comment is what needed fixing.
-      //
-      // ⚠ THE FILES GO TOO (Garrett, 2026-10-13). This said leaving them was
-      // deliberate -- "silently destroying a customer's uploaded files on a
-      // Shopify cancel is a decision" -- and the decision is: once these rows
-      // are gone nothing in the OMS can show or reach those files, so they go
-      // with the order, FIRST (below).
-      //
-      // ⚠ EVERY ERROR IS CHECKED AND RETURNED. Six of these discarded their
-      // error, so a rejected delete was indistinguishable from a completed
-      // one. A 5xx here is correct: these failures ARE retryable, unlike the
-      // warranty case above.
-      const files = await removeOrderFiles(ids);
-      if (!files.ok) {
-        logWebhook("delete_failed", {
-          order_id: project.id, shopify_id: shopifyId, topic,
-          table: "storage", message: files.error,
-        });
-        return NextResponse.json(
-          { error: "delete_failed", table: "storage", message: files.error },
-          { status: 500 },
-        );
-      }
-
-      for (const step of [
-        { table: "order_activity", column: "order_id" },
-        { table: "order_acknowledgments", column: "order_id" },
-        { table: "order_attachments", column: "order_id" },
-        { table: "damage_reports", column: "order_id" },
-        { table: "orders", column: "id" },
-      ]) {
-        const { error: delError } = await supabase
-          .from(step.table).delete().in(step.column, ids);
-        if (delError) {
-          logWebhook("delete_failed", {
-            order_id: project.id, shopify_id: shopifyId, topic,
-            table: step.table, message: delError.message,
-          });
-          return NextResponse.json(
-            { error: "delete_failed", table: step.table, message: delError.message },
-            { status: 500 },
-          );
-        }
-      }
-    }
-
-    const { error: projectError } = await supabase
-      .from("projects").delete().eq("id", project.id);
-    if (projectError) {
-      logWebhook("delete_failed", {
-        order_id: project.id, shopify_id: shopifyId, topic,
-        table: "projects", message: projectError.message,
+    // 200 rather than 5xx for a claim: retrying cannot clear a claim --
+    // Shopify would just redeliver this forever. A person decides.
+    if (removal.outcome === "blocked") {
+      return NextResponse.json({
+        received: true,
+        skipped: "blocked_by_references",
+        blocked_by: removal.blockedBy,
       });
+    }
+    // A 5xx IS correct here: these failures are retryable, unlike the claim.
+    if (removal.outcome === "failed") {
       return NextResponse.json(
-        { error: "delete_failed", table: "projects", message: projectError.message },
+        { error: "delete_failed", table: removal.table, message: removal.message },
         { status: 500 },
       );
     }
-
-    logWebhook("removed", {
-      order_id: project.id, shopify_id: shopifyId, topic, groups: ids.length,
-    });
   }
 
   return NextResponse.json({ received: true });

@@ -127,6 +127,14 @@ Add these to the old handoff's "Process" list when it is next touched.
   code, which does whatever it does with an unknown kind — here, word it as a
   stage move. Prove the order: old code over the new database, and new code
   over the old one.
+- **A stand-in must do what it stands for, and a case must inject what it
+  names** (2026-10-19). The database stand-in logged deletes without deleting
+  and had no foreign keys, so "what is left" read the same before and after;
+  a "wrong id" case injected nothing, because its first node was the deleted
+  one — and the run looked like a pass. And a script assembled with `cat` from
+  a missing part ran no edits and exited 0. Make the stand-in delete, enforce
+  the key that matters, print what was injected, and assemble only when every
+  part exists.
 - **Check the checks** (2026-10-14). Two empty listings compare equal, so an
   "unchanged" check must refuse an empty side; and a glob runs migrations
   ALPHABETICALLY, not in the order they ran — `…-close` before `…-notes`, and
@@ -342,8 +350,31 @@ Each line points at the section that owns the detail.
 
 ### Known gaps
 
-10. **Nothing reconciles deletions** — a missed Shopify `delete` leaves the
-    order in the OMS (old Open 5).
+10. ✅ **Nothing reconciles deletions** — a missed Shopify `delete` leaves the
+    order in the OMS (old Open 5). Built 2026-10-19
+    (`patch_reconcile_shopify_deletions.py`). **Decided by Garrett 2026-10-19:**
+    remove it automatically, as the webhook would, and report it; MORE THAN ONE
+    gone in one run removes none and alarms (a wrong store or token makes every
+    order look gone); a removal turns the check RED — it means a webhook was
+    missed. The webhook's removal moved, unchanged, to `removeShopifyPurchase`
+    in `lib/shopifyRemoval` (and `logWebhook` to `lib/webhookLog`); the webhook
+    and `webhook-health`'s new reverse pass both call it. That pass asks Shopify
+    about every held project by id (`nodes`, 250 at a time) and acts only on an
+    answer that checks out. Its three reads now REFUSE on an error — they
+    ignored them: a failed project lookup answered Shopify 200 "no project" (the
+    deletion lost); a failed groups read deleted the project and left its
+    groups and files; a failed claim check deleted a claimed purchase's files.
+    **Proved:** reproduced first — the deployed check green with a deleted
+    order still held, never asking about it. The real webhook, both versions:
+    ten paths identical in answer, log rows, files removed and rows left; the
+    three read failures now refuse with nothing touched. The real
+    `webhook-health`, 18 cases: a deletion and an old cancel removed and red; a
+    recent cancel left to the webhook; two gone, every node null, `errors`, a
+    short answer, a wrong id and an unreadable database all remove nothing;
+    a claimed purchase blocked and named; two batches past 250; the forward
+    check's status, count and note unchanged throughout. Strict typecheck: the
+    same seven errors in both (all modules not pulled), a planted error caught
+    in each of the four files. Item 4 was `fcd9969`.
 11. **Orphaned claims are unchecked** — `projects.claimed_by` holds two id
     formats (old Open 4).
 12. **`orders.date` and `order_activity.time` are display strings, not ISO**

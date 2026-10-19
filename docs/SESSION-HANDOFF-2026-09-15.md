@@ -524,7 +524,10 @@ truth for what orders exist, do we have them? **Read that file before touching
 anything in this area.** On 2026-09-15 it was green hourly: `missing_count: 0`,
 with `ORDERS_UPDATED` and `ORDERS_DELETE` both subscribed.
 
-⚠ **IT CANNOT SEE THE REVERSE.** It catches orders Shopify has that we lack. An
+⚠ **IT CANNOT SEE THE REVERSE.** ⚠ **SUPERSEDED 2026-10-19: it can — it now asks
+Shopify about every held purchase and removes one that is gone (OMS-STATE §3,
+"A lost deletion is caught within the hour").** What follows was true until
+then. It catches orders Shopify has that we lack. An
 order WE have that Shopify has deleted is invisible to it — a poll of current
 orders never notices an absence — so deletions depend entirely on the webhook
 arriving. That is the 1051 shape. `webhook_events` now records deliveries, but
@@ -2333,6 +2336,8 @@ patch_attachment_delete_fail_closed.py
 patch_docs_attachment_delete_fail_closed.py
 patch_project_files_download.py
 patch_docs_project_files_download.py
+patch_reconcile_shopify_deletions.py
+patch_docs_reconcile_shopify_deletions.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it
