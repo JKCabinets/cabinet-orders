@@ -2329,6 +2329,8 @@ patch_activity_real_changes.py
 patch_docs_activity_real_changes.py
 patch_source_label_warranty.py
 patch_docs_source_label_warranty.py
+patch_attachment_delete_fail_closed.py
+patch_docs_attachment_delete_fail_closed.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

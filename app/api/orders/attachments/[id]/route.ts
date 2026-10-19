@@ -63,17 +63,32 @@ export const DELETE = withClaimOverrideLog(async function DELETE(
   // work is editing the record of what happened. The row is loaded here only
   // for that question -- everything else this route needs is on the
   // attachment.
-  const { data: order } = await supabase
+  //
+  // ⚠ AND A READ THAT FAILS REFUSES (2026-10-19). This asked only `if (order)`,
+  // so a failed read -- a timeout, a dropped connection -- skipped the check,
+  // and if the claim gate's own read then worked, the file and its row were
+  // deleted from archived work: shown, with the read failing once. Refused as
+  // purchaseOf refuses an unreadable purchase, and for its reason. A missing
+  // order is a 404, told apart from a failure by maybeSingle.
+  const { data: order, error: orderErr } = await supabase
     .from("orders")
     .select("id, archived, project_id")
     .eq("id", attachment.order_id)
-    .single();
-  if (order) {
-    const purchase = await purchaseOf(order);
-    if (purchase instanceof NextResponse) return purchase;
-    const archivedState = archivedVia(order, purchase);
-    if (archivedState) return archivedReadOnly(order, archivedState);
+    .maybeSingle();
+  if (orderErr) {
+    return NextResponse.json(
+      {
+        error: "order_unavailable",
+        message: "Could not read the order this file belongs to, so nothing was deleted. Try again.",
+      },
+      { status: 500 },
+    );
   }
+  if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 });
+  const purchase = await purchaseOf(order);
+  if (purchase instanceof NextResponse) return purchase;
+  const archivedState = archivedVia(order, purchase);
+  if (archivedState) return archivedReadOnly(order, archivedState);
 
   // ⚠ GATED LIKE AN UPLOAD, not more strictly. Removing a signed receipt
   // from another member's claimed row is precisely the crossed-wires case

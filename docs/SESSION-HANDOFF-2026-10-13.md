@@ -299,8 +299,18 @@ Each line points at the section that owns the detail.
    and was not closed — so nothing could be queued yet, and nothing was.
    Needs: a claim at Shipped with no number, then a number, then a change; up
    to 15 minutes each for the sweep.
-3. **The attachment DELETE skips its archived check if its `orders` read
-   fails.**
+3. ✅ **The attachment DELETE skips its archived check if its `orders` read
+   fails.** Fixed 2026-10-19 (`patch_attachment_delete_fail_closed.py`). It
+   asked `if (order)`, so a failed read skipped the check; if the claim gate's
+   own read then worked, the file AND its row were deleted from archived work.
+   Reproduced with the real route and the read failing once: archived row and
+   archived purchase both answered 200, both destroyed. Now a failed read is a
+   500 `order_unavailable` ("nothing was deleted. Try again"), as `purchaseOf`
+   refuses an unreadable purchase; a missing order is a 404, told apart by
+   `maybeSingle`. **Proved:** 9 cases, both versions — the three failed reads
+   refuse with nothing destroyed; the five ordinary cases identical call for
+   call. Strict typecheck: no error in the route in either, a planted error
+   caught, and removing the not-found guard does not compile.
 4. **A Shopify project's Files tab (`ProjectFiles`) lists files it cannot
    open** — no download. A custom job's Files tab is the panel, with Download.
 
@@ -425,6 +435,10 @@ Each line points at the section that owns the detail.
     buttons inside it. Invalid HTML; React warns it causes a hydration error (a
     browser parsing the server's HTML closes the outer button at the inner).
     Found rendering the table for item 33; the same before and after it.
+36. **The attachment UPLOAD answers a failed `orders` read with "Order not
+    found"** (404). It refuses, so nothing is written wrongly — but it says the
+    order does not exist when it could not be read. The DELETE now tells the two
+    apart (item 3); the upload should say the same.
 
 ## 7. Facts that cost something to learn
 
