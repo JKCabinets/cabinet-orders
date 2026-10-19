@@ -311,8 +311,21 @@ Each line points at the section that owns the detail.
    refuse with nothing destroyed; the five ordinary cases identical call for
    call. Strict typecheck: no error in the route in either, a planted error
    caught, and removing the not-found guard does not compile.
-4. **A Shopify project's Files tab (`ProjectFiles`) lists files it cannot
+4. ✅ **A Shopify project's Files tab (`ProjectFiles`) lists files it cannot
    open** — no download. A custom job's Files tab is the panel, with Download.
+   Fixed 2026-10-19 (`patch_project_files_download.py`). Wider than this said:
+   `ProjectFiles` is every type's Files tab but a custom job's, so a CLAIM's
+   photos could not be opened there either. Every row now has the panel's
+   Download, through `downloadAttachment()` in `lib/attachments` — moved out
+   of the panel, which now calls it too, so a file opens one way. A refusal
+   shows on the tab. Claim photos sign from the right bucket: promotion copies
+   them into `order-attachments`. **Proved:** the real modal, both versions —
+   the Shopify project's and the claim's Files tabs differ by one Download per
+   file and nothing else; pressing one asks for the signed link and opens it
+   under the file's name, a refused one says why; the custom job's panel is
+   byte-identical and downloads exactly as before. Strict typecheck of the
+   39-file closure: 0 errors in both, a planted error caught in each changed
+   file. Commits before this one: item 33 `adb04ac`, item 3 `38f6860`.
 
 ### Unbuilt, decided
 

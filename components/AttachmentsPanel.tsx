@@ -5,7 +5,7 @@ import { Paperclip, Upload, X, Download, FileText, Image, File, Loader2, Trash2,
 import { readCustomSpecs, attachmentBin, type OrderType, type CustomSpecs, type AttachmentBin } from "@/lib/data";
 import { typeEverRequires } from "@/lib/requirements";
 import {
-  useAttachments, uploadAttachment, deleteAttachment, attachmentUrl, refreshAttachments,
+  useAttachments, uploadAttachment, deleteAttachment, downloadAttachment, refreshAttachments,
   type Attachment,
 } from "@/lib/attachments";
 
@@ -159,14 +159,9 @@ export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPa
 
   async function handleDownload(attachment: Attachment) {
     setDownloadingId(attachment.id);
-    const r = await attachmentUrl(attachment.id);
+    const r = await downloadAttachment(attachment);
     setDownloadingId(null);
-    if (!r.ok) { setError(`${attachment.file_name}: ${r.message}`); return; }
-    const a = document.createElement("a");
-    a.href = r.value;
-    a.download = attachment.file_name;
-    a.target = "_blank";
-    a.click();
+    if (!r.ok) setError(`${attachment.file_name}: ${r.message}`);
   }
 
   async function handleDelete(att: Attachment) {

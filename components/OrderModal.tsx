@@ -17,7 +17,7 @@ import { AvatarWithProfile } from "./AvatarWithProfile";
 import { useToast } from "./Toast";
 import { checkAttachmentGate } from "@/lib/stageGates";
 import { AttachmentsPanel, type AttachmentsPanelHandle } from "./AttachmentsPanel";
-import { useAttachmentsFor, refreshAttachments } from "@/lib/attachments";
+import { useAttachmentsFor, refreshAttachments, downloadAttachment, type Attachment } from "@/lib/attachments";
 import { FullOrderGroup, GroupIssueTag } from "./FullOrderGroup";
 import { OrderHeaderCards, ConsentMissingPill } from "./OrderHeaderCards";
 import { ClaimCloseButton, ClaimOutcomePill } from "./ClaimClose";
@@ -2371,6 +2371,19 @@ const GROUP_LABEL: Record<string, string> = {
  */
 function ProjectFiles({ groups }: { groups: Order[] }) {
   const lists = useAttachmentsFor(groups.map((g) => g.id));
+  // ⚠ IT LISTED FILES IT COULD NOT OPEN (until 2026-10-19): a name, its group,
+  // its kind -- and no way to get the file. Every row now has the panel's
+  // Download, through the same downloadAttachment. This tab is every type's
+  // but a custom job's, so a claim's photos were unopenable here too.
+  const [openingId, setOpeningId] = useState<number | null>(null);
+  const [openError, setOpenError] = useState<string | null>(null);
+  async function open(a: Attachment) {
+    setOpeningId(a.id);
+    setOpenError(null);
+    const r = await downloadAttachment(a);
+    setOpeningId(null);
+    if (!r.ok) setOpenError(`${a.file_name}: ${r.message}`);
+  }
   const labelOf = (g: Order) => GROUP_LABEL[g.type] ?? g.id;
   const rows = groups.flatMap((g) => (lists[g.id]?.files ?? []).map((a) => ({ g, a })));
   const failed = groups.filter((g) => lists[g.id]?.error);
@@ -2382,6 +2395,9 @@ function ProjectFiles({ groups }: { groups: Order[] }) {
 
   return (
     <div className="px-6 py-5 flex flex-col gap-2">
+      {openError && (
+        <p role="alert" className="text-[11px] text-red-400 px-1">{openError}</p>
+      )}
       {failed.map((g) => (
         <div key={"err-" + g.id} className="flex items-center justify-between gap-2 px-3 py-2 rounded-brand bg-red-950/30 border border-red-900/50">
           <p className="text-[11px] text-red-400">
@@ -2411,6 +2427,15 @@ function ProjectFiles({ groups }: { groups: Order[] }) {
               {a.kind === "customer_upload" && " · from the customer"}
             </p>
           </div>
+          <button
+            onClick={() => void open(a)}
+            disabled={openingId === a.id}
+            title="Download"
+            aria-label={`Download ${a.file_name}`}
+            className="p-1 text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] transition-colors disabled:opacity-50"
+          >
+            {openingId === a.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+          </button>
         </div>
       ))}
     </div>

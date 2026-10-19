@@ -240,3 +240,20 @@ export async function attachmentUrl(id: number): Promise<Outcome<string>> {
   }
   return { ok: true, value: body.url };
 }
+
+/**
+ * ⚠ THE ONE WAY TO OPEN A FILE (2026-10-19): a short-lived signed URL, handed
+ * to the browser as a download. It lived inside AttachmentsPanel, so the
+ * project Files tab -- which had to offer the same thing -- would have needed a
+ * second copy. Both call this; a refusal comes back for the caller to show.
+ */
+export async function downloadAttachment(a: Pick<Attachment, "id" | "file_name">): Promise<Outcome> {
+  const r = await attachmentUrl(a.id);
+  if (!r.ok) return r;
+  const link = document.createElement("a");
+  link.href = r.value;
+  link.download = a.file_name;
+  link.target = "_blank";
+  link.click();
+  return { ok: true, value: undefined };
+}
