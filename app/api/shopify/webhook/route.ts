@@ -3,7 +3,7 @@ import crypto from "crypto";
 import { supabase } from "@/lib/supabase";
 import { cleanInput } from "@/lib/auth";
 import { decodeHtmlEntities } from "@/lib/htmlEntities";
-import { decodeSku, buildSkuFromAvisNamesDetailed, ensureSkuMaps, skuMapsUnavailable, modificationMap } from "@/lib/skuDecoder";
+import { decodeSku, buildSkuFromAvisNamesDetailed, ensureSkuMaps, skuMapsUnavailable, modificationMap, lineOptionNames } from "@/lib/skuDecoder";
 import { parseModifications } from "@/lib/modifications";
 import type { ReviewReason } from "@/lib/data";
 import { readConsent, type TermsConsent } from "@/lib/consent";
@@ -201,8 +201,8 @@ function buildOrder(payload: Record<string, unknown>) {
     // whole family so Waypoint decodes regardless of the exact Avis naming.
     // Match on the TRIMMED name: label_cart comes straight from Avis, so a
     // stray space there ("Door Style 1 ") would otherwise match nothing.
-    const getPropLike = (re: RegExp) =>
-      props.find(p => re.test((p.name ?? "").trim()))?.value ?? "";
+    // ⚠ ONE RULE, lineOptionNames in lib/skuDecoder (2026-10-19): it also
+    // takes the kitchen designer's plain "Color", and Re-decode uses it too.
 
     const skuProp = props.find(p => p.name === "_sku");
     // Blank-aware base: a Shopify sku of "" (empty, not null) must still fall
@@ -217,8 +217,7 @@ function buildOrder(payload: Record<string, unknown>) {
     // numeric variant_id), so validation compares against a real SKU only.
     const variantSku = rawSku;
 
-    const avisDoorStyle   = getPropLike(/^_?Door\s*Style(\s*\d+)?$/i);
-    const avisColorSelect = getPropLike(/^_?Color\s*Selection(\s*\d+)?$/i);
+    const { doorStyle: avisDoorStyle, color: avisColorSelect } = lineOptionNames(props);
 
     const desc = String(i.name ?? "");
     let sku = (skuProp?.value ?? "").trim();

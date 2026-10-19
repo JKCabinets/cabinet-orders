@@ -559,6 +559,38 @@ Each line points at the section that owns the detail.
     functions match their migration (line endings aside — every live body has
     `\r\n`, from the SQL editor). Fix: a migration recording the live bodies.
 
+### Found 2026-10-19 (Garrett's screenshots of SHO-1057 to SHO-1059)
+
+38. ✅ **A kitchen-designer order lost its colour** — on the modal (the style
+    header read "Shaker", not "Shaker · Painted Linen") and on the vendor PDF.
+    Fixed 2026-10-19 (`patch_designer_color_and_ack.py`). The designer names
+    its line properties "Group", "Door Style", "Color"; the cart "Door Style 1",
+    "Color Selection". Ingest looked for "Color Selection" only, so a designer
+    line's colour was never found: stored `color` "", the SKU left the bare base
+    (`B36-1TD-BUTT`, not `B36-1TD-BUTT-410F-PL`), and everything that decodes
+    the SKU lost the colour (checked: 1057 and 1059 every line, 1058 none).
+    Now ONE rule, `lineOptionNames()` in `lib/skuDecoder`, used by ingest AND
+    Re-decode: "Color Selection" first, else the plain "Color"; Re-decode fills
+    a missing name from the line's stored properties. **After deploy: press
+    Re-decode on SHO-1057 and SHO-1059** — and look at the toe kick, which the
+    designer gave a door style and colour too, so it becomes `BTK8-410F-PL`, as
+    a cart line with those properties would. (1057's `DB18 4DWR` has a space in
+    its Shopify SKU; it decodes either way.) **Proved:** the rule on the real
+    property lists and on Avis's forms, look-alikes refused; Re-decode on 1059's
+    stored lines (repaired; 1058 untouched); the real webhook ingesting a
+    designer order (bare SKUs → full) and a cart order (identical). Strict
+    typecheck: the same 7 errors in both, a planted error caught in each file.
+39. ✅ **At New, once a file met "an acknowledgment or an attachment", nothing
+    offered to submit the acknowledgment** (SHO-1059: a photo met it; the
+    Waypoint row said "No acknowledgment submitted yet", with no Submit). The
+    acknowledgment panel hid its Submit wherever that requirement EXISTED, so
+    as not to repeat Next action's upload — and Next action offers it only while
+    the requirement is OUTSTANDING. Now the panel stands aside only while it is
+    outstanding, by the same test. **Proved:** the real modal, both versions,
+    with the file (deployed: no Submit anywhere; fixed: Submit) and without
+    (both: Next action's "Upload acknowledgment", the panel's Submit hidden).
+    Gap 12 was `a437617`.
+
 ## 7. Facts that cost something to learn
 
 - `CLAIM_MAX_REQUEST_BYTES` in `lib/claimIntake.ts` MUST EQUAL

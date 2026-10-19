@@ -86,6 +86,29 @@ export function decodeSku(sku: string): DecodedSku | null {
   return null;
 }
 
+/**
+ * ⚠ A LINE'S DOOR STYLE AND COLOR, READ FROM ITS PROPERTIES — ONE RULE
+ * (2026-10-19). Ingest had its own patterns, and Re-decode had none: the
+ * kitchen designer names the colour property plain "Color" (beside "Group" and
+ * "Door Style"), where the cart says "Color Selection" -- so a designer order's
+ * colour was never found, its line kept the bare base SKU, and the modal header
+ * and the vendor PDF lost the colour (SHO-1057, SHO-1059). Avis's family is
+ * matched as before ("_Door Style 1", "Color Selection 1", trailing spaces
+ * trimmed); "Color Selection" is looked for FIRST and the bare "Color" only if
+ * it is absent, so every order that read correctly reads the same.
+ */
+const DOOR_STYLE_PROP = /^_?Door\s*Style(\s*\d+)?$/i;
+const COLOR_SELECTION_PROP = /^_?Colou?r\s*Selection(\s*\d+)?$/i;
+const COLOR_PLAIN_PROP = /^_?Colou?r(\s*\d+)?$/i;
+
+export function lineOptionNames(
+  props: ReadonlyArray<{ name?: string | null; value?: string | null }> | null | undefined,
+): { doorStyle: string; color: string } {
+  const list = props ?? [];
+  const find = (re: RegExp) => list.find((p) => re.test((p.name ?? "").trim()))?.value ?? "";
+  return { doorStyle: find(DOOR_STYLE_PROP), color: find(COLOR_SELECTION_PROP) || find(COLOR_PLAIN_PROP) };
+}
+
 export interface AvisBuildResult {
   /** The composite SKU, or null if either name is not yet coded. */
   sku: string | null;

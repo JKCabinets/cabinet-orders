@@ -1,4 +1,4 @@
-import { decodeSku, buildSkuFromAvisNamesDetailed, modificationMap } from "@/lib/skuDecoder";
+import { decodeSku, buildSkuFromAvisNamesDetailed, modificationMap, lineOptionNames } from "@/lib/skuDecoder";
 import type { SkuItem, ReviewReason } from "@/lib/data";
 
 /**
@@ -97,15 +97,22 @@ export function reDecodeItems(items: SkuItem[]): ReDecodeResult {
     }
 
     // 2) Doesn't decode, but the line kept Avis names — try to rebuild.
-    if (item.door_style && item.color) {
-      const built = buildSkuFromAvisNamesDetailed(item.sku, item.door_style, item.color);
+    // ⚠ A NAME MISSING FROM ITS FIELD IS READ FROM THE LINE'S STORED
+    // PROPERTIES (2026-10-19), by the rule ingest uses: a kitchen-designer
+    // line was stored with color "" while its "Color" property held the name,
+    // so this step never ran for it and Re-decode could not repair it.
+    const fromProps = lineOptionNames(item.properties);
+    const doorName = item.door_style || fromProps.doorStyle;
+    const colorName = item.color || fromProps.color;
+    if (doorName && colorName) {
+      const built = buildSkuFromAvisNamesDetailed(item.sku, doorName, colorName);
       if (built.sku) {
         const d2 = decodeSku(built.sku);
         const next = settle({
           ...item,
           sku: built.sku,
-          door_style: d2?.doorStyle || item.door_style,
-          color: d2?.color || item.color,
+          door_style: d2?.doorStyle || doorName,
+          color: d2?.color || colorName,
         }, modIssues);
         if (wasFlagged && !next.needs_review) resolvedCount++;
         changed = true; // sku changed at minimum
