@@ -113,6 +113,11 @@ Add these to the old handoff's "Process" list when it is next touched.
   and the script refused its own re-run.
 - **A miss test must actually break the anchor.** Appending text after an
   anchor leaves it a substring; change a character INSIDE it.
+- **What the screen seems to show, ask the data** (2026-10-19). A new claim's
+  trail looked like an old claim's, and the first explanation — a number
+  reused, history inherited — was plausible and wrong. One query of the rows,
+  with their times, showed one save writing three lines. Read the rows before
+  the theory.
 - **A migration that queues a NEW KIND of work runs after the code that
   understands it** (2026-10-14). Run first, it hands the new rows to the old
   code, which does whatever it does with an unknown kind — here, word it as a
@@ -261,7 +266,7 @@ Each line points at the section that owns the detail.
    number is entered after the move — which, for claims, is usual (item 45).
    A short note when a tracking number is added to a claim already at Shipped.
 
-   **Fixed 2026-10-14** (`patch_claim_tracking_note.py`, migration
+   **Fixed 2026-10-14 in `42a82aa`** (`patch_claim_tracking_note.py`, migration
    `2026-10-14-claim-tracking-note.sql`). Reproduced end to end first — the
    box's three migrations on real Postgres, the REAL `lib/claimHelpScout` and
    `lib/helpscout`, `fetch` recorded: the Shipped note went without a number
@@ -285,6 +290,11 @@ Each line points at the section that owns the detail.
    reopening and deleting unchanged. Migration run twice over existing rows:
    identical checks, nothing backfilled, every existing row unchanged. Strict
    typecheck: 0 errors in both versions, a planted error caught.
+   ⚠ **The live check is still owed.** Migrated and checked on the box
+   (2026-10-15), but no claim had a conversation, was at Shipped or Resolved
+   and was not closed — so nothing could be queued yet, and nothing was.
+   Needs: a claim at Shipped with no number, then a number, then a change; up
+   to 15 minutes each for the sweep.
 3. **The attachment DELETE skips its archived check if its `orders` read
    fails.**
 4. **A Shopify project's Files tab (`ProjectFiles`) lists files it cannot
@@ -366,6 +376,36 @@ Each line points at the section that owns the detail.
 31. **The sweep's alarm names a stuck note by its stage** (`the note for
     "Shipped"`), so a stuck tracking note reads like the stage note. It still
     names the claim.
+
+### Found 2026-10-15 (Garrett's claim screenshots)
+
+32. ✅ **A save logged dates nobody changed** (fixed 2026-10-19,
+    `patch_activity_real_changes.py`). Seen as a new claim "keeping the
+    activity of all claims": it was not. Every entry on `WRN-1059-3` was its
+    own (the database said so, row by row): its promotion, then ONE save of
+    the Production & Delivery card 27 seconds later, which wrote "Production
+    dates updated" and "Delivery scheduled" beside the tracking number —
+    dates that were null before and after. `WRN-1059-1` had the same three
+    lines from the same card, so it looked inherited. The card sends every
+    date on every save; the PATCH route logged a date when it was SENT. Now
+    compared with the row as it was (the current-row read names all four
+    dates); a delivery date removed says "Delivery date cleared". Every type's
+    card, not only claims: the auto-advance at Entered wrote a false
+    "Delivery scheduled" too. **Proved:** the real route, 14 requests, both
+    versions — with clock times masked, every update and every other call
+    identical, only the activity rows changed. Strict typecheck: no error in
+    the route in either version (nine identical, all from modules not pulled),
+    a planted error caught — and the current row is typed FROM ITS SELECT
+    STRING, so a date compared but not selected would not compile.
+33. **A warranty claim reads "Custom"** in its header, its Source badge and the
+    list's TYPE column. Decided (Garrett, 2026-10-15): it reads **"Warranty"**
+    — "claim" is the customer's word. A claim's `source` is "Manual"; the modal
+    renders Manual as "Custom", and `OrderTable`'s `TypePill` calls anything
+    not Shopify "Custom". To be one `sourceLabel()` in `lib/data` for all.
+34. **Any save of a Shopify group's dates writes back to Shopify**, changed or
+    not: the write-back's `shouldSync` asks whether a field was SENT, the same
+    shape as item 32. It writes the current values, so it is idempotent — but
+    it is an API call, and Shopify's webhooks, per save.
 
 ## 7. Facts that cost something to learn
 

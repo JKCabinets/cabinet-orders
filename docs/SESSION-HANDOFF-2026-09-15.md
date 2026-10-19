@@ -2325,6 +2325,8 @@ patch_created_row_once.py
 patch_docs_created_row_once.py
 patch_claim_tracking_note.py
 patch_docs_claim_tracking_note.py
+patch_activity_real_changes.py
+patch_docs_activity_real_changes.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

@@ -185,7 +185,9 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
     // ⚠ production_start_date is here for the In production GATE below. It has
     // to be read before the update is applied, because the gate must accept a
     // request that supplies the date and the stage together.
-    .select("stage, type, archived, payment_status, payment_hold_cleared_for, project_id, tracking_number, carrier, production_start_date")
+    // ⚠ The other three dates are here so the activity block can tell a date
+    // that CHANGED from one that was merely sent (2026-10-14) -- see there.
+    .select("stage, type, archived, payment_status, payment_hold_cleared_for, project_id, tracking_number, carrier, production_start_date, production_est_finish_date, delivery_date, scheduled_delivery_date")
     .eq("id", id)
     .single();
   if (!currentRow) {
@@ -825,13 +827,25 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
   // ⚠ SUPPRESSED WHEN THE AUTO-ADVANCE ROW ALREADY SAID IT. That row names the
   // start date as the cause of the move; a second row reading "production dates
   // updated" is the same fact told twice, which is its own kind of untrue.
+  // ⚠ A DATE IS LOGGED WHEN IT CHANGES, NOT WHEN IT IS SENT (2026-10-14).
+  // The Production & Delivery card sends every date on every save, empty as
+  // null, and these asked only whether the request carried one -- so a claim's
+  // tracking-number save wrote "Production dates updated" AND "Delivery
+  // scheduled" for dates nobody touched, and clearing a delivery date wrote
+  // "Delivery scheduled". Compared with the row as it was; empty and null are
+  // the same. A delivery date removed says so.
+  const dateChanged = (f: "production_start_date" | "production_est_finish_date" | "delivery_date" | "scheduled_delivery_date") =>
+    body[f] !== undefined && (body[f] || null) !== (currentRow[f] || null);
   if (!autoAdvancedTo
-      && (body.production_start_date !== undefined || body.production_est_finish_date !== undefined)) {
+      && (dateChanged("production_start_date") || dateChanged("production_est_finish_date"))) {
     activityTexts.push(`Production dates updated by ${who}`);
   }
 
-  if (body.delivery_date !== undefined || body.scheduled_delivery_date !== undefined) {
-    activityTexts.push(`Delivery scheduled by ${who}`);
+  const deliveryChanged = (["delivery_date", "scheduled_delivery_date"] as const).filter(dateChanged);
+  if (deliveryChanged.length > 0) {
+    activityTexts.push(deliveryChanged.some((f) => body[f])
+      ? `Delivery scheduled by ${who}`
+      : `Delivery date cleared by ${who}`);
   }
 
   if (body.total_price !== undefined) {
