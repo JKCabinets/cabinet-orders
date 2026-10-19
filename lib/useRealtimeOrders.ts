@@ -134,7 +134,7 @@ interface RealtimeActivityHandlers {
    * it is an append-only record by design -- so there is no update or
    * delete handler here. Adding one would imply those events can happen.
    */
-  onEntry: (orderId: string, entry: { text: string; time: string }) => void;
+  onEntry: (orderId: string, entry: { text: string; time: string; at?: string | null }) => void;
 }
 
 /**
@@ -184,13 +184,13 @@ export function useRealtimeActivity(handlers: RealtimeActivityHandlers) {
             (payload) => {
               try {
                 const row = payload.new as {
-                  order_id?: string; text?: string; time?: string;
+                  order_id?: string; text?: string; time?: string; created_at?: string;
                 };
                 // A row missing either field cannot be displayed, and a
                 // half-rendered entry is worse than none.
                 if (!row?.order_id || !row.text) return;
                 handlersRef.current.onEntry(row.order_id, {
-                  text: row.text, time: row.time ?? "",
+                  text: row.text, time: row.time ?? "", at: row.created_at ?? null,
                 });
               } catch (err) {
                 console.warn("[realtime] activity handler failed", err);

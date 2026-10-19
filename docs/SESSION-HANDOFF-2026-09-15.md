@@ -2340,6 +2340,8 @@ patch_reconcile_shopify_deletions.py
 patch_docs_reconcile_shopify_deletions.py
 patch_member_claims.py
 patch_docs_member_claims.py
+patch_dates_from_created_at.py
+patch_docs_dates_from_created_at.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
       .sort((a: { created_at: string }, b: { created_at: string }) =>
         new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
       )
-      .map((a: { text: string; time: string }) => ({ text: a.text, time: a.time })),
+      .map((a: { text: string; time: string; created_at: string }) => ({ text: a.text, time: a.time, at: a.created_at })),
     order_activity: undefined,
   }));
 
@@ -205,5 +205,5 @@ export async function POST(req: NextRequest) {
     time: today,
   });
 
-  return NextResponse.json({ data: { ...inserted, activity: [{ text: `Order logged by ${auth.session.user.name}`, time: today }] } }, { status: 201 });
+  return NextResponse.json({ data: { ...inserted, activity: [{ text: `Order logged by ${auth.session.user.name}`, time: today, at: inserted.created_at ?? new Date().toISOString() }] } }, { status: 201 });
 }

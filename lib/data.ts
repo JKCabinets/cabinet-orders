@@ -155,7 +155,10 @@ export type Stage = OrderStage | WarrantyStage | CustomStage | HardwareStage | S
 
 export interface ActivityEntry {
   text: string;
+  /** The stored display string ("Oct 15"). Shown only when `at` is missing. */
   time: string;
+  /** order_activity.created_at (2026-10-19): what activityStamp shows. */
+  at?: string | null;
 }
 
 export type ReviewReason =

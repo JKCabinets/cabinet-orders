@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
       .sort((a: { created_at: string }, b: { created_at: string }) =>
         new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
       )
-      .map((a: { text: string; time: string }) => ({ text: a.text, time: a.time })),
+      .map((a: { text: string; time: string; created_at: string }) => ({ text: a.text, time: a.time, at: a.created_at })),
     order_activity: undefined,
   }));
 

@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { X, Search, Check, Plus, Trash2 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { displayOrderNumber, TYPE_LIST_LABEL, type Order, type SkuItem } from "@/lib/data";
+import { orderDate } from "@/lib/dates";
 
 /**
  * Logging a warranty claim.
@@ -197,7 +198,7 @@ export function WarrantyClaimModal({ onClose, submission, onDone }: Props) {
         groups: groups.sort((a, b) => a.type.localeCompare(b.type)),
         customer: groups[0]?.name ?? "",
         shipTo: groups[0]?.ship_to ?? "",
-        date: groups[0]?.date ?? "",
+        date: groups[0] ? orderDate(groups[0]) : "",
         source: groups[0]?.source ?? "",
       }))
       .filter((p) => {

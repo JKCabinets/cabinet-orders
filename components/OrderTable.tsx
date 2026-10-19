@@ -10,7 +10,8 @@ import {
 import { STAGE_ORDER_BY_TYPE, ORDER_STAGE_ORDER } from "@/lib/stageLogic";
 import { useStore } from "@/lib/store";
 import { useSession } from "next-auth/react";
-import { formatDateWithYear, parseOrderDate } from "@/lib/dateUtils";
+import { parseOrderDate } from "@/lib/dateUtils";
+import { orderDate } from "@/lib/dates";
 import { checkAttachmentGate, checkDeliveryProofGate } from "@/lib/stageGates";
 import { requirementsFor } from "@/lib/requirements";
 import { OrderEntryActions } from "./OrderEntryActions";
@@ -125,8 +126,9 @@ export function OrderTable({
           break;
         }
         case "date":
-          av = parseOrderDate(a.date) ?? 0;
-          bv = parseOrderDate(b.date) ?? 0;
+          // created_at carries the year; the string's was guessed (2026-10-19).
+          av = Date.parse(a.created_at ?? "") || parseOrderDate(a.date) || 0;
+          bv = Date.parse(b.created_at ?? "") || parseOrderDate(b.date) || 0;
           break;
       }
       if (av < bv) return sortDir === "asc" ? -1 : 1;
@@ -304,7 +306,7 @@ function OrderRow({
         </td>
       )}
       <td className="px-3 py-2.5 font-mono text-[10px] text-cream/65">{displayOrderNumber(order)}</td>
-      <td className="px-3 py-2.5 text-cream/75 text-[11px]">{formatDateWithYear(order.date)}</td>
+      <td className="px-3 py-2.5 text-cream/75 text-[11px]">{orderDate(order)}</td>
       <td className="px-3 py-2.5">
         <div className="font-display text-[15px] leading-tight text-cream truncate">{order.name}</div>
         {/* SKU detail line hidden — too noisy for a list view. The SKU
@@ -379,7 +381,7 @@ function MobileRow({
           <PaymentPill status={order.payment_status} />
         </div>
         <div className="font-display text-[15px] leading-tight text-cream truncate">{order.name}</div>
-        <div className="text-[10px] text-cream/45 truncate">{formatDateWithYear(order.date)}</div>
+        <div className="text-[10px] text-cream/45 truncate">{orderDate(order)}</div>
       </div>
       <div onClick={(e) => e.stopPropagation()} className="flex-shrink-0">
         <StatusCell order={order} stage={stage} mobile onOpenModal={onSelect} />

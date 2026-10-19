@@ -5,6 +5,7 @@ import { groupSkuItemsByStyle, decodeSku, doorStyleNameToCode, colorNameToCode }
 import { lookupVendorsForSkus } from "@/lib/vendorLookup";
 import type { SkuItem } from "@/lib/skuDecoder";
 import { poReference, displayOrderNumber } from "@/lib/data";
+import { orderDate } from "@/lib/dates";
 import { latestAckByVendor } from "@/lib/acknowledgments";
 import { customerIssues, ackIssues, ackNotesFor, keyedByName as keyedBy } from "@/lib/orderIssues";
 
@@ -164,7 +165,9 @@ export async function GET(
   // which at least identifies the right purchase.
   const shopifyId           = order.shopify_id      || orderNumber || "—";
   const status              = order.stage           || "—";
-  const orderedOn           = order.date            || "—";
+  // MM/DD/YYYY from created_at, as in the OMS (Garrett, 2026-10-19): it read
+  // "Oct 15", with no year, on a document that leaves the company.
+  const orderedOn           = orderDate(order)      || "—";
 
   // ⚠ ORDER ISSUES (Garrett, 2026-10-07): what a vendor cannot ship to, reach
   // or file without -- amber in its card and listed in the banner. The checks

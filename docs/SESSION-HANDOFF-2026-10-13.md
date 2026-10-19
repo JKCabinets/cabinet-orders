@@ -127,6 +127,9 @@ Add these to the old handoff's "Process" list when it is next touched.
   code, which does whatever it does with an unknown kind — here, word it as a
   stage move. Prove the order: old code over the new database, and new code
   over the old one.
+- **A render proves behaviour, not types** (2026-10-19). esbuild strips
+  types, so the rendered proof passed while `useRealtimeOrders` declared its
+  handler's entry without the new field; only `tsc` saw it. Both proofs, always.
 - **A patch script carries everything it writes** (2026-10-19). One read
   its three new files from paths in the sandbox it was built in; every test
   ran there, where the paths existed, so it passed — and on the box it failed
@@ -353,6 +356,9 @@ Each line points at the section that owns the detail.
    calling `refreshAttachments(orderId)` and a read policy for
    `authenticated` (old Open 1).
 7. **Rail timestamps** need a real per-transition time (old Open 2).
+   ⚠ (2026-10-19) It EXISTS: every `order_activity` row has a real
+   `created_at`, and since gap 12 the client has it as each entry's `at`. What
+   is left is reading a stage's moves out of the trail, not storing anything.
 8. **Mockup parity** — two structural differences remain (old Open 8).
 9. **Customer notifications.** Nothing sends the production notification
    promised on every cabinet order (OPERATIONS §2, "The promise that is not
@@ -418,8 +424,28 @@ Each line points at the section that owns the detail.
     one request carrying the hand-overs; the toasts say what moved. Strict
     typecheck: the same 10 errors in both (all modules not pulled), a planted
     error caught in each of six files. Gap 10 was `2eeaf6d`.
-12. **`orders.date` and `order_activity.time` are display strings, not ISO**
-    (old Open 6).
+12. ✅ **`orders.date` and `order_activity.time` are display strings, not ISO**
+    (old Open 6). Done 2026-10-19 (`patch_dates_from_created_at.py`), WITHOUT
+    a migration. Every writer stores the Phoenix day the row was made, so the
+    string is `created_at`'s day — checked on every row (8 orders, 35 trail
+    rows: no exception, none without `created_at`). The screens now read
+    `created_at`: **decided by Garrett 2026-10-19** — an order's date reads
+    MM/DD/YYYY (the table, its phone card, the modal header, Order details,
+    the Full Order card's "Ordered On", the claim picker, and the VENDOR PDF's
+    "Ordered On"); an activity line reads "10/15/2026 4:35 PM", Phoenix time.
+    `orderDate()` / `activityStamp()` in `lib/dates`; the three routes that
+    serve the trail pass its `created_at` on as `at` (they fetched it and
+    dropped it), as do realtime, the store's own entries and the create
+    answers. The strings are still written; nothing reads them for display
+    unless `created_at` is missing. The table SORTS by `created_at`: a 2024
+    order read "Oct 1, 2026" and ranked above a 2025 one. **Proved:** the two
+    functions (late evening, past midnight, New Year's Eve, July, no or bad
+    `created_at`, the same on a UTC server and a Tokyo browser); the real
+    table, modal, Full Order card and claim picker, both versions; the real
+    three routes, create route and vendor PDF. Strict typecheck of all 13
+    files: the same 16 errors in both (modules not pulled), a planted error
+    caught in each — and it caught a real one the renders could not: the
+    realtime handler's entry type. Gap 11 was `04ff149`.
 13. **`fieldsToClearOnBackwardMove`** is the last consumer not deriving from
     the requirement table (old Open 7).
 14. **`~/cron-jobs/cron.log` holds 196 non-zero `rc` runs** nobody has looked

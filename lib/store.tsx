@@ -557,7 +557,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // and a refusal undoes this one row with undoFields. `before` and `after`
     // are read only inside the revert's own updater, which React always runs
     // after the optimistic one -- never on the line after dispatching.
-    const entry = { text: `Moved to "${stage}"`, time: today() };
+    const entry = { text: `Moved to "${stage}"`, time: today(), at: new Date().toISOString() };
     let before: Order | undefined;
     let after: Order | undefined;
 
@@ -763,6 +763,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const entry = {
       text: archived ? "Moved to archive" : "Restored from archive",
       time: today(),
+      at: new Date().toISOString(),
     };
     let previous: boolean | undefined;
     setRawOrders(prev => prev.map(o => {

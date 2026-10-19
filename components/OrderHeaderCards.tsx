@@ -3,6 +3,7 @@
 import { AlertTriangle } from "lucide-react";
 import { poReference, displayOrderNumber, type Order, type Project, type TeamMember } from "@/lib/data";
 import { consentRequired, consentMissing, formatAgreed, CONSENT_WORDING } from "@/lib/consent";
+import { orderDate } from "@/lib/dates";
 import { RecordConsentButton } from "./RecordConsent";
 import { customerIssues, keyedByName, type AckIssues } from "@/lib/orderIssues";
 
@@ -75,7 +76,7 @@ export function OrderHeaderCards({ order, team, ack, project }: { order: Order; 
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-lg p-2" style={{ border: "0.5px solid rgba(255,255,255,0.12)" }}>
           <Row label="Keyed By" value={keyedBy} />
-          <Row label="Ordered On" value={orDash(order.date)} />
+          <Row label="Ordered On" value={orDash(orderDate(order))} />
           <Row label="PO" value={poReference(order)} flag={!!issue.name} />
           <Row label="Status" value={orDash(order.stage)} />
           {String(order.internal_notes ?? "").trim() && (

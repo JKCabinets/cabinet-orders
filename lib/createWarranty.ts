@@ -219,7 +219,7 @@ export async function createWarranty(
       await supabase.from("order_activity").insert({
         order_id: id, text: input.activityText, time: today,
       });
-      return { ok: true, order: { ...inserted, activity: [{ text: input.activityText, time: today }] } };
+      return { ok: true, order: { ...inserted, activity: [{ text: input.activityText, time: today, at: inserted.created_at ?? new Date().toISOString() }] } };
     }
 
     // 23505 = unique_violation. Anything else is a real failure.

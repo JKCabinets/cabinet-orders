@@ -28,7 +28,7 @@ import { STAGE_ACCENT } from "@/lib/data";
 import { typeCarriesTracking } from "@/lib/categories";
 import type { DateFields } from "./NextActionPanel";
 import { requirementsFor } from "@/lib/requirements";
-import { formatMDY } from "@/lib/dates";
+import { formatMDY, orderDate, activityStamp } from "@/lib/dates";
 import { useOrderEnrichment } from "@/lib/useOrderEnrichment";
 import { NextActionPanel } from "./NextActionPanel";
 import { CustomSpecsPanel } from "./CustomSpecsPanel";
@@ -848,7 +848,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
               <span className="mx-1.5">&middot;</span>
               {sourceLabel(liveOrder)}
               <span className="mx-1.5">&middot;</span>
-              {liveOrder.date}
+              {orderDate(liveOrder)}
               <ConsentMissingPill project={purchaseOfRow} />
               <ClaimOutcomePill order={liveOrder} />
             </p>
@@ -1416,7 +1416,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                 </div>
                 <div>
                   <p className={LABEL + " mb-1"}>Order date</p>
-                  <p className={VALUE}>{liveOrder.date}</p>
+                  <p className={VALUE}>{orderDate(liveOrder)}</p>
                 </div>
                 <div>
                   {/* The reference a MANUFACTURER sees. Internal -- never shown
@@ -1766,7 +1766,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                   </div>
                   <div className="pb-1">
                     <p className="text-[12px] text-cream/70 leading-snug">{a.text}</p>
-                    <p className="text-[10px] text-cream/40 mt-0.5">{a.time}</p>
+                    <p className="text-[10px] text-cream/40 mt-0.5">{activityStamp(a)}</p>
                   </div>
                 </div>
               ))}
