@@ -9,7 +9,7 @@ import {
   AVATAR_COLOR_STYLES,
   isPaymentHoldStatus, paymentHoldActive, paymentHoldLabel,
   displayOrderNumber, nextStageFor, poReference, archivesAsOrder, archivedVia,
-  type TeamMember,
+  sourceLabel, type TeamMember,
 } from "@/lib/data";
 import { slaRuleFor, slaAgeHours, hoursInStage, slaTier, formatStageAge } from "@/lib/sla";
 import { useStore } from "@/lib/store";
@@ -846,7 +846,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
             <p className="text-[11px] text-cream/45 mt-1">
               <span className="font-mono">{displayOrderNumber(liveOrder)}</span>
               <span className="mx-1.5">&middot;</span>
-              {liveOrder.source === "Manual" ? "Custom" : liveOrder.source}
+              {sourceLabel(liveOrder)}
               <span className="mx-1.5">&middot;</span>
               {liveOrder.date}
               <ConsentMissingPill project={purchaseOfRow} />
@@ -1411,7 +1411,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                         ? { background: "rgba(184,130,106,0.15)", color: "#d9a888", border: "0.5px solid rgba(184,130,106,0.40)" }
                         : { background: "rgba(145,165,151,0.18)", color: "#b8d0bd", border: "0.5px solid rgba(145,165,151,0.45)" }
                     }>
-                    {liveOrder.source === "Manual" ? "Custom" : liveOrder.source}
+                    {sourceLabel(liveOrder)}
                   </span>
                 </div>
                 <div>

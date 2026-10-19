@@ -113,6 +113,10 @@ Add these to the old handoff's "Process" list when it is next touched.
   and the script refused its own re-run.
 - **A miss test must actually break the anchor.** Appending text after an
   anchor leaves it a substring; change a character INSIDE it.
+- **A pattern finds the copies you thought of** (2026-10-19). Searching for
+  `Manual ? Custom` missed the table, which said `isShopify ? "Shopify" :
+  "Custom"`. The literal `"Custom"`, listed in full, found every place. Search
+  for the OUTPUT, not for one way of writing the logic.
 - **What the screen seems to show, ask the data** (2026-10-19). A new claim's
   trail looked like an old claim's, and the first explanation — a number
   reused, history inherited — was plausible and wrong. One query of the rows,
@@ -397,15 +401,30 @@ Each line points at the section that owns the detail.
     the route in either version (nine identical, all from modules not pulled),
     a planted error caught — and the current row is typed FROM ITS SELECT
     STRING, so a date compared but not selected would not compile.
-33. **A warranty claim reads "Custom"** in its header, its Source badge and the
+33. ✅ **A warranty claim reads "Custom"** in its header, its Source badge and the
     list's TYPE column. Decided (Garrett, 2026-10-15): it reads **"Warranty"**
     — "claim" is the customer's word. A claim's `source` is "Manual"; the modal
     renders Manual as "Custom", and `OrderTable`'s `TypePill` calls anything
     not Shopify "Custom". To be one `sourceLabel()` in `lib/data` for all.
+    **Fixed 2026-10-19** (`patch_source_label_warranty.py`): `sourceLabel()`
+    is the one answer; the modal's two places call it, and `TypePill` is given
+    the ROW (both its calls), not the source. Colours still follow `source`.
+    **Proved:** the real `OrderTable` and `OrderModal` rendered inside the real
+    store with a claim, a custom job and a Shopify group, both versions — the
+    whole rendered page differs in exactly four words, the claim's two pills,
+    header and badge, "Custom" → "Warranty"; the other two modals identical.
+    Strict typecheck of the full import closure (39 files, none stood in): 0
+    errors in both, a planted error caught in each changed file, and a source
+    passed where the row is wanted fails at both call sites.
 34. **Any save of a Shopify group's dates writes back to Shopify**, changed or
     not: the write-back's `shouldSync` asks whether a field was SENT, the same
     shape as item 32. It writes the current values, so it is idempotent — but
     it is an API call, and Shopify's webhooks, per save.
+35. **`OrderTable`'s card view nests buttons:** the whole card is a `<button>`
+    and the row's actions — the stage push, "Move to …", "Release claim" — are
+    buttons inside it. Invalid HTML; React warns it causes a hydration error (a
+    browser parsing the server's HTML closes the outer button at the inner).
+    Found rendering the table for item 33; the same before and after it.
 
 ## 7. Facts that cost something to learn
 

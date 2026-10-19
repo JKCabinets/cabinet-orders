@@ -5,7 +5,7 @@ import clsx from "clsx";
 import {
   Order, Stage, Project, OrderType, STAGE_LIST_BY_TYPE,
   AVATAR_COLOR_STYLES, getBackorderStatus, nextStageFor, displayOrderNumber,
-  STAGE_ACCENT, archivesAsOrder,
+  STAGE_ACCENT, archivesAsOrder, sourceLabel,
 } from "@/lib/data";
 import { STAGE_ORDER_BY_TYPE, ORDER_STAGE_ORDER } from "@/lib/stageLogic";
 import { useStore } from "@/lib/store";
@@ -311,7 +311,7 @@ function OrderRow({
             breakdown is available in the modal. */}
       </td>
       <td className="px-3 py-2.5">
-        <TypePill source={order.source} />
+        <TypePill order={order} />
       </td>
       {stage === null && (
         <td className="px-3 py-2.5">
@@ -375,7 +375,7 @@ function MobileRow({
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5 mb-0.5">
           <span className="font-mono text-[9px] text-cream/45">{displayOrderNumber(order)}</span>
-          <TypePill source={order.source} />
+          <TypePill order={order} />
           <PaymentPill status={order.payment_status} />
         </div>
         <div className="font-display text-[15px] leading-tight text-cream truncate">{order.name}</div>
@@ -430,16 +430,18 @@ export function StagePill({
   );
 }
 
-/* ─── Type pill (Shopify / Custom) ───────────────────────────────── */
+/* ─── Type pill (Shopify / Custom / Warranty) ─────────────────────── */
 
-function TypePill({ source }: { source: string }) {
-  const isShopify = source === "Shopify";
+// Given the ROW, not its source (2026-10-19): a claim's source is "Manual",
+// so a pill that saw only the source could not tell it from a custom job.
+function TypePill({ order }: { order: Pick<Order, "type" | "source"> }) {
+  const isShopify = order.source === "Shopify";
   const style = isShopify
     ? { background: "rgba(184,130,106,0.15)", color: "#d9a888", border: "0.5px solid rgba(184,130,106,0.40)" }
     : { background: "rgba(145,165,151,0.18)", color: "#b8d0bd", border: "0.5px solid rgba(145,165,151,0.45)" };
   return (
     <span className="text-[9px] px-2 py-px rounded-full font-medium uppercase tracking-wider" style={style}>
-      {isShopify ? "Shopify" : "Custom"}
+      {sourceLabel(order)}
     </span>
   );
 }

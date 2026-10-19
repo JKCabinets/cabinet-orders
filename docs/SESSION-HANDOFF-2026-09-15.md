@@ -2327,6 +2327,8 @@ patch_claim_tracking_note.py
 patch_docs_claim_tracking_note.py
 patch_activity_real_changes.py
 patch_docs_activity_real_changes.py
+patch_source_label_warranty.py
+patch_docs_source_label_warranty.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

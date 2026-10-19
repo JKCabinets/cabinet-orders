@@ -1180,6 +1180,21 @@ export function isStageOfferedForType(stage: string, type?: string | null): bool
   return (offered as readonly string[]).includes(stage);
 }
 
+/**
+ * ⚠ WHAT A ROW'S "SOURCE" READS AS, IN ONE PLACE (2026-10-19). A warranty claim
+ * is "Warranty" (Garrett, 2026-10-15: "claim" is the customer's word); a row
+ * from Shopify is "Shopify"; anything else is "Custom" -- `source` holds only
+ * "Shopify" or "Manual", and a hand-made row was a custom job when this label
+ * was first written. A claim's `source` is "Manual" too, which is why the
+ * modal's `source === "Manual" ? "Custom"` and the table's
+ * `isShopify ? "Shopify" : "Custom"` both called a claim "Custom". Every place
+ * that names a source asks this; colours still follow `source`.
+ */
+export function sourceLabel(order: Pick<Order, "type" | "source">): "Warranty" | "Shopify" | "Custom" {
+  if (order.type === "warranty") return "Warranty";
+  return order.source === "Shopify" ? "Shopify" : "Custom";
+}
+
 export function displayOrderNumber(order: Pick<Order, "id" | "project_id">): string {
   if (order.project_id) return order.project_id;
   for (const suffix of GROUP_HANDLE_SUFFIXES) {
