@@ -1,6 +1,67 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin, requireSelfOrAdmin, cleanInput } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
+import { activityDate } from "@/lib/data";
+
+/** What retire_member_claims() did, for the audit log and the team page. */
+type ClaimsOutcome = {
+  moved: { kind: string; id: string; to: string }[];
+  released: { kind: string; id: string }[];
+  not_held: string[];
+};
+
+/**
+ * ⚠ A MEMBER WHO LEAVES DOES NOT TAKE THEIR OPEN WORK WITH THEM (2026-10-19).
+ * A claim is a lock only its holder may lift -- for a custom job, a warranty
+ * claim or a submission not even an admin -- so a departed member's open work
+ * stayed locked against everyone. Deactivating now releases it; deleting hands
+ * each item to whoever the dialog chose and releases the rest (Garrett). Their
+ * FINISHED work keeps them. One transaction in retire_member_claims()
+ * (migrations/2026-10-19-member-claims.sql), run BEFORE the member changes: a
+ * refusal changes nothing. One audit entry lists what moved and what was
+ * released -- a submission has no trail of its own.
+ */
+async function retireClaims(
+  id: string, actor: { name: string; username: string },
+  event: "deactivated" | "removed", assign: Record<string, string>,
+): Promise<ClaimsOutcome | NextResponse> {
+  const { data, error } = await supabase.rpc("retire_member_claims", {
+    p_member: id, p_by: actor.name, p_event: event, p_time: activityDate(), p_assign: assign,
+  });
+  if (error) {
+    return NextResponse.json(
+      { error: "claims_unavailable", message: "Could not hand on or release this member's work, so nothing was changed. Try again." },
+      { status: 500 },
+    );
+  }
+  const r = (data ?? {}) as { ok?: boolean; reason?: string; submissions?: string[] } & Partial<ClaimsOutcome>;
+  if (!r.ok) {
+    if (r.reason === "promoting") {
+      return NextResponse.json(
+        { error: "promoting", message: `Their submission ${(r.submissions ?? []).join(", ")} is being promoted right now, so nothing was changed. Try again in a few minutes.` },
+        { status: 409 },
+      );
+    }
+    if (r.reason === "bad_assignee") {
+      return NextResponse.json(
+        { error: "bad_assignee", message: "Work can only go to an active member other than the one leaving. Nothing was changed." },
+        { status: 422 },
+      );
+    }
+    return NextResponse.json({ error: "claims_refused", message: "Their work could not be handed on, so nothing was changed." }, { status: 500 });
+  }
+  const out: ClaimsOutcome = { moved: r.moved ?? [], released: r.released ?? [], not_held: r.not_held ?? [] };
+  if (out.moved.length || out.released.length || out.not_held.length) {
+    try {
+      await supabase.from("audit_log").insert({
+        event: "member_claims_retired",
+        username: actor.username,
+        details: { target_id: id, because: event, ...out },
+      });
+    } catch { /* non-critical */ }
+  }
+  return out;
+}
 import bcrypt from "bcryptjs";
 import { validatePassword } from "@/lib/passwordPolicy";
 
@@ -137,6 +198,18 @@ export async function PATCH(
     }
   }
 
+  // ⚠ DEACTIVATING RELEASES THEIR OPEN WORK FIRST (2026-10-19) -- see
+  // retireClaims. Whenever this request deactivates, even a member already
+  // inactive: what they still hold is released, which is safe to repeat.
+  let claims: ClaimsOutcome | null = null;
+  if (updates.active === false) {
+    const r = await retireClaims(id,
+      { name: auth.session.user.name ?? auth.session.user.username, username: auth.session.user.username },
+      "deactivated", {});
+    if (r instanceof NextResponse) return r;
+    claims = r;
+  }
+
   const { error } = await supabase.from("team_members").update(updates).eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
@@ -206,7 +279,7 @@ export async function PATCH(
     }
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, ...(claims ? { claims } : {}) });
 }
 
 export async function DELETE(
@@ -220,6 +293,21 @@ export async function DELETE(
   const { searchParams } = new URL(req.url);
   const hard = searchParams.get("hard") === "true";
 
+  // The delete dialog's hand-overs, {"project:SHO-1050": "<member id>", ...}.
+  // Only a hard delete takes them; no body hands nothing on.
+  let assign: Record<string, string> = {};
+  if (hard) {
+    let body: unknown = null;
+    try { body = await req.json(); } catch { /* no body */ }
+    const a = (body as { assign?: unknown } | null)?.assign;
+    if (a !== undefined) {
+      if (!a || typeof a !== "object" || Array.isArray(a) || !Object.values(a).every((v) => typeof v === "string")) {
+        return NextResponse.json({ error: "invalid_assign" }, { status: 400 });
+      }
+      assign = a as Record<string, string>;
+    }
+  }
+
   // Capture target identity before deletion for the audit log. Also
   // reads session_version so we can compute the bump for soft-delete.
   const { data: beforeRow } = await supabase
@@ -227,6 +315,13 @@ export async function DELETE(
     .select("username, role, session_version")
     .eq("id", id)
     .single();
+
+  // ⚠ THEIR OPEN WORK GOES FIRST (2026-10-19) -- see retireClaims. Refused,
+  // the member is left exactly as they were.
+  const claims = await retireClaims(id,
+    { name: auth.session.user.name ?? auth.session.user.username, username: auth.session.user.username },
+    hard ? "removed" : "deactivated", assign);
+  if (claims instanceof NextResponse) return claims;
 
   if (hard) {
     // Hard delete: the row disappears. The JWT callback will fail its
@@ -276,5 +371,5 @@ export async function DELETE(
     } catch { /* non-critical */ }
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, claims });
 }

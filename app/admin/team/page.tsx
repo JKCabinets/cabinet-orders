@@ -14,6 +14,18 @@ import { ProfileForm } from "@/components/ProfileForm";
 import clsx from "clsx";
 import { AppShell, PageHeader } from "@/components/AppShell";
 import { useToast } from "@/components/Toast";
+import { RetireMemberDialog } from "@/components/RetireMemberDialog";
+import type { ClaimsOutcome } from "@/lib/store";
+
+/** " — 2 handed on, 1 released": what happened to a leaving member's open work. */
+function claimsNote(c?: ClaimsOutcome): string {
+  if (!c) return "";
+  const parts: string[] = [];
+  if (c.moved.length) parts.push(`${c.moved.length} handed on`);
+  if (c.released.length) parts.push(`${c.released.length} released`);
+  if (c.not_held.length) parts.push(`${c.not_held.length} already taken by someone else`);
+  return parts.length ? ` — ${parts.join(", ")}` : "";
+}
 
 /**
  * /admin/team - team member management (admin only).
@@ -33,7 +45,7 @@ import { useToast } from "@/components/Toast";
 export default function AdminTeamPage() {
   const { data: session } = useSession();
   const {
-    team, addTeamMember, updateTeamMember, deactivateTeamMember, deleteTeamMember,
+    team, addTeamMember, updateTeamMember, deactivateTeamMember, deleteTeamMember, memberOpenWork,
     updateTeamMemberProfile, uploadAvatar,
     loading,
   } = useStore();
@@ -42,6 +54,10 @@ export default function AdminTeamPage() {
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [changingPasswordId, setChangingPasswordId] = useState<string | null>(null);
   const [confirmActionId, setConfirmActionId] = useState<string | null>(null);
+  // ⚠ A DELETE OPENS THE DIALOG FIRST (2026-10-19): their open work is handed on
+  // or released before they go. Both Delete buttons -- the inactive list's
+  // deleted on one click, with no confirmation at all.
+  const [retiring, setRetiring] = useState<TeamMember | null>(null);
 
   const user = session?.user as { name?: string; role?: string } | undefined;
   const isAdmin = user?.role === "admin";
@@ -190,15 +206,10 @@ export default function AdminTeamPage() {
                     onDeactivate={async () => {
                       const res = await deactivateTeamMember(member.id);
                       setConfirmActionId(null);
-                      showToast(res.ok ? `${member.name} deactivated` : res.error ?? "Could not deactivate",
+                      showToast(res.ok ? `${member.name} deactivated${claimsNote(res.claims)}` : res.error ?? "Could not deactivate",
                         { kind: res.ok ? "warn" : "error" });
                     }}
-                    onDelete={async () => {
-                      const res = await deleteTeamMember(member.id);
-                      setConfirmActionId(null);
-                      showToast(res.ok ? `${member.name} permanently deleted` : res.error ?? "Could not delete",
-                        { kind: res.ok ? "warn" : "error" });
-                    }}
+                    onDelete={() => { setConfirmActionId(null); setRetiring(member); }}
                     onCancelAction={() => setConfirmActionId(null)}
                   />
                 )}
@@ -228,11 +239,7 @@ export default function AdminTeamPage() {
                       showToast(res.ok ? `${member.name} reactivated` : res.error ?? "Could not reactivate",
                         { kind: res.ok ? "success" : "error" });
                     }} className="text-[11px] text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] transition-colors">Reactivate</button>
-                    <button onClick={async () => {
-                      const res = await deleteTeamMember(member.id);
-                      showToast(res.ok ? `${member.name} permanently deleted` : res.error ?? "Could not delete",
-                        { kind: res.ok ? "warn" : "error" });
-                    }} className="text-[11px] text-red-400/60 hover:text-red-400 transition-colors ml-2">Delete</button>
+                    <button onClick={() => setRetiring(member)} className="text-[11px] text-red-400/60 hover:text-red-400 transition-colors ml-2">Delete</button>
                   </div>
                 </div>
               ))}
@@ -244,6 +251,23 @@ export default function AdminTeamPage() {
           <p className="text-xs font-medium text-[rgba(232,227,218,0.50)] mb-1.5">All changes saved to database</p>
           <p className="text-xs text-[rgba(232,227,218,0.30)] leading-relaxed">Team members, roles, and passwords are stored in Supabase and persist permanently across all deploys and server restarts. Password changes take effect on the next login.</p>
         </div>
+
+        {retiring && (
+          <RetireMemberDialog
+            member={retiring}
+            team={team}
+            loadWork={memberOpenWork}
+            onCancel={() => setRetiring(null)}
+            onConfirm={async (assign) => {
+              const member = retiring;
+              const res = await deleteTeamMember(member.id, assign);
+              if (!res.ok) return res.error ?? "Could not delete";
+              setRetiring(null);
+              showToast(`${member.name} permanently deleted${claimsNote(res.claims)}`, { kind: "warn" });
+              return null;
+            }}
+          />
+        )}
 
       </div>
     </AppShell>

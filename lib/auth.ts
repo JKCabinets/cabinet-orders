@@ -45,14 +45,20 @@ export async function requireAuth(): Promise<{ session: AuthSession } | NextResp
  */
 export async function claimOwnerOf(
   row: { project_id?: string | null; claimed_by?: string | null },
-): Promise<string | null> {
-  if (!row.project_id) return row.claimed_by ?? null;
-  const { data: project } = await supabase
+): Promise<{ owner: string | null } | { error: string }> {
+  if (!row.project_id) return { owner: row.claimed_by ?? null };
+  // ⚠ A READ THAT FAILS IS NOT "NOBODY" (2026-10-19). This answered null --
+  // unclaimed -- when the project could not be read, so for that request the
+  // guard let anyone edit somebody else's purchase. It now says it could not
+  // read; requireOrderClaim refuses. A purchase that is not there is still
+  // nobody's (maybeSingle), as it was.
+  const { data: project, error } = await supabase
     .from("projects")
     .select("claimed_by")
     .eq("id", row.project_id)
-    .single();
-  return project?.claimed_by ?? null;
+    .maybeSingle();
+  if (error) return { error: error.message };
+  return { owner: project?.claimed_by ?? null };
 }
 
 /**
@@ -149,7 +155,14 @@ export async function requireOrderClaim(
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
   }
 
-  const owner = await claimOwnerOf(row);
+  const claim = await claimOwnerOf(row);
+  if ("error" in claim) {
+    return NextResponse.json(
+      { error: "claim_unavailable", message: "Could not read who has claimed this order, so nothing was changed. Try again." },
+      { status: 500 },
+    );
+  }
+  const owner = claim.owner;
   if (!owner || owner === session.user.id) return { override: false };
 
   if (session.user.role !== "admin") {

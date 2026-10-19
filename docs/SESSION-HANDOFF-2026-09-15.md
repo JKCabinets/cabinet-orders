@@ -2338,6 +2338,8 @@ patch_project_files_download.py
 patch_docs_project_files_download.py
 patch_reconcile_shopify_deletions.py
 patch_docs_reconcile_shopify_deletions.py
+patch_member_claims.py
+patch_docs_member_claims.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

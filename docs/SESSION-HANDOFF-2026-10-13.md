@@ -127,6 +127,16 @@ Add these to the old handoff's "Process" list when it is next touched.
   code, which does whatever it does with an unknown kind — here, word it as a
   stage move. Prove the order: old code over the new database, and new code
   over the old one.
+- **A patch script carries everything it writes** (2026-10-19). One read
+  its three new files from paths in the sandbox it was built in; every test
+  ran there, where the paths existed, so it passed — and on the box it failed
+  while loading, before writing anything. Embed the content, grep the script
+  for the sandbox's paths, and test it with the sources moved out of reach.
+- **Run SQL from a file, not through nested shell quotes** (2026-10-19).
+  `su -c "psql -c \"…'{…}'…\""` stripped the double quotes out of every JSON
+  argument: half the cases failed on invalid JSON, one "re-run" ran on an
+  untouched database and looked like a pass. Write the statement to a file;
+  connect directly.
 - **A stand-in must do what it stands for, and a case must inject what it
   names** (2026-10-19). The database stand-in logged deletes without deleting
   and had no foreign keys, so "what is left" read the same before and after;
@@ -375,8 +385,39 @@ Each line points at the section that owns the detail.
     check's status, count and note unchanged throughout. Strict typecheck: the
     same seven errors in both (all modules not pulled), a planted error caught
     in each of the four files. Item 4 was `fcd9969`.
-11. **Orphaned claims are unchecked** — `projects.claimed_by` holds two id
-    formats (old Open 4).
+11. ✅ **Orphaned claims are unchecked** — `projects.claimed_by` holds two id
+    formats (old Open 4). Built 2026-10-19 (`patch_member_claims.py`,
+    migration `2026-10-19-member-claims.sql`). ⚠ **The formats were never the
+    problem:** `"1"` is Garrett's own id, from before ids took the
+    `member-<timestamp>` form; both are real members, and every claim held on
+    2026-10-19 matched one. The problem was how an orphan COMES ABOUT: a member
+    deactivated or deleted while holding claims. Their open work stayed locked
+    against everyone — and a custom job's, a claim's or a submission's claim
+    can be released by its holder only, admins included; a hard delete of
+    anyone named on a purchase failed on its foreign key.
+    **Decided by Garrett 2026-10-19:** deactivating RELEASES their OPEN work,
+    a note on each order's trail; their FINISHED work keeps them (the record
+    of who handled it). Deleting (admins) opens a dialog listing their open
+    work — each item to an active member or "Release", "Assign all to…" — and
+    nothing has to be assigned; finished work keeps the deleted id, so
+    `projects.claimed_by`'s foreign key was dropped. A submission is noted in
+    the audit log only. A submission of theirs mid-promotion refuses it all.
+    `retire_member_claims()` does it in one transaction, before the member
+    changes; `member_open_work()` lists it. And `claimOwnerOf` FAILED OPEN —
+    a failed read made a claimed purchase anyone's — and now refuses.
+    **Proved:** the migration twice over today's 11 claims, every row
+    unchanged; the foreign key refusing before and gone after. Every case of
+    the two functions on real Postgres. The real team route on real Postgres,
+    both versions: deactivating left all open work locked (deployed) / released
+    it (fixed); a hard delete was REFUSED by the database (deployed) / handed on
+    and released (fixed); a bad assignee, a malformed body and a promotion in
+    progress change nothing. The real order PATCH: with the guard's read
+    failing, a member wrote to another's purchase (deployed) / was refused
+    (fixed). The real page rendered: both Delete buttons — the inactive list's
+    deleted on ONE click — now open the dialog; "assign all" and "release all";
+    one request carrying the hand-overs; the toasts say what moved. Strict
+    typecheck: the same 10 errors in both (all modules not pulled), a planted
+    error caught in each of six files. Gap 10 was `2eeaf6d`.
 12. **`orders.date` and `order_activity.time` are display strings, not ISO**
     (old Open 6).
 13. **`fieldsToClearOnBackwardMove`** is the last consumer not deriving from
@@ -483,6 +524,14 @@ Each line points at the section that owns the detail.
     found"** (404). It refuses, so nothing is written wrongly — but it says the
     order does not exist when it could not be read. The DELETE now tells the two
     apart (item 3); the upload should say the same.
+37. **The claim functions in the repo are not what is live** (found
+    2026-10-19, reading `pg_get_functiondef`). `claim_order` / `release_order`
+    were hardened in Supabase (`SET search_path TO ''`, every table qualified);
+    `v16_order_claims.sql` still has the old ones. `claim_project` /
+    `release_project` are in NO migration. A database rebuilt from the repo
+    would get the old pair and lack the purchase pair. The three submission
+    functions match their migration (line endings aside — every live body has
+    `\r\n`, from the SQL editor). Fix: a migration recording the live bodies.
 
 ## 7. Facts that cost something to learn
 

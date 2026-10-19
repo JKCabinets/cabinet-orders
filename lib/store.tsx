@@ -32,6 +32,21 @@ export interface ArchiveResult {
  * nothing, so no caller could tell a created job from a refused one -- and on
  * a refusal the store made one up (see addOrder).
  */
+/** One item of a member's OPEN work, as member_open_work() lists it (2026-10-19). */
+export interface MemberWorkItem {
+  kind: "project" | "job" | "claim" | "submission";
+  id: string;
+  label: string;
+}
+
+/** What deactivating or deleting a member did to their open work (2026-10-19). */
+export interface ClaimsOutcome {
+  moved: { kind: string; id: string; to: string }[];
+  released: { kind: string; id: string }[];
+  /** Handed on in the dialog, but taken by someone else before the delete ran. */
+  not_held: string[];
+}
+
 export interface AddOrderResult {
   ok: boolean;
   /** The row the server created, shaped. Present when ok. */
@@ -114,8 +129,12 @@ interface StoreCtx {
    * and "deleted" whatever happened -- the same shape as the archive pair
    * before item 10. A refusal is undone here and reported to the caller.
    */
-  deactivateTeamMember: (id: string) => Promise<{ ok: boolean; error?: string }>;
-  deleteTeamMember: (id: string) => Promise<{ ok: boolean; error?: string }>;
+  /** Deactivating releases their open work (2026-10-19); `claims` says what. */
+  deactivateTeamMember: (id: string) => Promise<{ ok: boolean; error?: string; claims?: ClaimsOutcome }>;
+  /** `assign` hands their open work on, by "kind:id" (2026-10-19); the rest is released. */
+  deleteTeamMember: (id: string, assign?: Record<string, string>) => Promise<{ ok: boolean; error?: string; claims?: ClaimsOutcome }>;
+  /** What a member holds that is still open: the delete dialog's list. */
+  memberOpenWork: (id: string) => Promise<{ ok: boolean; work?: MemberWorkItem[]; error?: string }>;
 
   // Profile-only updates (self OR admin; see lib/auth.ts requireSelfOrAdmin)
   updateTeamMemberProfile: (
@@ -1004,9 +1023,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (res?.__error) {
       setTeam(prev => prev.map(m =>
         m.id === id && before && after ? undoFields(m, before, after) : m));
-      return { ok: false, error: res.__error };
+      return { ok: false, error: res.__message ?? res.__error };
     }
-    return { ok: true };
+    return { ok: true, claims: res?.claims as ClaimsOutcome | undefined };
   }, []);
 
   /**
@@ -1049,7 +1068,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return data.url as string;
   }, []);
 
-  const deleteTeamMember = useCallback(async (id: string) => {
+  const deleteTeamMember = useCallback(async (id: string, assign?: Record<string, string>) => {
     // ⚠ THE ROW GOES BACK WHERE IT WAS. A removal cannot be undone with
     // undoFields -- there is no row left to mend -- so the member and its
     // position are kept and re-inserted if the server refuses.
@@ -1060,7 +1079,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       removed = at >= 0 ? prev[at] : undefined;
       return prev.filter(m => m.id !== id);
     });
-    const res = await apiCall(`/api/team/${id}?hard=true`, "DELETE");
+    const res = await apiCall(`/api/team/${id}?hard=true`, "DELETE", { assign: assign ?? {} });
     if (res?.__error) {
       setTeam(prev => {
         if (!removed || prev.some(m => m.id === id)) return prev;
@@ -1068,9 +1087,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         next.splice(at < 0 ? next.length : at, 0, removed);
         return next;
       });
-      return { ok: false, error: res.__error };
+      return { ok: false, error: res.__message ?? res.__error };
     }
-    return { ok: true };
+    return { ok: true, claims: res?.claims as ClaimsOutcome | undefined };
+  }, []);
+
+  const memberOpenWork = useCallback(async (id: string) => {
+    const res = await apiCall(`/api/team/${encodeURIComponent(id)}/work`);
+    if (!res || res.__error) return { ok: false, error: res?.__message ?? res?.__error ?? "Could not load their work." };
+    return { ok: true, work: (res.data ?? []) as MemberWorkItem[] };
   }, []);
 
   return (
@@ -1078,7 +1103,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       allOrders, allOrdersIncludingArchived: resolvedOrders,
       orders, warranties, samples, customs, hardware, projects, team, onlineUsers, loading,
       addOrder, moveStage, updateNotes, updateInternalNotes, updateOrderDetails, archiveProject, claimProject, archiveOrder, unarchiveOrder, deleteOrder, closeClaim, recordConsent, bulkAction,
-      claimOrder, addTeamMember, updateTeamMember, deactivateTeamMember, deleteTeamMember,
+      claimOrder, addTeamMember, updateTeamMember, deactivateTeamMember, deleteTeamMember, memberOpenWork,
       updateTeamMemberProfile, uploadAvatar,
     }}>
       {children}
