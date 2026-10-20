@@ -539,7 +539,13 @@ Each line points at the section that owns the detail.
     is created wrongly. `NewOrderModal` refuses to close while saving.
 29. **Both create modals' Cancel and Create are not pills** — the 2026-10-07
     rule. `NewOrderModal` uses `rounded-lg`.
-30. **A claim closed and moved in ONE update gets its notes out of order:**
+30. ✅ **Cannot happen through the app** (read 2026-10-20). The close route's
+    one update sets `archived`, `archived_at`, `claim_outcome` and the
+    `closed_*` fields — never the stage; reopening clears the outcome in the
+    PATCH route, and even with a stage change in the same request the close
+    note's trigger fires first, so Help Scout reads "reopened" then "moved", the
+    right order. Only hand-written SQL setting both at once could misorder them.
+    **A claim closed and moved in ONE update gets its notes out of order:**
     "closed" before "moved to Resolved". Postgres fires the two triggers
     alphabetically (`orders_claim_close_note` first). Seen in a test that wrote
     both at once; whether the close route ever does is not yet read.
