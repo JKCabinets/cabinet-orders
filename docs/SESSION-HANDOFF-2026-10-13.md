@@ -580,7 +580,12 @@ Each line points at the section that owns the detail.
     not: the write-back's `shouldSync` asks whether a field was SENT, the same
     shape as item 32. It writes the current values, so it is idempotent — but
     it is an API call, and Shopify's webhooks, per save.
-35. **`OrderTable`'s card view nests buttons:** the whole card is a `<button>`
+35. ✅ **`OrderTable`'s card view nests buttons:** (fixed 2026-10-20,
+    `patch_card_not_a_button.py`: the card is a `div role="button"`, focusable,
+    answering Enter and Space only when the card itself has focus; the action
+    area still stops its clicks. Proved in the real table, both versions: 4
+    nested buttons and React's warning before, none after; click, Enter and
+    Space open or toggle the card; an action inside never does.) the whole card is a `<button>`
     and the row's actions — the stage push, "Move to …", "Release claim" — are
     buttons inside it. Invalid HTML; React warns it causes a hydration error (a
     browser parsing the server's HTML closes the outer button at the inner).

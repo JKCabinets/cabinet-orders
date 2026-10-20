@@ -368,10 +368,23 @@ function MobileRow({
     if (selectMode) onToggleSelect?.(order.id);
     else onSelect(order);
   }
+  // ⚠ THE CARD IS NOT A <button> (2026-10-20). It held the row's own buttons
+  // -- the stage push, "Move to …", "Release claim" -- and a button inside a
+  // button is invalid HTML: React warned of a hydration error, and a browser
+  // parsing the server's page closes the outer one at the first inner one.
+  // A div that acts as a button keeps the click and gains Enter and Space,
+  // answered only when the CARD has focus, so a key pressed on an action inside
+  // does not also open the order. The action area still stops its clicks.
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={handleClick}
-      className="text-left px-4 py-3 border-b border-white/5 hover:bg-white/4 transition-colors flex items-center gap-3"
+      onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return;
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleClick(); }
+      }}
+      className="text-left px-4 py-3 border-b border-white/5 hover:bg-white/4 transition-colors flex items-center gap-3 cursor-pointer"
       style={{ background: selected ? "rgba(184,130,106,0.10)" : undefined }}
     >
       <div className="flex-1 min-w-0">
@@ -387,7 +400,7 @@ function MobileRow({
         <StatusCell order={order} stage={stage} mobile onOpenModal={onSelect} />
       </div>
       <ChevronRight className="w-3.5 h-3.5 text-cream/40 flex-shrink-0" />
-    </button>
+    </div>
   );
 }
 
