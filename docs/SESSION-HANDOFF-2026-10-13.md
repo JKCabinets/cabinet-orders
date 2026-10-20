@@ -594,7 +594,15 @@ Each line points at the section that owns the detail.
     found"** (404). It refuses, so nothing is written wrongly — but it says the
     order does not exist when it could not be read. The DELETE now tells the two
     apart (item 3); the upload should say the same.
-37. **The claim functions in the repo are not what is live** (found
+37. ✅ **The claim functions in the repo are not what is live** — FIXED
+    2026-10-20: `migrations/2026-10-20-claim-functions-as-live.sql` holds
+    `claim_order`, `release_order`, `claim_project` and `release_project` as
+    they run live, verbatim but for line endings. A read-only check first
+    compared a fingerprint of each live function (arguments, result, settings,
+    security, volatility, body without `\r`) with the migration's; only on four
+    `true`s was it run. Proved on Postgres: twice, the same fingerprints; every
+    outcome of each function; the check saying false for a changed body.
+    (Found
     2026-10-19, reading `pg_get_functiondef`). `claim_order` / `release_order`
     were hardened in Supabase (`SET search_path TO ''`, every table qualified);
     `v16_order_claims.sql` still has the old ones. `claim_project` /
