@@ -483,10 +483,14 @@ Each line points at the section that owns the detail.
       1 webhook-health (19 Oct, SHO-1059 — item 40).
     To look again: the per-month summary in this session's record is one
     `grep -v ' rc=0 '` away; read ALL of it — a `tail` hid 127 of the 199.
-15. **The SLA clock runs through weekends; the digest does not** — an order
-    arriving Friday 5pm first appears Monday (OPERATIONS §7).
-16. **Whether the public lookup should answer by claim number** (OPERATIONS
-    §12).
+15. ✅ **The SLA clock runs through weekends; the digest does not** — an order
+    arriving Friday 5pm first appears Monday (OPERATIONS §7). **Decided
+    2026-10-20 (Garrett): as intended, no change.** The clock measures how long
+    an order has been in the system; a Friday order that was missed SHOULD read
+    urgent on Monday, and the customer never sees it. The digest stays on
+    weekdays.
+16. → **Moved to "Waiting on someone"** (2026-10-20): whether the public lookup
+    should answer by claim number is for the website team first.
 
 ### Housekeeping
 
@@ -519,6 +523,8 @@ Each line points at the section that owns the detail.
     1.x (icon renames).
 27. **Renaming the Shopify attribute "Est. Production Finish"** to match "Ship
     from factory" — only with the website team, who may read it.
+16. **Whether the public lookup should answer by claim number** (OPERATIONS
+    §12) — Garrett is checking with the website team (2026-10-20).
 
 ### Found 2026-10-14
 
