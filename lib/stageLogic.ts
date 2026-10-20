@@ -146,10 +146,13 @@ const FLOW_BY_TYPE: Record<string, StageFlow> = {
   sample: "order",
   warranty: "warranty",
   custom: "custom",
-  // Reports its own flow, NOT "order". That is what keeps
-  // fieldsToClearOnBackwardMove away from it -- hardware has no production
-  // or delivery dates to clear, and the ORDER_STAGE_ORDER indices the
-  // clearing rules are written against do not apply.
+  // Reports its own flow, NOT "order", so the order flow's DATE rules never
+  // reach it -- hardware has no production or delivery dates, and the
+  // ORDER_STAGE_ORDER indices those rules are written against do not apply.
+  // (This said it kept fieldsToClearOnBackwardMove away from hardware
+  // altogether. Not so since 2026-08-27: FLOWS_THAT_CLEAR includes hardware,
+  // and a backward move clears its tracking number and carrier. Corrected
+  // 2026-10-19.)
   hardware: "hardware",
 };
 
@@ -262,8 +265,11 @@ export function isBackwardsMove(
  *   warranty        No production or delivery dates to clear. AND its rows
  *                   carry two fields that must never be touched — see below.
  *
- *   hardware        No such dates either; it runs Ordered → Shipped →
- *                   Delivered with a carrier and a tracking number.
+ *   hardware        CLEARS its tracking number and carrier on a move back
+ *                   before Shipped (2026-08-27 -- see FLOWS_THAT_CLEAR). It
+ *                   has no production or delivery dates. (This line said
+ *                   "no such dates either" and stopped there; corrected
+ *                   2026-10-19.)
  *
  * Returns a partial update object suitable for spreading into the DB UPDATE,
  * or null if nothing should change.
@@ -304,6 +310,17 @@ const FLOWS_THAT_CLEAR: ReadonlySet<StageFlow> = new Set<StageFlow>(["order", "h
  */
 const NEVER_CLEARED = ["reported_at", "about_order_id"] as const;
 
+/**
+ * ⚠ DECIDED 2026-10-19 (Garrett): THIS RULE STAYS ITS OWN. It is not derived
+ * from lib/requirements, and that is the decision, not a deferral (gap 13).
+ * "Clear the evidence for every stage the move undoes" was enumerated against
+ * it over all 44 backward moves of every type: 30 identical, 14 different, and
+ * the differences are judgements the table cannot hold -- it would KEEP a
+ * delivery date when an order goes back to production (the stale date this
+ * rule exists to clear), CLEAR the production start when an order goes back
+ * to In production (the date that puts it there), and never clear the
+ * delivery window and notes or entered_by. Change it only as a decision.
+ */
 export function fieldsToClearOnBackwardMove(
   currentStage: string,
   targetStage: string,

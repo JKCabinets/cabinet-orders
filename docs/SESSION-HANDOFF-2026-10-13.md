@@ -446,8 +446,21 @@ Each line points at the section that owns the detail.
     files: the same 16 errors in both (modules not pulled), a planted error
     caught in each — and it caught a real one the renders could not: the
     realtime handler's entry type. Gap 11 was `04ff149`.
-13. **`fieldsToClearOnBackwardMove`** is the last consumer not deriving from
-    the requirement table (old Open 7).
+13. ✅ **`fieldsToClearOnBackwardMove`** is the last consumer not deriving from
+    the requirement table (old Open 7). **Decided 2026-10-19 (Garrett): it
+    stays its own** (`patch_backward_clear_decision.py`, comments only). The
+    derived rule — clear the evidence for every stage the move undoes — was
+    enumerated against today's over all 44 backward moves of every type: 30
+    identical, 14 different, and the differences are judgements the table
+    cannot hold: it would KEEP a delivery date when an order goes back to
+    production (the stale date this rule exists to clear), CLEAR the
+    production start when an order goes back to In production (the date that
+    puts it there), and never clear the delivery window and notes or
+    `entered_by`. Two stale comments in `lib/stageLogic.ts` corrected: hardware
+    DOES clear (its tracking number and carrier, since 2026-08-27), and samples
+    clear through the order flow. **Proved:** compiled code with comments
+    stripped byte-identical; all 111 (type, from, to) pairs identical; strict
+    typecheck clean in both. Item 40 is the commit before this one.
 14. **`~/cron-jobs/cron.log` holds 196 non-zero `rc` runs** nobody has looked
     at (old Open 9).
 15. **The SLA clock runs through weekends; the digest does not** — an order

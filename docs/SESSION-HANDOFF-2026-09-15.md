@@ -2346,6 +2346,8 @@ patch_designer_color_and_ack.py
 patch_docs_designer_color_and_ack.py
 patch_kept_for_claims.py
 patch_docs_kept_for_claims.py
+patch_backward_clear_decision.py
+patch_docs_backward_clear_decision.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it
