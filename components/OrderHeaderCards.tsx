@@ -52,6 +52,21 @@ export function ConsentMissingPill({ project }: { project: Project | null | unde
   );
 }
 
+/**
+ * "Deleted in Shopify — kept for its claims" (Garrett, 2026-10-19): a purchase
+ * Shopify no longer has, kept because warranty claims refer to it, and
+ * archived. On the purchase's modal and in the Archive.
+ */
+export function ShopifyGonePill({ project }: { project: Project | null | undefined }) {
+  if (!project?.shopify_gone_at) return null;
+  return (
+    <span className="inline-flex items-center gap-1 ml-2 px-2 py-px rounded-full text-[9px] uppercase tracking-wider font-medium align-middle"
+      style={{ color: "#e0806a", background: "rgba(224,128,106,0.10)", border: "0.5px solid rgba(224,128,106,0.45)" }}>
+      {project.shopify_gone_how === "cancelled" ? "Cancelled" : "Deleted"} in Shopify — kept for its claims
+    </span>
+  );
+}
+
 export function OrderHeaderCards({ order, team, ack, project }: { order: Order; team: TeamMember[]; ack?: AckIssues | null; project?: Project | null }) {
   const people = team;
   const issue = customerIssues(order);

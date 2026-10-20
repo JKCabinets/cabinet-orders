@@ -61,8 +61,10 @@ import { removeShopifyPurchase } from "@/lib/shopifyRemoval";
  *
  *   ⚠ MORE THAN ONE GONE IN ONE RUN REMOVES NONE (Garrett, 2026-10-19). All are
  *   named and a person looks. A purchase a warranty claim refers to is never
- *   removed (as the webhook refuses it) and stays red until a person decides --
- *   and, still "gone", it counts toward that one.
+ *   removed: it is KEPT, MARKED (projects.shopify_gone_at) and ARCHIVED, as the
+ *   webhook does (Garrett, 2026-10-19), red only on the run that marks it -- a
+ *   webhook was missed -- and skipped from then on, so it neither alarms every
+ *   hour nor counts toward that one (SHO-1059 did both until then).
  */
 
 const API_VERSION = "2026-04";
@@ -137,7 +139,7 @@ async function heldPurchases(): Promise<{ id: string; shopify_id: string }[]> {
   for (let from = 0; ; from += PROJECT_PAGE) {
     const { data, error } = await supabase
       .from("projects").select("id, shopify_id")
-      .not("shopify_id", "is", null).order("id").range(from, from + PROJECT_PAGE - 1);
+      .not("shopify_id", "is", null).is("shopify_gone_at", null).order("id").range(from, from + PROJECT_PAGE - 1);
     if (error) throw new Error(`could not read projects from the database: ${error.message}`);
     for (const r of data ?? []) out.push({ id: String(r.id), shopify_id: String(r.shopify_id) });
     if (!data || data.length < PROJECT_PAGE) return out;
@@ -338,10 +340,12 @@ export async function GET(req: NextRequest) {
           `Removed ${r.projectId}: its Shopify order was ${g.how} and the webhook never removed it. `
           + `A webhook was missed. Check: docker logs <container> | grep shopify-webhook`
         );
-      } else if (r.outcome === "blocked") {
-        problems.push(
+      } else if (r.outcome === "kept") {
+        detail.reconciled_kept = { project: r.projectId, how: g.how, claims: r.blockedBy };
+        if (r.newly) problems.push(
           `${r.projectId} is ${g.how} in Shopify, but warranty claim(s) ${r.blockedBy.join(", ")} `
-          + `refer to it, so nothing was removed. A person decides.`
+          + `refer to it, so it was KEPT, marked and archived. A webhook was missed. `
+          + `Check: docker logs <container> | grep shopify-webhook`
         );
       } else if (r.outcome === "failed") {
         problems.push(

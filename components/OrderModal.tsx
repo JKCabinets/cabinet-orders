@@ -19,7 +19,7 @@ import { checkAttachmentGate } from "@/lib/stageGates";
 import { AttachmentsPanel, type AttachmentsPanelHandle } from "./AttachmentsPanel";
 import { useAttachmentsFor, refreshAttachments, downloadAttachment, type Attachment } from "@/lib/attachments";
 import { FullOrderGroup, GroupIssueTag } from "./FullOrderGroup";
-import { OrderHeaderCards, ConsentMissingPill } from "./OrderHeaderCards";
+import { OrderHeaderCards, ConsentMissingPill, ShopifyGonePill } from "./OrderHeaderCards";
 import { ClaimCloseButton, ClaimOutcomePill } from "./ClaimClose";
 import { DamageReportPanel } from "./DamageReportPanel";
 import { AcknowledgmentPanel, type AcknowledgmentPanelHandle } from "./AcknowledgmentPanel";
@@ -248,7 +248,11 @@ const CARD_BADGE_STYLE: React.CSSProperties = {
 // var could drift out of sync, breaking every backward move silently.
 
 export function OrderModal({ order, onClose, onStageChange, initialReason }: OrderModalProps) {
-  const { moveStage, updateOrderDetails, updateNotes, updateInternalNotes, archiveOrder, unarchiveOrder, deleteOrder, allOrders, projects, team, claimProject, claimOrder: rawClaimOrder } = useStore();
+  const { moveStage, updateOrderDetails, updateNotes, updateInternalNotes, archiveOrder, unarchiveOrder, deleteOrder, allOrders, allOrdersIncludingArchived, projects, team, claimProject, claimOrder: rawClaimOrder } = useStore();
+  // ⚠ A CLAIM OPENS ITS PURCHASE IN PLACE (Garrett, 2026-10-19): "About
+  // SHO-1050 (cabinets)" on the claim opens that group's modal on top of this
+  // one, archived or not; closing it -- or Escape -- comes back to the claim.
+  const [aboutOpen, setAboutOpen] = useState<Order | null>(null);
   const { showToast } = useToast();
   const [claimBusy, setClaimBusy] = useState(false);
   const [reDecodeBusy, setReDecodeBusy] = useState(false);
@@ -540,13 +544,14 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        if (aboutOpen) return;   // the purchase on top closes itself
         if (pendingStage) { setPendingStage(null); setAdminPin(""); setPinError(false); }
         else onClose();
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [onClose, pendingStage]);
+  }, [onClose, pendingStage, aboutOpen]);
 
   useEffect(() => {
     setNotes(liveOrder.notes);
@@ -850,7 +855,19 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
               <span className="mx-1.5">&middot;</span>
               {orderDate(liveOrder)}
               <ConsentMissingPill project={purchaseOfRow} />
+              <ShopifyGonePill project={purchaseOfRow} />
               <ClaimOutcomePill order={liveOrder} />
+              {liveOrder.type === "warranty" && liveOrder.about_order_id && (() => {
+                const about = allOrdersIncludingArchived.find((o) => o.id === liveOrder.about_order_id);
+                return about ? (
+                  <button type="button" onClick={() => setAboutOpen(about)}
+                    className="ml-2 px-2 py-px rounded-full text-[10px] border border-white/15 text-cream/70 hover:text-cream hover:border-cream/30 transition-colors align-middle">
+                    About {displayOrderNumber(about)} ({(GROUP_LABEL[about.type] ?? about.type).toLowerCase()})
+                  </button>
+                ) : (
+                  <span className="ml-2 text-cream/45">About {liveOrder.about_order_id}</span>
+                );
+              })()}
             </p>
             {/* ⚠ THE TWO FACTS A CONTROL-LESS MODAL OWES THE READER: who worked
                 this, and why nothing can be changed. The claim chip is gone
@@ -1814,6 +1831,9 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
           </div>
         </div>
       </div>
+      {aboutOpen && (
+        <OrderModal order={aboutOpen} onClose={() => setAboutOpen(null)} onStageChange={() => {}} />
+      )}
     </div>
   );
 }

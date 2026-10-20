@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/AppShell";
 import { OrderModal } from "@/components/OrderModal";
 import { StagePill } from "@/components/OrderTable";
 import { ClaimOutcomePill } from "@/components/ClaimClose";
+import { ShopifyGonePill } from "@/components/OrderHeaderCards";
 import { Search, RotateCcw, Loader2, Archive as ArchiveIcon } from "lucide-react";
 import clsx from "clsx";
 
@@ -216,6 +217,7 @@ export function ArchiveClient() {
                       <span className="text-[10px] uppercase tracking-wider text-cream/35 px-1.5 py-px rounded-full border border-white/10">
                         {e.kind === "purchase" ? "Shopify" : e.order.type === "custom" ? "Custom" : "Warranty"}
                       </span>
+                      {e.kind === "purchase" && <ShopifyGonePill project={e.project} />}
                     </div>
 
                     {/* The parts, and where each stopped. Information, not

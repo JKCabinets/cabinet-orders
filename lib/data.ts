@@ -886,6 +886,12 @@ export interface Project {
    */
   archived_at?: string | null;
   /**
+   * Set when Shopify deleted or cancelled this purchase but warranty claims
+   * refer to it, so it was kept and archived (2026-10-19). Null otherwise.
+   */
+  shopify_gone_at?: string | null;
+  shopify_gone_how?: "deleted" | "cancelled" | null;
+  /**
    * ONE owner for the whole purchase.
    *
    * Groups used to be claimed separately, so a designer who had finished the

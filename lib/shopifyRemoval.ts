@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import { removeOrderFiles } from "@/lib/orderFiles";
 import { logWebhook } from "@/lib/webhookLog";
+import { activityDate } from "@/lib/data";
 
 /**
  * ⚠ HOW A SHOPIFY PURCHASE LEAVES THE OMS — ONE PLACE (2026-10-19).
@@ -26,7 +27,7 @@ import { logWebhook } from "@/lib/webhookLog";
  */
 export type RemovalResult =
   | { outcome: "no_project" }
-  | { outcome: "blocked"; projectId: string; blockedBy: string[] }
+  | { outcome: "kept"; projectId: string; blockedBy: string[]; how: "deleted" | "cancelled"; newly: boolean }
   | { outcome: "failed"; projectId: string | null; table: string; message: string }
   | { outcome: "removed"; projectId: string; groups: number };
 
@@ -75,11 +76,36 @@ export async function removeShopifyPurchase(shopifyId: string, topic: string): P
     }
     const blocking = (referrers ?? []).filter(r => !ids.includes(r.id));
     if (blocking.length > 0) {
-      logWebhook("delete_blocked", {
-        order_id: project.id, shopify_id: shopifyId, topic,
-        blocked_by: blocking.map(r => r.id),
-      });
-      return { outcome: "blocked", projectId: project.id, blockedBy: blocking.map(r => r.id) };
+      // ⚠ KEPT FOR ITS CLAIMS -- MARKED AND ARCHIVED (Garrett, 2026-10-19). It
+      // was only refused, and the purchase stayed on the board as if live: the
+      // hourly check went red every hour and, still "gone", the purchase used
+      // up the one-removal-per-run limit (SHO-1059). Now it is marked
+      // (shopify_gone_at / _how) and archived as a manual archive is, once:
+      // a later delivery for it (a delete after its cancel) finds it marked,
+      // and a person who restores it is not overruled.
+      const how: "deleted" | "cancelled" = /cancel/i.test(topic) ? "cancelled" : "deleted";
+      const blockedBy = blocking.map(r => r.id);
+      const now = new Date().toISOString();
+      const { data: marked, error: markErr } = await supabase
+        .from("projects")
+        .update({ shopify_gone_at: now, shopify_gone_how: how, archived: true, archived_at: now, updated_at: now })
+        .eq("id", project.id)
+        .is("shopify_gone_at", null)
+        .select("id");
+      if (markErr) {
+        logWebhook("delete_failed", { order_id: project.id, shopify_id: shopifyId, topic, table: "projects", message: markErr.message });
+        return { outcome: "failed", projectId: project.id, table: "projects", message: markErr.message };
+      }
+      const newly = (marked ?? []).length > 0;
+      if (newly && ids.length > 0) {
+        const text = `${how === "cancelled" ? "Cancelled" : "Deleted"} in Shopify — kept for its warranty `
+          + `claim${blockedBy.length === 1 ? "" : "s"} (${blockedBy.join(", ")}) and archived`;
+        const { error: noteErr } = await supabase.from("order_activity")
+          .insert(ids.map((id) => ({ order_id: id, text, time: activityDate() })));
+        if (noteErr) logWebhook("note_failed", { order_id: project.id, shopify_id: shopifyId, topic, message: noteErr.message });
+      }
+      logWebhook("kept_for_claims", { order_id: project.id, shopify_id: shopifyId, topic, blocked_by: blockedBy, how, newly });
+      return { outcome: "kept", projectId: project.id, blockedBy, how, newly };
     }
   }
 

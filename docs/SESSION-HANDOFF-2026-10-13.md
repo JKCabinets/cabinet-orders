@@ -590,6 +590,32 @@ Each line points at the section that owns the detail.
     with the file (deployed: no Submit anywhere; fixed: Submit) and without
     (both: Next action's "Upload acknowledgment", the panel's Submit hidden).
     Gap 12 was `a437617`.
+40. ✅ **A purchase gone from Shopify that warranty claims refer to** (found
+    2026-10-19, when the three test orders were cancelled and deleted). The
+    webhook removed SHO-1057 and SHO-1058 and refused SHO-1059 — four claims
+    referred to it — and so did the hourly check, red every hour; and, still
+    "gone", it used up the one-removal-per-run limit, so it would have blocked
+    every other removal. "A person decides" had given the person no tool.
+    **Garrett, 2026-10-19:** the test SHO-1059 and its four claims were removed
+    by hand (files first, then a guarded SQL step; their Help Scout
+    conversations noted and closed by the 10-07 trigger, their submissions
+    CR-1011 … CR-1014 unlinked and kept). And from now on such a purchase is
+    KEPT, MARKED and ARCHIVED (`patch_kept_for_claims.py`, migration
+    `2026-10-19-shopify-gone.sql`): `removeShopifyPurchase` sets
+    `projects.shopify_gone_at` / `_how` and archives it, once, with a trail
+    note; the webhook answers 200 `kept_for_claims`; the hourly check skips a
+    marked purchase — no alarm, not counted — and goes red only on the run
+    that marks one (a webhook was missed). A restore by a person is not
+    overruled. A label, "Deleted in Shopify — kept for its claims", is on the
+    purchase and in the Archive. And a claim now SHOWS its purchase: "About
+    SHO-1050 (cabinets)", which opens it on top of the claim, archived or not
+    (Escape closes only the top one) — no claim could reach its purchase
+    before. **Proved:** the real webhook and hourly check, both versions (cancel
+    then delete; a restore then a delete; a kept purchase beside an unrelated
+    one; the check finding one first, then the next hour); the migration twice
+    over existing projects; the real modal and Archive rendered; strict
+    typecheck, the same 11 errors in both, a planted error caught in each of
+    seven files. Items 38–39 were `c3177ca`.
 
 ## 7. Facts that cost something to learn
 

@@ -1037,12 +1037,12 @@ export async function POST(req: NextRequest) {
     if (removal.outcome === "no_project") {
       return NextResponse.json({ received: true, skipped: "no_matching_project" });
     }
-    // 200 rather than 5xx for a claim: retrying cannot clear a claim --
-    // Shopify would just redeliver this forever. A person decides.
-    if (removal.outcome === "blocked") {
+    // Kept for its warranty claims, marked and archived (2026-10-19). 200:
+    // retrying cannot change a claim, and the purchase is where it should be.
+    if (removal.outcome === "kept") {
       return NextResponse.json({
         received: true,
-        skipped: "blocked_by_references",
+        skipped: "kept_for_claims",
         blocked_by: removal.blockedBy,
       });
     }
