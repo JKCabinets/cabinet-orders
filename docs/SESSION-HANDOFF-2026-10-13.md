@@ -127,6 +127,9 @@ Add these to the old handoff's "Process" list when it is next touched.
   code, which does whatever it does with an unknown kind — here, word it as a
   stage move. Prove the order: old code over the new database, and new code
   over the old one.
+- **A summary you cut is not a summary** (2026-10-20). The first look at the
+  cron log ended in `tail -60`: it showed 72 failures of 199 and looked
+  complete. Count what you show against the total before reading it.
 - **A render proves behaviour, not types** (2026-10-19). esbuild strips
   types, so the rendered proof passed while `useRealtimeOrders` declared its
   handler's entry without the new field; only `tsc` saw it. Both proofs, always.
@@ -461,8 +464,25 @@ Each line points at the section that owns the detail.
     clear through the order flow. **Proved:** compiled code with comments
     stripped byte-identical; all 111 (type, from, to) pairs identical; strict
     typecheck clean in both. Item 40 is the commit before this one.
-14. **`~/cron-jobs/cron.log` holds 196 non-zero `rc` runs** nobody has looked
-    at (old Open 9).
+14. ✅ **`~/cron-jobs/cron.log` holds 196 non-zero `rc` runs** nobody has looked
+    at (old Open 9). **Looked at 2026-10-20: 199 of 3,276 runs (20 May – 20
+    Oct), every one accounted for, none ongoing; no code change.**
+    · 175 `curl: (35) TLS connect error` (20 May – 24 Jul): production-complete
+      64, delivery-complete 64, teams-digest 46, one catalog dry run — the
+      box's own requests could not complete TLS to the site before it served
+      its certificate. None since. (So production-complete never once ran in
+      those months: harmless pre-launch, and why every job now has its own
+      healthchecks.io alarm.) delivery-complete was removed on purpose
+      (`2b479e6`, delivery is human-confirmed — OMS-STATE).
+    · 7 sync-avis-catalog HTTP 500 (7–18 Aug); it has succeeded daily since.
+    · 13 webhook-health in August — 12 false alarms of the old check, rewritten
+      then, and one real "#1039 not in the OMS" on a test order — plus one
+      `monitor_misconfigured` from run-cron.sh (26 Aug), never again.
+    · 1 deliberate 404 (`/api/cron/does-not-exist`, the alarm test), 1
+      helpscout-sync 404 (6 Oct, scheduled just before its route deployed),
+      1 webhook-health (19 Oct, SHO-1059 — item 40).
+    To look again: the per-month summary in this session's record is one
+    `grep -v ' rc=0 '` away; read ALL of it — a `tail` hid 127 of the 199.
 15. **The SLA clock runs through weekends; the digest does not** — an order
     arriving Friday 5pm first appears Monday (OPERATIONS §7).
 16. **Whether the public lookup should answer by claim number** (OPERATIONS

@@ -2348,6 +2348,7 @@ patch_kept_for_claims.py
 patch_docs_kept_for_claims.py
 patch_backward_clear_decision.py
 patch_docs_backward_clear_decision.py
+patch_docs_cron_log_reviewed.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it
