@@ -588,7 +588,13 @@ Each line points at the section that owns the detail.
     Strict typecheck of the full import closure (39 files, none stood in): 0
     errors in both, a planted error caught in each changed file, and a source
     passed where the row is wanted fails at both call sites.
-34. **Any save of a Shopify group's dates writes back to Shopify**, changed or
+34. ✅ (fixed 2026-10-20, `patch_shopify_writeback_changed.py`: the write-back
+    fires on a date only when `dateChanged()` says it changed, and sends only
+    those. Proved through the real PATCH route, every call to Shopify recorded:
+    a save with nothing changed made a read and a write before and NO call
+    after; a changed finish date sent both dates before and only the finish
+    after; a stage move and a notes save identical.)
+    **Any save of a Shopify group's dates writes back to Shopify**, changed or
     not: the write-back's `shouldSync` asks whether a field was SENT, the same
     shape as item 32. It writes the current values, so it is idempotent — but
     it is an API call, and Shopify's webhooks, per save.
@@ -686,6 +692,19 @@ Each line points at the section that owns the detail.
     over existing projects; the real modal and Archive rendered; strict
     typecheck, the same 11 errors in both, a planted error caught in each of
     seven files. Items 38–39 were `c3177ca`.
+
+### Found 2026-10-20 (proving item 34)
+
+41. **A production AUTO-ADVANCE does not update Shopify's stage.** Setting a
+    start date at Entered moves a cabinet group to In production, and the
+    write-back sends the date but not "Production Stage" — the same bug the
+    tracking advance had, fixed there ("a tracking advance is a stage change")
+    and missed here: `autoAdvancedTo` is not in the stage condition. Seen in
+    both versions while proving item 34.
+42. **The write-back never sends `scheduled_delivery_date`** — the field the
+    Production & Delivery card edits; it sends the older `delivery_date`.
+    Perhaps deliberate (the delivery target is internal); a question for
+    Garrett, not a fix.
 
 ## 7. Facts that cost something to learn
 

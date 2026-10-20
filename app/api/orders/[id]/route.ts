@@ -1000,9 +1000,14 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
     // the group was still unshipped after it had shipped.
     trackingAdvancesTo !== null ||
     body.notes !== undefined ||
-    body.production_start_date !== undefined ||
-    body.production_est_finish_date !== undefined ||
-    body.delivery_date !== undefined ||
+    // ⚠ A DATE THAT CHANGED, NOT ONE THAT WAS SENT (2026-10-20). The card sends
+    // every date on every save, so asking "was it in the request" wrote to
+    // Shopify -- and set off its webhooks -- for every save of a Shopify
+    // group, changed or not (item 34). dateChanged() is the activity block's
+    // comparison with the row as it was (item 32).
+    dateChanged("production_start_date") ||
+    dateChanged("production_est_finish_date") ||
+    dateChanged("delivery_date") ||
     body.delivery_window !== undefined ||
     body.delivery_notes !== undefined;
 
@@ -1017,9 +1022,9 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
       const syncResult = await syncToShopify(order.shopify_id, {
         ...((body.stage !== undefined || trackingAdvancesTo !== null) && { stage: order.stage }),
         ...(body.notes !== undefined && { notes: order.notes }),
-        ...(body.production_start_date !== undefined && { production_start_date: order.production_start_date }),
-        ...(body.production_est_finish_date !== undefined && { production_est_finish_date: order.production_est_finish_date }),
-        ...(body.delivery_date !== undefined && { delivery_date: order.delivery_date }),
+        ...(dateChanged("production_start_date") && { production_start_date: order.production_start_date }),
+        ...(dateChanged("production_est_finish_date") && { production_est_finish_date: order.production_est_finish_date }),
+        ...(dateChanged("delivery_date") && { delivery_date: order.delivery_date }),
         ...(body.delivery_window !== undefined && { delivery_window: order.delivery_window }),
         ...(body.delivery_notes !== undefined && { delivery_notes: order.delivery_notes }),
       });
