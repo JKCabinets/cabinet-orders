@@ -999,6 +999,11 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
     // body.stage, so testing the body alone left the Shopify stage tag saying
     // the group was still unshipped after it had shipped.
     trackingAdvancesTo !== null ||
+    // ⚠ SO IS A PRODUCTION AUTO-ADVANCE (Garrett, 2026-10-20, item 41). A start
+    // date set at Entered moves the group to In production without body.stage,
+    // and Shopify's "Production Stage" stayed at Entered -- the tracking
+    // advance's bug, fixed above it and missed here.
+    autoAdvancedTo !== null ||
     body.notes !== undefined ||
     // ⚠ A DATE THAT CHANGED, NOT ONE THAT WAS SENT (2026-10-20). The card sends
     // every date on every save, so asking "was it in the request" wrote to
@@ -1020,7 +1025,7 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
 
     if (order?.shopify_id) {
       const syncResult = await syncToShopify(order.shopify_id, {
-        ...((body.stage !== undefined || trackingAdvancesTo !== null) && { stage: order.stage }),
+        ...((body.stage !== undefined || trackingAdvancesTo !== null || autoAdvancedTo !== null) && { stage: order.stage }),
         ...(body.notes !== undefined && { notes: order.notes }),
         ...(dateChanged("production_start_date") && { production_start_date: order.production_start_date }),
         ...(dateChanged("production_est_finish_date") && { production_est_finish_date: order.production_est_finish_date }),

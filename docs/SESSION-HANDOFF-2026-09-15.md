@@ -2362,6 +2362,8 @@ patch_note_alarm_wording.py
 patch_docs_note_alarm_wording.py
 patch_shopify_writeback_changed.py
 patch_docs_shopify_writeback_changed.py
+patch_autoadvance_writeback.py
+patch_docs_autoadvance_writeback.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

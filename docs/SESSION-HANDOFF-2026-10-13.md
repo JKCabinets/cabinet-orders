@@ -695,13 +695,19 @@ Each line points at the section that owns the detail.
 
 ### Found 2026-10-20 (proving item 34)
 
-41. **A production AUTO-ADVANCE does not update Shopify's stage.** Setting a
+41. ✅ (fixed 2026-10-20 — Garrett: an auto-advance is a stage change —
+    `patch_autoadvance_writeback.py`: `autoAdvancedTo` joins the write-back's
+    trigger and its stage condition. Proved through the real PATCH route: the
+    auto-advance now writes "Production Stage: In production" with its tags;
+    the other five saves byte-identical.)
+    **A production AUTO-ADVANCE does not update Shopify's stage.** Setting a
     start date at Entered moves a cabinet group to In production, and the
     write-back sends the date but not "Production Stage" — the same bug the
     tracking advance had, fixed there ("a tracking advance is a stage change")
     and missed here: `autoAdvancedTo` is not in the stage condition. Seen in
     both versions while proving item 34.
-42. **The write-back never sends `scheduled_delivery_date`** — the field the
+42. ✅ **Decided 2026-10-20 (Garrett): correct as is — the delivery target is
+    internal.** **The write-back never sends `scheduled_delivery_date`** — the field the
     Production & Delivery card edits; it sends the older `delivery_date`.
     Perhaps deliberate (the delivery target is internal); a question for
     Garrett, not a fix.
