@@ -2356,6 +2356,8 @@ patch_claim_functions_as_live.py
 patch_docs_claim_functions_as_live.py
 patch_upload_read_fails.py
 patch_docs_upload_read_fails.py
+patch_claim_modal_save_guard.py
+patch_docs_claim_modal_save_guard.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

@@ -172,8 +172,14 @@ export function WarrantyClaimModal({ onClose, submission, onDone }: Props) {
 
   const searchRef = useRef<HTMLInputElement>(null);
   useEffect(() => { searchRef.current?.focus(); }, []);
+  // ⚠ NOT CLOSED WHILE A CLAIM IS BEING CREATED (2026-10-20). Escape, the
+  // backdrop, X and Cancel all closed it mid-save, so a refusal that arrived
+  // after had nowhere to show -- the claim was not created, and nothing said so.
+  // The guard is `inFlight`, the ref the create already holds (2026-10-14), as
+  // NewOrderModal does. A create that succeeds still closes it itself.
+  const close = () => { if (!inFlight.current) onClose(); };
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !inFlight.current) onClose(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
@@ -344,7 +350,7 @@ export function WarrantyClaimModal({ onClose, submission, onDone }: Props) {
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: "rgba(10,21,32,0.72)", backdropFilter: "blur(6px)" }}
-      onClick={onClose}
+      onClick={close}
     >
       <div
         className="glass rounded-2xl w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden"
@@ -360,7 +366,7 @@ export function WarrantyClaimModal({ onClose, submission, onDone }: Props) {
                 : "Against an existing customer order."}
             </p>
           </div>
-          <button onClick={onClose} className="text-[rgba(232,227,218,0.45)] hover:text-cream transition-colors" aria-label="Close">
+          <button onClick={close} disabled={saving} className="text-[rgba(232,227,218,0.45)] hover:text-cream transition-colors disabled:opacity-40" aria-label="Close">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -696,8 +702,8 @@ export function WarrantyClaimModal({ onClose, submission, onDone }: Props) {
             )}
           </div>
           <div className="flex items-center gap-2.5">
-            <button onClick={onClose}
-              className="px-4 py-2 rounded-full text-[12px] uppercase tracking-wider text-[rgba(232,227,218,0.55)] hover:text-cream transition-colors">
+            <button onClick={close} disabled={saving}
+              className="px-4 py-2 rounded-full text-[12px] uppercase tracking-wider text-[rgba(232,227,218,0.55)] hover:text-cream transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
               Cancel
             </button>
             <button

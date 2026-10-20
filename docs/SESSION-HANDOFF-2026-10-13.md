@@ -528,7 +528,13 @@ Each line points at the section that owns the detail.
 
 ### Found 2026-10-14
 
-28. **`WarrantyClaimModal` can be closed while it saves** (Escape, Cancel, X,
+28. ✅ (fixed 2026-10-20, `patch_claim_modal_save_guard.py`: one `close()`
+    that does nothing while `inFlight` holds a create, for the backdrop, X and
+    Cancel; Escape checks the same; X and Cancel disabled while saving. Proved
+    in the real claim modal, each way out tried alone mid-save: deployed closed
+    every time and the refusal was never seen; fixed held every time and showed
+    it; a successful create still closes it.)
+    **`WarrantyClaimModal` can be closed while it saves** (Escape, Cancel, X,
     the backdrop), so a refusal that arrives after is lost from view. Nothing
     is created wrongly. `NewOrderModal` refuses to close while saving.
 29. **Both create modals' Cancel and Create are not pills** — the 2026-10-07
