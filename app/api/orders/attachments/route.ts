@@ -142,8 +142,18 @@ export const POST = withClaimOverrideLog(async function POST(
     .from("orders")
     .select("id, type, archived, project_id, custom_specs")
     .eq("id", orderId)
-    .single();
-  if (orderErr || !order) {
+    .maybeSingle();
+  // ⚠ A READ THAT FAILS IS NOT A MISSING ORDER (2026-10-20). Both answered 404
+  // "Order not found" -- safe, nothing was written, but untrue when the order
+  // exists and the read simply failed. Told apart as the attachment DELETE
+  // tells them (item 3): a failure is a 500 that says to try again.
+  if (orderErr) {
+    return NextResponse.json(
+      { error: "order_unavailable", message: "Could not read the order, so nothing was uploaded. Try again." },
+      { status: 500 },
+    );
+  }
+  if (!order) {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
   }
 

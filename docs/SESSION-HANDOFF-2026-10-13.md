@@ -590,7 +590,13 @@ Each line points at the section that owns the detail.
     buttons inside it. Invalid HTML; React warns it causes a hydration error (a
     browser parsing the server's HTML closes the outer button at the inner).
     Found rendering the table for item 33; the same before and after it.
-36. **The attachment UPLOAD answers a failed `orders` read with "Order not
+36. ✅ (fixed 2026-10-20, `patch_upload_read_fails.py`: `maybeSingle`, and a
+    failed read answers 500 `order_unavailable`, "Could not read the order, so
+    nothing was uploaded. Try again."; a missing order stays 404. Proved through
+    the real upload route with a multipart file: the failed read 404 → 500,
+    nothing written in either; the missing order and a normal upload identical,
+    call for call, but the file name's millisecond stamp.)
+    **The attachment UPLOAD answers a failed `orders` read with "Order not
     found"** (404). It refuses, so nothing is written wrongly — but it says the
     order does not exist when it could not be read. The DELETE now tells the two
     apart (item 3); the upload should say the same.

@@ -2354,6 +2354,8 @@ patch_card_not_a_button.py
 patch_docs_card_not_a_button.py
 patch_claim_functions_as_live.py
 patch_docs_claim_functions_as_live.py
+patch_upload_read_fails.py
+patch_docs_upload_read_fails.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it
