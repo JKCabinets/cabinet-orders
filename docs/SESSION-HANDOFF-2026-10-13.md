@@ -543,7 +543,13 @@ Each line points at the section that owns the detail.
     "closed" before "moved to Resolved". Postgres fires the two triggers
     alphabetically (`orders_claim_close_note` first). Seen in a test that wrote
     both at once; whether the close route ever does is not yet read.
-31. **The sweep's alarm names a stuck note by its stage** (`the note for
+31. ✅ (fixed 2026-10-20, `patch_note_alarm_wording.py`: the alarm reads each
+    stuck note's `event` and names it — "the tracking-number note (at
+    "Shipped")", "the "claim closed" note"; and a FAILED read of the queue,
+    which was ignored and reported all clear, is now a problem itself. Proved
+    in the real sweep: six stuck notes, one of each kind, named; an unreadable
+    queue 200 ok → 500.)
+    **The sweep's alarm names a stuck note by its stage** (`the note for
     "Shipped"`), so a stuck tracking note reads like the stage note. It still
     names the claim.
 

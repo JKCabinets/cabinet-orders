@@ -22,6 +22,22 @@ import { pushClaims, pushClaimNotes } from "@/lib/claimHelpScout";
 
 const ALARM_AFTER_ATTEMPTS = 4;
 
+/**
+ * ⚠ A STUCK NOTE IS NAMED BY WHAT IT IS (2026-10-20). The alarm said "the note
+ * for "Shipped"" for every kind, so a stuck tracking-number note (2026-10-14)
+ * read exactly like the stage note. The queue row knows its kind; say it.
+ */
+function noteName(s: { event?: string | null; to_stage?: string | null }): string {
+  switch (s.event) {
+    case "tracking": return `tracking-number note (at "${s.to_stage}")`;
+    case "created":  return `"claim created" note`;
+    case "closed":   return `"claim closed" note`;
+    case "reopened": return `"claim reopened" note`;
+    case "deleted":  return `"claim deleted" note`;
+    default:         return `note for "${s.to_stage}"`;
+  }
+}
+
 export async function GET(req: NextRequest) {
   if (!verifyCronAuth(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -37,9 +53,11 @@ export async function GET(req: NextRequest) {
   // A claim's progress (Help Scout part 2, 2026-10-07): every queued note --
   // any a stage move or a promotion did not send at once.
   const notes = await pushClaimNotes();
-  const { data: stuckNotes } = await supabase
+  // ⚠ A FAILED READ IS NOT "NOTHING STUCK" (2026-10-20): its error was
+  // ignored, so the alarm for stuck notes could not fire when it could not look.
+  const { data: stuckNotes, error: notesErr } = await supabase
     .from("claim_helpscout_notes")
-    .select("order_id, claim_ref, to_stage, attempts, last_error")
+    .select("order_id, claim_ref, event, to_stage, attempts, last_error")
     .eq("state", "pending")
     .gte("attempts", ALARM_AFTER_ATTEMPTS);
 
@@ -60,7 +78,8 @@ export async function GET(req: NextRequest) {
   };
   const problems = [
     ...(stuck ?? []).map((s) => `${s.ref}: not in Help Scout after ${s.helpscout_attempts} attempts. Last: ${s.helpscout_last_error ?? "no reason recorded"}`),
-    ...(stuckNotes ?? []).map((s) => `${s.order_id ?? s.claim_ref}: the note for "${s.to_stage}" not in Help Scout after ${s.attempts} attempts. Last: ${s.last_error ?? "no reason recorded"}`),
+    ...(stuckNotes ?? []).map((s) => `${s.order_id ?? s.claim_ref}: the ${noteName(s)} not in Help Scout after ${s.attempts} attempts. Last: ${s.last_error ?? "no reason recorded"}`),
+    ...(notesErr ? [`Could not read the Help Scout note queue, so stuck notes could not be checked: ${notesErr.message}`] : []),
   ];
   if (problems.length > 0) {
     return NextResponse.json(

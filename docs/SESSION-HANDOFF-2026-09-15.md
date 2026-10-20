@@ -2358,6 +2358,8 @@ patch_upload_read_fails.py
 patch_docs_upload_read_fails.py
 patch_claim_modal_save_guard.py
 patch_docs_claim_modal_save_guard.py
+patch_note_alarm_wording.py
+patch_docs_note_alarm_wording.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it
