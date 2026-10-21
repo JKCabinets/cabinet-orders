@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { X } from "lucide-react";
 import { useStore } from "@/lib/store";
-import { Source, TYPE_UI, displayOrderNumber, type OrderType } from "@/lib/data";
+import { Source, TYPE_UI, type OrderType } from "@/lib/data";
 
 /**
  * ⚠ NO PRODUCT PICKER (2026-10-07). Until then this form carried a Shopify SKU
@@ -23,7 +23,11 @@ interface NewOrderModalProps {
    * be told -- OrderModal and BulkActionBar read `.type` off the rows they
    * are handed, but here the row does not exist yet.
    */
-  type: OrderType;
+  // ⚠ NEVER A CLAIM (2026-10-20). The orders hub opens WarrantyClaimModal for
+  // claims and this for everything else, and the dashboard opens it for custom
+  // jobs; the claim branch that was here could not be reached, so it is gone,
+  // and the type now says so -- a caller passing "warranty" will not compile.
+  type: Exclude<OrderType, "warranty">;
   onClose: () => void;
 }
 
@@ -47,13 +51,12 @@ const GLASS_INPUT: React.CSSProperties = {
   transition: "border-color 0.15s",
 };
 
-const LABEL_CLS = "block text-[10px] uppercase tracking-widest text-[rgba(232,227,218,0.35)] mb-1.5";
 
 // Destructured as `orderType` so it cannot shadow anything named `type`
 // elsewhere in this file.
 export function NewOrderModal({ type: orderType, onClose }: NewOrderModalProps) {
   const ui = TYPE_UI[orderType] ?? TYPE_UI.order;
-  const { addOrder, team, allOrdersIncludingArchived } = useStore();
+  const { addOrder, team } = useStore();
   const activeTeam = team.filter((m) => m.active);
 
   const [name, setName] = useState("");
@@ -72,12 +75,6 @@ export function NewOrderModal({ type: orderType, onClose }: NewOrderModalProps) 
   // and parseMoney on the server accepts it; coercing here would fight the
   // user mid-keystroke and turn an empty box into 0.
   const [totalPrice, setTotalPrice] = useState("");
-  /**
-   * The GROUP this claim is about. Warranty rows only; empty for every other
-   * type, which has no parent.
-   */
-  const [aboutOrderId, setAboutOrderId] = useState("");
-  const [aboutSearch, setAboutSearch] = useState("");
 
   const overlayRef = useRef<HTMLDivElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
@@ -107,18 +104,11 @@ export function NewOrderModal({ type: orderType, onClose }: NewOrderModalProps) 
     e.preventDefault();
     if (inFlight.current) return;
     if (!name.trim()) return;
-    // ⚠ The server refuses this too (422 about_order_id_required). Stopping
-    // here as well means the person sees which field is missing rather than an
-    // error after everything else they typed.
-    if (orderType === "warranty" && !aboutOrderId) return;
     inFlight.current = true;
     setSubmitting(true);
     setSubmitError(null);
     const result = await addOrder({
       type: orderType,
-      // Only ever set on a claim; undefined is dropped by the route's explicit
-      // newOrder object for every other type.
-      about_order_id: orderType === "warranty" ? aboutOrderId : undefined,
       name, detail,
       source, member, notes,
       internal_notes: internalNotes,
@@ -138,31 +128,6 @@ export function NewOrderModal({ type: orderType, onClose }: NewOrderModalProps) 
     setSubmitError(result.message ?? result.error ?? "The job could not be created.");
   }
 
-  /**
-   * What a claim can be about.
-   *
-   * ⚠ ARCHIVED INCLUDED, ON PURPOSE. See the header: a purchase is archived
-   * once delivered, and a claim is filed after delivery, so excluding archived
-   * rows would hide the ordinary case.
-   *
-   * Claims are excluded -- a claim about a claim is not a thing -- and so are
-   * custom jobs, which have no delivery for the Terms 12.3 window to run from.
-   */
-  const claimTargets = useMemo(() => {
-    if (orderType !== "warranty") return [];
-    const q = aboutSearch.trim().toLowerCase();
-    return allOrdersIncludingArchived
-      .filter((o) => o.type !== "warranty" && o.type !== "custom")
-      .filter((o) => {
-        if (!q) return true;
-        return o.id.toLowerCase().includes(q)
-          || (o.name ?? "").toLowerCase().includes(q)
-          || displayOrderNumber(o).toLowerCase().includes(q);
-      })
-      .slice(0, 40);
-  }, [orderType, aboutSearch, allOrdersIncludingArchived]);
-
-  const chosenTarget = allOrdersIncludingArchived.find((o) => o.id === aboutOrderId);
 
 
   return (
@@ -259,53 +224,6 @@ export function NewOrderModal({ type: orderType, onClose }: NewOrderModalProps) 
             />
           </Field>
 
-          {orderType === "warranty" && (
-            <Field label="Which order is this claim about" required>
-              <input
-                value={aboutSearch}
-                onChange={(e) => setAboutSearch(e.target.value)}
-                placeholder="Search by order number or customer"
-                style={GLASS_INPUT}
-                className="placeholder:text-[rgba(232,227,218,0.20)] mb-2"
-              />
-              <div
-                className="max-h-40 overflow-y-auto rounded-lg"
-                style={{ border: "0.5px solid rgba(255,255,255,0.15)" }}
-              >
-                {claimTargets.length === 0 && (
-                  <p className="text-[11px] px-3 py-2 text-[rgba(232,227,218,0.35)]">
-                    No matching orders.
-                  </p>
-                )}
-                {claimTargets.map((o) => (
-                  <button
-                    type="button"
-                    key={o.id}
-                    onClick={() => setAboutOrderId(o.id)}
-                    className="w-full text-left px-3 py-2 text-xs transition-colors"
-                    style={{
-                      background: o.id === aboutOrderId
-                        ? "rgba(145,165,151,0.25)" : "transparent",
-                      color: "#e8e3da",
-                    }}
-                  >
-                    <span className="font-medium">{displayOrderNumber(o)}</span>
-                    <span className="text-[rgba(232,227,218,0.45)]">
-                      {" \u00b7 "}{o.name}{" \u00b7 "}{o.stage}
-                      {o.archived ? " \u00b7 archived" : ""}
-                    </span>
-                  </button>
-                ))}
-              </div>
-              {chosenTarget && (
-                <p className="text-[11px] mt-1.5 text-[rgba(232,227,218,0.45)]">
-                  {/* The GROUP handle, shown because that is what gets stored
-                      and what the claim reference is built from. */}
-                  Claim will be filed against <span className="text-[#e8e3da]">{chosenTarget.id}</span>
-                </p>
-              )}
-            </Field>
-          )}
 
           <Field label={ui.detailLabel}>
             <input
@@ -317,20 +235,18 @@ export function NewOrderModal({ type: orderType, onClose }: NewOrderModalProps) 
             />
           </Field>
 
-          {orderType !== "warranty" && (
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Door style">
-                <input value={doorStyle} onChange={(e) => setDoorStyle(e.target.value)}
-                  placeholder="e.g. Shaker" style={GLASS_INPUT}
-                  className="placeholder:text-[rgba(232,227,218,0.20)]" />
-              </Field>
-              <Field label="Color">
-                <input value={color} onChange={(e) => setColor(e.target.value)}
-                  placeholder="e.g. White" style={GLASS_INPUT}
-                  className="placeholder:text-[rgba(232,227,218,0.20)]" />
-              </Field>
-            </div>
-          )}
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Door style">
+              <input value={doorStyle} onChange={(e) => setDoorStyle(e.target.value)}
+                placeholder="e.g. Shaker" style={GLASS_INPUT}
+                className="placeholder:text-[rgba(232,227,218,0.20)]" />
+            </Field>
+            <Field label="Color">
+              <input value={color} onChange={(e) => setColor(e.target.value)}
+                placeholder="e.g. White" style={GLASS_INPUT}
+                className="placeholder:text-[rgba(232,227,218,0.20)]" />
+            </Field>
+          </div>
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Source">

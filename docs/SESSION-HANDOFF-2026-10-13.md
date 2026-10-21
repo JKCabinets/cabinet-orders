@@ -520,11 +520,23 @@ Each line points at the section that owns the detail.
     and the trail identical but the job's time-based id.) **The quote webhook
     has seven unused variables**, `color`, `city`,
     `state`, `zip` among them.
-22. **`NewOrderModal` keeps a WARRANTY branch nothing can reach** — the
+22. ✅ (fixed 2026-10-20, `patch_neworder_no_claim_branch.py`: proved
+    unreachable from the whole files — the hub opens WarrantyClaimModal for a
+    claim and NewOrderModal for the rest, the dashboard passes "custom", and
+    only custom and warranty pages have a create button. The branch, its state,
+    guard, purchase list and field are gone, with the imports only it used and
+    `LABEL_CLS`, already unused. The prop is now `Exclude<OrderType,
+    "warranty">`: remove the hub's warranty test and the build fails. The
+    custom-job form renders and creates identically.) **`NewOrderModal` keeps a
+    WARRANTY branch nothing can reach** — the
     dashboard opens it for custom jobs only; claims use `WarrantyClaimModal`.
 23. **An acknowledgment's phone written with an extension** ("ext 4") leaves
     that text in its address, which then differs — shown, not hidden.
 24. **A favicon** — `/favicon.ico` is a 404.
+43. **`DashboardClient` has five unused names** (found 2026-10-20 by the
+    compiler, proving item 22): `STAGE_ACCENT`, `getBackorderStatus`,
+    `currentUserId`, `HEALTH_GROUPS`, `worstStatus`. Read each before removing:
+    an unused result can be a feature that was never finished.
 
 ### Waiting on someone
 
