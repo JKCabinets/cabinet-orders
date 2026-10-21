@@ -20,7 +20,10 @@ const ALLOWED_HOST_SUFFIXES = [
 export type TeamsPostResult =
   | { ok: true }
   | { ok: false; skipped: true; reason: string }
-  | { ok: false; skipped: false; reason: string };
+  // `where` (2026-10-21): "config" is ours -- the URL is unparseable or not a
+  // Microsoft host; "teams" is theirs -- refused, or unreachable. The digest
+  // answers its cron 500 and 502 by it, as it did before using this.
+  | { ok: false; skipped: false; where: "config" | "teams"; reason: string };
 
 export async function postTeamsCard(card: unknown): Promise<TeamsPostResult> {
   const webhookUrl = process.env.TEAMS_WEBHOOK_URL;
@@ -30,10 +33,10 @@ export async function postTeamsCard(card: unknown): Promise<TeamsPostResult> {
   try {
     parsed = new URL(webhookUrl);
   } catch {
-    return { ok: false, skipped: false, reason: "Invalid TEAMS_WEBHOOK_URL" };
+    return { ok: false, skipped: false, where: "config", reason: "Invalid TEAMS_WEBHOOK_URL" };
   }
   if (!ALLOWED_HOST_SUFFIXES.some((s) => parsed.host.endsWith(s))) {
-    return { ok: false, skipped: false, reason: `Host not allowed: ${parsed.host}` };
+    return { ok: false, skipped: false, where: "config", reason: `Host not allowed: ${parsed.host}` };
   }
 
   const payload = {
@@ -55,10 +58,10 @@ export async function postTeamsCard(card: unknown): Promise<TeamsPostResult> {
     });
     if (!res.ok) {
       const body = await res.text().catch(() => "");
-      return { ok: false, skipped: false, reason: `Teams ${res.status}: ${body.slice(0, 200)}` };
+      return { ok: false, skipped: false, where: "teams", reason: `Teams ${res.status}: ${body.slice(0, 200)}` };
     }
     return { ok: true };
   } catch (e) {
-    return { ok: false, skipped: false, reason: e instanceof Error ? e.message : String(e) };
+    return { ok: false, skipped: false, where: "teams", reason: `Could not reach Teams: ${e instanceof Error ? e.message : String(e)}` };
   }
 }

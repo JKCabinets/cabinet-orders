@@ -3,6 +3,7 @@ import { verifyCronAuth } from "@/lib/cronAuth";
 import { supabase } from "@/lib/supabase";
 import { slaTier, slaRuleFor, slaAgeHours, formatStageAge } from "@/lib/sla";
 import { ORDER_TYPES, archivedVia, type Order, type OrderType } from "@/lib/data";
+import { postTeamsCard } from "@/lib/teamsCard";
 
 /**
  * Weekday morning digest, posted to Teams.
@@ -278,59 +279,16 @@ export async function GET(req: NextRequest) {
     ],
   };
 
-  const payload = {
-    type: "message",
-    attachments: [
-      {
-        contentType: "application/vnd.microsoft.card.adaptive",
-        contentUrl: null,
-        content: card,
-      },
-    ],
-  };
-
-  // ── SSRF guard on the webhook host ────────────────────────────────────
-  // Only Microsoft hosts, so a misconfigured env var cannot make this POST at
-  // an internal address. Covers both the legacy O365 connector format and the
-  // current Power Automate one.
-  let parsed: URL;
-  try {
-    parsed = new URL(webhookUrl);
-  } catch {
-    return NextResponse.json({ error: "Invalid TEAMS_WEBHOOK_URL" }, { status: 500 });
-  }
-  const allowedHostSuffixes = [
-    ".logic.azure.com",
-    ".webhook.office.com",
-    ".azure-apim.net",
-    ".api.powerplatform.com",
-  ];
-  if (!allowedHostSuffixes.some(suffix => parsed.host.endsWith(suffix))) {
-    return NextResponse.json(
-      { error: "TEAMS_WEBHOOK_URL host not allowed", host: parsed.host },
-      { status: 500 },
-    );
-  }
-
-  try {
-    const res = await fetch(webhookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      return NextResponse.json({
-        error: "Teams webhook rejected the payload",
-        status: res.status,
-        body: text.slice(0, 500),
-      }, { status: 502 });
-    }
-  } catch (e) {
-    return NextResponse.json({
-      error: "Failed to reach Teams webhook",
-      detail: e instanceof Error ? e.message : String(e),
-    }, { status: 502 });
+  // ⚠ ONE POSTER (2026-10-21, item 44). The wrapper and the Microsoft-host
+  // guard were written out here a second time, though lib/teamsCard exists so
+  // that a security control lives in one place; the catalog sync already used
+  // it. The cron's answers keep their meaning: a bad URL or a foreign host is a
+  // 500, a Teams refusal or outage a 502, so run-cron.sh and healthchecks.io
+  // see what they saw before.
+  const posted = await postTeamsCard(card);
+  if (!posted.ok) {
+    if (posted.skipped) return NextResponse.json({ ok: true, skipped: posted.reason });
+    return NextResponse.json({ error: posted.reason }, { status: posted.where === "config" ? 500 : 502 });
   }
 
   return NextResponse.json({

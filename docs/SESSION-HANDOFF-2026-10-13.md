@@ -584,7 +584,14 @@ Each line points at the section that owns the detail.
     compiler, proving item 22): `STAGE_ACCENT`, `getBackorderStatus`,
     `currentUserId`, `HEALTH_GROUPS`, `worstStatus`. Read each before removing:
     an unused result can be a feature that was never finished.
-44. **The digest route duplicates `postTeamsCard`** (found 2026-10-20): the
+44. ✅ (fixed 2026-10-21, `patch_digest_one_poster.py`: the digest posts through
+    `postTeamsCard`, which the catalog sync already used; the result now says
+    `where` a failure was — "config" (ours: 500) or "teams" (theirs: 502) — so the
+    cron's answers keep their statuses. Proved through the real digest in eight
+    cases: the request Teams receives identical, the status identical, a foreign
+    host and an internal address refused with nothing sent; only the failure
+    wording is postTeamsCard's, and "unreachable" now says so.)
+    **The digest route duplicates `postTeamsCard`** (found 2026-10-20): the
     same message wrapper and the same Microsoft-host check, written out twice,
     though `lib/teamsCard.ts` says that duplication is what it exists to
     prevent. Identical today; a fix to one would miss the other. Check what
@@ -607,9 +614,22 @@ Each line points at the section that owns the detail.
     nine audit entries, all build-time); TypeScript 7; ESLint 10; lucide-react
     1.x (icon renames).
 27. **Renaming the Shopify attribute "Est. Production Finish"** to match "Ship
-    from factory" — only with the website team, who may read it.
-16. **Whether the public lookup should answer by claim number** (OPERATIONS
-    §12) — Garrett is checking with the website team (2026-10-20).
+    from factory" — only with the website team, who may read it. ⚠ UNBLOCKED
+    2026-10-21: the website team checked the product pages, cart, order status
+    page, claim pages, the Kitchen designer and its checkout worker — nothing
+    reads it. Their rule: if a label can reach CUSTOMERS (order status page,
+    order emails), it says "Estimated ship date", never "ship from factory" —
+    their site says cabinets ship, never that they leave a factory; staff-only
+    names are ours. The order status page shows the OMS's stage labels exactly
+    as sent.
+16. ✅ **Whether the public lookup should answer by claim number** —
+    **decided 2026-10-21 (website team): no change for launch.** The order
+    status page asks for the order number and checkout email and already lists
+    the order's claims; a customer is given a CR- reference and the claim form
+    asks for their order number, so they always have what the lookup needs.
+47. **The website team asks: which claim reference does the lookup send, CR-
+    or WRN-?** (2026-10-21) Customers should only ever see one, and their pages
+    and emails use CR-. To answer from the lookup's code.
 
 ### Found 2026-10-14
 
