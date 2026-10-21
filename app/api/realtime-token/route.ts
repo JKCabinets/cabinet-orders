@@ -11,8 +11,10 @@ import jwt from "jsonwebtoken";
  * so Supabase will trust it as a regular auth token.
  *
  * Claims the token carries (RLS policies can inspect these):
- *   - sub: the user's identifier (we use username, which IS the user id
- *     in this app per authOptions.ts:180)
+ *   - sub: the user's USERNAME -- the login string, which can change. It is
+ *     NOT the user id: that is team_members.id (session.user.id; see
+ *     lib/authOptions). This said the username "IS the user id"; corrected
+ *     2026-10-20, the token unchanged. A policy keying on `sub` keys on a name.
  *   - role: "authenticated" (Supabase's standard role; required so our
  *     RLS policies that target `TO authenticated` actually apply)
  *   - app_user: redundant with sub, kept for clarity in future policies
@@ -58,8 +60,8 @@ export async function POST() {
   // The token shape Supabase Realtime expects:
   //   - `role: "authenticated"` makes Supabase apply our `TO authenticated`
   //     RLS policy.
-  //   - `sub` is the user id. We use `username` because per authOptions.ts
-  //     token.username IS the user's id.
+  //   - `sub` carries the USERNAME, not the user id (team_members.id) -- the
+  //     login string, which can change (lib/authOptions). Corrected 2026-10-20.
   //   - Custom claims (`app_user`, `app_role`) are passthrough data RLS
   //     can inspect if we ever want per-user or per-role filtering.
   const claims = {

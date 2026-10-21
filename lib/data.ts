@@ -949,20 +949,6 @@ export function archivesAsOrder(order: Pick<Order, "project_id">): boolean {
 }
 
 /**
- * Is this row archived -- on its own, or through its PURCHASE?
- *
- * ⚠ ONE QUESTION, BOTH SIDES (2026-09-16). The six write routes refuse an
- * archived row (lib/archived.ts, which re-exports this) and the modal hides the
- * controls those routes would refuse. Asking it twice in two files is how a
- * screen ends up offering what the server rejects.
- *
- * A standalone row carries `archived` itself. A project-linked group never does
- * -- orders_archived_standalone_only forbids it -- so its purchase is the only
- * place the answer lives. `null` for the project of a group means "not known",
- * and the caller decides: the routes refuse, the modal keeps its controls until
- * the store has the project.
- */
-/**
  * The date an activity row is stamped with: Phoenix, always.
  *
  * ⚠ THE SERVER'S CLOCK IS UTC, AND THE BUSINESS IS IN ARIZONA. Written without
@@ -1142,6 +1128,20 @@ export function newSpecId(kind: "area" | "set"): string {
   return `${kind === "area" ? "a" : "s"}_${crypto.randomUUID().slice(0, 8)}`;
 }
 
+/**
+ * Is this row archived -- on its own, or through its PURCHASE?
+ *
+ * ⚠ ONE QUESTION, BOTH SIDES (2026-09-16). The six write routes refuse an
+ * archived row (lib/archived.ts, which re-exports this) and the modal hides the
+ * controls those routes would refuse. Asking it twice in two files is how a
+ * screen ends up offering what the server rejects.
+ *
+ * A standalone row carries `archived` itself. A project-linked group never does
+ * -- orders_archived_standalone_only forbids it -- so its purchase is the only
+ * place the answer lives. `null` for the project of a group means "not known",
+ * and the caller decides: the routes refuse, the modal keeps its controls until
+ * the store has the project.
+ */
 export function archivedVia(
   order: { archived?: boolean | null; project_id?: string | null },
   project: { archived?: boolean | null } | null | undefined,
@@ -1165,8 +1165,10 @@ export function archivedVia(
  *                          narrowed without breaking both.
  *
  *   isStageOfferedForType  reads STAGE_LIST_BY_TYPE -- the flow a row can
- *                          actually take. A sample runs New -> Entered ->
- *                          Delivered. Three stages, not five.
+ *                          actually take. A sample runs New -> Shipped ->
+ *                          Delivered. Three stages, not five. (This said
+ *                          "New -> Entered"; SAMPLE_STAGES is New, Shipped,
+ *                          Delivered. Corrected 2026-10-20.)
  *
  * The gap between them was live: the server would have accepted
  * `PATCH { stage: "In production" }` on a SAMPLE, landing it at a stage its own

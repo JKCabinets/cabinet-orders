@@ -3,8 +3,9 @@
 /**
  * Subscribes to realtime INSERT/UPDATE/DELETE events on the orders table.
  *
- * Wires events into the store's setOrders / setWarranties via callback
- * passed in by the caller. The hook owns the subscription lifecycle:
+ * Hands each event to the handlers the caller passes in -- the store's
+ * insert, update, delete and activity-entry handlers. (This named the store's
+ * setOrders / setWarranties, which no longer exist; corrected 2026-10-20.) The hook owns the subscription lifecycle:
  * opens on mount, closes on unmount.
  *
  * The hook is intentionally generic — it doesn't know about React state

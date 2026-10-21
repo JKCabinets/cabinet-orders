@@ -501,12 +501,24 @@ Each line points at the section that owns the detail.
     to enable (OPERATIONS §7).
 19. **Record the Microsoft Graph client secret's expiry** somewhere other than
     Azure (OPERATIONS §5, §12). It is not on the box.
-20. **Stale code comments:** `archivedVia`'s doc comment sits above
+20. ✅ (fixed 2026-10-20, `patch_housekeeping_20_21.py`, comments only — the
+    three files compile to identical code: `archivedVia`'s comment moved word
+    for word onto `archivedVia`; a sample runs New → SHIPPED → Delivered; the
+    realtime token's `sub` is the USERNAME, which can change, not the user id —
+    the comment corrected, the token unchanged; `useRealtimeOrders` names the
+    handlers it calls.) **Stale code comments:** `archivedVia`'s doc comment sits above
     `activityDate`; `isStageOfferedForType` says samples run New → Entered →
     Delivered; `app/api/realtime-token` says a username "IS the user id"
     (`lib/auth`: the id is `team_members.id`); `lib/useRealtimeOrders.ts` names
     `setOrders`/`setWarranties`, which no longer exist.
-21. **The quote webhook has seven unused variables**, `color`, `city`,
+21. ✅ (fixed 2026-10-20, same patch: the seven locals, the three text
+    extractions only they read, an unused import and an obsolete helper — a
+    stored file's path is `orderId/time-uuid.ext`, so the customer's file name
+    never reaches storage. Everything the customer gives is in
+    `quote_submission`; the form asks no cabinet line (Garrett). Proved through
+    the real webhook: a form and a text submission, the inserted job, the answer
+    and the trail identical but the job's time-based id.) **The quote webhook
+    has seven unused variables**, `color`, `city`,
     `state`, `zip` among them.
 22. **`NewOrderModal` keeps a WARRANTY branch nothing can reach** — the
     dashboard opens it for custom jobs only; claims use `WarrantyClaimModal`.
@@ -717,6 +729,16 @@ Each line points at the section that owns the detail.
     Production & Delivery card edits; it sends the older `delivery_date`.
     Perhaps deliberate (the delivery target is internal); a question for
     Garrett, not a fix.
+
+### This session's commits (2026-10-14 → 10-20), verified on the box
+
+`2f258b5` 1 · `42a82aa` 2 · `22a48c6` 32 · `adb04ac` 33 · `38f6860` 3 ·
+`fcd9969` 4 · `2eeaf6d` 10 · `04ff149` 11 · `a437617` 12 · `c3177ca` 38–39 ·
+`e60a449` 40 · `9ca60cb` 13 · `10b29a2` 14 · `c4363d1` 15–16 · `4affe4e` 35 ·
+`a08c1d2` 37 · `c219f92` 36 · `35bd639` 28 · `c4826b0` 31 · `d081b4d` 34 ·
+`db31206` 41–42 · `bd33868` 30. On 2026-10-20 all 22 were confirmed on `main`,
+pushed, and every file they touched (40) hashed equal to the session's final
+copies.
 
 ## 7. Facts that cost something to learn
 

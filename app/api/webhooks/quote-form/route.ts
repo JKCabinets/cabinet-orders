@@ -3,7 +3,7 @@ import crypto from "crypto";
 import { supabase } from "@/lib/supabase";
 import { cleanInput, checkRateLimit } from "@/lib/auth";
 import {
-  SNIFF_BYTES, sniffMagicBytes, safeContentType,
+  SNIFF_BYTES, sniffMagicBytes,
   PUBLIC_UPLOAD_TYPES, PUBLIC_UPLOAD_LABEL,
 } from "@/lib/fileValidation";
 import { stripImageMetadata } from "@/lib/stripExif";
@@ -92,12 +92,9 @@ function stripHtml(html: string): string {
     .trim();
 }
 
-function sanitizeFileName(name: string): string {
-  // Restrict to alphanum, dot, underscore, hyphen — same as admin uploader.
-  const base = name.replace(/[^a-zA-Z0-9._-]/g, "_");
-  // Cap length & strip leading dots so we can't write hidden files / traverse.
-  return base.replace(/^\.+/, "_").slice(0, 200) || "file";
-}
+// (2026-10-20) sanitizeFileName is gone: unused, and obsolete -- a stored
+// file's path is `${orderId}/${Date.now()}-${uuid}.${ext}`, so the customer's
+// file name never reaches storage; it is kept, cleaned, only as the name shown.
 
 function isAllowedLegacyUrl(url: string): boolean {
   if (LEGACY_URL_HOST_ALLOWLIST.length === 0) return false;
@@ -302,10 +299,9 @@ export async function POST(req: NextRequest) {
   const extractedEmail   = extractField(plainText, "Email");
   const extractedPhone   = extractField(plainText, "Phone");
   const extractedAddress = extractField(plainText, "Address");
-  const extractedBudget  = body.budget || extractField(plainText, "Budget");
-  const extractedCabinet = extractField(plainText, "Cabinet Line", "Cabinet", "Select Your Cabinet Line");
-  const extractedDoor    = extractField(plainText, "Door Style", "Choose Your Door Style", "Door");
-  const extractedColor   = extractField(plainText, "Color", "Select Your Color", "Colour");
+  // (2026-10-20) Budget, door style and colour are not copied into locals any
+  // more: nothing read them. What the customer chose is kept in
+  // `quote_submission` below, as it arrived; the form asks no cabinet line.
   const extractedDetails = extractField(plainText, "More Details", "Details", "Additional Details", "Notes");
 
   // Trimmed and length-capped. NOT escaped: cleanInput only trims. Anything
@@ -315,13 +311,6 @@ export async function POST(req: NextRequest) {
   const email   = cleanInput((body.email   || extractedEmail   || "").slice(0, MAX_FIELD_LEN));
   const phone   = cleanInput((body.phone   || extractedPhone   || "").slice(0, MAX_FIELD_LEN));
   const address = cleanInput((body.address || extractedAddress || "").slice(0, MAX_FIELD_LEN));
-  const city    = cleanInput((body.city    || "").slice(0, MAX_FIELD_LEN));
-  const state   = cleanInput((body.state   || "").slice(0, MAX_FIELD_LEN));
-  const zip     = cleanInput((body.zip     || "").slice(0, MAX_FIELD_LEN));
-  const doorStyle   = cleanInput((body.door_style   || extractedDoor    || "").slice(0, MAX_FIELD_LEN));
-  const color       = cleanInput((body.color        || extractedColor   || "").slice(0, MAX_FIELD_LEN));
-  const cabinetLine = cleanInput((body.cabinet_line || extractedCabinet || "").slice(0, MAX_FIELD_LEN));
-
   const today = new Date().toLocaleDateString("en-US", {
     month: "short", day: "numeric", timeZone: "America/Phoenix",
   });
