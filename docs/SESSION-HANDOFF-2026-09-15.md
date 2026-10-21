@@ -2371,6 +2371,8 @@ patch_neworder_no_claim_branch.py
 patch_docs_neworder_no_claim_branch.py
 patch_ack_phone_ext.py
 patch_docs_ack_phone_ext.py
+patch_favicon.py
+patch_docs_favicon.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

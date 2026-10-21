@@ -542,7 +542,13 @@ Each line points at the section that owns the detail.
     order's ship-to holds a phone extension.)
     **An acknowledgment's phone written with an extension** ("ext 4") leaves
     that text in its address, which then differs — shown, not hidden.
-24. **A favicon** — `/favicon.ico` is a 404.
+24. ✅ **A favicon** — `/favicon.ico` is a 404. (Fixed 2026-10-20,
+    `patch_favicon.py`: `app/favicon.ico`, rendered from `app/icon.svg` — the
+    same mark, cream on navy — at 16, 32 and 48 px. `proxy.ts` already exempts
+    `/favicon.ico` from sign-in. Proved on Next.js 16.4.0 with the real
+    `icon.svg` and `apple-icon.png`: 404 without the file; with it, 200
+    `image/x-icon`, the exact bytes, and every page declares it beside the SVG
+    and Apple icons.)
 43. **`DashboardClient` has five unused names** (found 2026-10-20 by the
     compiler, proving item 22): `STAGE_ACCENT`, `getBackorderStatus`,
     `currentUserId`, `HEALTH_GROUPS`, `worstStatus`. Read each before removing:
