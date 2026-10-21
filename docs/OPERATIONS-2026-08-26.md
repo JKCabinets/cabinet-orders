@@ -8,6 +8,10 @@ thirteen), §5's Graph secret, §7's missing jobs, §9's NO ACTION edge, §12's
 intake question. §10 records this session's decisions; §13 what a website
 order now carries for a dispute; "estimated finish" reads "ship from factory".
 
+⚠ **AMENDED 2026-10-21.** §5's Graph client secret expiry is recorded —
+**17 August 2028** — with the app's name and client ID; §12's item to record
+it is done.
+
 ⚠ **AMENDED 2026-10-05.** §5 records the Help Scout app's credentials; §6 the
 fifth check, `helpscout-sync`; §10 that every website claim becomes a Help
 Scout conversation.
@@ -370,7 +374,7 @@ Also held, not in use by these systems: `jkkitchencabinets2you.com`,
 
 | Credential | Lives in | Expiry | Symptom when it dies |
 |---|---|---|---|
-| **Microsoft Graph client secret** | Entra only — **not on the box**: no Graph credential in `.env.kamal` or `.kamal/secrets` (checked 2026-09-08 and 2026-10-13) | ⚠ **RECORD THE DATE** — max 24 months | Nothing on the box uses it today |
+| **Microsoft Graph client secret** | Entra only — **not on the box**: no Graph credential in `.env.kamal` or `.kamal/secrets` (checked 2026-09-08 and 2026-10-13). App **"JK Cabinets OMS — transactional email"**, client ID `e8560b8d-6d3c-4547-8c2e-d01eb2986069` | **17 August 2028** (recorded 2026-10-21; reminder 17 July 2028) | Nothing on the box uses it today. Once Graph email is built: **every email the OMS sends stops** |
 | **GHCR token** (GitHub PAT, classic) | `.env.kamal` | Expired 2026-08-18 **and again 2026-09-16**. **Checked weekly since 2026-09-16** — `check-registry-token.sh` logs the expiry date and alarms 14 days ahead (§6) | `kamal deploy` → **`denied: denied`** at docker login |
 | **`SHOPIFY_WEBHOOK_SECRET`** | `.env.kamal` | No expiry | Webhook HMAC fails closed — **orders stop ingesting** |
 | **`SHOPIFY_WEBHOOK_SECRET_FALLBACK`** | `.env.kamal` | Empty when idle | Rotation slot — see below |
@@ -627,7 +631,13 @@ Outbound transactional email via **Graph, app-only auth**, from the
 
 - App registration: single tenant, no redirect URI (a daemon)
 - `Mail.Send` as an **Application** permission, admin consent granted
-- Client secret created — **expiry must be recorded**
+- Client secret created — **expires 17 August 2028** (recorded 2026-10-21, from
+  Entra). App **"JK Cabinets OMS — transactional email"**, client ID
+  `e8560b8d-6d3c-4547-8c2e-d01eb2986069`. To renew: a new secret on the same app
+  (Certificates & secrets), into `.env.kamal` once Graph is built, redeploy,
+  then delete the old secret. Whether anything besides the OMS signs in with
+  this app can be read in Entra's service-principal sign-in log — not checked;
+  optional.
 - **`New-ApplicationAccessPolicy`** scoping the app to a mail-enabled security
   group, `oms-email-senders@jkcabinets2you.com`, containing only No-Reply
 
@@ -1242,8 +1252,8 @@ so the first one to fail takes the rest with it.
   the shape from before projects existed, and was removed with its route. If a
   real import is ever needed, it should create projects and groups the way the
   webhook does.
-- **Record the Graph client secret's expiry** somewhere other than the Azure
-  portal.
+- ~~**Record the Graph client secret's expiry** somewhere other than the Azure
+  portal.~~ **DONE 2026-10-21: 17 August 2028** — §5.
 - ~~**Does `rateLimitOr429` fail open or closed** when Upstash is
   unreachable?~~ **ANSWERED 2026-08-26: it fails OPEN.** `lib/auth.ts`:
   *"Redis transient failure — fail open to avoid locking out legit users."*

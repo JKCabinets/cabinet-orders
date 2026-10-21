@@ -495,8 +495,10 @@ Each line points at the section that owns the detail.
 ### Housekeeping
 
 17. ✅ (2026-10-20: Garrett deleted the seven; `patch_health_deploys_row.py`
-    drops `IGNORED_CHECKS` and gives `registry-token` — the weekly Docker Hub
-    token check, never grouped — its own row, "Deploys" (Garrett: a failing
+    drops `IGNORED_CHECKS` and gives `registry-token` — the weekly GHCR
+    token check (GitHub's registry; this said "Docker Hub" until
+    `patch_deploys_row_ghcr.py`, 2026-10-21), never grouped — its own row,
+    "Deploys" (Garrett: a failing
     token stops fixes, not orders). Proved through the real route: the six
     checks now make five named rows and no "Other checks"; a new ungrouped
     check, or a deleted stray coming back, still lands in "Other checks".)
@@ -513,7 +515,10 @@ Each line points at the section that owns the detail.
     "Send webhook alerts to a channel" and never edited; its card renders.)
     **`teams-digest` posts nothing** until `TEAMS_WEBHOOK_URL` is set — safe
     to enable (OPERATIONS §7).
-19. **Record the Microsoft Graph client secret's expiry** somewhere other than
+19. ✅ (2026-10-21: **17 August 2028**, app "JK Cabinets OMS — transactional
+    email", client ID `e8560b8d-6d3c-4547-8c2e-d01eb2986069` — recorded in
+    OPERATIONS §5, §12. Kept rather than deleted; the sign-in log was not
+    checked.) **Record the Microsoft Graph client secret's expiry** somewhere other than
     Azure (OPERATIONS §5, §12). It is not on the box. WHERE (2026-10-20):
     entra.microsoft.com → Applications → App registrations → All applications
     → the app with Mail.Send (Application), made about 2026-08-18 → Certificates

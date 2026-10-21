@@ -69,13 +69,15 @@ const HEALTH_GROUPS: { key: string; label: string; detail: string; checks: strin
   },
   {
     // 2026-10-20 (Garrett): its own row. The weekly check-registry-token.sh
-    // warns before the Docker Hub token deploys depend on expires. A failing
-    // token stops no order -- it stops fixes from shipping -- so it is named,
-    // not folded into "Scheduled jobs", which would send a reader to the wrong
-    // place. Until now it sat under "Other checks", never grouped.
+    // warns 14 days before the GHCR token deploys depend on expires -- a
+    // classic GitHub personal access token for GitHub's container registry, in
+    // .env.kamal (OPERATIONS §5). A failing token stops no order -- it stops
+    // fixes from shipping -- so it is named, not folded into "Scheduled jobs".
+    // Until now it sat under "Other checks", never grouped. (This said "Docker
+    // Hub" for a day; the registry is GHCR. Corrected 2026-10-21.)
     key: "deploys",
     label: "Deploys",
-    detail: "Docker Hub token for deploys",
+    detail: "GitHub registry token for deploys",
     checks: ["registry-token"],
   },
 ];
