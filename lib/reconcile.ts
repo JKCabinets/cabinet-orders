@@ -159,6 +159,17 @@ export function normName(s: string): string {
 // edges were fenced with (?<!\d) and (?!\d) (caught in testing, 2026-10-07).
 const PHONE_RE = /(?<!\d)(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}(?!\d)/g;
 
+/**
+ * ⚠ A PHONE WITH THE EXTENSION AFTER IT, for taking out of an ADDRESS
+ * (2026-10-20). An acknowledgment that wrote "480-555-1234 ext 4" in its
+ * ship-to lost the phone to PHONE_RE but kept "EXT 4", so its address differed
+ * from the order's and was shown as a discrepancy (item 23). Only the address
+ * helpers use this: phoneIn / phoneKey keep PHONE_RE, because an extension's
+ * digit would shift the LAST TEN digits a phone is compared on.
+ */
+const PHONE_WITH_EXT_RE = new RegExp(
+  PHONE_RE.source + String.raw`(?:\s*(?:ext\.?|extension|x)\s*\d{1,6}(?!\d))?`, "gi");
+
 /** The phone as written in a string, or "". */
 export function phoneIn(s: string | null | undefined): string {
   return String(s ?? "").match(new RegExp(PHONE_RE.source))?.[0]?.trim() ?? "";
@@ -178,7 +189,7 @@ export function phoneKey(s: string | null | undefined): string {
 
 /** A ship-to without its phone, for showing. */
 export function withoutPhone(s: string | null | undefined): string {
-  return String(s ?? "").replace(PHONE_RE, " ").replace(/\s+/g, " ").replace(/[\s,]+$/, "").trim();
+  return String(s ?? "").replace(PHONE_WITH_EXT_RE, " ").replace(/\s+/g, " ").replace(/[\s,]+$/, "").trim();
 }
 
 /**
@@ -193,8 +204,9 @@ export function withoutPhone(s: string | null | undefined): string {
  */
 export function normAddress(s: string): string {
   return (s ?? "")
-    // remove phone-like sequences (480-219-9580, (480) 219 9580, 4802199580)
-    .replace(PHONE_RE, " ")
+    // remove phone-like sequences (480-219-9580, (480) 219 9580, 4802199580),
+    // and an extension right after one ("ext 4", "x4") -- 2026-10-20
+    .replace(PHONE_WITH_EXT_RE, " ")
     // separator punctuation -> space
     .replace(/[.,]/g, " ")
     // collapse whitespace, trim, uppercase

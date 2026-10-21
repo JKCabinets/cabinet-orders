@@ -530,7 +530,17 @@ Each line points at the section that owns the detail.
     custom-job form renders and creates identically.) **`NewOrderModal` keeps a
     WARRANTY branch nothing can reach** — the
     dashboard opens it for custom jobs only; claims use `WarrantyClaimModal`.
-23. **An acknowledgment's phone written with an extension** ("ext 4") leaves
+23. ✅ (fixed 2026-10-20, `patch_ack_phone_ext.py`: `normAddress` and
+    `withoutPhone` remove a phone TOGETHER WITH an extension right after it —
+    "ext 4", "ext. 12", "extension 205", "x4" — through PHONE_WITH_EXT_RE;
+    `phoneIn` / `phoneKey` keep PHONE_RE, since an extension's digit would
+    shift the last ten digits a phone is compared on. Proved: each form now
+    matches the order's address and displays clean; a real misspelling and a
+    suite number still differ; without an extension every output identical;
+    `phoneIn` / `phoneKey` identical in all cases. `ackFingerprint` uses
+    `normAddress` on the ORDER's ship-to: checked live before deploying that no
+    order's ship-to holds a phone extension.)
+    **An acknowledgment's phone written with an extension** ("ext 4") leaves
     that text in its address, which then differs — shown, not hidden.
 24. **A favicon** — `/favicon.ico` is a 404.
 43. **`DashboardClient` has five unused names** (found 2026-10-20 by the
