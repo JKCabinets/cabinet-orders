@@ -5,8 +5,7 @@ import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useStore } from "@/lib/store";
 import {
-  Order, Project, OrderType, STAGE_ACCENT, STAGE_LIST_BY_TYPE,
-  getBackorderStatus, displayOrderNumber,
+  Order, Project, OrderType, STAGE_LIST_BY_TYPE, displayOrderNumber,
 } from "@/lib/data";
 import { rollupBackorders, summarizeBackorders, type BackorderSummary } from "@/lib/backorders";
 import { attentionFor, attentionForProject, DUE_SOON_HOURS, type AttentionReason } from "@/lib/attention";
@@ -139,8 +138,6 @@ export function DashboardClient() {
    * two join-backed reasons arrive a moment after the page draws.
    */
   const enrich = useOrderEnrichment(allOrders);
-  const { data: session } = useSession();
-  const currentUserId = (session?.user as { id?: string } | undefined)?.id ?? null;
 
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [showNewForm, setShowNewForm] = useState(false);
@@ -713,48 +710,10 @@ export function DashboardClient() {
  * upstream unreachable, and the real list. A panel that shows green because it
  * failed to ask is worse than no panel.
  */
-/**
- * The eleven healthchecks, rolled up to three concerns.
- *
- * ⚠ THE FULL LIST LIVES ON /admin. Eleven rows on a dashboard is a list nobody
- * reads, and a check named `jk-orphan-mapping` means nothing to somebody
- * entering orders. Three rows answer the question a team member actually has:
- * is the system doing its job?
- *
- * ⚠ EACH ROW TAKES THE WORST STATUS IN ITS GROUP. One check down turns the row
- * red -- a problem cannot hide behind nine green siblings, which is the whole
- * point of a rollup rather than an average.
- *
- * ⚠ AND ANYTHING UNMAPPED FALLS INTO "Other", which appears ONLY when it has
- * members. Without it a check added next month would be invisible -- exactly
- * the failure this panel was built for, in different clothes.
- */
-const HEALTH_GROUPS: { label: string; detail: string; checks: string[] }[] = [
-  {
-    label: "Shopify ingest",
-    detail: "Orders arriving from the storefront",
-    checks: ["jk-webhook-health", "jk-storefront", "jk-stale-sync"],
-  },
-  {
-    label: "Catalog sync",
-    detail: "Products and SKU mappings current",
-    checks: ["sync-avis-catalog", "jk-sync-failure", "jk-orphan-mapping",
-             "jk-option-rename", "jk-new-option-values"],
-  },
-  {
-    label: "Scheduled jobs",
-    detail: "Nightly and hourly automation",
-    checks: ["production-complete", "teams-digest", "jk-orders-overdue"],
-  },
-];
-
-/** down beats grace beats new/paused beats up -- the worst wins. */
-function worstStatus(statuses: string[]): string {
-  const rank = (s: string) =>
-    s === "down" ? 0 : s === "grace" ? 1 : s === "new" ? 2 : s === "paused" ? 3 : 4;
-  return statuses.slice().sort((a, b) => rank(a) - rank(b))[0] ?? "up";
-}
-
+// (2026-10-20) The rollup -- which checks make which row, the worst status
+// winning, an "Other checks" row for anything unmapped -- lives in
+// /api/health-summary, and this panel renders the groups it returns. The copy
+// that sat here (HEALTH_GROUPS, worstStatus) was unused, and three groups behind.
 function SystemHealthPanel() {
   const { data: session } = useSession();
   const isAdmin = (session?.user as { role?: string } | undefined)?.role === "admin";

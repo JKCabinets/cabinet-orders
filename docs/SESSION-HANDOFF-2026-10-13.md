@@ -538,8 +538,8 @@ Each line points at the section that owns the detail.
     matches the order's address and displays clean; a real misspelling and a
     suite number still differ; without an extension every output identical;
     `phoneIn` / `phoneKey` identical in all cases. `ackFingerprint` uses
-    `normAddress` on the ORDER's ship-to: checked live before deploying that no
-    order's ship-to holds a phone extension.)
+    `normAddress` on the ORDER's ship-to: Garrett confirmed (2026-10-20) that
+    no phone numbers carry extensions — the count query was offered, not run.)
     **An acknowledgment's phone written with an extension** ("ext 4") leaves
     that text in its address, which then differs — shown, not hidden.
 24. ✅ **A favicon** — `/favicon.ico` is a 404. (Fixed 2026-10-20,
@@ -549,7 +549,14 @@ Each line points at the section that owns the detail.
     `icon.svg` and `apple-icon.png`: 404 without the file; with it, 200
     `image/x-icon`, the exact bytes, and every page declares it beside the SVG
     and Apple icons.)
-43. **`DashboardClient` has five unused names** (found 2026-10-20 by the
+43. ✅ (fixed 2026-10-20, `patch_dashboard_unused.py`, each read in full first:
+    `STAGE_ACCENT` and `getBackorderStatus` were leftover imports; the only use
+    of the main component's `useSession()` was `currentUserId`, itself unused
+    (the health panel reads the session for itself); `HEALTH_GROUPS` and
+    `worstStatus` were a STALE client copy of the rollup that
+    `/api/health-summary` now owns — three groups to its four. Compiled, the
+    dashboard differs from before only by those removals; nothing unused left.)
+    **`DashboardClient` has five unused names** (found 2026-10-20 by the
     compiler, proving item 22): `STAGE_ACCENT`, `getBackorderStatus`,
     `currentUserId`, `HEALTH_GROUPS`, `worstStatus`. Read each before removing:
     an unused result can be a feature that was never finished.
