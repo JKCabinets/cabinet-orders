@@ -494,13 +494,32 @@ Each line points at the section that owns the detail.
 
 ### Housekeeping
 
-17. **Seven stray checks** on healthchecks.io to delete, and
+17. ✅ (2026-10-20: Garrett deleted the seven; `patch_health_deploys_row.py`
+    drops `IGNORED_CHECKS` and gives `registry-token` — the weekly Docker Hub
+    token check, never grouped — its own row, "Deploys" (Garrett: a failing
+    token stops fixes, not orders). Proved through the real route: the six
+    checks now make five named rows and no "Other checks"; a new ungrouped
+    check, or a deleted stray coming back, still lands in "Other checks".)
+    **Seven stray checks** on healthchecks.io to delete, and
     `IGNORED_CHECKS` in `app/api/health-summary/route.ts` to shrink to match
     (OPERATIONS §6, §12).
-18. **`teams-digest` posts nothing** until `TEAMS_WEBHOOK_URL` is set — safe
+18. ✅ (enabled 2026-10-21, no code change: the digest already sends the
+    Workflows card format and `deploy.yml` already passes the variable. The
+    URL lives in `.env.kamal`, which `.kamal/secrets` reads. ⚠ The first URL
+    was "OMS Health Webhook"'s — the workflow healthchecks.io posts its alerts
+    through, which posts a FIXED alert text whatever it receives — so the
+    digest came out as three false "a job changed state" alerts. The digest now
+    has its own workflow, "OMS Daily Digest", made from the Teams template
+    "Send webhook alerts to a channel" and never edited; its card renders.)
+    **`teams-digest` posts nothing** until `TEAMS_WEBHOOK_URL` is set — safe
     to enable (OPERATIONS §7).
 19. **Record the Microsoft Graph client secret's expiry** somewhere other than
-    Azure (OPERATIONS §5, §12). It is not on the box.
+    Azure (OPERATIONS §5, §12). It is not on the box. WHERE (2026-10-20):
+    entra.microsoft.com → Applications → App registrations → All applications
+    → the app with Mail.Send (Application), made about 2026-08-18 → Certificates
+    & secrets → Client secrets → Expires. Record the app's name and client ID
+    with the date; never the secret. (Graph is unbuilt — nothing sends mail yet
+    — so an expiry today breaks nothing, but the day Graph is built it would.)
 20. ✅ (fixed 2026-10-20, `patch_housekeeping_20_21.py`, comments only — the
     three files compile to identical code: `archivedVia`'s comment moved word
     for word onto `archivedVia`; a sample runs New → SHIPPED → Delivered; the
@@ -560,6 +579,20 @@ Each line points at the section that owns the detail.
     compiler, proving item 22): `STAGE_ACCENT`, `getBackorderStatus`,
     `currentUserId`, `HEALTH_GROUPS`, `worstStatus`. Read each before removing:
     an unused result can be a feature that was never finished.
+44. **The digest route duplicates `postTeamsCard`** (found 2026-10-20): the
+    same message wrapper and the same Microsoft-host check, written out twice,
+    though `lib/teamsCard.ts` says that duplication is what it exists to
+    prevent. Identical today; a fix to one would miss the other. Check what
+    else calls `postTeamsCard` first — it may have no caller left.
+45. **A healthchecks.io alert does not say WHICH job** (found 2026-10-21): it
+    goes through "OMS Health Webhook", which posts fixed text. healthchecks.io's
+    own Teams integration may be able to post the check's name and state — to
+    look into, not yet decided.
+46. ✅ **The dashboard's health panel printed `\u00b7` and `\u2192`**
+    literally (found 2026-10-20 from Garrett's screenshot; older than item 43):
+    written as text inside the page, where no escape is read. Now `{" \u00b7 "}`
+    and `{" \u2192"}`; the compiled page carries the real characters. Same
+    patch as 17.
 
 ### Waiting on someone
 

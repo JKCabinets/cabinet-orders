@@ -27,11 +27,12 @@ import { requireAuth, rateLimitOr429 } from "@/lib/auth";
  */
 
 /**
- * ⚠ FOUR REAL CHECKS, ONE PER CRON JOB. See OPERATIONS-2026-08-20.md §6.
+ * ⚠ ONE REAL CHECK PER JOB. See OPERATIONS-2026-08-20.md §6.
  *
- * The account carries eleven. The other seven are STRAY -- leftovers from an
- * earlier setup, listed for deletion in OPERATIONS §12, each with a 365-day
- * period so they report "up" forever whatever happens.
+ * The account carried eleven until 2026-10-20, when Garrett deleted the seven
+ * STRAYS -- leftovers from an earlier setup, each with a 365-day period so they
+ * reported "up" forever whatever happened (OPERATIONS §12). Six remain, and
+ * every one is in a group below.
  *
  * The first version of this panel grouped all eleven. The dashboard then read
  * "Catalog sync · Healthy · 5 checks" when FOUR OF THOSE FIVE could not
@@ -66,25 +67,22 @@ const HEALTH_GROUPS: { key: string; label: string; detail: string; checks: strin
     detail: "Website claims reaching the Help Scout inbox",
     checks: ["helpscout-sync"],
   },
+  {
+    // 2026-10-20 (Garrett): its own row. The weekly check-registry-token.sh
+    // warns before the Docker Hub token deploys depend on expires. A failing
+    // token stops no order -- it stops fixes from shipping -- so it is named,
+    // not folded into "Scheduled jobs", which would send a reader to the wrong
+    // place. Until now it sat under "Other checks", never grouped.
+    key: "deploys",
+    label: "Deploys",
+    detail: "Docker Hub token for deploys",
+    checks: ["registry-token"],
+  },
 ];
 
-/**
- * ⚠ NAMED, NOT MERELY UNGROUPED.
- *
- * These are the seven strays. Leaving them out of HEALTH_GROUPS would drop
- * them into "Other checks" below -- where a GENUINELY NEW check also lands.
- * Then the one signal that matters (somebody added a cron and nobody mapped
- * it) would be buried under seven that mean nothing.
- *
- * Deleting them from healthchecks.io is on the operations list; until that
- * happens they are ignored here BY NAME, so the day one is deleted or a
- * twelfth appears, this list stops matching and the difference shows up.
- */
-const IGNORED_CHECKS: readonly string[] = [
-  "jk-sync-failure", "jk-orphan-mapping", "jk-option-rename",
-  "jk-new-option-values", "jk-stale-sync", "jk-storefront",
-  "jk-orders-overdue",
-];
+// (2026-10-20) The ignore list is gone: it named the seven stray checks so they
+// would not crowd "Other checks", and Garrett has deleted them. Anything not
+// grouped above now lands in "Other checks", as a genuinely new check should.
 
 /** down beats grace beats new/paused beats up — the worst wins. */
 function worst(statuses: string[]): string {
@@ -148,7 +146,7 @@ export async function GET(req: NextRequest) {
     // this panel, which is the failure the panel was built for.
     const orphans = all.filter((c) => {
       const n = c.name ?? "";
-      return !claimed.has(n) && !IGNORED_CHECKS.includes(n);
+      return !claimed.has(n);
     });
     if (orphans.length > 0) {
       groups.push({
@@ -160,16 +158,13 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // ⚠ `total` COUNTS WHAT IS MONITORED, not what the account holds. Eleven
-    // checks exist; four of them watch anything. Reporting eleven would tell a
-    // reader the system is more observed than it is.
-    const monitored = all.length - IGNORED_CHECKS.filter(
-      (n) => byName.has(n)).length;
+    // ⚠ `total` COUNTS WHAT IS MONITORED. With the strays deleted
+    // (2026-10-20) that is every check on the account; it read eleven-minus-
+    // seven while seven stood there reporting nothing.
     return NextResponse.json({
       configured: true,
       groups,
-      total: monitored,
-      ignored: all.length - monitored,
+      total: all.length,
     });
   } catch (err) {
     // A monitoring outage is not an application outage. Saying so keeps people

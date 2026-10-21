@@ -2375,6 +2375,8 @@ patch_favicon.py
 patch_docs_favicon.py
 patch_dashboard_unused.py
 patch_docs_dashboard_unused.py
+patch_health_deploys_row.py
+patch_docs_health_deploys_row.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

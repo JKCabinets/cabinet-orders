@@ -816,7 +816,7 @@ function SystemHealthPanel() {
                         detail; a designer needs the row and the pill. */}
                     {isAdmin && (
                       <span className="block text-[10px] text-cream/35 truncate">
-                        {g.detail} \u00b7 {g.count} check{g.count === 1 ? "" : "s"}
+                        {g.detail}{" \u00b7 "}{g.count} check{g.count === 1 ? "" : "s"}
                       </span>
                     )}
                   </span>
@@ -830,7 +830,7 @@ function SystemHealthPanel() {
           </div>
           {isAdmin && (
             <Link href="/admin" className="block mt-3 text-[11px] text-cream/45 hover:text-cream/80 transition-colors">
-              All {state.total} checks \u2192
+              All {state.total} checks{" \u2192"}
             </Link>
           )}
         </>
