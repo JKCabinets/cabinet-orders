@@ -2387,6 +2387,8 @@ patch_docs_create_modal_pills.py
 patch_docs_alerts_and_digest_wiring.py
 patch_attachments_realtime.py
 patch_docs_attachments_realtime.py
+patch_stage_events.py
+patch_docs_stage_events.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

@@ -10,6 +10,7 @@ import {
   AvatarColor, Role,
   ORDER_TYPES, shapeOrder, withPurchasePayment, activityDate,
   type Project,
+  withStageEvent, withCreationEvent,
 } from "./data";
 // (2026-10-14) Member, Source, ORDER_STAGES, WARRANTY_STAGES and
 // ID_PREFIX_BY_TYPE left this import with the row addOrder used to fabricate
@@ -399,7 +400,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // without these handlers knowing those types exist.
     onInsert: (row) => {
       setRawOrders((prev) =>
-        prev.some((o) => o.id === row.id) ? prev : [row, ...prev],
+        prev.some((o) => o.id === row.id) ? prev : [withCreationEvent(row), ...prev],
       );
     },
     onUpdate: (row) => {
@@ -424,7 +425,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         // browser's role -- see that hook.) Guarded on length rather than
         // replaced unconditionally, so a caller that ever does supply activity
         // wins.
-        return row.activity.length > 0 ? row : { ...row, activity: o.activity };
+        //
+        // ⚠ STAGE EVENTS LIKEWISE (2026-10-21, item 7): the payload has none, so
+        // keep the order's, and append when its stage moved -- at the row's
+        // stage_entered_at, which is what the database's trigger recorded.
+        return {
+          ...row,
+          activity: row.activity.length > 0 ? row.activity : o.activity,
+          stage_events: row.stage_events.length > 0 ? row.stage_events
+            : withStageEvent(o.stage_events, row.stage, row.stage_entered_at),
+        };
       }));
     },
     onDelete: (id) => {
@@ -518,7 +528,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       // added, and the refusal goes back to the caller to show.
       return { ok: false, error: res?.__error ?? "request_failed", message: res?.__message };
     }
-    const created = shapeOrder(res.data);
+    const created = withCreationEvent(shapeOrder(res.data));
     // ⚠ REALTIME USUALLY GETS HERE FIRST (2026-10-14). The row's INSERT event
     // often arrives before this POST's own answer, and this used to prepend
     // regardless -- so a new job showed TWICE until a reload, while the

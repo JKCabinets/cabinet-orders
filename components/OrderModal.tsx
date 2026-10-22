@@ -24,11 +24,11 @@ import { ClaimCloseButton, ClaimOutcomePill } from "./ClaimClose";
 import { DamageReportPanel } from "./DamageReportPanel";
 import { AcknowledgmentPanel, type AcknowledgmentPanelHandle } from "./AcknowledgmentPanel";
 import { consumeAckPicker, useAckStatus } from "@/lib/ackStatus";
-import { STAGE_ACCENT } from "@/lib/data";
+import { STAGE_ACCENT, lastEnteredAt } from "@/lib/data";
 import { typeCarriesTracking } from "@/lib/categories";
 import type { DateFields } from "./NextActionPanel";
 import { requirementsFor } from "@/lib/requirements";
-import { formatMDY, orderDate, activityStamp } from "@/lib/dates";
+import { formatMDY, orderDate, activityStamp, stageDate } from "@/lib/dates";
 import { useOrderEnrichment } from "@/lib/useOrderEnrichment";
 import { NextActionPanel } from "./NextActionPanel";
 import { CustomSpecsPanel } from "./CustomSpecsPanel";
@@ -540,6 +540,11 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
   // to OrderType, so a corrupted `type` column would lie to the compiler.
   const stages = STAGE_LIST_BY_TYPE[liveOrder.type] ?? ORDER_STAGES;
   const stageIdx = (stages as string[]).indexOf(liveOrder.stage);
+  // ⚠ ONE "IN STAGE" (2026-10-21, item 7). The rail's heading and its current
+  // stage show the same figure -- the SLA age where the type has a rule, else
+  // the hours in stage -- computed once, so the two can never disagree.
+  const stageAgeText = formatStageAge(
+    slaRuleFor(liveOrder) ? slaAgeHours(liveOrder, slaRuleFor(liveOrder)!) : hoursInStage(liveOrder));
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -1123,10 +1128,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                   {liveOrder.stage}
                 </span>
                 <span className="text-[10px] text-cream/45">
-                  {formatStageAge(
-                    slaRuleFor(liveOrder)
-                      ? slaAgeHours(liveOrder, slaRuleFor(liveOrder)!)
-                      : hoursInStage(liveOrder))} in stage
+                  {stageAgeText} in stage
                   {slaTier(liveOrder) === "hard" && <span style={{ color: "#e08585" }}> &middot; overdue</span>}
                   {slaTier(liveOrder) === "soft" && <span style={{ color: "#e8b56a" }}> &middot; due</span>}
                 </span>
@@ -1135,6 +1137,9 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                 {stages.map((s, i) => {
                   const isActive = liveOrder.stage === s;
                   const isPast = stageIdx > i;
+                  // A stage behind the current one: the day it was LAST entered.
+                  // None recorded (before 2026-10-21, or never) -> nothing.
+                  const enteredOn = isPast ? stageDate(lastEnteredAt(liveOrder.stage_events, s)) : "";
                   const color = STAGE_COLOR[s] ?? "#91a597";
                   const isEnteredGate = s === "Entered" && liveOrder.stage === "New";
                   const lineDone = "rgba(145,165,151,0.55)";
@@ -1184,6 +1189,16 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                       >
                         {s}
                       </button>
+                      {/* ⚠ WHEN (2026-10-21, item 7; Garrett's mockup): the date
+                          under each stage reached, "in stage" under the current
+                          one, nothing under stages not reached -- after a move
+                          back, the stages ahead of it are not reached. */}
+                      {(isActive || enteredOn) && (
+                        <span className="mt-0.5 text-[9px] tabular-nums text-center leading-tight"
+                          style={{ color: isActive ? color : "rgba(240,236,228,0.45)" }}>
+                          {isActive ? `${stageAgeText} in stage` : enteredOn}
+                        </span>
+                      )}
                     </div>
                   );
                 })}

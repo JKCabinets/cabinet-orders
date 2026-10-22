@@ -370,7 +370,30 @@ Each line points at the section that owns the detail.
    **`order_attachments` does not publish over realtime** — a subscriber
    calling `refreshAttachments(orderId)` and a read policy for
    `authenticated` (old Open 1).
-7. **Rail timestamps** need a real per-transition time (old Open 2).
+7. ✅ (built 2026-10-21, `patch_stage_events.py` + migration
+   `2026-10-21-stage-events.sql`.) **The database records it:** table
+   `order_stage_events` (order, stage, entered_at; RLS, no direct access, not on
+   realtime) and trigger `orders_record_stage_event` (AFTER INSERT OR UPDATE OF
+   stage) — one event per creation and per REAL stage change, by any path, at
+   the order's `stage_entered_at`, which the existing
+   `trg_orders_bump_stage_entered_at` has just set to now(): an event and "in
+   stage" are one moment. Seed: each order's current stage at its
+   `stage_entered_at` (one order on 2026-10-21; no back-fill, nothing parsed).
+   **The app:** the three routes that load orders embed the events
+   (`shapeStageEvents`, once); the store keeps them through a realtime update
+   and appends on a stage change (`withStageEvent`, against the LAST EVENT, not
+   the old row), seeding a new order's creation entry (`withCreationEvent`).
+   **The rail:** MM/DD/YYYY under each stage reached (Phoenix day; Garrett), the
+   heading's own "in stage" figure under the current one (computed once),
+   nothing under stages not reached. Proved: every writer replayed on
+   PostgreSQL 16 with production's triggers — one event each, at
+   `stage_entered_at`, none for a non-stage update; the real store and modal —
+   a forward history, a move back, a seed-only order, a realtime-created order.
+   ⚠ DEPLOY ORDER: the migration BEFORE the code — the routes select
+   `order_stage_events`, and without the table they fail.
+   Item 49 (Shopify's move not resetting `stage_entered_at`) was raised from
+   the app's code alone and WITHDRAWN once the database's triggers were read.
+   **Rail timestamps** need a real per-transition time (old Open 2).
    ⚠ DECIDED 2026-10-21 (Garrett, "properly the first time"): RECORD THE STAGE
    ON EACH TRAIL ROW — a migration, every path that moves an order setting it,
    existing rows back-filled once — rather than reading "moved to" out of the
@@ -678,6 +701,10 @@ Each line points at the section that owns the detail.
     Harmless — the handler reads only `id` — but the comment misleads, and FULL
     on `orders` costs WAL for nothing. A migration's comment is history; record
     it, decide whether to set `orders` back to DEFAULT.
+50. **The trail's shaping is written out three times** (found 2026-10-21,
+    building item 7): `app/api/orders`, `app/api/warranties` and
+    `app/api/orders/[id]` each sort and map `order_activity` inline. Item 7's
+    events use one shared `shapeStageEvents`; the trail could do the same.
 
 ### Found 2026-10-14
 

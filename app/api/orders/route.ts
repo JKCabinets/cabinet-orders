@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, cleanInput, rateLimitOr429 } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
-import { ORDER_TYPES, MANUAL_CREATABLE_TYPES, ID_PREFIX_BY_TYPE, parseMoney, type OrderType } from "@/lib/data";
+import { ORDER_TYPES, MANUAL_CREATABLE_TYPES, ID_PREFIX_BY_TYPE, parseMoney, shapeStageEvents, type OrderType } from "@/lib/data";
 import { createWarranty } from "@/lib/createWarranty";
 
 export async function GET(req: NextRequest) {
@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
 
   let query = supabase
     .from("orders")
-    .select("*, order_activity(*)")
+    .select("*, order_activity(*), order_stage_events(stage, entered_at)")
     .eq("type", type)
     .order("created_at", { ascending: false });
 
@@ -45,6 +45,8 @@ export async function GET(req: NextRequest) {
       )
       .map((a: { text: string; time: string; created_at: string }) => ({ text: a.text, time: a.time, at: a.created_at })),
     order_activity: undefined,
+    stage_events: shapeStageEvents(o.order_stage_events),
+    order_stage_events: undefined,
   }));
 
   return NextResponse.json({ data: shaped });

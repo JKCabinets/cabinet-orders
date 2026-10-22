@@ -4,7 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { getShopifyToken } from "@/lib/shopify";
 import { mergeTags } from "@/lib/shopifyStageSync";
 import { ALLOWED_STAGES, isStageAllowedForType, isBackwardsMove, verifyAdminPin, fieldsToClearOnBackwardMove, describeFieldsCleared } from "@/lib/stageGuards";
-import { isPaymentHoldStatus, paymentHoldLabel, paymentRecordOf, parseMoney, isStageOfferedForType, activityDate, type OrderType, type Stage } from "@/lib/data";
+import { isPaymentHoldStatus, paymentHoldLabel, paymentRecordOf, parseMoney, isStageOfferedForType, activityDate, shapeStageEvents, type OrderType, type Stage } from "@/lib/data";
 import { purchaseOf, archivedVia, archivedReadOnly } from "@/lib/archived";
 import { trackingTargetStage, typeRecordsTracking, type OrderCategory } from "@/lib/categories";
 import { pushClaimNotes } from "@/lib/claimHelpScout";
@@ -116,7 +116,7 @@ export async function GET(
 
   const { data, error } = await supabase
     .from("orders")
-    .select("*, order_activity(*)")
+    .select("*, order_activity(*), order_stage_events(stage, entered_at)")
     .eq("id", id)
     .single();
 
@@ -130,6 +130,8 @@ export async function GET(
       )
       .map((a: { text: string; time: string; created_at: string }) => ({ text: a.text, time: a.time, at: a.created_at })),
     order_activity: undefined,
+    stage_events: shapeStageEvents(data.order_stage_events),
+    order_stage_events: undefined,
   };
 
   return NextResponse.json({ data: shaped });

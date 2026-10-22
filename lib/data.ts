@@ -282,6 +282,15 @@ export interface Order {
    */
   internal_notes?: string;
   activity: ActivityEntry[];
+  /**
+   * ⚠ WHEN THE ORDER ENTERED EACH STAGE (2026-10-21, item 7), oldest first.
+   * Recorded by the DATABASE -- the orders_record_stage_event trigger, on every
+   * creation and every real stage change, whoever makes it -- at the order's
+   * stage_entered_at, so an event and "in stage" are the same moment. Never
+   * read out of the trail's wording. A realtime row cannot carry it (no join);
+   * the store keeps it and appends with withStageEvent.
+   */
+  stage_events: StageEvent[];
   archived?: boolean;
   /**
    * WHEN this row was archived, cleared on restore -- non-null exactly while
@@ -477,6 +486,7 @@ export function shapeOrder(raw: Record<string, unknown>): Order {
     archived: (raw.archived as boolean) ?? false,
     archived_at: (raw.archived_at as string | null) ?? null,
     activity: (raw.activity as { text: string; time: string }[]) ?? [],
+    stage_events: Array.isArray(raw.stage_events) ? (raw.stage_events as StageEvent[]) : [],
     door_style: (raw.door_style as string) ?? "",
     color: (raw.color as string) ?? "",
     sku_items: (raw.sku_items as { sku: string; quantity: number; description?: string }[]) ?? [],
@@ -946,6 +956,48 @@ export interface Project {
  */
 export function archivesAsOrder(order: Pick<Order, "project_id">): boolean {
   return !order.project_id;
+}
+
+/** One entry into a stage: order_stage_events' `stage` and `entered_at`. */
+export interface StageEvent { stage: string; at: string }
+
+/**
+ * The routes' one shaping of order_stage_events rows (2026-10-21, item 7):
+ * every route that loads orders calls this, rather than a fourth copy of the
+ * trail's inline mapping. Oldest first; a row missing either field is dropped.
+ */
+export function shapeStageEvents(rows: unknown): StageEvent[] {
+  if (!Array.isArray(rows)) return [];
+  return (rows as { stage?: string | null; entered_at?: string | null }[])
+    .filter((r) => !!r && !!r.stage && !!r.entered_at && Number.isFinite(Date.parse(r.entered_at as string)))
+    .map((r) => ({ stage: r.stage as string, at: r.entered_at as string }))
+    .sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+}
+
+/**
+ * ⚠ APPEND ONLY WHEN THE LAST RECORDED STAGE DIFFERS -- not when the order's
+ * previous row did. After the actor's own move the store already shows the new
+ * stage locally, so comparing with the old row would skip that move's event.
+ * The time is the row's stage_entered_at: what the trigger recorded.
+ */
+export function withStageEvent(events: StageEvent[], stage: string, at: string | null | undefined): StageEvent[] {
+  if (!at || !Number.isFinite(Date.parse(at))) return events;
+  const last = events[events.length - 1];
+  if (last && last.stage === stage) return events;
+  return [...events, { stage, at }];
+}
+
+/** A new order that arrived without its events (a realtime insert, a create's answer): its creation entry. */
+export function withCreationEvent<T extends { stage: string; stage_entered_at?: string | null; stage_events: StageEvent[] }>(order: T): T {
+  return order.stage_events.length > 0 ? order
+    : { ...order, stage_events: withStageEvent([], order.stage, order.stage_entered_at) };
+}
+
+/** When the order last entered this stage, or null if it never has (or before 2026-10-21's record began). */
+export function lastEnteredAt(events: StageEvent[] | undefined, stage: string): string | null {
+  const list = events ?? [];
+  for (let i = list.length - 1; i >= 0; i--) if (list[i].stage === stage) return list[i].at;
+  return null;
 }
 
 /**

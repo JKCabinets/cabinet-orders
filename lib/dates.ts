@@ -36,6 +36,15 @@ function phoenixMDY(ms: number): string {
   return new Date(ms).toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric", timeZone: PHOENIX });
 }
 
+/**
+ * The Phoenix day of a timestamp, MM/DD/YYYY -- a stage's date on the rail
+ * (2026-10-21, item 7; Garrett: MM/DD/YYYY like every other date). "" for none.
+ */
+export function stageDate(at: string | null | undefined): string {
+  const t = at ? Date.parse(at) : NaN;
+  return Number.isFinite(t) ? phoenixMDY(t) : "";
+}
+
 /** An order's date, MM/DD/YYYY: the Phoenix day it was created. */
 export function orderDate(order: { created_at?: string | null; date?: string | null }): string {
   const t = order.created_at ? Date.parse(order.created_at) : NaN;
