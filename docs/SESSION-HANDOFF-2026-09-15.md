@@ -2384,6 +2384,7 @@ patch_docs_digest_one_poster.py
 patch_docs_lookup_and_wording.py
 patch_create_modal_pills.py
 patch_docs_create_modal_pills.py
+patch_docs_alerts_and_digest_wiring.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

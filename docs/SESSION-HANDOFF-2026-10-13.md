@@ -596,7 +596,14 @@ Each line points at the section that owns the detail.
     though `lib/teamsCard.ts` says that duplication is what it exists to
     prevent. Identical today; a fix to one would miss the other. Check what
     else calls `postTeamsCard` first — it may have no caller left.
-45. **A healthchecks.io alert does not say WHICH job** (found 2026-10-21): it
+45. ✅ (done 2026-10-21, no code: healthchecks.io's own Microsoft Teams
+    integration speaks the Workflows format — its maintainer added it
+    (healthchecks issue #1024) — so "OMS Health" now posts a card naming the
+    check and its state, through an unedited workflow; "OMS Health Email" goes
+    beside it; the fixed-text flow "OMS Health Webhook" is turned off. The test
+    card read '"TEST" is DOWN …' with period, pings and a link. OPERATIONS §5,
+    §6, §7 and §12 corrected to match, the digest's set-up included.)
+    **A healthchecks.io alert does not say WHICH job** (found 2026-10-21): it
     goes through "OMS Health Webhook", which posts fixed text. healthchecks.io's
     own Teams integration may be able to post the check's name and state — to
     look into, not yet decided.

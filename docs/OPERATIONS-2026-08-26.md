@@ -477,8 +477,8 @@ Which is why:
 kamal secrets print 2>&1 | awk -F= '/^[A-Z_]+=/ { v=substr($0, index($0,"=")+1); print (v=="" ? "EMPTY " : "set   ") $1 }'
 ```
 
-Names and set/empty, never values. Only `SHOPIFY_WEBHOOK_SECRET_FALLBACK` and
-`TEAMS_WEBHOOK_URL` are empty by design. (`QUOTE_WEBHOOK_SECRET` was listed here
+Names and set/empty, never values. Only `SHOPIFY_WEBHOOK_SECRET_FALLBACK` is
+empty by design (`TEAMS_WEBHOOK_URL` was too, until it was set 2026-10-21). (`QUOTE_WEBHOOK_SECRET` was listed here
 until 2026-10-01; it has been set since 2026-09-24.) This is the
 check that would have caught both of 2026-09-16's failed deploys before they ran.
 
@@ -503,7 +503,19 @@ check that would have caught both of 2026-09-16's failed deploys before they ran
 # 6. Monitoring and alerting
 
 **healthchecks.io**, free tier, deliberately **off-box** so a box outage cannot
-silence its own alarm. Email alerting, verified. Ping-URL map at
+silence its own alarm. Email alerting, verified.
+
+**Alerts reach Teams and email** (2026-10-21). healthchecks.io has two
+integrations, each on all six checks: **"OMS Health"** — its own Microsoft
+Teams integration, through a Teams workflow made from the template "Send
+webhook alerts to a channel" and never edited — and **"OMS Health Email"**, to
+garrett@jkcabinets2you.com. A Teams alert is a card naming the check and its
+state ("teams-digest" is DOWN …), with its period, pings, last ping and a "View
+in Healthchecks.io" button. ⚠ It used to go through a Power Automate flow, "OMS
+Health Webhook", edited to post FIXED text whatever it received — so an alert
+could not say which job changed, and when the digest was pointed at it by
+mistake, the digest came out as false "a job changed state" alerts. That flow
+is turned off, not deleted. Ping-URL map at
 `~/cron-jobs/healthchecks.map` (mode 600, not in git).
 
 **The registry token is watched weekly** (2026-09-16):
@@ -518,25 +530,25 @@ is passed to curl on stdin, never on its command line, and never logged.
 "blocked by the tenant". That was wrong. Teams worked at one point and was
 **retired during migration cleanup** — it is not blocked, and a channel and
 webhook can be recreated whenever wanted. The stale note would have sent
-someone hunting for a restriction that does not exist.
+someone hunting for a restriction that does not exist. ⚠ SUPERSEDED 2026-10-21:
+Teams alerting is live again — see "Alerts reach Teams and email" above.
 
-**Six checks**, one per cron job — out of **thirteen on the account**
-(`registry-token` since 2026-09-16, `helpscout-sync` since 2026-10-05; counted
-against the crontab and the account 2026-10-13). The
-other seven are strays listed for deletion in §12, each with a 365-day period so
-they report "up" forever whatever happens.
+**Six checks**, one per cron job (`registry-token` since 2026-09-16,
+`helpscout-sync` since 2026-10-05). The account held thirteen until 2026-10-20,
+when Garrett deleted the seven strays — each with a 365-day period, so they
+reported "up" forever whatever happened. Six remain, all real.
 
-⚠ The in-app health panel (2026-08-26) ignores those seven **by name**, not by
-leaving them ungrouped — ungrouped is where a genuinely NEW check lands, and
-burying that signal under seven meaningless ones would defeat the point. Delete
-them from healthchecks.io and shrink `IGNORED_CHECKS` in
-`app/api/health-summary/route.ts` to match.
+The in-app health panel groups every check into a named row (2026-10-20):
+Shopify ingest, Catalog sync, Scheduled jobs, Claims to Help Scout, and
+**Deploys** (`registry-token`). The list that ignored the seven strays by name
+(`IGNORED_CHECKS`) went with them; a genuinely NEW check, ungrouped, lands in
+"Other checks", as it should.
 
 | Check | Watches |
 |---|---|
 | `sync-avis-catalog` | Nightly Avis reconciliation |
 | `production-complete` | In production → At cross dock |
-| `teams-digest` | Silent until `TEAMS_WEBHOOK_URL` is set — now safe to enable |
+| `teams-digest` | Posts the morning briefing card to Teams — enabled 2026-10-21 |
 | **`jk-webhook-health`** | **Shopify ingestion** — added 2026-08-20; skips cancelled orders since 2026-10-13 |
 | **`helpscout-sync`** | **Website claims reaching Help Scout**, every 15 minutes; fails when a claim is unsent after four attempts; since 2026-10-07 also sends a claim's progress notes, and fails when one is unsent after four attempts — added 2026-10-05 |
 | **`registry-token`** | **The GHCR registry token** — Mondays 15:00 UTC, `check-registry-token.sh`; fails 14 days before it expires |
@@ -587,13 +599,14 @@ the reason — previously `curl -f` discarded it and logged only `error: 500`.
 |---|---|---|---|
 | 07:30 daily | 12:30am | `sync-avis-catalog` | Reconciles the option catalogue. Never writes a SKU code, never deletes, refuses an empty catalogue. |
 | 08:00 daily | 1:00am | `production-complete` | In production → At cross dock once the ship-from-factory date passes. Sole owner of that transition. |
-| 14:00 weekdays | 7:00am | `teams-digest` | **Posts nothing** — see below |
+| 14:00 weekdays | 7:00am | `teams-digest` | Posts the morning briefing card to Teams — see below |
 | **hourly at :20** | | **`webhook-health`** | **Reconciles Shopify's orders against the OMS** |
 | every 15 min | | `helpscout-sync` | Website claims, and each claim's progress notes, to Help Scout (§6) |
 | 15:00 Mondays | 8:00am | `check-registry-token.sh` | The registry token: alarms 14 days before it expires (§6). A script, not a route |
 
-**`teams-digest` is silent** because `TEAMS_WEBHOOK_URL` is empty — but it is
-now **safe to configure**. It uses the same SLA rules as the app and reports
+**`teams-digest` posts** since 2026-10-21 ("JK Cabinets — Morning briefing":
+totals, each type, an "Open the SLA page" button); until then
+`TEAMS_WEBHOOK_URL` was empty and it posted nothing. It uses the same SLA rules as the app and reports
 **by type** rather than by stage, because 23 stages across five flows would be a
 wall nobody reads.
 
@@ -613,12 +626,20 @@ wall-clock hours including weekends; the digest runs weekdays only. An order
 arriving Friday 5pm passes the 24h soft threshold on Saturday afternoon and
 hard-breaches on Sunday afternoon with nobody working, and first appears in a
 digest at **Monday 07:00 Phoenix**. Either the clock should respect business
-days or the digest should run at weekends. Currently neither does.
+days or the digest should run at weekends. Currently neither does. ⚠ DECIDED
+2026-10-20 (Garrett): as intended. The clock measures how long an order has
+been in the system, and a Friday order that was missed SHOULD read urgent on
+Monday; the customer never sees it. The digest stays on weekdays.
 
-To enable: create a Teams channel and an Incoming Webhook (Connectors) or a
-Workflow, put the URL in `TEAMS_WEBHOOK_URL`, and deploy. The route allows both
-host families and posts an Adaptive Card; if the first post is rejected, the
-response body now lands in `cron.log`.
+**How it is set up (2026-10-21).** The Teams workflow **"OMS Daily Digest"**,
+made from the template "Send webhook alerts to a channel" and never edited — it
+posts the card it is sent. Its URL is `TEAMS_WEBHOOK_URL` in `.env.kamal`, which
+`.kamal/secrets` reads; a redeploy picks a change up. ⚠ Never the health-alert
+workflow: one that posts fixed text turns the digest into false alerts. Office
+365 connectors ("Incoming Webhook") stopped working in May 2026; Workflows is
+the only way now. The digest posts through `postTeamsCard` (`lib/teamsCard`),
+which allows only Microsoft hosts; a refusal lands in `cron.log` with Teams'
+reason.
 
 ---
 
@@ -1266,7 +1287,8 @@ so the first one to fail takes the rest with it.
   decision about the bucket (session user id, falling back to IP for
   unauthenticated routes) and a pass over every caller's limit. **Its own
   session.**
-- **Delete the seven stray healthchecks.io checks — ⚠ BY EXACT NAME, NEVER BY
+- ~~**Delete the seven stray healthchecks.io checks**~~ **DONE 2026-10-20** (by
+  Garrett, by name). Kept for the warning: **⚠ BY EXACT NAME, NEVER BY
   PATTERN.** All seven are `jk-`-prefixed, and so is **`jk-webhook-health`**,
   which is real, is the Shopify ingestion reconciliation, and caught the
   genuinely missed order #1038. A `jk-*` selection kills the only check with a
