@@ -273,3 +273,72 @@ export function useRealtimeProjects(handlers: RealtimeProjectsHandlers) {
     };
   }, [status]);
 }
+
+/**
+ * ⚠ FILES ON REALTIME (2026-10-21, item 6). order_attachments joins the
+ * publication with a read policy for signed-in sessions
+ * (migrations/2026-10-21-attachments-realtime.sql). An event is a SIGNAL TO
+ * REFETCH, never the data: lib/attachments refetches the lists on screen.
+ *
+ * ⚠ A DELETE CARRIES ONLY THE FILE'S id. With row-level security on, Supabase
+ * sends a DELETE's old record as the primary key alone, whatever the replica
+ * identity -- so the order is found from the lists on screen (onRemoved), not
+ * from the event. INSERT and UPDATE carry the whole row, order_id included.
+ *
+ * SUBSCRIBED fires on the first connect AND on every reconnect after a blip;
+ * events in the gap are lost, so onReconnect refetches every list on screen.
+ */
+interface RealtimeAttachmentsHandlers {
+  onChange: (orderId: string) => void;
+  onRemoved: (fileId: number) => void;
+  onReconnect: () => void;
+}
+
+export function useRealtimeAttachments(handlers: RealtimeAttachmentsHandlers) {
+  const { status } = useSession();
+  const handlersRef = useRef(handlers);
+  useEffect(() => { handlersRef.current = handlers; }, [handlers]);
+
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    let cancelled = false;
+    let channel: RealtimeChannel | null = null;
+    (async () => {
+      try {
+        const client = await getRealtimeClient();
+        if (cancelled) return;
+        channel = client
+          .channel("order-attachments-realtime")
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "order_attachments" },
+            (payload) => {
+              try {
+                if (payload.eventType === "DELETE") {
+                  const id = Number((payload.old as { id?: number | string })?.id);
+                  if (Number.isFinite(id)) handlersRef.current.onRemoved(id);
+                  return;
+                }
+                const orderId = (payload.new as { order_id?: string })?.order_id;
+                if (orderId) handlersRef.current.onChange(orderId);
+              } catch (err) {
+                console.warn("[realtime] attachment handler failed", err);
+              }
+            },
+          )
+          .subscribe((subscribeStatus) => {
+            if (subscribeStatus === "SUBSCRIBED") handlersRef.current.onReconnect();
+          });
+      } catch (err) {
+        // Best-effort, as for the other tables: a failed subscription costs
+        // live updates, not function -- each view still refetches on mounting.
+        console.warn("[realtime] could not subscribe to order_attachments", err);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (channel) void channel.unsubscribe();
+    };
+  }, [status]);
+}

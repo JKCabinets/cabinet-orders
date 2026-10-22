@@ -15,7 +15,8 @@ import {
 // ID_PREFIX_BY_TYPE left this import with the row addOrder used to fabricate
 // after a failed create; nothing else here read them.
 import { fieldsToClearOnBackwardMove } from "./stageLogic";
-import { useRealtimeOrders, useRealtimeProjects, useRealtimeActivity } from "./useRealtimeOrders";
+import { useRealtimeOrders, useRealtimeProjects, useRealtimeActivity, useRealtimeAttachments } from "./useRealtimeOrders";
+import { attachmentsChanged, attachmentRemoved, refreshShownAttachments } from "./attachments";
 import { usePresence } from "./usePresence";
 
 /** What archiveOrder and unarchiveOrder resolve with. */
@@ -478,6 +479,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return next;
       });
     },
+  });
+
+  // ⚠ FILES ON REALTIME (2026-10-21, item 6). A colleague's upload or delete
+  // refetches the file lists ON SCREEN; lib/attachments owns that cache, so the
+  // store only routes the events to it.
+  useRealtimeAttachments({
+    onChange: attachmentsChanged,
+    onRemoved: attachmentRemoved,
+    onReconnect: refreshShownAttachments,
   });
 
   // Track who else is signed in right now. Powers the green-ring online

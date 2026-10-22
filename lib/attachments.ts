@@ -25,10 +25,13 @@ import { invalidateEnrichment } from "@/lib/useOrderEnrichment";
  *      response that set off before the change can never land on top of it.
  *
  *   2. A VIEW MOUNTING REFETCHES. ackStatus keeps what it fetched until somebody
- *      invalidates it. order_attachments is not in the realtime publication, so
+ *      invalidates it. order_attachments was not in the realtime publication, so
  *      a cache kept that way would never show a colleague's upload, not even on
- *      reopening the modal -- today each mount refetches, and that must survive.
- *      Views mounting together share one request.
+ *      reopening the modal -- each mount refetches, and that must survive.
+ *      Views mounting together share one request. ⚠ It IS on realtime since
+ *      2026-10-21 (item 6), and the rule still stands: realtime refetches only
+ *      the lists ON SCREEN (attachmentsChanged, below), so a list that was not
+ *      shown when a colleague changed it is brought up to date by this.
  *
  * ⚠ NOT FOR GATES. lib/stageGates asks the server at the moment of a stage move
  * and should keep doing so: a gate that reads a cache can pass on a list that
@@ -170,6 +173,36 @@ export function useAttachmentsFor(orderIds: string[]): Record<string, Attachment
 /** Refetch now, for every view of this order. */
 export function refreshAttachments(orderId: string): void {
   load(orderId);
+}
+
+/**
+ * ⚠ A FILE OF THIS ORDER CHANGED ELSEWHERE -- a colleague's upload, delete or
+ * re-filing, from realtime (2026-10-21, item 6). The event is a SIGNAL, not the
+ * data: refetch, and only if a view shows this order -- any other view refetches
+ * when it mounts (rule 2). Next action can hinge on a file ("an acknowledgment
+ * or an attachment"), so it is asked again too.
+ */
+export function attachmentsChanged(orderId: string): void {
+  if (listeners.has(orderId)) load(orderId);
+  invalidateEnrichment();
+}
+
+/**
+ * A file was deleted elsewhere. ⚠ With row-level security on, Supabase sends a
+ * DELETE's old record as the PRIMARY KEY ONLY, whatever the replica identity --
+ * so the order is found from the lists on screen that hold this file.
+ */
+export function attachmentRemoved(fileId: number): void {
+  const shownWithIt = [...lists].filter(([orderId, list]) =>
+    listeners.has(orderId) && (list.files ?? []).some((f) => f.id === fileId));
+  for (const [orderId] of shownWithIt) load(orderId);
+  invalidateEnrichment();
+}
+
+/** After realtime (re)connects, events in the gap are lost: refetch every list on screen. */
+export function refreshShownAttachments(): void {
+  for (const orderId of [...listeners.keys()]) load(orderId);
+  invalidateEnrichment();
 }
 
 export type Outcome<T = undefined> = { ok: true; value: T } | { ok: false; message: string };

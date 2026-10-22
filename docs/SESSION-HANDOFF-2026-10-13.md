@@ -355,10 +355,29 @@ Each line points at the section that owns the detail.
 
 5. **Moving a file to another room**, and **filing under a style group from a
    screen** (the route already accepts a style group's id) — item 24.
-6. **`order_attachments` does not publish over realtime** — a subscriber
+6. ✅ (built 2026-10-21, `patch_attachments_realtime.py` + migration
+   `2026-10-21-attachments-realtime.sql`: a read policy for `authenticated` and
+   the table in the publication, as the trail had; NO replica identity FULL —
+   with RLS on, Supabase sends a DELETE's old record as the primary key only,
+   whatever the identity. `useRealtimeAttachments` routes events to
+   lib/attachments, which refetches only the lists ON SCREEN — a delete found
+   by the file's id among them — and asks Next action again; a reconnect
+   refetches every list on screen. Proved: the migration on PostgreSQL 16 from
+   production's exact state, twice — signed-in reads 0 rows before, 1 after,
+   writes still refused, anon nothing; and the real store, panel and cache with
+   events delivered — an upload and a delete appear on the open screen, an
+   order not on screen is not fetched.)
+   **`order_attachments` does not publish over realtime** — a subscriber
    calling `refreshAttachments(orderId)` and a read policy for
    `authenticated` (old Open 1).
 7. **Rail timestamps** need a real per-transition time (old Open 2).
+   ⚠ DECIDED 2026-10-21 (Garrett, "properly the first time"): RECORD THE STAGE
+   ON EACH TRAIL ROW — a migration, every path that moves an order setting it,
+   existing rows back-filled once — rather than reading "moved to" out of the
+   text, which any rewording would silently break. Garrett's mockup: under each
+   stage reached, its date ("Sep 9"); under the current one, days in stage
+   ("6d in stage"); nothing under stages not reached. Design to be written out
+   in full before building.
    ⚠ (2026-10-19) It EXISTS: every `order_activity` row has a real
    `created_at`, and since gap 12 the client has it as each entry's `at`. What
    is left is reading a stage's moves out of the trail, not storing anything.
@@ -653,6 +672,12 @@ Each line points at the section that owns the detail.
     and emails use CR-. ANSWERED from `app/api/public/lookup/route.ts`: NEITHER —
     it sends no claims at all (`claims: []`, always). If it is ever made to list
     them, it sends CR-, never WRN-. That would be a new decision for Garrett.
+48. **v14's comment is wrong about DELETE events** (found 2026-10-21, building
+    item 6): it says REPLICA IDENTITY FULL makes `orders` DELETE events "carry
+    the full row". With RLS on they carry the primary key only (Supabase docs).
+    Harmless — the handler reads only `id` — but the comment misleads, and FULL
+    on `orders` costs WAL for nothing. A migration's comment is history; record
+    it, decide whether to set `orders` back to DEFAULT.
 
 ### Found 2026-10-14
 
