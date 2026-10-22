@@ -2381,6 +2381,7 @@ patch_deploys_row_ghcr.py
 patch_docs_graph_expiry.py
 patch_digest_one_poster.py
 patch_docs_digest_one_poster.py
+patch_docs_lookup_and_wording.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

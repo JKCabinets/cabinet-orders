@@ -613,7 +613,17 @@ Each line points at the section that owns the detail.
 26. **Held back, each its own project:** Tailwind 4 (it alone clears the last
     nine audit entries, all build-time); TypeScript 7; ESLint 10; lucide-react
     1.x (icon renames).
-27. **Renaming the Shopify attribute "Est. Production Finish"** to match "Ship
+27. ✅ **Decided 2026-10-21 (Garrett, with the website team): KEEP "Est.
+    Production Finish"** — the most accurate name, it reads as an estimate, and
+    the website's shipping page calls it the production completion date. No
+    code change. ⚠ THE RULE THAT CAME WITH IT: "Ship from factory" must never
+    appear where a customer can see it — the site says cabinets ship, never
+    that they leave a factory; staff screens may call it what suits the OMS.
+    Checked 2026-10-21: every "factory" in app/, lib/ and components/ is on a
+    staff screen (requirements' prompts, NextActionPanel, OrderModal,
+    OrderTable, the calendar's icon); `lib/customerFacing`, `lib/carriers`, the
+    public lookup and claim routes and the Help Scout notes have none.
+    **Renaming the Shopify attribute "Est. Production Finish"** to match "Ship
     from factory" — only with the website team, who may read it. ⚠ UNBLOCKED
     2026-10-21: the website team checked the product pages, cart, order status
     page, claim pages, the Kitchen designer and its checkout worker — nothing
@@ -624,12 +634,18 @@ Each line points at the section that owns the detail.
     as sent.
 16. ✅ **Whether the public lookup should answer by claim number** —
     **decided 2026-10-21 (website team): no change for launch.** The order
-    status page asks for the order number and checkout email and already lists
-    the order's claims; a customer is given a CR- reference and the claim form
-    asks for their order number, so they always have what the lookup needs.
-47. **The website team asks: which claim reference does the lookup send, CR-
+    status page asks for the order number and checkout email; a customer is
+    given a CR- reference and the claim form asks for their order number.
+    ⚠ CORRECTED 2026-10-21: the website team said the page "already lists any
+    claims on that order", and this record repeated it. It does not: the
+    lookup's `claims` is ALWAYS EMPTY, by design (warranty updates go by email —
+    push, not pull, with no claim-enumeration surface), so the page's claims
+    block renders nothing. The decision stands; its reason was wrong.
+47. ✅ **The website team asks: which claim reference does the lookup send, CR-
     or WRN-?** (2026-10-21) Customers should only ever see one, and their pages
-    and emails use CR-. To answer from the lookup's code.
+    and emails use CR-. ANSWERED from `app/api/public/lookup/route.ts`: NEITHER —
+    it sends no claims at all (`claims: []`, always). If it is ever made to list
+    them, it sends CR-, never WRN-. That would be a new decision for Garrett.
 
 ### Found 2026-10-14
 
