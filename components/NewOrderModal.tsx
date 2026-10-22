@@ -317,31 +317,22 @@ export function NewOrderModal({ type: orderType, onClose }: NewOrderModalProps) 
             </p>
           )}
 
-          {/* Footer buttons */}
-          <div className="flex gap-2.5 pt-1">
+          {/* Footer buttons. ⚠ PILLS (2026-10-20, item 29): the 2026-10-07 rule,
+              in the styles already on screen, verbatim -- Cancel is the order
+              modal's Close, Create its terracotta Save. */}
+          <div className="flex justify-end gap-2.5 pt-1">
             <button
               type="button"
               onClick={close}
               disabled={submitting}
-              className="flex-1 py-2 rounded-lg text-xs transition-all hover:text-[#e8e3da] disabled:opacity-40"
-              style={{
-                background: "rgba(255,255,255,0.03)",
-                border: "0.5px solid rgba(255,255,255,0.18)",
-                color: "rgba(232,227,218,0.70)",
-              }}
+              className="px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-white/6 border border-cream/15 text-cream/75 hover:bg-white/10 hover:text-cream disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="flex-1 py-2 rounded-lg text-xs font-semibold transition-all hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{
-                background: "rgba(86,100,72,0.22)",
-                border: "0.5px solid rgba(86,100,72,0.70)",
-                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.18)",
-                color: "#a0b890",
-              }}
+              className="text-[10px] uppercase tracking-wider px-3 py-1.5 rounded-full transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {submitting ? "Saving…" : ui.createCta}
             </button>

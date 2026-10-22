@@ -658,7 +658,14 @@ Each line points at the section that owns the detail.
     **`WarrantyClaimModal` can be closed while it saves** (Escape, Cancel, X,
     the backdrop), so a refusal that arrives after is lost from view. Nothing
     is created wrongly. `NewOrderModal` refuses to close while saving.
-29. **Both create modals' Cancel and Create are not pills** — the 2026-10-07
+29. ✅ (fixed 2026-10-21, `patch_create_modal_pills.py`: both footers use the
+    styles already on screen, verbatim — Cancel is the order modal's Close pill,
+    Create its terracotta Save; `NewOrderModal`'s footer is right-aligned pills,
+    as the claim modal's. Proved: the custom-job form identical but the footer,
+    and the job it creates identical; the claim modal still holds through every
+    way out mid-save, shows a refusal, closes on success. This item was missed
+    in the 2026-10-20 summary of done work and caught 2026-10-21.)
+    **Both create modals' Cancel and Create are not pills** — the 2026-10-07
     rule. `NewOrderModal` uses `rounded-lg`.
 30. ✅ **Cannot happen through the app** (read 2026-10-20). The close route's
     one update sets `archived`, `archived_at`, `claim_outcome` and the

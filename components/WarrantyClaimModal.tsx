@@ -702,15 +702,16 @@ export function WarrantyClaimModal({ onClose, submission, onDone }: Props) {
             )}
           </div>
           <div className="flex items-center gap-2.5">
+            {/* ⚠ PILLS (2026-10-20, item 29): the order modal's Close and its
+                terracotta Save, verbatim -- the 2026-10-07 rule. */}
             <button onClick={close} disabled={saving}
-              className="px-4 py-2 rounded-full text-[12px] uppercase tracking-wider text-[rgba(232,227,218,0.55)] hover:text-cream transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+              className="px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-white/6 border border-cream/15 text-cream/75 hover:bg-white/10 hover:text-cream disabled:opacity-40 disabled:cursor-not-allowed">
               Cancel
             </button>
             <button
               onClick={handleCreate}
               disabled={!canSave}
-              className="px-5 py-2 rounded-full text-[12px] uppercase tracking-wider font-medium transition-all disabled:opacity-35 disabled:cursor-not-allowed"
-              style={{ background: "#576257", color: "#f0ece4", border: "0.5px solid rgba(145,165,151,0.45)" }}
+              className="text-[10px] uppercase tracking-wider px-3 py-1.5 rounded-full transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {saving ? "Creating" : "Create claim"}
             </button>
