@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { isWaypointVendor } from "@/lib/vendorFamily";
 import { decodeSku, type SkuItem } from "@/lib/skuDecoder";
 import { normName, normAddress, phoneKey, skuKey, type OrderLineItem } from "@/lib/reconcile";
 
@@ -61,14 +62,9 @@ export function linesForAckVendor(
   vendor: string,
   skuItems: SkuItem[],
 ): OrderLineItem[] | null {
-  const v = (vendor ?? "").trim().toLowerCase();
-
-  // Waypoint family. "Select Cabinetry" is the storefront alias; Shopify's
-  // product vendor is "Waypoint Cabinetry" (verified 2026-08-27), but the alias
-  // is accepted in case a line ever carries it.
-  const isWaypoint =
-    v === "waypoint cabinetry" || v === "waypoint" || v === "select cabinetry";
-  if (!isWaypoint) return null;
+  // Waypoint family -- ONE test, lib/vendorFamily (2026-10-22): the stage
+  // panel's Woodmark link asks the same question, and this was its third copy.
+  if (!isWaypointVendor(vendor)) return null;
 
   // ⚠ THE SAME PREDICATE THE UPLOAD ROUTE USED INLINE. Post-fix orders store the
   // full composite, whose 3-part door+color shape identifies the family

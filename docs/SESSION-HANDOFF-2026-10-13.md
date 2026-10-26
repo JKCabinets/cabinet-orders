@@ -378,7 +378,9 @@ Each line points at the section that owns the detail.
    the order's `stage_entered_at`, which the existing
    `trg_orders_bump_stage_entered_at` has just set to now(): an event and "in
    stage" are one moment. Seed: each order's current stage at its
-   `stage_entered_at` (one order on 2026-10-21; no back-fill, nothing parsed).
+   `stage_entered_at` (no back-fill, nothing parsed). ⚠ CORRECTED 2026-10-22:
+   this said "one order"; the migration found and seeded THREE (two had come in
+   since the count) — orders 3, orders_with_an_event 3, events 3.
    **The app:** the three routes that load orders embed the events
    (`shapeStageEvents`, once); the store keeps them through a realtime update
    and appends on a stage change (`withStageEvent`, against the LAST EVENT, not
@@ -404,7 +406,36 @@ Each line points at the section that owns the detail.
    ⚠ (2026-10-19) It EXISTS: every `order_activity` row has a real
    `created_at`, and since gap 12 the client has it as each entry's `at`. What
    is left is reading a stage's moves out of the trail, not storing anything.
-8. **Mockup parity** — two structural differences remain (old Open 8).
+8. **Mockup parity — the Overview to Garrett's mockup** (redefined 2026-10-22:
+   "I like the layout and style of the mockup a lot better"). The old note's
+   "Next Action is a cell in a strip" was stale — it is already a full-width
+   band. DECIDED (Garrett, 2026-10-22): A — KEEP TODAY'S PALETTE, take the
+   mockup's layout only; C — drop the "Pipeline details · type … SLA target"
+   line and the Full Order count (lateness still reads "due"/"overdue");
+   D — FILE GROUPS, named by people: groups belong to one order; the Files tab
+   shows groups with their files, the Overview only the groups, and a group
+   opens the Files tab at it; a file is uploaded INTO a group, so a group must
+   exist first; deleting a group deletes its files, after a prompt saying so
+   and to move any worth keeping; automatic uploads go to groups the OMS
+   creates — "Customer uploads", "Proof of delivery"; a custom job's rooms and
+   style groups each become a group named after them; existing (test) files
+   are deleted when groups arrive, listed first. The order of work: (1) the
+   stage panel and rail, (2) the Next Action band, (3) the two-column layout
+   with the details, Production & Delivery and Notes cards, (4) Custom Order
+   Specs and Website Preferences, (5) file groups (designed and agreed first).
+   ✅ STEP 1 built 2026-10-22, `patch_stage_panel.py`: an icon tile, the stage
+   large in its colour with "in stage" (and due/overdue), and ONE SENTENCE per
+   stage — Garrett's approved wording, `lib/stageSentences` (23, five flows;
+   staff-only); cabinet orders at the cross dock from the Waypoint family get
+   "Check order status" → go.woodmark.com/onlineordering (Garrett: cabinets
+   only, Select/Waypoint only) — the Waypoint test now ONE function,
+   `lib/vendorFamily` `isWaypointVendor`, used by the acknowledgment matcher
+   too (proved identical for 11 vendor spellings). Rail labels in title case,
+   reached segments in the stages' colours; the "Pipeline details" line and
+   the Full Order count gone. Proved on the real modal for all five flows: the
+   sentence per stage, the link only where it belongs, item 7's dates
+   identical.
+   **Mockup parity** — two structural differences remain (old Open 8).
 9. **Customer notifications.** Nothing sends the production notification
    promised on every cabinet order (OPERATIONS §2, "The promise that is not
    yet kept"); the planned list is there.

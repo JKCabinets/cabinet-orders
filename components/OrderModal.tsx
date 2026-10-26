@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo } from "react";
-import { X, Check, Clock, ChevronRight, Archive, RotateCcw, Trash2, Loader2, Download, FileText, Truck } from "lucide-react";
+import { X, Check, Clock, ChevronRight, Archive, RotateCcw, Trash2, Loader2, Download, FileText, Truck, Inbox, ClipboardCheck, Factory, PackageCheck, Search, ShoppingCart, Send, Wrench, ShieldAlert, CircleCheck, CircleDot } from "lucide-react";
+import { stageSentence } from "@/lib/stageSentences";
 import clsx from "clsx";
 import { useSession } from "next-auth/react";
 import {
@@ -226,6 +227,17 @@ const CELL: React.CSSProperties = {
 // this, and under it every value sat at 65% -- so the cards read as a grey
 // wash and the words got lost. The label is still quieter than its value;
 // it is just legible now.
+/**
+ * The stage panel's icon tile (2026-10-22, item 8 -- Garrett's mockup). One per
+ * stage NAME: the five flows share names ("New", "Delivered"), and a name means
+ * the same moment in each. A stage not listed falls back to a plain dot.
+ */
+const STAGE_ICON: Record<string, typeof Truck> = {
+  "New": Inbox, "New claim": ShieldAlert, "Entered": ClipboardCheck, "In review": Search,
+  "Ordered": ShoppingCart, "Parts ordered": Wrench, "In production": Factory,
+  "At cross dock": Truck, "Shipped": Send, "Delivered": PackageCheck, "Resolved": CircleCheck,
+};
+
 const LABEL = "text-[10px] uppercase tracking-[0.16em] text-cream/60 mb-1.5";
 /** The value under a LABEL. Bright: it is the fact the label names. */
 const VALUE = "text-[12px] text-cream/90";
@@ -398,16 +410,12 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
   // Which of the three bottom cards is expanded. One at a time -- three open
   // at once is the height problem this was meant to solve.
   const [openPane, setOpenPane] = useState<"customer" | "internal" | "files" | null>(null);
-  const itemCount = useMemo(
-    () => projectGroups.reduce((n, g) => n + (g.sku_items?.length ?? 0), 0),
-    [projectGroups],
-  );
-  // No Files badge. It was left out because ProjectFiles was the only thing
+  // No tab counts (2026-10-22, item 8: Garrett dropped Full Order's with the
+  // mockup's layout). Files never had one: ProjectFiles was once the only thing
   // that fetched the attachments, so a count shown before that tab opened would
   // read 0 -- "not looked yet" looking exactly like "no files". Since 2026-09-30
-  // the list is shared (lib/attachments) and loads when the modal opens, so a
-  // badge could now be honest; nobody has asked for one. itemCount is safe
-  // because sku_items is already in the store row.
+  // the list is shared (lib/attachments) and loads when the modal opens, so one
+  // could now be honest; nobody has asked for one.
 
   // Which tab. Resets when the modal is opened on a different order -- a stale
   // tab across opens is how someone lands on Files wondering where the stage
@@ -1046,14 +1054,14 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
         <div className="flex items-center gap-1 px-6 pt-1 pb-0 flex-shrink-0">
           {([
             ["project", "Overview", null],
-            ["items", "Full Order", itemCount],
+            ["items", "Full Order", null],
             ["files", "Files", null],
             ["activity", "Activity", null],
           ] as const).map(([key, label, count]) => (
             <button
               key={key}
               onClick={() => setTab(key)}
-              className="px-3 py-2 text-[11px] uppercase tracking-wider font-medium transition-all flex items-center gap-1.5"
+              className="px-3 py-2 text-[13px] font-medium transition-all flex items-center gap-1.5"
               style={{
                 color: tab === key ? "#f0ece4" : "rgba(232,227,218,0.45)",
                 borderBottom: tab === key
@@ -1095,18 +1103,9 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
               another, the claim two sections further down in ORDER INFO. That
               is why it read as stitched together rather than designed. */}
           <div className="px-6 pt-4 pb-1">
-            <div className="flex items-baseline gap-2 mb-2">
-              <p className={LABEL + " mb-0"}>Pipeline details</p>
-              <span className="text-[10px] text-cream/30">&middot;</span>
-              <span className="text-[10px] text-cream/45">
-                {GROUP_LABEL[liveOrder.type] ?? liveOrder.type}
-              </span>
-              {slaRuleFor(liveOrder) && (
-                <span className="text-[10px] text-cream/35 ml-auto">
-                  SLA target {slaRuleFor(liveOrder)!.hardHours}h
-                </span>
-              )}
-            </div>
+            {/* (2026-10-22, item 8) The "Pipeline details · <type> … SLA target"
+                line is gone (Garrett): the type is in the header, and lateness
+                still shows as "due" / "overdue" beside the stage below. */}
 
             {/* No outer border. The rail and the strip below are each their
                 own frosted card; wrapping them in a bordered box as well is a
@@ -1120,19 +1119,49 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                   action -- the part with the controls -- had to fit in what
                   was left. Here it costs one line and the Overview fits
                   without scrolling. */}
-              <div className="flex items-center gap-2 mb-3">
-                <span className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                  style={{ background: STAGE_ACCENT[liveOrder.stage] ?? "#8a8a8a" }} />
-                <span className="text-[13px] font-medium"
-                  style={{ color: STAGE_ACCENT[liveOrder.stage] ?? "#8a8a8a" }}>
-                  {liveOrder.stage}
-                </span>
-                <span className="text-[10px] text-cream/45">
-                  {stageAgeText} in stage
-                  {slaTier(liveOrder) === "hard" && <span style={{ color: "#e08585" }}> &middot; overdue</span>}
-                  {slaTier(liveOrder) === "soft" && <span style={{ color: "#e8b56a" }}> &middot; due</span>}
-                </span>
-              </div>
+              {/* ⚠ THE MOCKUP'S HEADING (2026-10-22, item 8): an icon tile, the
+                  stage large in its colour with its time in stage, and one
+                  sentence saying what the stage means -- Garrett's own wording,
+                  lib/stageSentences. Today's palette, the mockup's layout. */}
+              {(() => {
+                const accent = STAGE_ACCENT[liveOrder.stage] ?? "#8a8a8a";
+                const StageIcon = STAGE_ICON[liveOrder.stage] ?? CircleDot;
+                const sentence = stageSentence(liveOrder);
+                return (
+                  <div className="flex items-start gap-3 mb-4">
+                    <span className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                      style={{ background: `${accent}1f`, border: `0.5px solid ${accent}55` }}>
+                      <StageIcon className="w-[18px] h-[18px]" style={{ color: accent }} />
+                    </span>
+                    <div className="min-w-0 pt-0.5">
+                      <div className="flex items-baseline gap-2 flex-wrap">
+                        <span className="text-[17px] font-medium leading-tight" style={{ color: accent }}>
+                          {liveOrder.stage}
+                        </span>
+                        <span className="text-[11px] text-cream/50">
+                          &middot; {stageAgeText} in stage
+                          {slaTier(liveOrder) === "hard" && <span style={{ color: "#e08585" }}> &middot; overdue</span>}
+                          {slaTier(liveOrder) === "soft" && <span style={{ color: "#e8b56a" }}> &middot; due</span>}
+                        </span>
+                      </div>
+                      {sentence && (
+                        <p className="text-[12px] text-cream/70 mt-1 leading-snug">
+                          {sentence.text}
+                          {sentence.link && (
+                            <>
+                              {" "}
+                              <a href={sentence.link.href} target="_blank" rel="noopener noreferrer"
+                                className="underline decoration-cream/30 underline-offset-2 hover:text-cream transition-colors">
+                                {sentence.link.label}
+                              </a>
+                            </>
+                          )}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
               <div className="flex items-start">
                 {stages.map((s, i) => {
                   const isActive = liveOrder.stage === s;
@@ -1142,12 +1171,15 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                   const enteredOn = isPast ? stageDate(lastEnteredAt(liveOrder.stage_events, s)) : "";
                   const color = STAGE_COLOR[s] ?? "#91a597";
                   const isEnteredGate = s === "Entered" && liveOrder.stage === "New";
-                  const lineDone = "rgba(145,165,151,0.55)";
+                  // ⚠ LINES IN THE STAGES' COLOURS (2026-10-22, item 8): a reached
+                  // segment runs from one stage's colour into the next's, as in
+                  // the mockup -- this half solid, the next half blending in.
+                  const prevColor = i > 0 ? (STAGE_COLOR[stages[i - 1]] ?? "#91a597") : color;
                   const lineTodo = "rgba(255,255,255,0.12)";
                   return (
                     <div key={s} className="flex-1 flex flex-col items-center min-w-0">
                       <div className="flex items-center w-full">
-                        <span className="flex-1 h-[1.5px] rounded-full" style={{ background: i === 0 ? "transparent" : (i <= stageIdx ? lineDone : lineTodo) }} />
+                        <span className="flex-1 h-[1.5px] rounded-full" style={{ background: i === 0 ? "transparent" : (i <= stageIdx ? `linear-gradient(90deg, ${prevColor}99, ${color}99)` : lineTodo) }} />
                         <button
                           type="button"
                           onClick={() => handleMoveStage(s as Stage)}
@@ -1178,13 +1210,13 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                             <span className="w-1.5 h-1.5 rounded-full" style={{ background: isEnteredGate ? "#e8b56a" : "rgba(240,236,228,0.35)" }} />
                           )}
                         </button>
-                        <span className="flex-1 h-[1.5px] rounded-full" style={{ background: i === stages.length - 1 ? "transparent" : (i < stageIdx ? lineDone : lineTodo) }} />
+                        <span className="flex-1 h-[1.5px] rounded-full" style={{ background: i === stages.length - 1 ? "transparent" : (i < stageIdx ? `${color}99` : lineTodo) }} />
                       </div>
                       <button
                         type="button"
                         onClick={() => handleMoveStage(s as Stage)}
                         disabled={readOnly || checkingAttachments}
-                        className="mt-1.5 px-0.5 text-[9px] uppercase tracking-[0.07em] font-medium text-center leading-tight transition-colors disabled:opacity-60"
+                        className="mt-1.5 px-0.5 text-[11px] font-medium text-center leading-tight transition-colors disabled:opacity-60"
                         style={{ color: isActive ? color : isPast ? "rgba(240,236,228,0.62)" : "rgba(240,236,228,0.40)" }}
                       >
                         {s}
