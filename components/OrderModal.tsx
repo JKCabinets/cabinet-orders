@@ -1442,92 +1442,14 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
           </div>
 
           {/* ── ORDER INFO ──────────────────────────────────────────────────
-              Six cells on a 3-column grid, so the second row fills. The
-              4-column version went ragged the moment the claim cell moved out
-              of it -- two cells on a row built for four. */}
-          {/* ⚠ A 50/50 SPLIT, NOT ONE TABLE. What the order IS on the left --
-              facts that were true when it arrived and never change. What its
-              stages RUN ON on the right -- the live fields somebody acts on.
-              They were six cells of one grid, in which nothing distinguished
-              a PO number from a date the pipeline is waiting for. */}
-          <div className="px-6 py-4 grid grid-cols-1 md:grid-cols-2 gap-2.5">
-            <div className="glass-sage rounded-panel px-4 py-3.5">
-              <div className="flex items-center gap-2.5 mb-2">
-                <span className={CARD_BADGE} style={CARD_BADGE_STYLE}>
-                  <FileText className="w-3.5 h-3.5" style={{ color: "#d9a888" }} />
-                </span>
-                <p className={LABEL + " mb-0"}>Order details</p>
-              </div>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-3 mt-2">
-                <div>
-                  <p className={LABEL + " mb-1"}>Source</p>
-                  <span className="text-[10px] uppercase tracking-wider px-2 py-px rounded-full font-medium inline-block"
-                    style={
-                      liveOrder.source === "Shopify"
-                        ? { background: "rgba(184,130,106,0.15)", color: "#d9a888", border: "0.5px solid rgba(184,130,106,0.40)" }
-                        : { background: "rgba(145,165,151,0.18)", color: "#b8d0bd", border: "0.5px solid rgba(145,165,151,0.45)" }
-                    }>
-                    {sourceLabel(liveOrder)}
-                  </span>
-                </div>
-                <div>
-                  <p className={LABEL + " mb-1"}>Order date</p>
-                  <p className={VALUE}>{orderDate(liveOrder)}</p>
-                </div>
-                <div>
-                  {/* The reference a MANUFACTURER sees. Internal -- never shown
-                      to a customer, who knows only the order number. */}
-                  <p className={LABEL + " mb-1"}>PO / Reference</p>
-                  <p className={VALUE + " font-mono truncate"}>{poReference(liveOrder)}</p>
-                </div>
-                <div>
-                  <p className={LABEL + " mb-1"}>Order type</p>
-                  <p className={VALUE}>{GROUP_LABEL[liveOrder.type] ?? liveOrder.type}</p>
-                </div>
-              </div>
-            </div>
-
-            <StageInputsCard
-              readOnly={readOnly}
-              order={liveOrder}
-              updateOrderDetails={updateOrderDetails}
-              onStageChange={onStageChange}
-              canEdit={canEdit}
-            />
-
-            {/* ⚠ CUSTOM JOBS ONLY. A custom job is specs and files: a designer
-                owns it end to end, and this is where what the customer CHOSE is
-                recorded. A Shopify group's specification arrives decoded from
-                its SKUs and has no business here; a warranty claim is about work
-                already done. The route refuses the column on anything else. */}
-            {liveOrder.type === "custom" && (
-              // ⚠ KEYED BY THE JOB. The panel holds drafts, and a panel handed a
-              // different job once saved the last job's rooms onto it (proven
-              // 2026-09-30). A new job is a new panel.
-              <CustomSpecsPanel key={liveOrder.id} order={liveOrder} readOnly={readOnly || !canEdit} />
-            )}
-
-            {/* ⚠ BELOW THE SPECS, AND SMALLER, ON PURPOSE. The panel above is
-                what the customer CHOSE and the designer works from; this is what
-                they ASKED FOR on the website. It renders nothing at all when
-                there is no submission -- a job raised by hand has none. */}
-            {liveOrder.type === "custom" && <QuoteSubmissionPanel order={liveOrder} />}
-          </div>
-
-            {/* Acknowledgments: per-vendor .xlsx reconciliation.
-
-                NOT for samples. They ship from JK's own stock, so there is no
-                manufacturer acknowledgment to reconcile against -- the server
-                already exempts them from the Entered gate (phase 1c), and this
-                stops the modal asking for a document that cannot exist.
-
-                Phrased "not sample" so a future order type inherits the panel
-                by default: showing it wrongly is cosmetic, hiding it wrongly
-                means a missed manufacturer confirmation. */}
-          {liveOrder.type !== "sample" && (
-            <AcknowledgmentPanel ref={ackPanelRef} orderId={liveOrder.id} orderName={liveOrder.name} eligible={ackEligible} onViewDiscrepancies={() => { setTab("items"); setItemsGroupId(liveOrder.id); }} uploadOfferedElsewhere={requirementsFor(liveOrder).some((r) => r.id === "ack_or_attachment" && r.state(liveOrder, enrichFor(liveOrder)) !== "met")} onAdvanceOverride={() => { void overrideAckAdvance(); }} canAct={canEdit} lockedNote={`Claimed by ${claimOwnerName}. Ask them to release it` + `${isAdmin ? ", or use Edit order above" : ""}.`} />
-          )}
-          {/* Notes and attachments as three cards in one row, collapsed to a
+              ⚠ THE MOCKUP'S TWO COLUMNS (2026-10-26, item 8 step 3a; Garrett).
+              A CUSTOM JOB: details, Production & Delivery, Files and Notes on
+              the left; what the customer chose and asked for on the right.
+              EVERY OTHER TYPE: details | Production & Delivery, then Notes |
+              Files. LAYOUT ONLY -- each card below is the same element it was,
+              moved; their panes still open full width beneath, and the
+              Acknowledgments panel stays full width below (Garrett placed the
+              four cards; the panel keeps its place).
               summary line. This was two full-height textareas plus the
               attachments panel -- roughly 380px of an Overview that has to fit
               without scrolling.
@@ -1538,41 +1460,178 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
               missing-attachment or missing-receipt gate. Conditional rendering
               would leave attachmentsRef.current null and those calls would do
               nothing, silently. */}
-          <div className="px-6 py-4 grid grid-cols-1 md:grid-cols-3 gap-2.5" style={SECTION_BORDER}>
-            <button
-              onClick={() => setOpenPane(openPane === "customer" ? null : "customer")}
-              className="glass-sage rounded-panel px-3.5 py-3 text-left transition-all hover:brightness-110"
-            >
-              <p className={LABEL + " mb-0.5"}>Customer note</p>
-              <p className="text-[11px] text-cream/70 truncate">
-                {notes.trim() ? notes.trim().split("\n")[0] : "No customer note yet"}
-              </p>
-            </button>
-            <button
-              onClick={() => setOpenPane(openPane === "internal" ? null : "internal")}
-              className="glass-sage rounded-panel px-3.5 py-3 text-left transition-all hover:brightness-110"
-            >
-              <div className="flex items-center gap-1.5">
-                <p className={LABEL + " mb-0.5"}>Internal note</p>
-                <span className="text-[8px] uppercase tracking-wider px-1 rounded-full mb-1"
-                  style={{ background: "rgba(232,144,144,0.12)", color: "rgba(232,144,144,0.85)" }}>
-                  staff
-                </span>
+          {liveOrder.type === "custom" ? (
+            <div className="px-6 py-4 grid grid-cols-1 md:grid-cols-2 gap-2.5 items-start">
+              <div className="flex flex-col gap-2.5 min-w-0">
+                <div className="glass-sage rounded-panel px-4 py-3.5">
+                  <div className="flex items-center gap-2.5 mb-2">
+                    <span className={CARD_BADGE} style={CARD_BADGE_STYLE}>
+                      <FileText className="w-3.5 h-3.5" style={{ color: "#d9a888" }} />
+                    </span>
+                    <p className={LABEL + " mb-0"}>Order details</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-3 mt-2">
+                    <div>
+                      <p className={LABEL + " mb-1"}>Source</p>
+                      <span className="text-[10px] uppercase tracking-wider px-2 py-px rounded-full font-medium inline-block"
+                        style={
+                          liveOrder.source === "Shopify"
+                            ? { background: "rgba(184,130,106,0.15)", color: "#d9a888", border: "0.5px solid rgba(184,130,106,0.40)" }
+                            : { background: "rgba(145,165,151,0.18)", color: "#b8d0bd", border: "0.5px solid rgba(145,165,151,0.45)" }
+                        }>
+                        {sourceLabel(liveOrder)}
+                      </span>
+                    </div>
+                    <div>
+                      <p className={LABEL + " mb-1"}>Order date</p>
+                      <p className={VALUE}>{orderDate(liveOrder)}</p>
+                    </div>
+                    <div>
+                      {/* The reference a MANUFACTURER sees. Internal -- never shown
+                          to a customer, who knows only the order number. */}
+                      <p className={LABEL + " mb-1"}>PO / Reference</p>
+                      <p className={VALUE + " font-mono truncate"}>{poReference(liveOrder)}</p>
+                    </div>
+                    <div>
+                      <p className={LABEL + " mb-1"}>Order type</p>
+                      <p className={VALUE}>{GROUP_LABEL[liveOrder.type] ?? liveOrder.type}</p>
+                    </div>
+                  </div>
+                </div>
+                <StageInputsCard
+                  readOnly={readOnly}
+                  order={liveOrder}
+                  updateOrderDetails={updateOrderDetails}
+                  onStageChange={onStageChange}
+                  canEdit={canEdit}
+                />
+                <button
+                  onClick={() => setOpenPane(openPane === "files" ? null : "files")}
+                  className="glass-sage rounded-panel px-3.5 py-3 text-left transition-all hover:brightness-110"
+                >
+                  <p className={LABEL + " mb-0.5"}>Attachments</p>
+                  <p className="text-[11px] text-cream/70 truncate">
+                    Drawings, receipts, measurements
+                  </p>
+                </button>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <button
+                  onClick={() => setOpenPane(openPane === "customer" ? null : "customer")}
+                  className="glass-sage rounded-panel px-3.5 py-3 text-left transition-all hover:brightness-110"
+                >
+                  <p className={LABEL + " mb-0.5"}>Customer note</p>
+                  <p className="text-[11px] text-cream/70 truncate">
+                    {notes.trim() ? notes.trim().split("\n")[0] : "No customer note yet"}
+                  </p>
+                </button>
+                <button
+                  onClick={() => setOpenPane(openPane === "internal" ? null : "internal")}
+                  className="glass-sage rounded-panel px-3.5 py-3 text-left transition-all hover:brightness-110"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <p className={LABEL + " mb-0.5"}>Internal note</p>
+                    <span className="text-[8px] uppercase tracking-wider px-1 rounded-full mb-1"
+                      style={{ background: "rgba(232,144,144,0.12)", color: "rgba(232,144,144,0.85)" }}>
+                      staff
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-cream/70 truncate">
+                    {internalNotes.trim() ? internalNotes.trim().split("\n")[0] : "No internal note yet"}
+                  </p>
+                </button>
               </div>
-              <p className="text-[11px] text-cream/70 truncate">
-                {internalNotes.trim() ? internalNotes.trim().split("\n")[0] : "No internal note yet"}
-              </p>
-            </button>
-            <button
-              onClick={() => setOpenPane(openPane === "files" ? null : "files")}
-              className="glass-sage rounded-panel px-3.5 py-3 text-left transition-all hover:brightness-110"
-            >
-              <p className={LABEL + " mb-0.5"}>Attachments</p>
-              <p className="text-[11px] text-cream/70 truncate">
-                Drawings, receipts, measurements
-              </p>
-            </button>
-          </div>
+              </div>
+              <div className="flex flex-col gap-2.5 min-w-0">
+                {liveOrder.type === "custom" && (
+                  // ⚠ KEYED BY THE JOB. The panel holds drafts, and a panel handed a
+                  // different job once saved the last job's rooms onto it (proven
+                  // 2026-09-30). A new job is a new panel.
+                  <CustomSpecsPanel key={liveOrder.id} order={liveOrder} readOnly={readOnly || !canEdit} />
+                )}
+                {liveOrder.type === "custom" && <QuoteSubmissionPanel order={liveOrder} />}
+              </div>
+            </div>
+          ) : (
+            <div className="px-6 py-4 grid grid-cols-1 md:grid-cols-2 gap-2.5">
+              <div className="glass-sage rounded-panel px-4 py-3.5">
+                <div className="flex items-center gap-2.5 mb-2">
+                  <span className={CARD_BADGE} style={CARD_BADGE_STYLE}>
+                    <FileText className="w-3.5 h-3.5" style={{ color: "#d9a888" }} />
+                  </span>
+                  <p className={LABEL + " mb-0"}>Order details</p>
+                </div>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-3 mt-2">
+                  <div>
+                    <p className={LABEL + " mb-1"}>Source</p>
+                    <span className="text-[10px] uppercase tracking-wider px-2 py-px rounded-full font-medium inline-block"
+                      style={
+                        liveOrder.source === "Shopify"
+                          ? { background: "rgba(184,130,106,0.15)", color: "#d9a888", border: "0.5px solid rgba(184,130,106,0.40)" }
+                          : { background: "rgba(145,165,151,0.18)", color: "#b8d0bd", border: "0.5px solid rgba(145,165,151,0.45)" }
+                      }>
+                      {sourceLabel(liveOrder)}
+                    </span>
+                  </div>
+                  <div>
+                    <p className={LABEL + " mb-1"}>Order date</p>
+                    <p className={VALUE}>{orderDate(liveOrder)}</p>
+                  </div>
+                  <div>
+                    {/* The reference a MANUFACTURER sees. Internal -- never shown
+                        to a customer, who knows only the order number. */}
+                    <p className={LABEL + " mb-1"}>PO / Reference</p>
+                    <p className={VALUE + " font-mono truncate"}>{poReference(liveOrder)}</p>
+                  </div>
+                  <div>
+                    <p className={LABEL + " mb-1"}>Order type</p>
+                    <p className={VALUE}>{GROUP_LABEL[liveOrder.type] ?? liveOrder.type}</p>
+                  </div>
+                </div>
+              </div>
+              <StageInputsCard
+                readOnly={readOnly}
+                order={liveOrder}
+                updateOrderDetails={updateOrderDetails}
+                onStageChange={onStageChange}
+                canEdit={canEdit}
+              />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <button
+                onClick={() => setOpenPane(openPane === "customer" ? null : "customer")}
+                className="glass-sage rounded-panel px-3.5 py-3 text-left transition-all hover:brightness-110"
+              >
+                <p className={LABEL + " mb-0.5"}>Customer note</p>
+                <p className="text-[11px] text-cream/70 truncate">
+                  {notes.trim() ? notes.trim().split("\n")[0] : "No customer note yet"}
+                </p>
+              </button>
+              <button
+                onClick={() => setOpenPane(openPane === "internal" ? null : "internal")}
+                className="glass-sage rounded-panel px-3.5 py-3 text-left transition-all hover:brightness-110"
+              >
+                <div className="flex items-center gap-1.5">
+                  <p className={LABEL + " mb-0.5"}>Internal note</p>
+                  <span className="text-[8px] uppercase tracking-wider px-1 rounded-full mb-1"
+                    style={{ background: "rgba(232,144,144,0.12)", color: "rgba(232,144,144,0.85)" }}>
+                    staff
+                  </span>
+                </div>
+                <p className="text-[11px] text-cream/70 truncate">
+                  {internalNotes.trim() ? internalNotes.trim().split("\n")[0] : "No internal note yet"}
+                </p>
+              </button>
+            </div>
+              <button
+                onClick={() => setOpenPane(openPane === "files" ? null : "files")}
+                className="glass-sage rounded-panel px-3.5 py-3 text-left transition-all hover:brightness-110"
+              >
+                <p className={LABEL + " mb-0.5"}>Attachments</p>
+                <p className="text-[11px] text-cream/70 truncate">
+                  Drawings, receipts, measurements
+                </p>
+              </button>
+            </div>
+          )}
 
           {/* Expanded pane. One at a time -- three open at once is the height
               problem this was meant to solve. */}
@@ -1667,6 +1726,20 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
             <AttachmentsPanel ref={attachmentsRef} orderId={liveOrder.id} orderType={liveOrder.type} readOnly={readOnly || !canEdit}
               specs={liveOrder.type === "custom" ? liveOrder.custom_specs : null} />
           </div>
+
+            {/* Acknowledgments: per-vendor .xlsx reconciliation.
+
+                NOT for samples. They ship from JK's own stock, so there is no
+                manufacturer acknowledgment to reconcile against -- the server
+                already exempts them from the Entered gate (phase 1c), and this
+                stops the modal asking for a document that cannot exist.
+
+                Phrased "not sample" so a future order type inherits the panel
+                by default: showing it wrongly is cosmetic, hiding it wrongly
+                means a missed manufacturer confirmation. */}
+          {liveOrder.type !== "sample" && (
+            <AcknowledgmentPanel ref={ackPanelRef} orderId={liveOrder.id} orderName={liveOrder.name} eligible={ackEligible} onViewDiscrepancies={() => { setTab("items"); setItemsGroupId(liveOrder.id); }} uploadOfferedElsewhere={requirementsFor(liveOrder).some((r) => r.id === "ack_or_attachment" && r.state(liveOrder, enrichFor(liveOrder)) !== "met")} onAdvanceOverride={() => { void overrideAckAdvance(); }} canAct={canEdit} lockedNote={`Claimed by ${claimOwnerName}. Ask them to release it` + `${isAdmin ? ", or use Edit order above" : ""}.`} />
+          )}
 
           </>)}
 

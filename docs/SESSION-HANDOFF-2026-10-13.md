@@ -445,6 +445,22 @@ Each line points at the section that owns the detail.
    (ready, blocked at New, Entered without dates, at the cross dock, a claim,
    read-only) plus the date editor opened and the main button clicked: text,
    every button's label, state and tooltip, and the request sent — identical.
+   STEP 3, DECIDED (Garrett, 2026-10-26): (1) the details card's Edit changes
+   the name, contact and location on CUSTOM JOBS AND CLAIMS ONLY — Shopify
+   orders read-only, enforced by the server too; (2) Production & Delivery's
+   Modify also edits Shipping Method; (3) a custom job follows the mockup —
+   details, Production & Delivery, Files, Notes left; specs and Website
+   Preferences right — and every other type is details | Production &
+   Delivery, then Notes | Files; the Acknowledgments panel stays full width
+   below. Built as four commits: 3a layout, 3b details + Edit, 3c Production
+   & Delivery rows + Shipping Method, 3d one Notes card.
+   ✅ STEP 3a built 2026-10-26, `patch_overview_columns.py`: the two columns
+   per type, LAYOUT ONLY — each card the same element, moved; the panes still
+   open full width beneath, the attachments panel still always mounted.
+   Proved on the real modal (a custom job, a cabinet order, a claim): every
+   card present with the same text, in its column; each card opens the same
+   pane; the Next Action band's "Attach a file" still opens the attachments
+   pane.
    **Mockup parity** — two structural differences remain (old Open 8).
 9. **Customer notifications.** Nothing sends the production notification
    promised on every cabinet order (OPERATIONS §2, "The promise that is not

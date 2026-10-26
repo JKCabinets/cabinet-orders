@@ -2395,6 +2395,8 @@ patch_next_action_band.py
 patch_docs_next_action_band.py
 patch_one_stage_palette.py
 patch_docs_one_stage_palette.py
+patch_overview_columns.py
+patch_docs_overview_columns.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it
