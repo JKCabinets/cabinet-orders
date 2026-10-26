@@ -179,18 +179,10 @@ function PaymentHoldBanner({ order }: { order: Order }) {
   );
 }
 
-const STAGE_COLOR: Record<string, string> = {
-  "New":              "#c97070",
-  "Entered":          "#d4922a",
-  "In production":    "#c8b84a",
-  "At cross dock":    "#5a8db8",
-  "Delivered":        "#8fbe70",
-  "New claim":        "#c97070",
-  "In review":        "#d4922a",
-  "Parts ordered":    "#c8b84a",
-  "Shipped":          "#5a8db8",
-  "Resolved":         "#8fbe70",
-};
+// (2026-10-26) The rail's own copy of the stage colours, STAGE_COLOR, is gone:
+// it matched lib/data's STAGE_ACCENT except that it lacked "Ordered", so a
+// custom job's rail drew Ordered in the fallback sage while its heading, the
+// board and the table drew it gold. One map now: STAGE_ACCENT.
 
 const PANEL: React.CSSProperties = {
   // Brand: signature frosted sage glass — matches the sidebar's sage tone
@@ -1169,12 +1161,12 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                   // A stage behind the current one: the day it was LAST entered.
                   // None recorded (before 2026-10-21, or never) -> nothing.
                   const enteredOn = isPast ? stageDate(lastEnteredAt(liveOrder.stage_events, s)) : "";
-                  const color = STAGE_COLOR[s] ?? "#91a597";
+                  const color = STAGE_ACCENT[s] ?? "#91a597";
                   const isEnteredGate = s === "Entered" && liveOrder.stage === "New";
                   // ⚠ LINES IN THE STAGES' COLOURS (2026-10-22, item 8): a reached
                   // segment runs from one stage's colour into the next's, as in
                   // the mockup -- this half solid, the next half blending in.
-                  const prevColor = i > 0 ? (STAGE_COLOR[stages[i - 1]] ?? "#91a597") : color;
+                  const prevColor = i > 0 ? (STAGE_ACCENT[stages[i - 1]] ?? "#91a597") : color;
                   const lineTodo = "rgba(255,255,255,0.12)";
                   return (
                     <div key={s} className="flex-1 flex flex-col items-center min-w-0">

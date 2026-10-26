@@ -746,6 +746,13 @@ Each line points at the section that owns the detail.
     building item 7): `app/api/orders`, `app/api/warranties` and
     `app/api/orders/[id]` each sort and map `order_activity` inline. Item 7's
     events use one shared `shapeStageEvents`; the trail could do the same.
+51. ✅ **The modal kept its own copy of the stage colours** (found 2026-10-26
+    from Garrett's screenshot after step 1): the rail's `STAGE_COLOR` matched
+    lib/data's `STAGE_ACCENT` except that it lacked "Ordered", so a custom job
+    at Ordered had a gold heading over a sage dot. Fixed the same day,
+    `patch_one_stage_palette.py`: the copy deleted, the rail reads
+    `STAGE_ACCENT`. Proved: of 16 rail dots across three flows, only custom
+    Ordered changed (sage to gold, the board's and the table's colour).
 
 ### Found 2026-10-14
 
