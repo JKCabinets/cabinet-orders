@@ -110,6 +110,8 @@ interface StoreCtx {
     action: { type: "archive"; archived: boolean } | { type: "delete" }
   ) => Promise<{ succeeded: number; failed: number; results: { id: string; ok: boolean; error?: string }[] } | null>;
   updateOrderDetails: (id: string, details: { door_style?: string; color?: string; sku_items?: { sku: string; quantity: number; description?: string }[]; production_start_date?: string | null; production_est_finish_date?: string | null; scheduled_delivery_date?: string | null; tracking_number?: string | null }) => Promise<void>;
+  /** Name, contact, location -- custom jobs and claims. NOT optimistic: resolves to null when saved, or the server's sentence. */
+  updateCustomerDetails: (id: string, details: { name?: string; customer_email?: string; customer_phone?: string; ship_to?: string }) => Promise<string | null>;
   /**
    * Claim or release the order. When `claimedBy` is non-null, attempts
    * to claim; when null, releases. Returns the actual server state so
@@ -830,6 +832,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     await apiCall(`/api/orders/${id}`, "PATCH", details);
   }, []);
 
+  // ⚠ NOT OPTIMISTIC (2026-10-26, item 8 step 3b). updateOrderDetails paints
+  // first and ignores apiCall's { __error }, so a refused change stays on
+  // screen until a reload (item 52). This waits for the server, applies what
+  // it confirmed -- trimmed, as the route stores it -- and otherwise returns
+  // the server's own sentence for the form to show.
+  const updateCustomerDetails = useCallback(async (id: string, details: { name?: string; customer_email?: string; customer_phone?: string; ship_to?: string }): Promise<string | null> => {
+    const res = await apiCall(`/api/orders/${id}`, "PATCH", details) as { __error?: string; __message?: string } | null;
+    if (res && res.__error) return res.__message ?? res.__error;
+    const stored = Object.fromEntries(Object.entries(details).map(([k, v]) => [k, typeof v === "string" ? v.trim() : v]));
+    setRawOrders(prev => prev.map(o => o.id === id ? { ...o, ...stored } : o));
+    return null;
+  }, []);
+
   const deleteOrder = useCallback(async (id: string) => {
     setRawOrders(prev => prev.filter(o => o.id !== id));
     await apiCall(`/api/orders/${id}`, "DELETE");
@@ -1123,7 +1138,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     <Store.Provider value={{
       allOrders, allOrdersIncludingArchived: resolvedOrders,
       orders, warranties, samples, customs, hardware, projects, team, onlineUsers, loading,
-      addOrder, moveStage, updateNotes, updateInternalNotes, updateOrderDetails, archiveProject, claimProject, archiveOrder, unarchiveOrder, deleteOrder, closeClaim, recordConsent, bulkAction,
+      addOrder, moveStage, updateNotes, updateInternalNotes, updateOrderDetails, updateCustomerDetails, archiveProject, claimProject, archiveOrder, unarchiveOrder, deleteOrder, closeClaim, recordConsent, bulkAction,
       claimOrder, addTeamMember, updateTeamMember, deactivateTeamMember, deleteTeamMember, memberOpenWork,
       updateTeamMemberProfile, uploadAvatar,
     }}>

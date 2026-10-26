@@ -139,6 +139,18 @@ export async function GET(
 
 // ⚠ WRAPPED so an admin's override of a claim reaches the trail only if this
 // request succeeds. See ClaimOverrideLog in lib/auth.
+/**
+ * ⚠ WHO THE CUSTOMER IS -- name, contact, location (2026-10-26, item 8 step
+ * 3b; Garrett). They change ONLY on what the OMS made: a custom job or a
+ * warranty claim. A Shopify order's come from Shopify, and an OMS copy that
+ * differed would be checked against acknowledgments as if it were the truth.
+ * Before this, nothing sent them -- and the route accepted them on any row.
+ */
+const CUSTOMER_FIELDS = ["name", "customer_email", "customer_phone", "ship_to"] as const;
+type CustomerField = typeof CUSTOMER_FIELDS[number];
+const CUSTOMER_FIELD_MAX: Record<CustomerField, number> = { name: 200, customer_email: 254, customer_phone: 40, ship_to: 500 };
+const CUSTOMER_FIELD_LABEL: Record<CustomerField, string> = { name: "Name", customer_email: "Email", customer_phone: "Phone", ship_to: "Project location" };
+
 export const PATCH = withClaimOverrideLog(async function PATCH(
   overrides: ClaimOverrideLog,
   req: NextRequest,
@@ -189,7 +201,7 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
     // request that supplies the date and the stage together.
     // ⚠ The other three dates are here so the activity block can tell a date
     // that CHANGED from one that was merely sent (2026-10-14) -- see there.
-    .select("stage, type, archived, payment_status, payment_hold_cleared_for, project_id, tracking_number, carrier, production_start_date, production_est_finish_date, delivery_date, scheduled_delivery_date")
+    .select("stage, type, archived, payment_status, payment_hold_cleared_for, project_id, tracking_number, carrier, production_start_date, production_est_finish_date, delivery_date, scheduled_delivery_date, name, customer_email, customer_phone, ship_to")
     .eq("id", id)
     .single();
   if (!currentRow) {
@@ -683,6 +695,28 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
   if (body.production_est_finish_date !== undefined) updates.production_est_finish_date = body.production_est_finish_date;
   if ("claimed_by" in body) updates.claimed_by = body.claimed_by ?? null;
   if (body.vendor !== undefined)          updates.vendor          = cleanInput(body.vendor as string);
+  // ⚠ CUSTOMER DETAILS: refused off a custom job or claim, refused empty (a
+  // name) or too long -- each with a sentence a person can act on. These
+  // return before anything is written, like every check in this block.
+  {
+    const sent = CUSTOMER_FIELDS.filter((f) => body[f] !== undefined);
+    if (sent.length > 0) {
+      if (currentRow.type !== "custom" && currentRow.type !== "warranty") {
+        return NextResponse.json({ error: "customer_details_read_only",
+          message: "This order's customer details come from Shopify. Change them in Shopify." }, { status: 422 });
+      }
+      if (body.name !== undefined && !cleanInput(body.name as string)) {
+        return NextResponse.json({ error: "name_required", message: "A name is required." }, { status: 422 });
+      }
+      for (const f of sent) {
+        if (cleanInput(body[f] as string).length > CUSTOMER_FIELD_MAX[f]) {
+          return NextResponse.json({ error: "field_too_long",
+            message: `${CUSTOMER_FIELD_LABEL[f]} is too long (at most ${CUSTOMER_FIELD_MAX[f]} characters).` }, { status: 422 });
+        }
+      }
+    }
+  }
+  if (body.name !== undefined)            updates.name            = cleanInput(body.name as string);
   if (body.ship_to !== undefined)         updates.ship_to         = cleanInput(body.ship_to as string);
   if (body.customer_phone !== undefined)  updates.customer_phone  = cleanInput(body.customer_phone as string);
   if (body.customer_email !== undefined)  updates.customer_email  = cleanInput(body.customer_email as string);
@@ -822,6 +856,15 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
   // ── Everything else, each asked independently ──────────────────────────
   if (body.notes !== undefined) activityTexts.push(`Notes updated by ${who}`);
   if (body.internal_notes !== undefined) activityTexts.push(`Internal notes updated by ${who}`);
+  // Customer details (2026-10-26): ONE line, naming only what really changed.
+  {
+    const was = currentRow as unknown as Record<string, unknown>;
+    const changed = CUSTOMER_FIELDS.filter((f) => body[f] !== undefined
+      && cleanInput(body[f] as string) !== String(was[f] ?? "").trim());
+    if (changed.length > 0) {
+      activityTexts.push(`Customer details updated by ${who} (${changed.map((f) => CUSTOMER_FIELD_LABEL[f].toLowerCase()).join(", ")})`);
+    }
+  }
   // (2026-09-30) No specifications row here: the specs route writes one per room.
   if (body.archived === true) activityTexts.push(`Archived by ${who}`);
   if (body.archived === false) activityTexts.push(`Restored by ${who}`);

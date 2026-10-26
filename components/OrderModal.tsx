@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo } from "react";
-import { X, Check, Clock, ChevronRight, Archive, RotateCcw, Trash2, Loader2, Download, FileText, Truck, Inbox, ClipboardCheck, Factory, PackageCheck, Search, ShoppingCart, Send, Wrench, ShieldAlert, CircleCheck, CircleDot } from "lucide-react";
+import { X, Check, Clock, ChevronRight, Archive, RotateCcw, Trash2, Loader2, Download, FileText, Truck, Inbox, ClipboardCheck, Factory, PackageCheck, Search, ShoppingCart, Send, Wrench, ShieldAlert, CircleCheck, CircleDot, Hash, CalendarDays, User, Mail, MapPin, Layers } from "lucide-react";
 import { stageSentence } from "@/lib/stageSentences";
 import clsx from "clsx";
 import { useSession } from "next-auth/react";
@@ -252,7 +252,7 @@ const CARD_BADGE_STYLE: React.CSSProperties = {
 // var could drift out of sync, breaking every backward move silently.
 
 export function OrderModal({ order, onClose, onStageChange, initialReason }: OrderModalProps) {
-  const { moveStage, updateOrderDetails, updateNotes, updateInternalNotes, archiveOrder, unarchiveOrder, deleteOrder, allOrders, allOrdersIncludingArchived, projects, team, claimProject, claimOrder: rawClaimOrder } = useStore();
+  const { moveStage, updateOrderDetails, updateCustomerDetails, updateNotes, updateInternalNotes, archiveOrder, unarchiveOrder, deleteOrder, allOrders, allOrdersIncludingArchived, projects, team, claimProject, claimOrder: rawClaimOrder } = useStore();
   // ⚠ A CLAIM OPENS ITS PURCHASE IN PLACE (Garrett, 2026-10-19): "About
   // SHO-1050 (cabinets)" on the claim opens that group's modal on top of this
   // one, archived or not; closing it -- or Escape -- comes back to the claim.
@@ -545,6 +545,10 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
   // the hours in stage -- computed once, so the two can never disagree.
   const stageAgeText = formatStageAge(
     slaRuleFor(liveOrder) ? slaAgeHours(liveOrder, slaRuleFor(liveOrder)!) : hoursInStage(liveOrder));
+  // Who may edit the customer's name, contact and location (2026-10-26, item 8
+  // step 3b): ONCE, outside the two layouts -- inside the non-custom one,
+  // TypeScript already knows the type is not "custom".
+  const canEditCustomer = (liveOrder.type === "custom" || liveOrder.type === "warranty") && canEdit && !readOnly;
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -1463,41 +1467,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
           {liveOrder.type === "custom" ? (
             <div className="px-6 py-4 grid grid-cols-1 md:grid-cols-2 gap-2.5 items-start">
               <div className="flex flex-col gap-2.5 min-w-0">
-                <div className="glass-sage rounded-panel px-4 py-3.5">
-                  <div className="flex items-center gap-2.5 mb-2">
-                    <span className={CARD_BADGE} style={CARD_BADGE_STYLE}>
-                      <FileText className="w-3.5 h-3.5" style={{ color: "#d9a888" }} />
-                    </span>
-                    <p className={LABEL + " mb-0"}>Order details</p>
-                  </div>
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-3 mt-2">
-                    <div>
-                      <p className={LABEL + " mb-1"}>Source</p>
-                      <span className="text-[10px] uppercase tracking-wider px-2 py-px rounded-full font-medium inline-block"
-                        style={
-                          liveOrder.source === "Shopify"
-                            ? { background: "rgba(184,130,106,0.15)", color: "#d9a888", border: "0.5px solid rgba(184,130,106,0.40)" }
-                            : { background: "rgba(145,165,151,0.18)", color: "#b8d0bd", border: "0.5px solid rgba(145,165,151,0.45)" }
-                        }>
-                        {sourceLabel(liveOrder)}
-                      </span>
-                    </div>
-                    <div>
-                      <p className={LABEL + " mb-1"}>Order date</p>
-                      <p className={VALUE}>{orderDate(liveOrder)}</p>
-                    </div>
-                    <div>
-                      {/* The reference a MANUFACTURER sees. Internal -- never shown
-                          to a customer, who knows only the order number. */}
-                      <p className={LABEL + " mb-1"}>PO / Reference</p>
-                      <p className={VALUE + " font-mono truncate"}>{poReference(liveOrder)}</p>
-                    </div>
-                    <div>
-                      <p className={LABEL + " mb-1"}>Order type</p>
-                      <p className={VALUE}>{GROUP_LABEL[liveOrder.type] ?? liveOrder.type}</p>
-                    </div>
-                  </div>
-                </div>
+                <OrderDetailsCard key="details-custom" order={liveOrder} onSaveCustomer={updateCustomerDetails} canEditCustomer={canEditCustomer} />
                 <StageInputsCard
                   readOnly={readOnly}
                   order={liveOrder}
@@ -1553,41 +1523,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
             </div>
           ) : (
             <div className="px-6 py-4 grid grid-cols-1 md:grid-cols-2 gap-2.5">
-              <div className="glass-sage rounded-panel px-4 py-3.5">
-                <div className="flex items-center gap-2.5 mb-2">
-                  <span className={CARD_BADGE} style={CARD_BADGE_STYLE}>
-                    <FileText className="w-3.5 h-3.5" style={{ color: "#d9a888" }} />
-                  </span>
-                  <p className={LABEL + " mb-0"}>Order details</p>
-                </div>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-3 mt-2">
-                  <div>
-                    <p className={LABEL + " mb-1"}>Source</p>
-                    <span className="text-[10px] uppercase tracking-wider px-2 py-px rounded-full font-medium inline-block"
-                      style={
-                        liveOrder.source === "Shopify"
-                          ? { background: "rgba(184,130,106,0.15)", color: "#d9a888", border: "0.5px solid rgba(184,130,106,0.40)" }
-                          : { background: "rgba(145,165,151,0.18)", color: "#b8d0bd", border: "0.5px solid rgba(145,165,151,0.45)" }
-                      }>
-                      {sourceLabel(liveOrder)}
-                    </span>
-                  </div>
-                  <div>
-                    <p className={LABEL + " mb-1"}>Order date</p>
-                    <p className={VALUE}>{orderDate(liveOrder)}</p>
-                  </div>
-                  <div>
-                    {/* The reference a MANUFACTURER sees. Internal -- never shown
-                        to a customer, who knows only the order number. */}
-                    <p className={LABEL + " mb-1"}>PO / Reference</p>
-                    <p className={VALUE + " font-mono truncate"}>{poReference(liveOrder)}</p>
-                  </div>
-                  <div>
-                    <p className={LABEL + " mb-1"}>Order type</p>
-                    <p className={VALUE}>{GROUP_LABEL[liveOrder.type] ?? liveOrder.type}</p>
-                  </div>
-                </div>
-              </div>
+              <OrderDetailsCard key="details-other" order={liveOrder} onSaveCustomer={updateCustomerDetails} canEditCustomer={canEditCustomer} />
               <StageInputsCard
                 readOnly={readOnly}
                 order={liveOrder}
@@ -1979,6 +1915,127 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
  * advance-on-save, and the re-sync when a Shopify fulfilment writes underneath.
  * A second implementation here would be a second set of those rules.
  */
+/**
+ * Who the order is for and what it is (2026-10-26, item 8 step 3b; Garrett's
+ * mockup): one row per fact, each with an icon -- Source, PO / Reference,
+ * Order type, Order date, and, new on the Overview, Customer, Contact and
+ * Project location (the Full Order tab still flags them against an
+ * acknowledgment). ONE component: step 3a had placed the card twice, one per
+ * layout, and two copies are where drift starts.
+ *
+ * ⚠ EDIT ONLY ON WHAT THE OMS MADE -- a custom job or a claim (Garrett). The
+ * route refuses the rest; this only declines to offer it. The save waits for
+ * the server and shows its refusal (updateCustomerDetails).
+ */
+function OrderDetailsCard({ order, canEditCustomer, onSaveCustomer }: {
+  order: Order;
+  canEditCustomer: boolean;
+  onSaveCustomer: (id: string, d: { name: string; customer_email: string; customer_phone: string; ship_to: string }) => Promise<string | null>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState({ name: "", customer_email: "", customer_phone: "", ship_to: "" });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const open = () => {
+    setDraft({ name: order.name ?? "", customer_email: order.customer_email ?? "", customer_phone: order.customer_phone ?? "", ship_to: order.ship_to ?? "" });
+    setError(null);
+    setEditing(true);
+  };
+  const save = async () => {
+    if (!draft.name.trim()) { setError("A name is required."); return; }
+    setSaving(true);
+    setError(null);
+    const refused = await onSaveCustomer(order.id, draft);
+    setSaving(false);
+    if (refused) { setError(refused); return; }
+    setEditing(false);
+  };
+  const notSet = <span className="text-cream/40">Not set</span>;
+  const contact = [order.customer_email, order.customer_phone].map((v) => (v ?? "").trim()).filter(Boolean).join(" \u00b7 ");
+  const rows: [typeof FileText, string, React.ReactNode][] = [
+    [Layers, "Source", (
+      <span className="text-[10px] uppercase tracking-wider px-2 py-px rounded-full font-medium inline-block"
+        style={
+          order.source === "Shopify"
+            ? { background: "rgba(184,130,106,0.15)", color: "#d9a888", border: "0.5px solid rgba(184,130,106,0.40)" }
+            : { background: "rgba(145,165,151,0.18)", color: "#b8d0bd", border: "0.5px solid rgba(145,165,151,0.45)" }
+        }>
+        {sourceLabel(order)}
+      </span>
+    )],
+    // The reference a MANUFACTURER sees. Internal -- never shown to a
+    // customer, who knows only the order number.
+    [Hash, "PO / Reference", <span className="font-mono">{poReference(order)}</span>],
+    [FileText, "Order type", GROUP_LABEL[order.type] ?? order.type],
+    [CalendarDays, "Order date", orderDate(order)],
+    [User, "Customer", order.name?.trim() ? order.name : notSet],
+    [Mail, "Contact", contact || notSet],
+    [MapPin, "Project location", order.ship_to?.trim() ? order.ship_to : notSet],
+  ];
+  const FIELD = "w-full rounded-brand px-2.5 py-1.5 placeholder:text-cream/25";
+  const FIELD_STYLE: React.CSSProperties = { background: "rgba(255,255,255,0.04)", border: "0.5px solid rgba(255,255,255,0.12)", color: "rgba(240,236,228,0.90)", fontSize: "16px" };
+  const inputs: [keyof typeof draft, string, string][] = [
+    ["name", "Customer", "Full name"], ["customer_email", "Email", "email@example.com"],
+    ["customer_phone", "Phone", "(555) 000-0000"], ["ship_to", "Project location", "Street, City, State ZIP"],
+  ];
+  return (
+    <div className="glass-sage rounded-panel px-4 py-3.5">
+      <div className="flex items-center gap-2.5 mb-2">
+        <span className={CARD_BADGE} style={CARD_BADGE_STYLE}>
+          <FileText className="w-3.5 h-3.5" style={{ color: "#d9a888" }} />
+        </span>
+        <p className={LABEL + " mb-0"}>Customer &amp; order details</p>
+        {canEditCustomer && !editing && (
+          <button onClick={open}
+            className="ml-auto text-[10px] uppercase tracking-wider px-3 py-1 rounded-full transition-all flex-shrink-0 bg-white/5 border border-cream/20 text-cream/75 hover:bg-white/10 hover:text-cream">
+            Edit
+          </button>
+        )}
+      </div>
+      {editing ? (
+        <div className="mt-2 space-y-2.5">
+          {inputs.map(([key, label, placeholder]) => (
+            <label key={key} className="block">
+              <span className="block text-[11px] text-cream/55 mb-1">{label}</span>
+              {key === "ship_to" ? (
+                <textarea rows={2} value={draft[key]} placeholder={placeholder} aria-label={label}
+                  onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
+                  className={FIELD + " resize-none"} style={FIELD_STYLE} />
+              ) : (
+                <input value={draft[key]} placeholder={placeholder} aria-label={label}
+                  type={key === "customer_email" ? "email" : key === "customer_phone" ? "tel" : "text"}
+                  onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
+                  className={FIELD} style={FIELD_STYLE} />
+              )}
+            </label>
+          ))}
+          {error && <p className="text-[11px]" style={{ color: "#e08585" }}>{error}</p>}
+          <div className="flex justify-end gap-2.5 pt-1">
+            <button type="button" onClick={() => { setEditing(false); setError(null); }} disabled={saving}
+              className="px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all bg-white/6 border border-cream/15 text-cream/75 hover:bg-white/10 hover:text-cream disabled:opacity-40 disabled:cursor-not-allowed">
+              Cancel
+            </button>
+            <button type="button" onClick={save} disabled={saving}
+              className="text-[10px] uppercase tracking-wider px-3 py-1.5 rounded-full transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30 disabled:opacity-40 disabled:cursor-not-allowed">
+              {saving ? "Saving\u2026" : "Save"}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <dl className="mt-1">
+          {rows.map(([Icon, label, value]) => (
+            <div key={label} className="flex items-start gap-3 py-1.5 border-t border-white/[0.06] first:border-t-0">
+              <Icon className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-cream/45" />
+              <dt className="w-32 flex-shrink-0 text-[11.5px] text-cream/55">{label}</dt>
+              <dd className={VALUE + " min-w-0 break-words whitespace-pre-line"}>{value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </div>
+  );
+}
+
 function StageInputsCard({
   order, updateOrderDetails, onStageChange, canEdit = true, readOnly = false,
 }: {

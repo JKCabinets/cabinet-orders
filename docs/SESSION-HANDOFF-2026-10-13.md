@@ -461,6 +461,19 @@ Each line points at the section that owns the detail.
    card present with the same text, in its column; each card opens the same
    pane; the Next Action band's "Attach a file" still opens the attachments
    pane.
+   ✅ STEP 3b built 2026-10-26, `patch_details_card.py`: ONE component,
+   `OrderDetailsCard` (3a had placed the card twice), row by row with icons —
+   Source, PO / Reference, Order type, Order date, and new on the Overview
+   Customer, Contact, Project location. EDIT on custom jobs and claims the user
+   may edit: the route now accepts `name`, REFUSES name/contact/location on any
+   other type (customer_details_read_only — before, it silently accepted a
+   Shopify order's phone), refuses an empty name and over-long values, and
+   writes ONE trail line naming only what really changed. The save is NOT
+   optimistic (`updateCustomerDetails`): it applies what the server confirmed
+   and shows the server's own refusal in the form. Proved: the real route in
+   nine cases; the real modal — rows, the form filled, a refusal shown, a save
+   reflected in the rows and the header, no Edit on Shopify orders or on a
+   claim someone else holds.
    **Mockup parity** — two structural differences remain (old Open 8).
 9. **Customer notifications.** Nothing sends the production notification
    promised on every cabinet order (OPERATIONS §2, "The promise that is not
@@ -769,6 +782,11 @@ Each line points at the section that owns the detail.
     `patch_one_stage_palette.py`: the copy deleted, the rail reads
     `STAGE_ACCENT`. Proved: of 16 rail dots across three flows, only custom
     Ordered changed (sage to gold, the board's and the table's colour).
+52. **`updateOrderDetails` ignores a refusal** (found 2026-10-26, building
+    step 3b): it paints the change first and discards apiCall's `{ __error }`,
+    so a change the server refuses stays on screen until a reload. Today that
+    is Modify's dates. To fix in step 3c, which changes Modify anyway; the
+    customer Edit was built non-optimistic from the start.
 
 ### Found 2026-10-14
 
