@@ -314,202 +314,205 @@ export function NextActionPanel({
 
   return (
     <div className="px-5 py-4" style={flush ? undefined : { borderLeft: HAIRLINE }}>
-      {/* ⚠ THE OVERRIDE LIVES ON THE TITLE ROW, at the far edge, not stacked on
-          the move button. Stacked, the exception had the same size and weight
-          as the path and sat directly on top of it, so the pair read as two
-          equal choices. Up here it is available without being offered. */}
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <span className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
-            style={{ background: "rgba(184,130,106,0.18)", border: "0.5px solid rgba(184,130,106,0.40)" }}>
-            <Zap className="w-3.5 h-3.5" style={{ color: "#d9a888" }} />
-          </span>
-          <p className={TITLE}>Next action</p>
-        </div>
+      {/* ⚠ THE MOCKUP'S BAND (2026-10-26, item 8 step 2; Garrett): a large icon
+          tile, then what is needed -- the title, the headline, the record note
+          and the checklist -- then the actions on the far right, centred on
+          the band. LAYOUT ONLY: every control below is the same element it was,
+          moved, not rewritten; the main button keeps the OMS pill (Garrett).
+          ⚠ THE OVERRIDE STAYS ON THE TITLE ROW, at its far edge, small: stacked
+          on the move button, the exception read as an equal choice. */}
+      <div className="flex items-center gap-4 flex-wrap">
+        <span className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+          style={{ background: "rgba(184,130,106,0.18)", border: "0.5px solid rgba(184,130,106,0.40)" }}>
+          <Zap className="w-[18px] h-[18px]" style={{ color: "#d9a888" }} />
+        </span>
 
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          {!readOnly && showMoveButton && !ready && outstanding.map(({ req }) => {
-            const override = overrides[req.id];
-            if (!override) return null;
-            return (
-              <button
-                key={"override:" + req.id}
-                onClick={override.onClick}
-                disabled={busy}
-                className={PILL + " bg-white/6 border border-cream/20 text-cream/75 hover:bg-white/10 disabled:opacity-40"}
-              >
-                <Send className="w-3 h-3" /> {override.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <p className={BODY + " mt-2"}>{headline}</p>
-      {recordNote && (
-        <p className={NOTE + " mt-0.5"}>{recordNote}</p>
-      )}
-
-      {/* Checklist left, controls right, bottom-aligned so the move button
-          sits on the same line as the last requirement. */}
-      <div className="mt-3 flex items-end justify-between gap-5 flex-wrap">
-      {rows.length > 0 ? (
-        <ul className="space-y-1.5 min-w-0">
-          {rows.map(({ req, state }) => (
-            <li key={req.id} className="flex items-start gap-2 text-[12px] leading-snug">
-              <span
-                className="w-3.5 h-3.5 rounded-full flex-shrink-0 mt-[2px] flex items-center justify-center"
-                style={state === "met"
-                  ? { background: "rgba(160,204,122,0.20)", border: "0.5px solid #a0cc7a" }
-                  : { border: "0.5px solid rgba(232,227,218,0.30)" }}
-              >
-                {state === "met" && <Check className="w-2 h-2" style={{ color: "#a0cc7a" }} />}
-              </span>
-              <span style={{ color: state === "met" ? "#a0cc7a" : "rgba(240,236,228,0.92)" }}>
-                {capitalise(req.label)}
-                {state !== "met" && (
-                  <span className={"block " + NOTE}>{req.remedy}</span>
-                )}
-              </span>
-            </li>
-          ))}
-        </ul>
-      ) : <span />}
-
-      {readOnly ? (
-        <p className={NOTE + " flex-shrink-0 text-right max-w-[16rem]"}>{lockedNote}</p>
-      ) : (
-      <>
-      {/* ⚠ A COLUMN OF ROWS, NOT ONE WRAPPING ROW. Five controls in a single
-          flex-wrap line broke wherever the width happened to run out, which
-          put the override beside the move on one screen and under an upload
-          button on the next. The fields take a row of their own while open. */}
-      <div className="flex flex-col items-end gap-2 flex-shrink-0">
-        {openDate === "production" && (
-          <div className="flex items-center gap-1.5">
-            <input type="date" value={prodStart} onChange={(e) => setProdStart(e.target.value)}
-              title="Production starts" aria-label="Production start date" autoFocus style={DATE_INPUT} />
-            <span className="text-cream/30 text-[11px]">&rarr;</span>
-            <input type="date" value={prodFinish} onChange={(e) => setProdFinish(e.target.value)}
-              title="Ship from factory" aria-label="Ship from factory date" style={DATE_INPUT} />
-            {/* ⚠ BOTH DATES, THOUGH ONLY THE START ONE GATES. The start date
-                advances the row; the estimated finish is what
-                `production-complete` later advances ON, so a row saved with
-                only a start date would move to In production and then strand.
-                Asking for both here is the difference between one trip and
-                two. */}
-            <button
-              onClick={() => save({ production_start_date: prodStart || null,
-                                    production_est_finish_date: prodFinish || null })}
-              disabled={saving || (isClaim ? !(prodStart || prodFinish) : !prodStart)}
-              title={isClaim
-                ? "Save the dates on this claim"
-                : prodStart
-                  ? (datesAreTheAction ? "Save the dates and move to In production" : "Save the production dates")
-                  : "A production start date is what advances the order"}
-              className={PILL_QUIET}
-            >
-              {saving ? "\u2026" : "Save"}
-            </button>
-            <button onClick={() => setOpenDate(null)} disabled={saving}
-              className={PILL + " text-cream/45 hover:text-cream/75"}>
-              Cancel
-            </button>
-          </div>
-        )}
-
-        {openDate === "delivery" && (
-          <div className="flex items-center gap-1.5">
-            {isClaim && (
-              <input type="text" value={trackingNum} onChange={(e) => setTrackingNum(e.target.value)}
-                placeholder="Tracking number" title="Tracking number" aria-label="Tracking number"
-                autoFocus maxLength={100} style={DATE_INPUT} />
-            )}
-            <input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)}
-              title="Delivery date" aria-label="Delivery date" autoFocus={!isClaim} style={DATE_INPUT} />
-            <button
-              onClick={() => save({
-                scheduled_delivery_date: deliveryDate || null,
-                ...(isClaim ? { tracking_number: trackingNum.trim() || null } : {}),
+        <div className="flex-1 min-w-[16rem]">
+          <div className="flex items-start justify-between gap-3">
+            <p className={TITLE}>Next action</p>
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              {!readOnly && showMoveButton && !ready && outstanding.map(({ req }) => {
+                const override = overrides[req.id];
+                if (!override) return null;
+                return (
+                  <button
+                    key={"override:" + req.id}
+                    onClick={override.onClick}
+                    disabled={busy}
+                    className={PILL + " bg-white/6 border border-cream/20 text-cream/75 hover:bg-white/10 disabled:opacity-40"}
+                  >
+                    <Send className="w-3 h-3" /> {override.label}
+                  </button>
+                );
               })}
-              disabled={saving || (isClaim ? !(deliveryDate || trackingNum.trim()) : !deliveryDate)}
-              className={PILL_QUIET}
-            >
-              {saving ? "\u2026" : "Save"}
-            </button>
-            <button onClick={() => setOpenDate(null)} disabled={saving}
-              className={PILL + " text-cream/45 hover:text-cream/75"}>
-              Cancel
-            </button>
+            </div>
           </div>
-        )}
 
-        <div className="flex items-end gap-1.5 flex-wrap justify-end">
-          {trackingSlot}
-
-          {needsProdDates && openDate !== "production" && (
-            <button onClick={() => setOpenDate("production")} className={PILL_QUIET}>
-              <Calendar className="w-3 h-3" /> {isClaim ? "Enter dates" : "Set production dates"}
-            </button>
+          <p className={BODY + " mt-1"}>{headline}</p>
+          {recordNote && (
+            <p className={NOTE + " mt-0.5"}>{recordNote}</p>
           )}
 
-          {needsDeliveryDate && openDate !== "delivery" && (
-            <button onClick={() => setOpenDate("delivery")} className={PILL_QUIET}>
-              <Calendar className="w-3 h-3" /> {isClaim ? "Enter dates" : "Set delivery date"}
-            </button>
-          )}
-
-          {outstanding.map(({ req }) => {
-            const remedy = remedies[req.id];
-            if (!remedy) return null;
-            return (
-              <button
-                key={req.id}
-                onClick={remedy.onClick}
-                title={req.remedy}
-                className={PILL_QUIET + " hover:border-terracotta/40"}
-              >
-                <Upload className="w-3 h-3" /> {remedy.label}
-              </button>
-            );
-          })}
-
-          {/*
-            ⚠ ONE STRETCHED COLUMN, so the override and the move share an edge
-            and a width. Right-aligning two pills of different label lengths
-            left a ragged step: `items-stretch` sizes both to the wider, which
-            is the move button, and the override sits directly on top of the
-            thing it overrides.
-
-            ⚠ DISABLED UNTIL EVERY GATING REQUIREMENT IS MET, and every gating
-            requirement is one the SERVER also checks. A button that fails on
-            click is a requirement nobody was told about -- which is how the
-            Entered gate spent a day refusing the request that satisfied it.
-          */}
-          {showMoveButton && (
-            <button
-              onClick={() => onMove(next!)}
-              disabled={busy || !ready}
-              title={!ready
-                ? blocking.map((o) => capitalise(o.req.label)).join(", ") + " outstanding"
-                : autoAdvance
-                  ? `Move to ${autoAdvance.to} now, rather than waiting for ${formatMDY(autoAdvance.on)}`
-                  : `Move to ${next}`}
-              className={PILL}
-              style={ready ? PILL_MOVE : PILL_MOVE_WAITING}
-            >
-              {/* ⚠ "Manual Push" ONLY WHERE SOMETHING AUTOMATIC IS BEING
-                  pre-empted. Elsewhere this button is the only way the row
-                  moves, and calling that a push would imply a normal path
-                  that does not exist. */}
-              <Check className="w-3.5 h-3.5" />{" "}
-              {busy ? "\u2026" : autoAdvance ? "Manual Push" : `Move to ${next}`}
-            </button>
+          {rows.length > 0 && (
+            <ul className="mt-3 space-y-1.5 min-w-0">
+              {rows.map(({ req, state }) => (
+                <li key={req.id} className="flex items-start gap-2 text-[12px] leading-snug">
+                  <span
+                    className="w-3.5 h-3.5 rounded-full flex-shrink-0 mt-[2px] flex items-center justify-center"
+                    style={state === "met"
+                      ? { background: "rgba(160,204,122,0.20)", border: "0.5px solid #a0cc7a" }
+                      : { border: "0.5px solid rgba(232,227,218,0.30)" }}
+                  >
+                    {state === "met" && <Check className="w-2 h-2" style={{ color: "#a0cc7a" }} />}
+                  </span>
+                  <span style={{ color: state === "met" ? "#a0cc7a" : "rgba(240,236,228,0.92)" }}>
+                    {capitalise(req.label)}
+                    {state !== "met" && (
+                      <span className={"block " + NOTE}>{req.remedy}</span>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
-      </div>
-      </>
-      )}
+
+        <div className="flex-shrink-0 ml-auto">
+          {readOnly ? (
+            <p className={NOTE + " flex-shrink-0 text-right max-w-[16rem]"}>{lockedNote}</p>
+          ) : (
+          <>
+          {/* ⚠ A COLUMN OF ROWS, NOT ONE WRAPPING ROW. Five controls in a single
+              flex-wrap line broke wherever the width happened to run out, which
+              put the override beside the move on one screen and under an upload
+              button on the next. The fields take a row of their own while open. */}
+          <div className="flex flex-col items-end gap-2 flex-shrink-0">
+            {openDate === "production" && (
+              <div className="flex items-center gap-1.5">
+                <input type="date" value={prodStart} onChange={(e) => setProdStart(e.target.value)}
+                  title="Production starts" aria-label="Production start date" autoFocus style={DATE_INPUT} />
+                <span className="text-cream/30 text-[11px]">&rarr;</span>
+                <input type="date" value={prodFinish} onChange={(e) => setProdFinish(e.target.value)}
+                  title="Ship from factory" aria-label="Ship from factory date" style={DATE_INPUT} />
+                {/* ⚠ BOTH DATES, THOUGH ONLY THE START ONE GATES. The start date
+                    advances the row; the estimated finish is what
+                    `production-complete` later advances ON, so a row saved with
+                    only a start date would move to In production and then strand.
+                    Asking for both here is the difference between one trip and
+                    two. */}
+                <button
+                  onClick={() => save({ production_start_date: prodStart || null,
+                                        production_est_finish_date: prodFinish || null })}
+                  disabled={saving || (isClaim ? !(prodStart || prodFinish) : !prodStart)}
+                  title={isClaim
+                    ? "Save the dates on this claim"
+                    : prodStart
+                      ? (datesAreTheAction ? "Save the dates and move to In production" : "Save the production dates")
+                      : "A production start date is what advances the order"}
+                  className={PILL_QUIET}
+                >
+                  {saving ? "\u2026" : "Save"}
+                </button>
+                <button onClick={() => setOpenDate(null)} disabled={saving}
+                  className={PILL + " text-cream/45 hover:text-cream/75"}>
+                  Cancel
+                </button>
+              </div>
+            )}
+
+            {openDate === "delivery" && (
+              <div className="flex items-center gap-1.5">
+                {isClaim && (
+                  <input type="text" value={trackingNum} onChange={(e) => setTrackingNum(e.target.value)}
+                    placeholder="Tracking number" title="Tracking number" aria-label="Tracking number"
+                    autoFocus maxLength={100} style={DATE_INPUT} />
+                )}
+                <input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)}
+                  title="Delivery date" aria-label="Delivery date" autoFocus={!isClaim} style={DATE_INPUT} />
+                <button
+                  onClick={() => save({
+                    scheduled_delivery_date: deliveryDate || null,
+                    ...(isClaim ? { tracking_number: trackingNum.trim() || null } : {}),
+                  })}
+                  disabled={saving || (isClaim ? !(deliveryDate || trackingNum.trim()) : !deliveryDate)}
+                  className={PILL_QUIET}
+                >
+                  {saving ? "\u2026" : "Save"}
+                </button>
+                <button onClick={() => setOpenDate(null)} disabled={saving}
+                  className={PILL + " text-cream/45 hover:text-cream/75"}>
+                  Cancel
+                </button>
+              </div>
+            )}
+
+            <div className="flex items-end gap-1.5 flex-wrap justify-end">
+              {trackingSlot}
+
+              {needsProdDates && openDate !== "production" && (
+                <button onClick={() => setOpenDate("production")} className={PILL_QUIET}>
+                  <Calendar className="w-3 h-3" /> {isClaim ? "Enter dates" : "Set production dates"}
+                </button>
+              )}
+
+              {needsDeliveryDate && openDate !== "delivery" && (
+                <button onClick={() => setOpenDate("delivery")} className={PILL_QUIET}>
+                  <Calendar className="w-3 h-3" /> {isClaim ? "Enter dates" : "Set delivery date"}
+                </button>
+              )}
+
+              {outstanding.map(({ req }) => {
+                const remedy = remedies[req.id];
+                if (!remedy) return null;
+                return (
+                  <button
+                    key={req.id}
+                    onClick={remedy.onClick}
+                    title={req.remedy}
+                    className={PILL_QUIET + " hover:border-terracotta/40"}
+                  >
+                    <Upload className="w-3 h-3" /> {remedy.label}
+                  </button>
+                );
+              })}
+
+              {/*
+                ⚠ ONE STRETCHED COLUMN, so the override and the move share an edge
+                and a width. Right-aligning two pills of different label lengths
+                left a ragged step: `items-stretch` sizes both to the wider, which
+                is the move button, and the override sits directly on top of the
+                thing it overrides.
+
+                ⚠ DISABLED UNTIL EVERY GATING REQUIREMENT IS MET, and every gating
+                requirement is one the SERVER also checks. A button that fails on
+                click is a requirement nobody was told about -- which is how the
+                Entered gate spent a day refusing the request that satisfied it.
+              */}
+              {showMoveButton && (
+                <button
+                  onClick={() => onMove(next!)}
+                  disabled={busy || !ready}
+                  title={!ready
+                    ? blocking.map((o) => capitalise(o.req.label)).join(", ") + " outstanding"
+                    : autoAdvance
+                      ? `Move to ${autoAdvance.to} now, rather than waiting for ${formatMDY(autoAdvance.on)}`
+                      : `Move to ${next}`}
+                  className={PILL}
+                  style={ready ? PILL_MOVE : PILL_MOVE_WAITING}
+                >
+                  {/* ⚠ "Manual Push" ONLY WHERE SOMETHING AUTOMATIC IS BEING
+                      pre-empted. Elsewhere this button is the only way the row
+                      moves, and calling that a push would imply a normal path
+                      that does not exist. */}
+                  <Check className="w-3.5 h-3.5" />{" "}
+                  {busy ? "\u2026" : autoAdvance ? "Manual Push" : `Move to ${next}`}
+                </button>
+              )}
+            </div>
+          </div>
+          </>
+          )}
+        </div>
       </div>
     </div>
   );

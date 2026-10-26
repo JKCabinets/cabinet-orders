@@ -2391,6 +2391,8 @@ patch_stage_events.py
 patch_docs_stage_events.py
 patch_stage_panel.py
 patch_docs_stage_panel.py
+patch_next_action_band.py
+patch_docs_next_action_band.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

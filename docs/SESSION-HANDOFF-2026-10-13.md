@@ -435,6 +435,16 @@ Each line points at the section that owns the detail.
    the Full Order count gone. Proved on the real modal for all five flows: the
    sentence per stage, the link only where it belongs, item 7's dates
    identical.
+   ✅ STEP 2 built 2026-10-26, `patch_next_action_band.py`: the band in the
+   mockup's row — a large icon tile, then the title, headline, record note and
+   checklist, then the actions on the far right, centred. LAYOUT ONLY: built by
+   moving the band's own pieces word for word (each control still present
+   once). The mockup's second action ("Set delivery date") and second line were
+   already the band's. The main button keeps the OMS pill, not the mockup's
+   solid fill (Garrett, 2026-10-26). Proved on the real modal in six states
+   (ready, blocked at New, Entered without dates, at the cross dock, a claim,
+   read-only) plus the date editor opened and the main button clicked: text,
+   every button's label, state and tooltip, and the request sent — identical.
    **Mockup parity** — two structural differences remain (old Open 8).
 9. **Customer notifications.** Nothing sends the production notification
    promised on every cabinet order (OPERATIONS §2, "The promise that is not
