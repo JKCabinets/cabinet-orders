@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Calendar, Check, Send, Upload, Zap } from "lucide-react";
 import { nextStageFor, type Order, type PaymentFields } from "@/lib/data";
 import { requirementsFor, dateControlsFor, type RequirementEnrichment, type RequirementState } from "@/lib/requirements";
@@ -176,7 +176,7 @@ interface Props {
   overrides?: Partial<Record<string, RemedyAction>>;
   onMove: (stage: string) => void;
   /** PATCHes the row. Setting a start date at Entered auto-advances it. */
-  onSaveDates: (patch: DateFields) => Promise<void> | void;
+  onSaveDates: (patch: DateFields) => Promise<string | null | void> | void;
   busy?: boolean;
   /**
    * Somebody else holds the claim and the viewer is not an admin, so the server
@@ -224,10 +224,19 @@ export function NextActionPanel({
    * fields replace the row when it is pressed.
    */
   const [openDate, setOpenDate] = useState<null | "production" | "delivery">(null);
+  // The server's sentence when it refuses the dates (2026-10-26, item 52):
+  // the editor stays open on it, rather than closing as if they had saved.
+  const [saveError, setSaveError] = useState<string | null>(null);
+  useEffect(() => { setSaveError(null); }, [openDate]);
 
   async function save(patch: DateFields) {
     setSaving(true);
-    try { await onSaveDates(patch); setOpenDate(null); } finally { setSaving(false); }
+    setSaveError(null);
+    try {
+      const refused = await onSaveDates(patch);
+      if (typeof refused === "string") { setSaveError(refused); return; }
+      setOpenDate(null);
+    } finally { setSaving(false); }
   }
 
   const requirements = requirementsFor(order);
@@ -387,6 +396,9 @@ export function NextActionPanel({
               put the override beside the move on one screen and under an upload
               button on the next. The fields take a row of their own while open. */}
           <div className="flex flex-col items-end gap-2 flex-shrink-0">
+            {saveError && openDate && (
+              <p role="alert" className="text-[11px] max-w-[22rem] text-right" style={{ color: "#e08585" }}>{saveError}</p>
+            )}
             {openDate === "production" && (
               <div className="flex items-center gap-1.5">
                 <input type="date" value={prodStart} onChange={(e) => setProdStart(e.target.value)}

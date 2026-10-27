@@ -474,6 +474,15 @@ Each line points at the section that owns the detail.
    nine cases; the real modal — rows, the form filled, a refusal shown, a save
    reflected in the rows and the header, no Edit on Shopify orders or on a
    claim someone else holds.
+   ✅ STEP 3c built 2026-10-26, `patch_production_rows.py`: Production &
+   Delivery as rows — Production (start → ship from factory), Delivery target,
+   Shipping method, and a claim's Tracking number; hardware and samples
+   Tracking number and Carrier — drawn by ONE `DetailRows`, which the details
+   card now uses too. Modify edits Shipping method (Garrett); the route refuses
+   one over 100 characters and writes "Shipping method updated by …" only when
+   it changed. Item 52 fixed with it. Proved: the real route; the real modal —
+   each type's rows, Modify refused then saved, the Next Action band's dates
+   refused.
    **Mockup parity** — two structural differences remain (old Open 8).
 9. **Customer notifications.** Nothing sends the production notification
    promised on every cabinet order (OPERATIONS §2, "The promise that is not
@@ -782,7 +791,14 @@ Each line points at the section that owns the detail.
     `patch_one_stage_palette.py`: the copy deleted, the rail reads
     `STAGE_ACCENT`. Proved: of 16 rail dots across three flows, only custom
     Ordered changed (sage to gold, the board's and the table's colour).
-52. **`updateOrderDetails` ignores a refusal** (found 2026-10-26, building
+52. ✅ (fixed 2026-10-26 in step 3c: `updateOrderDetails` waits for the server,
+    applies only what it confirmed, and RETURNS the refusal; the Next Action
+    band's date fields and Modify stay open on the server's sentence. Proved:
+    deployed, refused dates closed the band and showed "12/01/2026 →
+    11/01/2026" on the order; fixed, the band stays open with the reason and
+    the order still reads "Not set". Full Order's line editor gets the store
+    fix — a refused change no longer appears — but no message yet.)
+    **`updateOrderDetails` ignores a refusal** (found 2026-10-26, building
     step 3b): it paints the change first and discards apiCall's `{ __error }`,
     so a change the server refuses stays on screen until a reload. Today that
     is Modify's dates. To fix in step 3c, which changes Modify anyway; the

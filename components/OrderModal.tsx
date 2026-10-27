@@ -1927,6 +1927,26 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
  * route refuses the rest; this only declines to offer it. The save waits for
  * the server and shows its refusal (updateCustomerDetails).
  */
+/**
+ * A card's facts, one row each: icon, label, value (2026-10-26, item 8). ONE
+ * helper for the details card and Production & Delivery, so the two read
+ * alike and cannot drift apart.
+ */
+type DetailRow = [typeof FileText, string, React.ReactNode];
+function DetailRows({ rows }: { rows: DetailRow[] }) {
+  return (
+    <dl className="mt-1">
+      {rows.map(([Icon, label, value]) => (
+        <div key={label} className="flex items-start gap-3 py-1.5 border-t border-white/[0.06] first:border-t-0">
+          <Icon className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-cream/45" />
+          <dt className="w-32 flex-shrink-0 text-[11.5px] text-cream/55">{label}</dt>
+          <dd className={VALUE + " min-w-0 break-words whitespace-pre-line"}>{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 function OrderDetailsCard({ order, canEditCustomer, onSaveCustomer }: {
   order: Order;
   canEditCustomer: boolean;
@@ -1952,7 +1972,7 @@ function OrderDetailsCard({ order, canEditCustomer, onSaveCustomer }: {
   };
   const notSet = <span className="text-cream/40">Not set</span>;
   const contact = [order.customer_email, order.customer_phone].map((v) => (v ?? "").trim()).filter(Boolean).join(" \u00b7 ");
-  const rows: [typeof FileText, string, React.ReactNode][] = [
+  const rows: DetailRow[] = [
     [Layers, "Source", (
       <span className="text-[10px] uppercase tracking-wider px-2 py-px rounded-full font-medium inline-block"
         style={
@@ -2022,15 +2042,7 @@ function OrderDetailsCard({ order, canEditCustomer, onSaveCustomer }: {
           </div>
         </div>
       ) : (
-        <dl className="mt-1">
-          {rows.map(([Icon, label, value]) => (
-            <div key={label} className="flex items-start gap-3 py-1.5 border-t border-white/[0.06] first:border-t-0">
-              <Icon className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-cream/45" />
-              <dt className="w-32 flex-shrink-0 text-[11.5px] text-cream/55">{label}</dt>
-              <dd className={VALUE + " min-w-0 break-words whitespace-pre-line"}>{value}</dd>
-            </div>
-          ))}
-        </dl>
+        <DetailRows rows={rows} />
       )}
     </div>
   );
@@ -2042,7 +2054,7 @@ function StageInputsCard({
   order: Order;
   /** Archived: the dates and the tracking show, nothing offers to change them. */
   readOnly?: boolean;
-  updateOrderDetails: (id: string, details: DateFields) => Promise<void>;
+  updateOrderDetails: (id: string, details: DateFields & { delivery_method?: string }) => Promise<string | null>;
   onStageChange: (stage: Stage) => void;
   /** False when another member holds the claim. The fields still show. */
   canEdit?: boolean;
@@ -2052,7 +2064,11 @@ function StageInputsCard({
   const [prodStart, setProdStart] = useState(order.production_start_date ?? "");
   const [prodFinish, setProdFinish] = useState(order.production_est_finish_date ?? "");
   const [deliveryDate, setDeliveryDate] = useState(order.scheduled_delivery_date ?? "");
+  // Shipping method, editable here since 2026-10-26 (item 8 step 3c; Garrett).
+  const [shippingMethod, setShippingMethod] = useState(order.delivery_method ?? "");
   const [saving, setSaving] = useState(false);
+  // The server's sentence when it refuses (item 52): Modify stays open on it.
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Re-sync when the row changes underneath: the cron advances rows and a
   // fulfilment can write dates while this is open.
@@ -2060,7 +2076,8 @@ function StageInputsCard({
     setProdStart(order.production_start_date ?? "");
     setProdFinish(order.production_est_finish_date ?? "");
     setDeliveryDate(order.scheduled_delivery_date ?? "");
-  }, [order.production_start_date, order.production_est_finish_date, order.scheduled_delivery_date]);
+    setShippingMethod(order.delivery_method ?? "");
+  }, [order.production_start_date, order.production_est_finish_date, order.scheduled_delivery_date, order.delivery_method]);
 
   /**
    * ⚠ A CLAIM RECORDS ITS DATES AND TRACKING NUMBER (Garrett, 2026-10-13).
@@ -2075,13 +2092,16 @@ function StageInputsCard({
 
   async function saveDates() {
     setSaving(true);
+    setSaveError(null);
     try {
-      await updateOrderDetails(order.id, {
+      const refused = await updateOrderDetails(order.id, {
         production_start_date: prodStart || null,
         production_est_finish_date: prodFinish || null,
         scheduled_delivery_date: deliveryDate || null,
+        delivery_method: shippingMethod.trim(),
         ...(isWarranty ? { tracking_number: trackingNum.trim() || null } : {}),
       });
+      if (refused) { setSaveError(refused); return; }
       setEditing(false);
     } finally {
       setSaving(false);
@@ -2121,44 +2141,28 @@ function StageInputsCard({
         )}
       </div>
 
-      {carriesTracking ? (
-        <div className="grid grid-cols-2 gap-x-4 gap-y-3 mt-2">
-          <div>
-            <p className={LABEL + " mb-1"}>Tracking number</p>
-            <p className={VALUE + " font-mono truncate"}>{order.tracking_number || "Not set"}</p>
-          </div>
-          <div>
-            <p className={LABEL + " mb-1"}>Carrier</p>
-            <p className={VALUE}>{order.carrier || "Not set"}</p>
-          </div>
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 gap-x-4 gap-y-3 mt-2">
-          <div>
-            {/* Start and estimated finish read as a span, not two facts. */}
-            <p className={LABEL + " mb-1"}>Production {"\u2192"} ship from factory</p>
-            <p className={VALUE}>
-              {order.production_start_date || order.production_est_finish_date
+      {/* ⚠ ROWS, AS THE DETAILS CARD (2026-10-26, item 8 step 3c; Garrett's
+          mockup): one fact a line, each with an icon -- the same DetailRows.
+          Shipping method is new here, and Modify edits it. */}
+      {(() => {
+        const notSet = <span className="text-cream/40">Not set</span>;
+        const tracking: DetailRow = [Hash, "Tracking number",
+          order.tracking_number ? <span className="font-mono">{order.tracking_number}</span> : notSet];
+        const rows: DetailRow[] = carriesTracking
+          ? [tracking, [Truck, "Carrier", order.carrier || notSet]]
+          : [
+              // Start and estimated finish read as a span, not two facts.
+              [Factory, "Production", order.production_start_date || order.production_est_finish_date
                 ? `${formatMDY(order.production_start_date) || "?"} \u2192 ${formatMDY(order.production_est_finish_date) || "?"}`
-                : "Not set"}
-            </p>
-          </div>
-          <div>
-            {/* Scheduled, not actual. A date the customer has not been given is
-                not a promise, and this is the internal view. */}
-            <p className={LABEL + " mb-1"}>Delivery target</p>
-            <p className={VALUE}>
-              {formatMDY(order.scheduled_delivery_date || order.delivery_date) || "Not set"}
-            </p>
-          </div>
-          {isWarranty && (
-            <div>
-              <p className={LABEL + " mb-1"}>Tracking number</p>
-              <p className={VALUE + " font-mono truncate"}>{order.tracking_number || "Not set"}</p>
-            </div>
-          )}
-        </div>
-      )}
+                : notSet],
+              // Scheduled, not actual. A date the customer has not been given
+              // is not a promise, and this is the internal view.
+              [CalendarDays, "Delivery target", formatMDY(order.scheduled_delivery_date || order.delivery_date) || notSet],
+              [Truck, "Shipping method", order.delivery_method?.trim() || notSet],
+              ...(isWarranty ? [tracking] : []),
+            ];
+        return <DetailRows rows={rows} />;
+      })()}
 
       {editing && canEdit && (
         <div className="mt-3 pt-3" style={{ borderTop: "0.5px solid rgba(255,255,255,0.10)" }}>
@@ -2177,6 +2181,9 @@ function StageInputsCard({
                 title="Ship from factory" aria-label="Ship from factory date" style={CARD_DATE_INPUT} />
               <input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)}
                 title="Delivery target" aria-label="Delivery target" style={CARD_DATE_INPUT} />
+              <input type="text" value={shippingMethod} onChange={(e) => setShippingMethod(e.target.value)}
+                placeholder="Shipping method" title="Shipping method" aria-label="Shipping method"
+                maxLength={100} style={CARD_DATE_INPUT} />
               {isWarranty && (
                 <input type="text" value={trackingNum} onChange={(e) => setTrackingNum(e.target.value)}
                   placeholder="Tracking number" title="Tracking number" aria-label="Tracking number"
@@ -2190,6 +2197,9 @@ function StageInputsCard({
               >
                 {saving ? "\u2026" : "Save"}
               </button>
+              {saveError && (
+                <p role="alert" className="w-full text-[11px]" style={{ color: "#e08585" }}>{saveError}</p>
+              )}
             </div>
           )}
         </div>

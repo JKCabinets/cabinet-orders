@@ -109,7 +109,7 @@ interface StoreCtx {
     ids: string[],
     action: { type: "archive"; archived: boolean } | { type: "delete" }
   ) => Promise<{ succeeded: number; failed: number; results: { id: string; ok: boolean; error?: string }[] } | null>;
-  updateOrderDetails: (id: string, details: { door_style?: string; color?: string; sku_items?: { sku: string; quantity: number; description?: string }[]; production_start_date?: string | null; production_est_finish_date?: string | null; scheduled_delivery_date?: string | null; tracking_number?: string | null }) => Promise<void>;
+  updateOrderDetails: (id: string, details: { door_style?: string; color?: string; sku_items?: { sku: string; quantity: number; description?: string }[]; production_start_date?: string | null; production_est_finish_date?: string | null; scheduled_delivery_date?: string | null; tracking_number?: string | null; delivery_method?: string }) => Promise<string | null>;
   /** Name, contact, location -- custom jobs and claims. NOT optimistic: resolves to null when saved, or the server's sentence. */
   updateCustomerDetails: (id: string, details: { name?: string; customer_email?: string; customer_phone?: string; ship_to?: string }) => Promise<string | null>;
   /**
@@ -826,10 +826,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const unarchiveOrder = useCallback(
     (id: string) => setOrderArchived(id, false), [setOrderArchived]);
 
-  const updateOrderDetails = useCallback(async (id: string, details: { door_style?: string; color?: string; sku_items?: { sku: string; quantity: number; description?: string }[]; production_start_date?: string | null; production_est_finish_date?: string | null; scheduled_delivery_date?: string | null; tracking_number?: string | null }) => {
-    const update = (list: Order[]) => list.map(o => o.id === id ? { ...o, ...details } : o);
-    setRawOrders(prev => update(prev));
-    await apiCall(`/api/orders/${id}`, "PATCH", details);
+  const updateOrderDetails = useCallback(async (id: string, details: { door_style?: string; color?: string; sku_items?: { sku: string; quantity: number; description?: string }[]; production_start_date?: string | null; production_est_finish_date?: string | null; scheduled_delivery_date?: string | null; tracking_number?: string | null; delivery_method?: string }): Promise<string | null> => {
+    // ⚠ NOT OPTIMISTIC (2026-10-26, item 52). This painted first and discarded
+    // apiCall's { __error }, so a date or a line the server refused stayed on
+    // screen until a reload. Now: the server first; what it confirmed is
+    // applied; a refusal comes back as the server's sentence for the caller to
+    // show (Modify, the Next Action band, Full Order's lines).
+    const res = await apiCall(`/api/orders/${id}`, "PATCH", details) as { __error?: string; __message?: string } | null;
+    if (res && res.__error) return res.__message ?? res.__error;
+    setRawOrders(prev => prev.map(o => o.id === id ? { ...o, ...details } : o));
+    return null;
   }, []);
 
   // ⚠ NOT OPTIMISTIC (2026-10-26, item 8 step 3b). updateOrderDetails paints

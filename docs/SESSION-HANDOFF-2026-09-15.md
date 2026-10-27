@@ -2399,6 +2399,8 @@ patch_overview_columns.py
 patch_docs_overview_columns.py
 patch_details_card.py
 patch_docs_details_card.py
+patch_production_rows.py
+patch_docs_production_rows.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

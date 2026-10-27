@@ -201,7 +201,7 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
     // request that supplies the date and the stage together.
     // ⚠ The other three dates are here so the activity block can tell a date
     // that CHANGED from one that was merely sent (2026-10-14) -- see there.
-    .select("stage, type, archived, payment_status, payment_hold_cleared_for, project_id, tracking_number, carrier, production_start_date, production_est_finish_date, delivery_date, scheduled_delivery_date, name, customer_email, customer_phone, ship_to")
+    .select("stage, type, archived, payment_status, payment_hold_cleared_for, project_id, tracking_number, carrier, production_start_date, production_est_finish_date, delivery_date, scheduled_delivery_date, name, customer_email, customer_phone, ship_to, delivery_method")
     .eq("id", id)
     .single();
   if (!currentRow) {
@@ -720,7 +720,15 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
   if (body.ship_to !== undefined)         updates.ship_to         = cleanInput(body.ship_to as string);
   if (body.customer_phone !== undefined)  updates.customer_phone  = cleanInput(body.customer_phone as string);
   if (body.customer_email !== undefined)  updates.customer_email  = cleanInput(body.customer_email as string);
-  if (body.delivery_method !== undefined) updates.delivery_method = cleanInput(body.delivery_method as string);
+  if (body.delivery_method !== undefined) {
+    // Editable from Modify since 2026-10-26 (item 8 step 3c; Garrett). Its
+    // field allows 100 characters; refused beyond, before anything is written.
+    if (cleanInput(body.delivery_method as string).length > 100) {
+      return NextResponse.json({ error: "field_too_long",
+        message: "Shipping method is too long (at most 100 characters)." }, { status: 422 });
+    }
+    updates.delivery_method = cleanInput(body.delivery_method as string);
+  }
 
   // ── Job total ────────────────────────────────────────────────────────
   //
@@ -864,6 +872,10 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
     if (changed.length > 0) {
       activityTexts.push(`Customer details updated by ${who} (${changed.map((f) => CUSTOMER_FIELD_LABEL[f].toLowerCase()).join(", ")})`);
     }
+  }
+  if (body.delivery_method !== undefined
+      && cleanInput(body.delivery_method as string) !== String((currentRow as unknown as Record<string, unknown>).delivery_method ?? "").trim()) {
+    activityTexts.push(`Shipping method updated by ${who}`);
   }
   // (2026-09-30) No specifications row here: the specs route writes one per room.
   if (body.archived === true) activityTexts.push(`Archived by ${who}`);
