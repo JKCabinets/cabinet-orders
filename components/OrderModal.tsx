@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo } from "react";
-import { X, Check, Clock, ChevronRight, Archive, RotateCcw, Trash2, Loader2, Download, FileText, Truck, Inbox, ClipboardCheck, Factory, PackageCheck, Search, ShoppingCart, Send, Wrench, ShieldAlert, CircleCheck, CircleDot, Hash, CalendarDays, User, Mail, MapPin, Layers } from "lucide-react";
+import { X, Check, Clock, ChevronRight, Archive, RotateCcw, Trash2, Loader2, Download, FileText, Truck, Inbox, ClipboardCheck, Factory, PackageCheck, Search, ShoppingCart, Send, Wrench, ShieldAlert, CircleCheck, CircleDot, Hash, CalendarDays, User, Mail, MapPin, Layers, StickyNote } from "lucide-react";
 import { stageSentence } from "@/lib/stageSentences";
 import clsx from "clsx";
 import { useSession } from "next-auth/react";
@@ -838,6 +838,127 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
 
   const isCompleted = liveOrder.stage === "Delivered" || liveOrder.stage === "Resolved";
 
+  // ⚠ ONE NOTES CARD (2026-10-26, item 8 step 3d; Garrett's mockup): the
+  // customer note and the internal note side by side, each with its text and
+  // Add note / Edit, which opens the SAME editor -- the textarea, its Save and
+  // its visibility line, moved here word for word from the panes that opened
+  // beneath the whole grid. Defined once, used by both layouts. A read-only
+  // order shows the text and no button (its textareas were read-only before).
+  const notesCard = (
+    <div className="glass-sage rounded-panel px-4 py-3.5">
+      <div className="flex items-center gap-2.5 mb-3">
+        <span className={CARD_BADGE} style={CARD_BADGE_STYLE}>
+          <StickyNote className="w-3.5 h-3.5" style={{ color: "#d9a888" }} />
+        </span>
+        <p className={LABEL + " mb-0"}>Notes</p>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+        <div className="rounded-brand px-3 py-2.5 min-w-0"
+          style={{ background: "rgba(255,255,255,0.03)", border: "0.5px solid rgba(255,255,255,0.10)" }}>
+          <div className="flex items-center gap-1.5">
+            <p className={LABEL + " mb-0"}>Customer note</p>
+            {!readOnly && (
+              <button onClick={() => setOpenPane(openPane === "customer" ? null : "customer")} className="ml-auto text-[10px] uppercase tracking-wider px-2.5 py-0.5 rounded-full transition-all flex-shrink-0 bg-white/5 border border-cream/20 text-cream/75 hover:bg-white/10 hover:text-cream">
+                {openPane === "customer" ? "Close" : notes.trim() ? "Edit" : "Add note"}
+              </button>
+            )}
+          </div>
+          <p className="text-[10px] text-cream/35 mt-0.5 mb-2">
+            {/* ⚠ TRUE ONLY WITH A SHOPIFY ORDER (2026-10-05). The note is
+                written to Shopify by the PATCH route, and only for a row
+                with a shopify_id. A custom job or a warranty claim has
+                none, yet this said "written to the Shopify order" on every
+                order -- the website asked where a customer could see a
+                claim's note, and the answer was nowhere. */}
+            {liveOrder.shopify_id
+              ? <>Visible to the customer &middot; written to the Shopify order</>
+              : <>Kept in the OMS &middot; there is no Shopify order to write it to</>}
+          </p>
+          {openPane === "customer" ? (
+            <>
+              {/* ⚠ ONE TEXTAREA, ALWAYS (2026-09-28). A quote job used to render
+                  parsed prose here INSTEAD of this field, so the designer who
+                  owns the job could not write a customer note on it. What the
+                  customer asked for is shown by QuoteSubmissionPanel on the
+                  Overview tab, in their own words rather than the form's keys. */}
+              <textarea
+                  value={notes}
+                  onChange={(e) => { setNotes(e.target.value); setNotesChanged(true); }}
+                  readOnly={readOnly}
+                  placeholder="No customer note yet."
+                  rows={3}
+                  className="w-full rounded-brand p-2.5 text-[12px] resize-none placeholder:text-cream/25"
+                  style={{
+                    background: "rgba(255,255,255,0.04)",
+                    border: "0.5px solid rgba(255,255,255,0.12)",
+                    color: "rgba(240,236,228,0.90)",
+                    fontSize: "16px",
+                  }}
+                />
+              {notesChanged && (
+                <button onClick={handleSaveNotes}
+                  className="mt-2 text-[11px] uppercase tracking-wider font-medium text-terracotta hover:brightness-110">
+                  Save note
+                </button>
+              )}
+            </>
+          ) : (
+            <p className="text-[12px] text-cream/80 whitespace-pre-line break-words">
+              {notes.trim() || <span className="text-cream/40">No customer note yet</span>}
+            </p>
+          )}
+        </div>
+        <div className="rounded-brand px-3 py-2.5 min-w-0"
+          style={{ background: "rgba(232,144,144,0.03)", border: "0.5px solid rgba(232,144,144,0.22)" }}>
+          <div className="flex items-center gap-1.5">
+            <p className={LABEL + " mb-0"}>Internal note</p>
+            <span className="text-[8px] uppercase tracking-wider px-1 rounded-full"
+              style={{ background: "rgba(232,144,144,0.12)", color: "rgba(232,144,144,0.85)" }}>
+              staff
+            </span>
+            {!readOnly && (
+              <button onClick={() => setOpenPane(openPane === "internal" ? null : "internal")} className="ml-auto text-[10px] uppercase tracking-wider px-2.5 py-0.5 rounded-full transition-all flex-shrink-0 bg-white/5 border border-cream/20 text-cream/75 hover:bg-white/10 hover:text-cream">
+                {openPane === "internal" ? "Close" : internalNotes.trim() ? "Edit" : "Add note"}
+              </button>
+            )}
+          </div>
+          <p className="text-[10px] text-cream/35 mt-0.5 mb-2">
+            Visible to staff and on the export PDF. Never sent to Shopify.
+          </p>
+          {openPane === "internal" ? (
+            <>
+              <textarea
+                value={internalNotes}
+                onChange={(e) => { setInternalNotes(e.target.value); setInternalNotesChanged(true); }}
+                readOnly={readOnly}
+                placeholder="No internal note yet."
+                rows={3}
+                className="w-full rounded-brand p-2.5 text-[12px] resize-none placeholder:text-cream/25"
+                style={{
+                  background: "rgba(232,144,144,0.04)",
+                  border: "0.5px solid rgba(232,144,144,0.25)",
+                  color: "rgba(240,236,228,0.90)",
+                  fontSize: "16px",
+                }}
+              />
+              {internalNotesChanged && (
+                <button onClick={handleSaveInternalNotes}
+                  className="mt-2 text-[11px] uppercase tracking-wider font-medium text-terracotta hover:brightness-110">
+                  Save internal note
+                </button>
+              )}
+            </>
+          ) : (
+            <p className="text-[12px] text-cream/80 whitespace-pre-line break-words">
+              {internalNotes.trim() || <span className="text-cream/40">No internal note yet</span>}
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+
   return (
     <div
       ref={overlayRef}
@@ -1484,32 +1605,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                     Drawings, receipts, measurements
                   </p>
                 </button>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                <button
-                  onClick={() => setOpenPane(openPane === "customer" ? null : "customer")}
-                  className="glass-sage rounded-panel px-3.5 py-3 text-left transition-all hover:brightness-110"
-                >
-                  <p className={LABEL + " mb-0.5"}>Customer note</p>
-                  <p className="text-[11px] text-cream/70 truncate">
-                    {notes.trim() ? notes.trim().split("\n")[0] : "No customer note yet"}
-                  </p>
-                </button>
-                <button
-                  onClick={() => setOpenPane(openPane === "internal" ? null : "internal")}
-                  className="glass-sage rounded-panel px-3.5 py-3 text-left transition-all hover:brightness-110"
-                >
-                  <div className="flex items-center gap-1.5">
-                    <p className={LABEL + " mb-0.5"}>Internal note</p>
-                    <span className="text-[8px] uppercase tracking-wider px-1 rounded-full mb-1"
-                      style={{ background: "rgba(232,144,144,0.12)", color: "rgba(232,144,144,0.85)" }}>
-                      staff
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-cream/70 truncate">
-                    {internalNotes.trim() ? internalNotes.trim().split("\n")[0] : "No internal note yet"}
-                  </p>
-                </button>
-              </div>
+                {notesCard}{/* the custom layout */}
               </div>
               <div className="flex flex-col gap-2.5 min-w-0">
                 {liveOrder.type === "custom" && (
@@ -1531,32 +1627,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                 onStageChange={onStageChange}
                 canEdit={canEdit}
               />
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              <button
-                onClick={() => setOpenPane(openPane === "customer" ? null : "customer")}
-                className="glass-sage rounded-panel px-3.5 py-3 text-left transition-all hover:brightness-110"
-              >
-                <p className={LABEL + " mb-0.5"}>Customer note</p>
-                <p className="text-[11px] text-cream/70 truncate">
-                  {notes.trim() ? notes.trim().split("\n")[0] : "No customer note yet"}
-                </p>
-              </button>
-              <button
-                onClick={() => setOpenPane(openPane === "internal" ? null : "internal")}
-                className="glass-sage rounded-panel px-3.5 py-3 text-left transition-all hover:brightness-110"
-              >
-                <div className="flex items-center gap-1.5">
-                  <p className={LABEL + " mb-0.5"}>Internal note</p>
-                  <span className="text-[8px] uppercase tracking-wider px-1 rounded-full mb-1"
-                    style={{ background: "rgba(232,144,144,0.12)", color: "rgba(232,144,144,0.85)" }}>
-                    staff
-                  </span>
-                </div>
-                <p className="text-[11px] text-cream/70 truncate">
-                  {internalNotes.trim() ? internalNotes.trim().split("\n")[0] : "No internal note yet"}
-                </p>
-              </button>
-            </div>
+              {notesCard}{/* the other layout */}
               <button
                 onClick={() => setOpenPane(openPane === "files" ? null : "files")}
                 className="glass-sage rounded-panel px-3.5 py-3 text-left transition-all hover:brightness-110"
@@ -1569,78 +1640,8 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
             </div>
           )}
 
-          {/* Expanded pane. One at a time -- three open at once is the height
-              problem this was meant to solve. */}
-          <div className={openPane === "customer" ? "" : "hidden"}>
-            <div className="px-6 py-4" style={SECTION_BORDER}>
-              <p className={LABEL}>Customer note</p>
-              <p className="text-[10px] text-cream/35 mb-2">
-                {/* ⚠ TRUE ONLY WITH A SHOPIFY ORDER (2026-10-05). The note is
-                    written to Shopify by the PATCH route, and only for a row
-                    with a shopify_id. A custom job or a warranty claim has
-                    none, yet this said "written to the Shopify order" on every
-                    order -- the website asked where a customer could see a
-                    claim's note, and the answer was nowhere. */}
-                {liveOrder.shopify_id
-                  ? <>Visible to the customer &middot; written to the Shopify order</>
-                  : <>Kept in the OMS &middot; there is no Shopify order to write it to</>}
-              </p>
-              {/* ⚠ ONE TEXTAREA, ALWAYS (2026-09-28). A quote job used to render
-                  parsed prose here INSTEAD of this field, so the designer who
-                  owns the job could not write a customer note on it. What the
-                  customer asked for is shown by QuoteSubmissionPanel on the
-                  Overview tab, in their own words rather than the form's keys. */}
-              <textarea
-                  value={notes}
-                  onChange={(e) => { setNotes(e.target.value); setNotesChanged(true); }}
-                  readOnly={readOnly}
-                  placeholder="No customer note yet."
-                  rows={3}
-                  className="w-full rounded-brand p-2.5 text-[12px] resize-none placeholder:text-cream/25"
-                  style={{
-                    background: "rgba(255,255,255,0.04)",
-                    border: "0.5px solid rgba(255,255,255,0.12)",
-                    color: "rgba(240,236,228,0.90)",
-                    fontSize: "16px",
-                  }}
-                />
-              {notesChanged && (
-                <button onClick={handleSaveNotes}
-                  className="mt-2 text-[11px] uppercase tracking-wider font-medium text-terracotta hover:brightness-110">
-                  Save note
-                </button>
-              )}
-            </div>
-          </div>
-
-          <div className={openPane === "internal" ? "" : "hidden"}>
-            <div className="px-6 py-4" style={SECTION_BORDER}>
-              <p className={LABEL}>Internal note</p>
-              <p className="text-[10px] text-cream/35 mb-2">
-                Visible to staff and on the export PDF. Never sent to Shopify.
-              </p>
-              <textarea
-                value={internalNotes}
-                onChange={(e) => { setInternalNotes(e.target.value); setInternalNotesChanged(true); }}
-                readOnly={readOnly}
-                placeholder="No internal note yet."
-                rows={3}
-                className="w-full rounded-brand p-2.5 text-[12px] resize-none placeholder:text-cream/25"
-                style={{
-                  background: "rgba(232,144,144,0.04)",
-                  border: "0.5px solid rgba(232,144,144,0.25)",
-                  color: "rgba(240,236,228,0.90)",
-                  fontSize: "16px",
-                }}
-              />
-              {internalNotesChanged && (
-                <button onClick={handleSaveInternalNotes}
-                  className="mt-2 text-[11px] uppercase tracking-wider font-medium text-terracotta hover:brightness-110">
-                  Save internal note
-                </button>
-              )}
-            </div>
-          </div>
+          {/* Expanded pane -- now only Files (2026-10-26, item 8 step 3d): the two
+              note panes moved into the Notes card above. */}
 
           {/* Damage reports */}
           {liveOrder.type === "warranty" && (

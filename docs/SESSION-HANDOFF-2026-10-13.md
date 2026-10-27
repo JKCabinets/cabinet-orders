@@ -483,6 +483,15 @@ Each line points at the section that owns the detail.
    it changed. Item 52 fixed with it. Proved: the real route; the real modal —
    each type's rows, Modify refused then saved, the Next Action band's dates
    refused.
+   ✅ STEP 3d built 2026-10-26, `patch_notes_card.py`: ONE Notes card — the
+   customer note and the internal note (STAFF) side by side, each with its text
+   and Add note / Edit opening the SAME editor in place: the textarea, its Save
+   and its visibility line moved word for word from the panes that opened
+   below the grid. Defined once (`notesCard`), used by both layouts. The
+   Attachments card and its pane are untouched until step 5. Proved on the
+   real modal: each note written and saved sends the identical request; a
+   Shopify order's notes and visibility line shown; Attachments still opens
+   its pane; who may write a note unchanged (item 53).
    **Mockup parity** — two structural differences remain (old Open 8).
 9. **Customer notifications.** Nothing sends the production notification
    promised on every cabinet order (OPERATIONS §2, "The promise that is not
@@ -803,6 +812,16 @@ Each line points at the section that owns the detail.
     so a change the server refuses stays on screen until a reload. Today that
     is Modify's dates. To fix in step 3c, which changes Modify anyway; the
     customer Edit was built non-optimistic from the start.
+53. **A colleague can write a note on an order someone else holds** (found
+    2026-10-26, building step 3d) — a QUESTION for Garrett, not a fix. The
+    note textareas were read-only only when the order is archived
+    (`readOnly`), never when another member holds it (`canEdit`), and the
+    route does not refuse it (PATCH is wrapped in `withClaimOverrideLog`).
+    The attachments panel was locked for exactly this on 2026-09-30 ("a
+    colleague was shown Upload and Delete and refused after the fact"); the
+    notes were not. Step 3d kept today's rule. Also: `updateNotes` and
+    `updateInternalNotes` paint first and ignore a refusal, as
+    `updateOrderDetails` did (item 52).
 
 ### Found 2026-10-14
 

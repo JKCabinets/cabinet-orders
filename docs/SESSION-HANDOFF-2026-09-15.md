@@ -2401,6 +2401,8 @@ patch_details_card.py
 patch_docs_details_card.py
 patch_production_rows.py
 patch_docs_production_rows.py
+patch_notes_card.py
+patch_docs_notes_card.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it
