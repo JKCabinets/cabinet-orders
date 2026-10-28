@@ -383,6 +383,11 @@ export async function POST(req: NextRequest) {
       design_assistance: body.design_assistance ?? null,
       door_style:        { keys: jsonField(body.door_style), labels: jsonField(body.door_style_label) },
       color:             { keys: jsonField(body.color),      labels: jsonField(body.color_label) },
+      // Rooms Requested (2026-10-28, Garrett; the website team's contract in
+      // oms-to-website-rooms-and-file-kinds-2026-10-28.md): the same shape as
+      // door_style -- keys from kitchen, bathroom, pantry, laundry_room, other,
+      // and their labels. Absent until the form sends it.
+      rooms:             { keys: jsonField(body.rooms),      labels: jsonField(body.rooms_label) },
     },
     text: {
       finish_notes: cleanInput((body.finish_notes ?? "").slice(0, MAX_BODY_LEN)),

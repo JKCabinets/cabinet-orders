@@ -600,6 +600,22 @@ Each line points at the section that owns the detail.
    "receipt", like "Attach a file"; it had worked through the hidden pane.
    ProjectFiles/ProjectFileRow and the pane's code are gone. Proved on the
    real modal and store.
+   ✅ STEP 4a built 2026-10-28, `patch_website_prefs.py`: Submitted Website
+   Preferences to the mockup — three columns (Preferred Door Styles, Preferred
+   Colors, Rooms Requested chips; Budget Range, Project Type, Timeline;
+   Inspiration / Layout / other files and the customer's notes); a file chip
+   OPENS the job's own copy (Customer uploads, matched by the name it was sent
+   with); VIEW FORM opens the whole submission in place (Garrett) — contact,
+   address, home type, design help, finish notes. The quote-form receiver
+   stores choices.rooms (rooms / rooms_label). Garrett: the website team adds
+   exactly Kitchen, Bathroom, Pantry, Laundry Room, Other, and a kind per file
+   — contract sent as `oms-to-website-rooms-and-file-kinds-2026-10-28.md`
+   (rooms/rooms_label as door_style; files_meta[].kind "inspiration" |
+   "layout", optional). Until the form sends them: no Rooms row, one "Files"
+   list. Proved: the real panel (both shapes, a file the job lacks, View Form)
+   and the real receiver on real PostgreSQL.
+   NEXT — 4b: Custom Order Specs to the mockup, with Attach Files per room and
+   style group, and the fields as dropdowns that accept typing (Garrett).
    STILL TO DO — the specs panel's room attachments (with step 4); the
    Overview's group tiles were the rest of 5d (opening the Files tab at a
    group, `fileGroupAnchor`), and the specs panel's room attachments; then
