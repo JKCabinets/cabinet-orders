@@ -516,6 +516,21 @@ Each line points at the section that owns the detail.
    role, moves, a room deleted with its files, the quote form and a claim
    promotion into Customer uploads, archived and held orders refused); the real
    Files tab, cache and realtime. 5a: the one test file was deleted first.
+   ✅ FOLLOW-UP 2026-10-27, `patch_attach_card.py` (Garrett, after testing):
+   the Next Action band's "Attach a file" asked its question inside the Files
+   pane, at the FOOT of the Overview — far from the button, so nothing seemed
+   to happen — and when the modal opened on a move that needed an attachment,
+   inside the pane while it was still HIDDEN, so nothing appeared at all (5c's
+   slip: openFilePicker() had been the OS picker, which works from a hidden
+   pane). Now `AttachFileCard`: directly under the band, sliding open (grid
+   rows, 300 ms; reduced motion honoured; inert while closed), asking which
+   group or a new one, uploading, saying what was attached where, then sliding
+   away by itself. A NEW group is made first and then offered as "Choose a file
+   for …" — a file picker opens only within a click, never after waiting on the
+   server (Safari most strictly). The Files tab's in-pane question and its
+   openFilePicker() are gone; its handle keeps openReceiptPicker(). Proved on
+   the real modal, both versions, for both paths. Phase B was held for this and
+   is independent of it.
    STILL TO DO — 5d: the Overview's group tiles (opening the Files tab at a
    group, `fileGroupAnchor`), and the specs panel's room attachments; then
    step 4.

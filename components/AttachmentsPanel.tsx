@@ -20,8 +20,9 @@
  *
  * Kept from the tab this replaces: the Receipt upload (filed by the server),
  * read-only orders, download, delete with its confirm, every error and Retry,
- * and the handle the Next Action band calls. openFilePicker() now ASKS WHICH
- * GROUP first (Garrett), with a new one offered, then opens the picker.
+ * and the receipt picker the Next Action band calls. Its "Attach a file" is the
+ * AttachFileCard under the band (2026-10-27): asked here, at the foot of the
+ * Overview, nothing seemed to happen.
  * Changed: rows sit on the OMS's surface, not #111, and their actions are
  * always shown, not only on hover.
  */
@@ -46,9 +47,8 @@ interface AttachmentsPanelProps {
 }
 
 export interface AttachmentsPanelHandle {
-  /** The Next Action band's "Attach a file": asks which group, then opens the picker. */
-  openFilePicker: () => void;
-  /** Its "Upload receipt": straight to the picker; the server files a receipt by role. */
+  /** The Next Action band's "Upload receipt": straight to the picker; the server files a receipt by role.
+   *  ("Attach a file" is the AttachFileCard under the band, since 2026-10-27.) */
   openReceiptPicker: () => void;
 }
 
@@ -91,8 +91,7 @@ export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPa
   const [newName, setNewName] = useState<string | null>(null);          // the New group field, when open
   const [renaming, setRenaming] = useState<{ id: number; name: string } | null>(null);
   const [confirmGroupId, setConfirmGroupId] = useState<number | null>(null);
-  const [choosing, setChoosing] = useState(false);                       // "Which group?", from the Next Action band
-  const [chooserNew, setChooserNew] = useState("");
+  // "Which group?" for the Next Action band is asked in AttachFileCard, under the band (2026-10-27).
   const fileInputRef = useRef<HTMLInputElement>(null);
   const receiptInputRef = useRef<HTMLInputElement>(null);
   const uploadTo = useRef<number | null>(null);
@@ -107,7 +106,6 @@ export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPa
   const pick = (groupId: number) => { uploadTo.current = groupId; fileInputRef.current?.click(); };
 
   useImperativeHandle(ref, () => ({
-    openFilePicker: () => { setChooserNew(""); setChoosing(true); },
     openReceiptPicker: () => receiptInputRef.current?.click(),
   }), []);
 
@@ -274,32 +272,9 @@ export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPa
         </form>
       )}
 
-      {choosing && !readOnly && (
-        <div role="dialog" aria-label="Which group?" className="mb-3 rounded-lg px-3 py-2.5"
-          style={{ background: "rgba(255,255,255,0.04)", border: "0.5px solid rgba(255,255,255,0.14)" }}>
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-[11px] text-cream/80">Which group should the file go in?</p>
-            <button onClick={() => setChoosing(false)} title="Cancel"><X className="w-3 h-3 text-cream/50" /></button>
-          </div>
-          {groups.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mb-2">
-              {groups.map((g) => (
-                <button key={g.id} onClick={() => { setChoosing(false); pick(g.id); }} className={SMALL + " normal-case tracking-normal text-[11px] py-1"}>
-                  {g.name}
-                </button>
-              ))}
-            </div>
-          )}
-          <form className="flex items-center gap-2"
-            onSubmit={async (e) => { e.preventDefault(); const g = await makeGroup(chooserNew); if (g) { setChoosing(false); pick(g.id); } }}>
-            <input value={chooserNew} onChange={(e) => setChooserNew(e.target.value)} maxLength={80}
-              placeholder={groups.length ? "Or a new group…" : "A name for its group, e.g. Acknowledgments"}
-              aria-label="A new group for the file" className={FIELD + " flex-1"} style={FIELD_STYLE} />
-            <button type="submit" disabled={busy || !chooserNew.trim()} className={SMALL}>Create &amp; choose file</button>
-          </form>
-        </div>
-      )}
-
+      {/* The Next Action band's "Attach a file" asks which group in the
+          AttachFileCard under the band (2026-10-27): asked here, at the foot
+          of the Overview, nothing seemed to happen. */}
       {error && (
         <div className="flex items-start justify-between gap-2 mb-2 px-2.5 py-1.5 bg-red-950/30 border border-red-900/50 rounded-lg">
           <p role="alert" className="text-[11px] text-red-400">{error}</p>

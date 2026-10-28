@@ -18,6 +18,7 @@ import { AvatarWithProfile } from "./AvatarWithProfile";
 import { useToast } from "./Toast";
 import { checkAttachmentGate } from "@/lib/stageGates";
 import { AttachmentsPanel, type AttachmentsPanelHandle } from "./AttachmentsPanel";
+import { AttachFileCard } from "./AttachFileCard";
 import { useAttachmentsFor, refreshAttachments, downloadAttachment, type Attachment } from "@/lib/attachments";
 import { FullOrderGroup, GroupIssueTag } from "./FullOrderGroup";
 import { OrderHeaderCards, ConsentMissingPill, ShopifyGonePill } from "./OrderHeaderCards";
@@ -341,6 +342,8 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
   const pinInputRef = useRef<HTMLInputElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const attachmentsRef = useRef<AttachmentsPanelHandle>(null);
+  // The "Attach a file" card under the Next Action band (2026-10-27, Garrett).
+  const [attachCardOpen, setAttachCardOpen] = useState(false);
   const ackPanelRef = useRef<AcknowledgmentPanelHandle>(null);
   const attachmentsAnchorRef = useRef<HTMLDivElement>(null);
 
@@ -366,14 +369,10 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
 
   useEffect(() => {
     if (initialReason !== "needs-attachment") return;
-    // Wait one frame so refs are mounted, then scroll to the attachment
-    // section and pop the OS file picker. Slight delay on the click so
-    // the scroll animation has a chance to land before the picker steals
-    // focus.
-    requestAnimationFrame(() => {
-      attachmentsAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-      setTimeout(() => attachmentsRef.current?.openFilePicker(), 350);
-    });
+    // ⚠ THE CARD UNDER THE NEXT ACTION BAND (2026-10-27). This scrolled to the
+    // Files pane and asked there -- but the pane was still HIDDEN, so since
+    // file groups (the question replaced the picker) nothing appeared at all.
+    setAttachCardOpen(true);
   }, [initialReason]);
 
   // ── The project and its groups ──────────────────────────────────────
@@ -1516,10 +1515,8 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                       ? { label: "Upload acknowledgment",
                           onClick: () => ackPanelRef.current?.openFilePicker() }
                       : { label: "Attach a file",
-                          onClick: () => {
-                            setOpenPane("files");
-                            requestAnimationFrame(() => attachmentsRef.current?.openFilePicker());
-                          } },
+                          // The card directly below this band (2026-10-27).
+                          onClick: () => setAttachCardOpen(true) },
                     proof_of_delivery: {
                       label: "Upload receipt",
                       onClick: () => {
@@ -1566,6 +1563,15 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
             </div>
           </div>
 
+          {/* "Attach a file", sliding open under the band and away again once
+              a file is attached (2026-10-27, Garrett). Mounted always, so it
+              can slide; inert while closed. */}
+          {canEdit && !readOnly && (
+            <div className="px-6">
+              <AttachFileCard orderId={liveOrder.id} open={attachCardOpen} onClose={() => setAttachCardOpen(false)} />
+            </div>
+          )}
+
           {/* ── ORDER INFO ──────────────────────────────────────────────────
               ⚠ THE MOCKUP'S TWO COLUMNS (2026-10-26, item 8 step 3a; Garrett).
               A CUSTOM JOB: details, Production & Delivery, Files and Notes on
@@ -1580,11 +1586,11 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
               without scrolling.
 
               ⚠ THE PANELS ARE HIDDEN WITH CSS, NOT UNMOUNTED. AttachmentsPanel
-              exposes openFilePicker() and openReceiptPicker() through an
-              imperative handle, and the modal calls them when it opens on a
-              missing-attachment or missing-receipt gate. Conditional rendering
-              would leave attachmentsRef.current null and those calls would do
-              nothing, silently. */}
+              exposes openReceiptPicker() through an imperative handle, and the
+              modal calls it for a missing receipt. Conditional rendering would
+              leave attachmentsRef.current null and the call would do nothing,
+              silently. (A missing attachment opens the Attach a file card under
+              the Next Action band instead, since 2026-10-27.) */}
           {liveOrder.type === "custom" ? (
             <div className="px-6 py-4 grid grid-cols-1 md:grid-cols-2 gap-2.5 items-start">
               <div className="flex flex-col gap-2.5 min-w-0">
