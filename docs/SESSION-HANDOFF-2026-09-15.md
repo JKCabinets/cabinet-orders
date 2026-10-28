@@ -2421,6 +2421,8 @@ patch_specs_files_warning.py
 patch_docs_specs_files_warning.py
 patch_website_prefs.py
 patch_docs_website_prefs.py
+patch_specs_restyle.py
+patch_docs_specs_restyle.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

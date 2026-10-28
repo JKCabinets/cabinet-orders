@@ -1,13 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   readCustomSpecs, newSpecId,
   type Order, type CustomSpecArea, type CustomSpecSet,
 } from "@/lib/data";
 import { useToast } from "./Toast";
-import { useAttachments } from "@/lib/attachments";
-import { Plus, Copy, Trash2, ChevronDown, ChevronRight, Loader2, Check, RotateCcw } from "lucide-react";
+import { useAttachments, uploadAttachment, downloadAttachment, refreshAttachments, type Attachment } from "@/lib/attachments";
+import { useSkuOptions, optionsFor } from "@/lib/skuOptions";
+import {
+  Plus, Copy, Trash2, ChevronDown, ChevronUp, Loader2, Check, RotateCcw, Paperclip, Layers, PanelsTopLeft,
+  Home, WashingMachine, Bath, Boxes, Shirt, LayoutGrid,
+} from "lucide-react";
 
 /**
  * A custom job's specifications: what the customer CHOSE, as the designer
@@ -183,6 +187,9 @@ export function CustomSpecsPanel({
           return { ...prev, [id]: { room: roomOf(area), baseRev: area.rev, heldRev: area.rev } };
         });
         setJustSaved(id);
+        // Its file group (and its style groups') exist now (5c): fetch them,
+        // rather than wait for realtime, so Attach Files is ready at once.
+        refreshAttachments(order.id);
         setTimeout(() => setJustSaved(cur => (cur === id ? null : cur)), 2000);
         return;
       }
@@ -210,6 +217,7 @@ export function CustomSpecsPanel({
       if (res.ok) {
         discard(id);
         setRemoved(prev => ({ ...prev, [id]: true }));
+        refreshAttachments(order.id); // its files went with it (5c)
         return;
       }
       if (res.status === 409 && data.error === "specs_conflict") {
@@ -245,29 +253,98 @@ export function CustomSpecsPanel({
   const setField = (id: string, setId: string, key: keyof CustomSpecSet, v: string) =>
     edit(id, r => ({ ...r, sets: r.sets.map(s => (s.id === setId ? { ...s, [key]: v } : s)) }));
 
-  const field = (value: string | undefined, onChange: (v: string) => void, placeholder: string) => (
+  // ── THE MOCKUP'S LOOK (2026-10-28, item 8 step 4b; Garrett) ──────────────
+  // A RESTYLE: every action above is the same function it was -- drafts, the
+  // per-room save, conflicts, item 58's removal prompts. What is new is how it
+  // looks; the fields' SUGGESTIONS (manufacturer from the vendors, door style
+  // and colour for that manufacturer, typing still free); and each room's and
+  // style group's FILES, through its file group (5c): Attach Files on the
+  // room, Add attachment on the style group, the files as chips that open.
+  const options = useSkuOptions(!readOnly);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadTo = useRef<number | null>(null);
+  const [uploading, setUploading] = useState<number | null>(null);
+  const groupFor = (specRef: string) => (fileList.groups ?? []).find((g) => g.spec_ref === specRef);
+  const filesIn = (groupId: number | undefined) => groupId === undefined ? [] : (fileList.files ?? []).filter((f) => f.group_id === groupId);
+  /** Open the picker within the click; the files go to that group. */
+  const pick = (groupId: number) => { uploadTo.current = groupId; fileInputRef.current?.click(); };
+  async function onFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files ? Array.from(e.target.files) : [];
+    e.target.value = "";
+    const groupId = uploadTo.current;
+    uploadTo.current = null;
+    if (files.length === 0 || groupId === null) return;
+    setUploading(groupId);
+    for (const f of files) {
+      const r = await uploadAttachment(order.id, f, "general", groupId);
+      if (!r.ok) showToast(r.message, { kind: "error" });
+    }
+    setUploading(null);
+  }
+  async function openFile(a: Attachment) {
+    const r = await downloadAttachment(a);
+    if (!r.ok) showToast(`${a.file_name}: ${r.message}`, { kind: "error" });
+  }
+
+  const INPUT = "w-full rounded-lg px-2.5 py-1.5 text-[12px] bg-white/[0.04] border border-white/10 text-cream placeholder:text-cream/30 focus:outline-none focus:border-cream/25 read-only:opacity-80";
+  const field = (value: string | undefined, onChange: (v: string) => void, placeholder: string, list?: { id: string; values: string[] }) => (
+    <>
+      <input
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value)}
+        readOnly={readOnly}
+        placeholder={placeholder}
+        list={list && !readOnly ? list.id : undefined}
+        className={INPUT}
+      />
+      {list && !readOnly && (
+        <datalist id={list.id}>{list.values.map((v) => <option key={v} value={v} />)}</datalist>
+      )}
+    </>
+  );
+  // A name that reads as a heading until it is edited.
+  const nameField = (value: string | undefined, onChange: (v: string) => void, placeholder: string, big: boolean) => (
     <input
       value={value ?? ""}
       onChange={(e) => onChange(e.target.value)}
       readOnly={readOnly}
       placeholder={placeholder}
-      className="w-full rounded-brand px-2 py-1.5 text-[12px] bg-white/4 border border-white/10 text-cream placeholder:text-cream/30 focus:outline-none focus:border-cream/25 read-only:opacity-70"
+      className={`w-full rounded-lg px-2 py-1 bg-transparent border border-transparent ${big ? "text-[13px] font-medium" : "text-[12px] font-medium"} text-cream/90 placeholder:text-cream/30 hover:border-white/10 focus:border-cream/25 focus:bg-white/[0.04] focus:outline-none read-only:hover:border-transparent`}
     />
   );
+  const LABEL = "text-[10px] text-cream/50 mb-1";
+  const PILL = "flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider bg-white/5 border border-white/12 text-cream/75 hover:bg-white/10 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed";
+  const roomIcon = (name: string) => {
+    const n = name.toLowerCase();
+    return /kitchen/.test(n) ? Home : /laundry/.test(n) ? WashingMachine : /bath/.test(n) ? Bath
+      : /pantry/.test(n) ? Boxes : /closet|mud/.test(n) ? Shirt : LayoutGrid;
+  };
+  const chipsOf = (files: Attachment[]) => files.map((a) => (
+    <button key={a.id} onClick={() => void openFile(a)} title={`Open ${a.file_name}`}
+      className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] text-cream/80 bg-white/5 border border-white/12 hover:bg-white/10 max-w-[12rem]">
+      <Paperclip className="w-2.5 h-2.5 flex-shrink-0" /><span className="truncate">{a.file_name}</span>
+    </button>
+  ));
 
   const list = readOnly ? stored.areas.map(a => a.id) : ids;
 
   return (
-    <div className="rounded-brand" style={{ background: "rgba(255,255,255,0.03)", border: "0.5px solid rgba(255,255,255,0.08)" }}>
-      <div className="flex items-center justify-between px-4 py-3">
-        <div>
-          <p className="text-[13px] text-cream/90">Custom Job Specs</p>
-          <p className="text-[11px] text-cream/45">What the customer chose, room by room. Each room saves on its own.</p>
+    <div className="glass-sage rounded-panel px-4 py-3.5">
+      <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(e) => void onFiles(e)}
+        accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" />
+      <div className="flex items-start gap-2.5 mb-3">
+        <span className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+          style={{ background: "rgba(184,130,106,0.14)", border: "0.5px solid rgba(184,130,106,0.40)" }}>
+          <PanelsTopLeft className="w-4 h-4" style={{ color: "#d9a888" }} />
+        </span>
+        <div className="flex-1 min-w-0">
+          <p className="text-[14px] text-cream/90">Custom Order Specs</p>
+          <p className="text-[11px] text-cream/50">Build out the full home specifications for this custom job. Each room saves on its own.</p>
         </div>
         {!readOnly && (
           <button
             onClick={addRoom}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider bg-white/6 border border-cream/15 text-cream/85 hover:bg-white/10 transition-all"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider bg-white/6 border border-cream/15 text-cream/85 hover:bg-white/10 transition-all flex-shrink-0"
           >
             <Plus className="w-3 h-3" /> Add Room / Group
           </button>
@@ -275,11 +352,11 @@ export function CustomSpecsPanel({
       </div>
 
       {list.length === 0 ? (
-        <p className="px-4 pb-4 text-[11px] text-cream/35">
+        <p className="pb-1 text-[11px] text-cream/40">
           {readOnly ? "No specifications recorded." : "No rooms yet. Add one to record what the customer chose."}
         </p>
       ) : (
-        <div className="px-3 pb-3 space-y-2">
+        <div className="space-y-2">
           {list.map((id) => {
             const room = readOnly ? roomOf(storedRoom(id)!) : shown(id);
             const isCollapsed = collapsed[id];
@@ -295,23 +372,33 @@ export function CustomSpecsPanel({
             const stale = !readOnly && changedElsewhere(id);
             const gone = !readOnly && removedElsewhere(id);
             const isNew = !readOnly && !storedRoom(id) && drafts[id]?.baseRev === null && drafts[id]?.heldRev === undefined;
+            // The room's own file group exists once the room is saved (5c).
+            const roomGroup = groupFor(id);
+            const roomOwnFiles = filesIn(roomGroup?.id);
+            const RoomIcon = roomIcon(room.name);
             return (
-              <div key={id} className="rounded-brand" style={{ background: "rgba(255,255,255,0.03)", border: "0.5px solid rgba(255,255,255,0.07)" }}>
+              <div key={id} className="rounded-xl" style={{ background: "rgba(255,255,255,0.03)", border: "0.5px solid rgba(255,255,255,0.10)" }}>
                 <div className="flex items-center gap-2 px-3 py-2.5">
-                  <button onClick={() => setCollapsed(c => ({ ...c, [id]: !c[id] }))} className="text-cream/45 hover:text-cream/80">
-                    {isCollapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                  </button>
+                  <span className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+                    style={{ background: "rgba(217,168,136,0.10)", border: "0.5px solid rgba(217,168,136,0.30)" }}>
+                    <RoomIcon className="w-3.5 h-3.5" style={{ color: "#e8a3a3" }} />
+                  </span>
                   <div className="flex-1 min-w-0">
-                    {field(room.name, (v) => edit(id, r => ({ ...r, name: v })), "Room or group name — e.g. Kitchen")}
+                    {nameField(room.name, (v) => edit(id, r => ({ ...r, name: v })), "Room or group name — e.g. Kitchen", true)}
                   </div>
                   {!readOnly && (
                     <>
-                      <button
-                        onClick={() => addSet(id)}
-                        disabled={busy === id}
-                        className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider bg-white/5 border border-white/10 text-cream/70 hover:bg-white/10 whitespace-nowrap disabled:opacity-40"
-                      >
+                      <button onClick={() => addSet(id)} disabled={busy === id} className={PILL}>
                         <Plus className="w-3 h-3" /> Add Style Group
+                      </button>
+                      <button
+                        onClick={() => roomGroup && pick(roomGroup.id)}
+                        disabled={!roomGroup || uploading !== null}
+                        title={roomGroup ? `Attach files to “${roomGroup.name}”` : "Save the room first, then attach files"}
+                        className={PILL}
+                      >
+                        {uploading === roomGroup?.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Paperclip className="w-3 h-3" />}
+                        Attach Files{roomOwnFiles.length > 0 ? ` · ${roomOwnFiles.length}` : ""}
                       </button>
                       <button
                         onClick={() => (isNew ? discard(id) : setConfirmRemove(id))}
@@ -323,7 +410,13 @@ export function CustomSpecsPanel({
                       </button>
                     </>
                   )}
+                  <button onClick={() => setCollapsed(c => ({ ...c, [id]: !c[id] }))} title={isCollapsed ? "Open" : "Collapse"} className="p-1 text-cream/45 hover:text-cream/80">
+                    {isCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+                  </button>
                 </div>
+                {roomOwnFiles.length > 0 && (
+                  <div className="flex items-center gap-1.5 flex-wrap px-3 pb-2 -mt-1">{chipsOf(roomOwnFiles)}</div>
+                )}
 
                 {confirmRemove === id && (
                   <div className="mx-3 mb-2 px-3 py-2 rounded-brand flex items-center justify-between gap-3" style={{ background: "rgba(220,80,60,0.08)", border: "0.5px solid rgba(220,80,60,0.35)" }}>
@@ -349,15 +442,20 @@ export function CustomSpecsPanel({
                 {!isCollapsed && (
                   <div className="px-3 pb-3 space-y-2">
                     {room.sets.length === 0 && (
-                      <p className="text-[11px] text-cream/30 px-1 pb-1">
+                      <p className="text-[11px] text-cream/35 px-1 pb-1">
                         No style groups yet. One group is one door style and colour — an island with its own style is a second group.
                       </p>
                     )}
-                    {room.sets.map((set) => (
-                      <div key={set.id} className="rounded-brand px-3 py-2.5" style={{ background: "rgba(255,255,255,0.02)", border: "0.5px solid rgba(255,255,255,0.06)" }}>
+                    {room.sets.map((set) => {
+                      const setGroup = groupFor(set.id);
+                      const setFiles = filesIn(setGroup?.id);
+                      const sug = optionsFor(options, set.manufacturer ?? "");
+                      return (
+                      <div key={set.id} className="rounded-lg px-3 py-2.5" style={{ background: "rgba(255,255,255,0.025)", border: "0.5px solid rgba(255,255,255,0.08)" }}>
                         <div className="flex items-center gap-2 mb-2">
+                          <Layers className="w-3.5 h-3.5 flex-shrink-0 text-cream/45" />
                           <div className="flex-1 min-w-0">
-                            {field(set.name, (v) => setField(id, set.id, "name", v), "Style group — e.g. Perimeter")}
+                            {nameField(set.name, (v) => setField(id, set.id, "name", v), "Style group — e.g. Island", false)}
                           </div>
                           {!readOnly && (
                             <>
@@ -384,24 +482,47 @@ export function CustomSpecsPanel({
                         )}
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
                           <div>
-                            <p className="text-[9px] uppercase tracking-wider text-cream/35 mb-1">Cabinet manufacturer</p>
-                            {field(set.manufacturer, (v) => setField(id, set.id, "manufacturer", v), "")}
+                            <p className={LABEL}>Cabinet Manufacturer</p>
+                            {field(set.manufacturer, (v) => setField(id, set.id, "manufacturer", v), "Select manufacturer", { id: `${set.id}-maker`, values: options?.manufacturers ?? [] })}
                           </div>
                           <div>
-                            <p className="text-[9px] uppercase tracking-wider text-cream/35 mb-1">Door style</p>
-                            {field(set.door_style, (v) => setField(id, set.id, "door_style", v), "")}
+                            <p className={LABEL}>Door Style</p>
+                            {field(set.door_style, (v) => setField(id, set.id, "door_style", v), "Select door style", { id: `${set.id}-door`, values: sug.door_styles })}
                           </div>
                           <div>
-                            <p className="text-[9px] uppercase tracking-wider text-cream/35 mb-1">Color / finish</p>
-                            {field(set.color, (v) => setField(id, set.id, "color", v), "")}
+                            <p className={LABEL}>Color / Finish</p>
+                            {field(set.color, (v) => setField(id, set.id, "color", v), "Select color", { id: `${set.id}-color`, values: sug.colors })}
                           </div>
                           <div>
-                            <p className="text-[9px] uppercase tracking-wider text-cream/35 mb-1">Notes</p>
-                            {field(set.notes, (v) => setField(id, set.id, "notes", v), "")}
+                            <p className={LABEL}>Notes (optional)</p>
+                            {field(set.notes, (v) => setField(id, set.id, "notes", v), "Add note…")}
                           </div>
                         </div>
+                        <div className="flex items-center gap-1.5 flex-wrap mt-2">
+                          <span className="flex items-center gap-1 text-[10px] text-cream/50"><Paperclip className="w-3 h-3" /> Attachments</span>
+                          {chipsOf(setFiles)}
+                          {!readOnly && (
+                            <button
+                              onClick={() => setGroup && pick(setGroup.id)}
+                              disabled={!setGroup || uploading !== null}
+                              title={setGroup ? `Attach to “${setGroup.name}”` : "Save the room first, then attach files"}
+                              className={PILL}
+                            >
+                              {uploading === setGroup?.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />} Add attachment
+                            </button>
+                          )}
+                          {readOnly && setFiles.length === 0 && <span className="text-[10px] text-cream/30">none</span>}
+                        </div>
                       </div>
-                    ))}
+                      );
+                    })}
+
+                    {!readOnly && (
+                      <button onClick={() => addSet(id)} disabled={busy === id}
+                        className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-[11px] text-cream/60 hover:text-cream/85 border border-dashed border-white/15 hover:border-white/25 transition-all disabled:opacity-40">
+                        <Plus className="w-3 h-3" /> Add Style Group to {room.name.trim() ? room.name.trim() : "this room"}
+                      </button>
+                    )}
 
                     {!readOnly && (
                       <div className="flex items-center justify-end gap-2 pt-1">
@@ -421,7 +542,7 @@ export function CustomSpecsPanel({
                             onClick={() => discard(id)}
                             disabled={busy === id}
                             title="Throw away the edits to this room and show what is saved"
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider bg-white/4 border border-white/10 text-cream/70 hover:bg-white/10 disabled:opacity-40"
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider bg-white/4 border border-white/10 text-cream/70 hover:bg-white/8 transition-all disabled:opacity-40"
                           >
                             <RotateCcw className="w-3 h-3" /> Discard
                           </button>
@@ -429,7 +550,7 @@ export function CustomSpecsPanel({
                         <button
                           onClick={() => void saveRoom(id)}
                           disabled={busy !== null || !dirty || stale || gone}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider transition-all bg-white/6 border border-cream/15 text-cream/85 hover:bg-white/10 disabled:opacity-40"
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider transition-all bg-white/6 border border-cream/15 text-cream/85 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           {busy === id ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
                           Save room

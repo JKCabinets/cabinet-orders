@@ -614,8 +614,21 @@ Each line points at the section that owns the detail.
    "layout", optional). Until the form sends them: no Rooms row, one "Files"
    list. Proved: the real panel (both shapes, a file the job lacks, View Form)
    and the real receiver on real PostgreSQL.
-   NEXT — 4b: Custom Order Specs to the mockup, with Attach Files per room and
-   style group, and the fields as dropdowns that accept typing (Garrett).
+   ✅ STEP 4b built 2026-10-28, `patch_specs_restyle.py`: Custom Order Specs to
+   the mockup — the panel's LOGIC kept verbatim (drafts, per-room save against
+   its revision, conflicts, item 58's prompts; plus a refetch of the job's
+   files after a save or a removal), its RENDER replaced: header and line; a
+   room icon by name (Kitchen, Laundry, Bath, Pantry, Closet/Mud, else a grid);
+   Add Style Group, ATTACH FILES (into the room's file group, with its count)
+   and a chevron; each style group's four fields in a row, copy/delete, and an
+   ATTACHMENTS row (its files as chips that open, Add attachment into its own
+   group); a dashed "Add Style Group to <room>". A room not yet saved has no
+   group: its Attach says "Save the room first". The three fields are
+   DROPDOWNS THAT ACCEPT TYPING (Garrett; <datalist>): manufacturers from the
+   vendors, door styles and colours for that manufacturer, from the new
+   read-only GET /api/sku-options (names only, any signed-in member — the only
+   route to sku_mappings was admin-only). Proved: the route on real PostgreSQL
+   (a member; a not-yet-coded name left out; signed out 401); the real panel.
    STILL TO DO — the specs panel's room attachments (with step 4); the
    Overview's group tiles were the rest of 5d (opening the Files tab at a
    group, `fileGroupAnchor`), and the specs panel's room attachments; then
@@ -982,6 +995,17 @@ Each line points at the section that owns the detail.
     parser (HCI, J&K) — and it applies to Waypoint orders too: a file in the
     Files tab satisfies it whatever the acknowledgment says. Acknowledgment
     files themselves no longer count (patch_ack_files); this is the rest.
+59. **The product list keeps variants Shopify deleted** (2026-10-28; Garrett:
+    later). The website team removed HCI's Nano finishes and wrote "a Sync
+    should clear them" — not in the OMS: the products/update webhook and the
+    Sync (app/api/shopify/sync) only UPSERT the variants Shopify has, never
+    removing one it no longer has. Harmless for orders (a past Nano order still
+    resolves to HCI; HCI's SKUs did not change); the admin product list shows
+    the dead variants with their last price. The fix: a FULL Sync marks or
+    removes what Shopify did not return. ALSO from that note: a new J&K finish
+    (e.g. B09-S7) or HCI finish name must be added in Admin → Mappings when the
+    website team announces it — until then its lines show the code without a
+    name, and the SKU-shape fallback cannot name its vendor.
 58. ✅ FOUND AND FIXED 2026-10-28, `patch_specs_files_warning.py` — A PROMPT
     THAT SAID FILES WERE SAFE WHILE THEY WERE DELETED. Since file groups (5c),
     removing a room deletes its file group and files, and saving a room
