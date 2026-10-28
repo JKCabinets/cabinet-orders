@@ -291,6 +291,8 @@ export function useRealtimeProjects(handlers: RealtimeProjectsHandlers) {
 interface RealtimeAttachmentsHandlers {
   onChange: (orderId: string) => void;
   onRemoved: (fileId: number) => void;
+  /** A file group deleted elsewhere (2026-10-27): its id only, as for a file. */
+  onGroupRemoved: (groupId: number) => void;
   onReconnect: () => void;
 }
 
@@ -323,6 +325,26 @@ export function useRealtimeAttachments(handlers: RealtimeAttachmentsHandlers) {
                 if (orderId) handlersRef.current.onChange(orderId);
               } catch (err) {
                 console.warn("[realtime] attachment handler failed", err);
+              }
+            },
+          )
+          // ⚠ FILE GROUPS TOO (2026-10-27, item 8 step 5), on the same channel and
+          // read the same way: a group made or renamed elsewhere refetches its
+          // order's list if it is on screen; a deleted one carries its id only.
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "order_file_groups" },
+            (payload) => {
+              try {
+                if (payload.eventType === "DELETE") {
+                  const id = Number((payload.old as { id?: number | string })?.id);
+                  if (Number.isFinite(id)) handlersRef.current.onGroupRemoved(id);
+                  return;
+                }
+                const orderId = (payload.new as { order_id?: string })?.order_id;
+                if (orderId) handlersRef.current.onChange(orderId);
+              } catch (err) {
+                console.warn("[realtime] file group handler failed", err);
               }
             },
           )

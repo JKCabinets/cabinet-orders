@@ -3,6 +3,7 @@ import { requireAuth, requireOrderClaim, withClaimOverrideLog, type ClaimOverrid
 import { purchaseOf, archivedVia, archivedReadOnly } from "@/lib/archived";
 import { activityDate } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
+import { removeStoredFiles } from "@/lib/fileGroups";
 
 /**
  * POST /api/orders/[id]/specs -- save or remove ONE ROOM of a custom job's
@@ -48,7 +49,7 @@ function trimStrings(value: unknown): unknown {
 const isRev = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= 2147483647;
 
 type SpecsResult =
-  | { result: "ok"; specs: unknown; area: { name?: string; rev?: number }; unlinked: number }
+  | { result: "ok"; specs: unknown; area: { name?: string; rev?: number }; unlinked: number; removed_files?: string[] }
   | { result: "conflict"; current: unknown; specs: unknown }
   | { result: "invalid"; problem: string }
   | { result: "not_found" | "not_custom" | "archived" };
@@ -56,8 +57,12 @@ type SpecsResult =
 const roomName = (area: { name?: string } | null | undefined) =>
   area?.name && area.name.trim() ? `"${area.name}"` : "(untitled room)";
 
-const filesNote = (n: number) =>
-  n > 0 ? ` — ${n} file${n === 1 ? "" : "s"} no longer filed under it` : "";
+// ⚠ DELETED, NOT UNLINKED, since file groups (2026-10-27, item 8 step 5;
+// Garrett): a room's or style group's files go with it. "No longer filed under
+// it" is left for a file filed only by spec_ref, before phase B.
+const filesNote = (removed: number, unlinked: number) =>
+  removed > 0 ? ` \u2014 ${removed} file${removed === 1 ? "" : "s"} deleted with it`
+  : unlinked > 0 ? ` \u2014 ${unlinked} file${unlinked === 1 ? "" : "s"} no longer filed under it` : "";
 
 // ⚠ WRAPPED so an admin's override of a claim reaches the trail only if this
 // save succeeds. See ClaimOverrideLog in lib/auth.
@@ -140,9 +145,12 @@ export const POST = withClaimOverrideLog(async function POST(
     case "ok": {
       const who = auth.session.user.name ?? auth.session.user.username;
       const verb = op === "remove" ? "removed" : body.base_rev === null ? "added" : "saved";
+      // Rows first (the function), then the stored files.
+      const removed = Array.isArray(r.removed_files) ? r.removed_files : [];
+      await removeStoredFiles(removed);
       await supabase.from("order_activity").insert({
         order_id: id,
-        text: `Room ${roomName(r.area)} ${verb} by ${who}${filesNote(r.unlinked)}`,
+        text: `Room ${roomName(r.area)} ${verb} by ${who}${filesNote(removed.length, r.unlinked)}`,
         time: activityDate(),
       });
       return NextResponse.json({ ok: true, data: { custom_specs: r.specs, area: r.area, unlinked: r.unlinked } });

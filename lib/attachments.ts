@@ -61,18 +61,40 @@ export interface Attachment {
    */
   kind: AttachmentKind;
   /** The room or style group it is filed under, on a custom job; null = the job. */
-  spec_ref: string | null;
+  spec_ref?: string | null;   // retired by file groups (phase B); the group says where a file is filed
+  /** The file group it is filed in (2026-10-27, item 8 step 5). Required once phase B runs. */
+  group_id: number | null;
 }
+
+/**
+ * A FILE GROUP (2026-10-27, item 8 step 5; Garrett, 2026-10-26): belongs to one
+ * order, named by people; a file is uploaded INTO one. `role` is what the OMS
+ * made it for -- null for a group people made. A room's or style group's group
+ * ("area" / "set") follows its room: renamed and deleted through Custom Job
+ * Specs, never here.
+ */
+export interface FileGroup {
+  id: number;
+  name: string;
+  role: "customer_uploads" | "proof_of_delivery" | "area" | "set" | null;
+  spec_ref: string | null;
+  created_at: string | null;
+}
+
+/** A room's or style group's group: renamed and deleted with its room, not from the Files tab. */
+export const followsRoom = (g: Pick<FileGroup, "role">) => g.role === "area" || g.role === "set";
 
 export interface AttachmentList {
   /** null until a load has succeeded once. */
   files: Attachment[] | null;
+  /** The order's groups, empty ones included; null until first loaded. */
+  groups: FileGroup[] | null;
   loading: boolean;
   /** Why the latest load failed. Files from an earlier success are kept. */
   error: string | null;
 }
 
-const NOT_LOADED: AttachmentList = { files: null, loading: true, error: null };
+const NOT_LOADED: AttachmentList = { files: null, groups: null, loading: true, error: null };
 
 const lists = new Map<string, AttachmentList>();
 const latestTicket = new Map<string, number>();
@@ -101,7 +123,7 @@ function load(orderId: string): void {
   latestTicket.set(orderId, ticket);
   inFlight.set(orderId, ticket);
   const now = lists.get(orderId);
-  publish(orderId, { files: now?.files ?? null, loading: true, error: null });
+  publish(orderId, { files: now?.files ?? null, groups: now?.groups ?? null, loading: true, error: null });
 
   void (async () => {
     let next: AttachmentList;
@@ -109,10 +131,11 @@ function load(orderId: string): void {
       const res = await fetch(`/api/orders/attachments?orderId=${encodeURIComponent(orderId)}`);
       const body = await readJson(res);
       next = res.ok
-        ? { files: Array.isArray(body.data) ? (body.data as Attachment[]) : [], loading: false, error: null }
-        : { files: lists.get(orderId)?.files ?? null, loading: false, error: reasonOf(body, res.status, "Could not load the files") };
+        ? { files: Array.isArray(body.data) ? (body.data as Attachment[]) : [],
+            groups: Array.isArray(body.groups) ? (body.groups as FileGroup[]) : [], loading: false, error: null }
+        : { files: lists.get(orderId)?.files ?? null, groups: lists.get(orderId)?.groups ?? null, loading: false, error: reasonOf(body, res.status, "Could not load the files") };
     } catch {
-      next = { files: lists.get(orderId)?.files ?? null, loading: false, error: "Could not reach the server to load the files." };
+      next = { files: lists.get(orderId)?.files ?? null, groups: lists.get(orderId)?.groups ?? null, loading: false, error: "Could not reach the server to load the files." };
     }
     // ⚠ ONLY THE NEWEST TICKET WRITES. Anything older set off before a change
     // this list has since seen.
@@ -199,6 +222,17 @@ export function attachmentRemoved(fileId: number): void {
   invalidateEnrichment();
 }
 
+/**
+ * A file group was deleted elsewhere (2026-10-27): like a file, a DELETE carries
+ * only its id, so the list on screen that holds the group is refetched.
+ */
+export function fileGroupRemoved(groupId: number): void {
+  const shownWithIt = [...lists].filter(([orderId, list]) =>
+    listeners.has(orderId) && (list.groups ?? []).some((g) => g.id === groupId));
+  for (const [orderId] of shownWithIt) load(orderId);
+  invalidateEnrichment();
+}
+
 /** After realtime (re)connects, events in the gap are lost: refetch every list on screen. */
 export function refreshShownAttachments(): void {
   for (const orderId of [...listeners.keys()]) load(orderId);
@@ -215,13 +249,15 @@ export type Outcome<T = undefined> = { ok: true; value: T } | { ok: false; messa
 export async function uploadAttachment(
   orderId: string, file: File, kind: "general" | "proof_of_delivery",
   /** A room or style group of a custom job to file it under; null is the job itself. */
-  specRef: string | null = null,
+  groupId: number | null = null,
 ): Promise<Outcome<Attachment>> {
   const form = new FormData();
   form.append("file", file);
   form.append("orderId", orderId);
   form.append("kind", kind);
-  if (specRef) form.append("spec_ref", specRef);
+  // ⚠ INTO A GROUP (2026-10-27). A receipt needs none: the server files it in
+  // the order's "Proof of delivery" by role.
+  if (groupId !== null) form.append("group_id", String(groupId));
   let res: Response;
   try {
     res = await fetch("/api/orders/attachments", { method: "POST", body: form });
@@ -260,6 +296,52 @@ export async function deleteAttachment(orderId: string, id: number): Promise<Out
 }
 
 /** A short-lived signed URL for one file. */
+// ── File groups (2026-10-27, item 8 step 5) ──────────────────────────────
+// Each waits for the server, refetches the order's list on success, and gives
+// back the server's own sentence when it refuses -- nothing is painted first.
+
+async function send(url: string, method: string, body: unknown, nothing: string): Promise<{ ok: true; body: Record<string, unknown> } | { ok: false; message: string }> {
+  let res: Response;
+  try {
+    res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+  } catch {
+    return { ok: false, message: `Could not reach the server. ${nothing}` };
+  }
+  const b = await readJson(res);
+  if (!res.ok) return { ok: false, message: reasonOf(b, res.status, "Refused") };
+  return { ok: true, body: b };
+}
+
+export async function createFileGroup(orderId: string, name: string): Promise<Outcome<FileGroup>> {
+  const r = await send("/api/orders/file-groups", "POST", { orderId, name }, "No group was made.");
+  if (!r.ok) return r;
+  load(orderId);
+  return { ok: true, value: r.body.data as FileGroup };
+}
+
+export async function renameFileGroup(orderId: string, groupId: number, name: string): Promise<Outcome> {
+  const r = await send(`/api/orders/file-groups/${groupId}`, "PATCH", { name }, "The group was not renamed.");
+  if (!r.ok) return r;
+  load(orderId);
+  return { ok: true, value: undefined };
+}
+
+/** Deletes the group AND ITS FILES -- the caller asks first (Garrett, 2026-10-26). */
+export async function deleteFileGroup(orderId: string, groupId: number): Promise<Outcome<number>> {
+  const r = await send(`/api/orders/file-groups/${groupId}`, "DELETE", undefined, "Nothing was deleted.");
+  if (!r.ok) return r;
+  load(orderId);
+  invalidateEnrichment(); // a deleted receipt reopens the Delivered gate
+  return { ok: true, value: typeof r.body.removed === "number" ? r.body.removed : 0 };
+}
+
+export async function moveAttachment(orderId: string, id: number, groupId: number): Promise<Outcome> {
+  const r = await send(`/api/orders/attachments/${id}`, "PATCH", { group_id: groupId }, "The file was not moved.");
+  if (!r.ok) return r;
+  load(orderId);
+  return { ok: true, value: undefined };
+}
+
 export async function attachmentUrl(id: number): Promise<Outcome<string>> {
   let res: Response;
   try {

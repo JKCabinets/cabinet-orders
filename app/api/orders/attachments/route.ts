@@ -3,7 +3,7 @@ import { requireAuth, requireOrderClaim, withClaimOverrideLog, type ClaimOverrid
 import { purchaseOf, archivedVia, archivedReadOnly } from "@/lib/archived";
 import { SNIFF_BYTES, sniffMagicBytes, safeContentType } from "@/lib/fileValidation";
 import { supabase } from "@/lib/supabase";
-import { readCustomSpecs, specRefResolves, SPEC_ID_RE } from "@/lib/data";
+import { fileGroupForRole } from "@/lib/fileGroups";
 
 // Hard caps on attachment uploads. Twenty MB per file mirrors what Supabase
 // Storage will accept without bucket-side tuning. (This said the quote-form
@@ -61,7 +61,15 @@ export async function GET(req: NextRequest) {
     .order("created_at", { ascending: false });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ data });
+  // ⚠ THE GROUPS TOO, EMPTY ONES INCLUDED (2026-10-27, item 8 step 5): a group
+  // exists before its files, so the list of groups is not derivable from them.
+  const { data: groups, error: gErr } = await supabase
+    .from("order_file_groups")
+    .select("id, name, role, spec_ref, created_at")
+    .eq("order_id", orderId)
+    .order("created_at", { ascending: true });
+  if (gErr) return NextResponse.json({ error: gErr.message }, { status: 500 });
+  return NextResponse.json({ data, groups });
 }
 
 // ⚠ WRAPPED so an admin's override of a claim reaches the trail only if the
@@ -106,23 +114,19 @@ export const POST = withClaimOverrideLog(async function POST(
   // (handoff item 24, step 3; 2026-09-30). Optional, and empty is the same as
   // absent: the file belongs to the job itself. Its shape is checked here;
   // whether the job HAS that room is checked once the order is read, below.
-  const rawSpecRef = formData.get("spec_ref");
-  const specRef = rawSpecRef === null || rawSpecRef === "" ? null : String(rawSpecRef);
-  if (specRef !== null && !SPEC_ID_RE.test(specRef)) {
-    return NextResponse.json({ error: "spec_ref must be a room or style-group id" }, { status: 422 });
-  }
-  if (specRef !== null && kind !== "general") {
+  // ⚠ A FILE IS UPLOADED INTO A GROUP (2026-10-27, item 8 step 5; Garrett). A
+  // general file names its group; a receipt is filed in the order's "Proof of
+  // delivery" group by ROLE, whatever was sent -- the delivery gate reads its
+  // KIND, so where it is filed never decides that.
+  const rawGroup = formData.get("group_id");
+  const sentGroupId = rawGroup === null || rawGroup === "" ? null : Number(rawGroup);
+  if (kind === "general" && (sentGroupId === null || !Number.isInteger(sentGroupId) || sentGroupId <= 0)) {
     return NextResponse.json(
-      { error: "spec_ref_kind", message: "A delivery receipt belongs to the order, not to a room." },
+      { error: "group_required", message: "Choose a group for this file. (If you see no groups, reload the page.)" },
       { status: 422 },
     );
   }
 
-  // ── Validate orderId shape ────────────────────────────────────────────
-  // The id is interpolated into a storage path below. Without validation,
-  // a string like "../../foo" would let an attacker write files outside
-  // the order's namespace (Supabase normalizes some of this, but defense
-  // in depth costs nothing).
   if (!ORDER_ID_RE.test(orderId)) {
     return NextResponse.json({ error: "invalid orderId" }, { status: 422 });
   }
@@ -184,19 +188,29 @@ export const POST = withClaimOverrideLog(async function POST(
   // item 24 -- and ids are never reused, so it cannot surface in another room.
   // Closing the race would mean inserting through a function that locks the
   // order row; a file in the job's own bin is not worth that.
-  if (specRef !== null) {
-    if (order.type !== "custom") {
+  let groupId: number;
+  if (kind === "proof_of_delivery") {
+    const g = await fileGroupForRole(orderId, "proof_of_delivery");
+    if (g === null) {
       return NextResponse.json(
-        { error: "spec_ref_not_custom", message: `Only a custom job has rooms to file under; ${orderId} is a ${order.type} order.` },
+        { error: "group_unavailable", message: "Could not find or make this order's \u201cProof of delivery\u201d group, so nothing was uploaded. Try again." },
+        { status: 500 },
+      );
+    }
+    groupId = g;
+  } else {
+    const { data: group, error: gErr } = await supabase
+      .from("order_file_groups").select("id, order_id, role").eq("id", sentGroupId).maybeSingle();
+    if (gErr) {
+      return NextResponse.json({ error: "group_unavailable", message: "Could not read the group, so nothing was uploaded. Try again." }, { status: 500 });
+    }
+    if (!group || group.order_id !== orderId) {
+      return NextResponse.json(
+        { error: "group_unknown", message: "That group is not on this order any more. Reload to see its groups." },
         { status: 422 },
       );
     }
-    if (!specRefResolves(readCustomSpecs(order.custom_specs), specRef)) {
-      return NextResponse.json(
-        { error: "spec_ref_unknown", message: "That room or style group is not on this job any more. Reload to see its rooms." },
-        { status: 422 },
-      );
-    }
+    groupId = group.id as number;
   }
 
   // Sanitize the display filename ONCE, then use the same value for the
@@ -248,7 +262,7 @@ export const POST = withClaimOverrideLog(async function POST(
       // Whitelisted above, and constrained again by the DB CHECK.
       kind,
       // Checked above against the stored specs; null is the job itself.
-      spec_ref: specRef,
+      group_id: groupId,
     })
     .select()
     .single();

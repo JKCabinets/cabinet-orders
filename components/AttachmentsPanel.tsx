@@ -1,49 +1,54 @@
 "use client";
 
+/**
+ * The Files tab -- FILE GROUPS (2026-10-27, item 8 step 5; Garrett, 2026-10-26).
+ *
+ * Groups belong to this order and are named by people; a file is uploaded INTO
+ * a group, so a group exists first. Each group is a section: its files, its
+ * Upload, and -- for groups people may change -- Rename and Delete. Deleting a
+ * group deletes its files, after a prompt that says so (and says so again if it
+ * holds the signed delivery receipt the Delivered gate reads).
+ *
+ * The OMS makes "Customer uploads" (the quote form, a promoted claim) and "Proof
+ * of delivery" (a receipt) and finds them by ROLE -- ordinary groups people may
+ * rename or delete. A custom job's rooms and style groups have groups that
+ * FOLLOW the room: renamed and deleted through Custom Job Specs, not here.
+ *
+ * ⚠ kind IS NOT THE GROUP. A receipt stays a receipt wherever it is filed, and
+ * the gates read `kind`; a receipt or a customer's file never goes into a
+ * room's group (the server refuses it; this does not offer it).
+ *
+ * Kept from the tab this replaces: the Receipt upload (filed by the server),
+ * read-only orders, download, delete with its confirm, every error and Retry,
+ * and the handle the Next Action band calls. openFilePicker() now ASKS WHICH
+ * GROUP first (Garrett), with a new one offered, then opens the picker.
+ * Changed: rows sit on the OMS's surface, not #111, and their actions are
+ * always shown, not only on hover.
+ */
 import { useState, useRef, forwardRef, useImperativeHandle } from "react";
-import { Paperclip, Upload, X, Download, FileText, Image, File, Loader2, Trash2, FileCheck, RotateCcw } from "lucide-react";
-import { readCustomSpecs, attachmentBin, type OrderType, type CustomSpecs, type AttachmentBin } from "@/lib/data";
+import { Paperclip, Upload, X, Download, FileText, Image, File, Loader2, Trash2, FileCheck, RotateCcw, FolderPlus, Pencil } from "lucide-react";
+import type { OrderType, CustomSpecs } from "@/lib/data";
 import { typeEverRequires } from "@/lib/requirements";
 import {
   useAttachments, uploadAttachment, deleteAttachment, downloadAttachment, refreshAttachments,
-  type Attachment,
+  createFileGroup, renameFileGroup, deleteFileGroup, moveAttachment, followsRoom,
+  type Attachment, type FileGroup,
 } from "@/lib/attachments";
 
 interface AttachmentsPanelProps {
   orderId: string;
-  /** Decides whether a signed receipt is offered at all -- see `receiptOffered`. */
+  /** Decides whether a signed receipt is offered at all. */
   orderType: OrderType;
-  /**
-   * Show the files, offer nothing. The modal sets it for an ARCHIVED row and
-   * for a row CLAIMED BY SOMEONE ELSE (unless an admin chose to edit it) --
-   * every write route refuses both anyway, 409 `archived_read_only` or
-   * `claimed_by_other`. Until 2026-09-30 it was archived only, so a colleague
-   * saw Upload and Delete on somebody else's order and was refused after the
-   * fact. The list, the names, the dates and the downloads stay.
-   */
+  /** Archived, or somebody else's claim: everything readable, nothing changeable. */
   readOnly?: boolean;
-  /**
-   * A custom job's specifications: each ROOM gets its own bin, and uploading in
-   * it files the upload under that room. Omit it (every other type) and there
-   * are two bins, as before.
-   */
+  /** No longer read: a room's files are filed in its group (2026-10-27). Kept so callers need not change. */
   specs?: CustomSpecs | null;
 }
 
-/**
- * Imperative handle exposed by AttachmentsPanel. Parent components can call
- * `ref.current?.openFilePicker()` to programmatically open the OS file
- * picker — used when the modal opens because of a missing-attachment gate
- * failure and we want to land the user directly on "add a file".
- *
- * Both are no-ops when the panel offers nothing: read-only, or -- for the
- * receipt -- a type that never needs one. Every caller in the modal already
- * appears only where both hold.
- */
 export interface AttachmentsPanelHandle {
+  /** The Next Action band's "Attach a file": asks which group, then opens the picker. */
   openFilePicker: () => void;
-  /** Opens the picker that uploads as proof_of_delivery. Used by the
-   *  delivery gate to land the user on the right action. */
+  /** Its "Upload receipt": straight to the picker; the server files a receipt by role. */
   openReceiptPicker: () => void;
 }
 
@@ -65,177 +70,242 @@ function FileIcon({ type }: { type: string }) {
   return <File className="w-3.5 h-3.5 text-[rgba(232,227,218,0.50)]" />;
 }
 
-/**
- * The order's files, in bins, with upload and delete.
- *
- * ⚠ THE LIST IS SHARED (lib/attachments, 2026-09-30). Every view reads one
- * list, so an upload or a delete in either shows in both, and a delete leaves
- * the screen only when the server has done it.
- *
- * ⚠ ON A CUSTOM JOB THIS IS ALSO THE FILES TAB, with a bin per room -- the same
- * component in both places, so the bins cannot drift apart.
- */
+const PILL = "flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-cream/18 bg-white/4 text-[11px] uppercase tracking-wider text-cream/75 hover:bg-white/8 hover:text-cream transition-all disabled:opacity-40 disabled:cursor-not-allowed";
+const SMALL = "text-[10px] uppercase tracking-wider px-2.5 py-0.5 rounded-full transition-all flex-shrink-0 bg-white/5 border border-cream/20 text-cream/75 hover:bg-white/10 hover:text-cream disabled:opacity-40";
+const FIELD = "rounded-brand px-2.5 py-1.5 text-[16px] placeholder:text-cream/25 min-w-0";
+const FIELD_STYLE: React.CSSProperties = { background: "rgba(255,255,255,0.04)", border: "0.5px solid rgba(255,255,255,0.14)", color: "rgba(240,236,228,0.90)" };
+/** A group's section id: the Overview's group tiles open the Files tab at it (step 5d). */
+export const fileGroupAnchor = (groupId: number) => `file-group-${groupId}`;
+
 export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPanelProps>(
-  function AttachmentsPanel({ orderId, orderType, readOnly = false, specs = null }, ref) {
+  function AttachmentsPanel({ orderId, orderType, readOnly = false }, ref) {
   const list = useAttachments(orderId);
   const attachments: Attachment[] = list.files ?? [];
-  const [uploading, setUploading] = useState(false);
+  const groups: FileGroup[] = list.groups ?? [];
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
-  const [bin, setBin] = useState<AttachmentBin>("designer");
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [movingId, setMovingId] = useState<number | null>(null);
+  const [newName, setNewName] = useState<string | null>(null);          // the New group field, when open
+  const [renaming, setRenaming] = useState<{ id: number; name: string } | null>(null);
+  const [confirmGroupId, setConfirmGroupId] = useState<number | null>(null);
+  const [choosing, setChoosing] = useState(false);                       // "Which group?", from the Next Action band
+  const [chooserNew, setChooserNew] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const receiptInputRef = useRef<HTMLInputElement>(null);
+  const uploadTo = useRef<number | null>(null);
 
-  // ⚠ THE RECEIPT FOLLOWS THE REQUIREMENTS TABLE, like every other control that
-  // stands for a requirement. Only a cabinet group ever needs a signed proof of
-  // delivery (Terms 12.3). Until 2026-09-30 the button was offered on every
-  // type, with a title saying it was "required before this order can be marked
-  // Delivered" -- on a custom job, which has no gates at all, that was a demand
-  // nothing enforces. A receipt uploaded before this keeps its badge.
   const receiptOffered = !readOnly && typeEverRequires(orderType, "proof_of_delivery");
-
-  // ⚠ THE BINS (2026-10-01, Garrett: the same bins wherever files are shown).
-  // Designer, Customer, then one per ROOM of a custom job, in the job's order.
-  // attachmentBin in lib/data decides which bin a file is in, for this panel and
-  // for the custom job's Files tab -- which IS this panel -- so a label cannot
-  // mean two sets of files. Designer is the job's own: anything not the
-  // customer's and not filed under a room that exists, which includes a file
-  // whose room was removed.
-  const rooms = specs ? readCustomSpecs(specs).areas : [];
-  const readSpecs = { v: 2 as const, areas: rooms };
-  type BinDef = { key: AttachmentBin; label: string; specRef: string | null; uploads: boolean };
-  const bins: BinDef[] = [
-    { key: "designer", label: "Designer attachments", specRef: null, uploads: true },
-    { key: "customer", label: "Customer attachments", specRef: null, uploads: false },
-    ...rooms.map((r): BinDef => ({ key: `room:${r.id}`, label: r.name.trim() || "Untitled room", specRef: r.id, uploads: true })),
-  ];
-  const placed = attachments.map((a) => ({ a, ...attachmentBin(a, readSpecs) }));
-  // A room removed elsewhere takes its bin with it: fall back to Designer.
-  const current = bins.find((b) => b.key === bin) ?? bins[0];
-  const shown = placed.filter((p) => p.bin === current.key);
-  const count = (k: AttachmentBin) => placed.filter((p) => p.bin === k).length;
-  const setName = (setId?: string) =>
-    setId ? rooms.flatMap((r) => r.sets).find((s) => s.id === setId)?.name.trim() || "a style group" : null;
-
-  // ⚠ WHERE AN UPLOAD IS FILED is decided when the picker opens, not when the
-  // file arrives. The panel's own buttons file under the bin on screen; the
-  // modal's calls through the handle -- a work-queue row asking for "a file" --
-  // always file under the job, whichever bin was last clicked.
-  const uploadTo = useRef<string | null>(null);
-  const pick = (specRef: string | null) => { uploadTo.current = specRef; fileInputRef.current?.click(); };
+  const filesIn = (g: FileGroup) => attachments.filter((a) => a.group_id === g.id);
+  // ⚠ A FILE IN NO GROUP can exist only between phase A and the deploy (the old
+  // code uploading without one). Shown, so it can be filed -- phase B refuses
+  // while any remain, and an unseen file could not be.
+  const known = new Set(groups.map((g) => g.id));
+  const loose = attachments.filter((a) => a.group_id === null || !known.has(a.group_id));
+  const pick = (groupId: number) => { uploadTo.current = groupId; fileInputRef.current?.click(); };
 
   useImperativeHandle(ref, () => ({
-    openFilePicker: () => { uploadTo.current = null; fileInputRef.current?.click(); },
+    openFilePicker: () => { setChooserNew(""); setChoosing(true); },
     openReceiptPicker: () => receiptInputRef.current?.click(),
   }), []);
 
-  async function handleUpload(
-    e: React.ChangeEvent<HTMLInputElement>,
-    kind: "general" | "proof_of_delivery" = "general",
-  ) {
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>, kind: "general" | "proof_of_delivery") {
     const files = e.target.files ? Array.from(e.target.files) : [];
     e.target.value = "";
     if (files.length === 0) return;
-    setUploading(true);
-    setError("");
-    // ⚠ EVERY REFUSAL IS KEPT. One message per file that did not go, in the
-    // route's own words; the ones that did go are in the list.
-    const refused: string[] = [];
-    const specRef = kind === "general" ? uploadTo.current : null;
-    // Read once, then forgotten: the next upload is the job's unless whatever
-    // opens its picker says otherwise. A target never carries over.
+    const groupId = kind === "general" ? uploadTo.current : null;
     uploadTo.current = null;
+    if (kind === "general" && groupId === null) { setError("Choose a group to upload into."); return; }
+    setBusy(true);
+    setError("");
+    const refused: string[] = [];
     for (const file of files) {
-      const r = await uploadAttachment(orderId, file, kind, specRef);
+      const r = await uploadAttachment(orderId, file, kind, groupId);
       if (!r.ok) refused.push(r.message);
     }
-    setUploading(false);
-    if (refused.length) {
-      setError((files.length > 1 ? `${files.length - refused.length} of ${files.length} uploaded. ` : "") + refused.join(" · "));
-    }
+    setBusy(false);
+    if (refused.length) setError((files.length > 1 ? `${files.length - refused.length} of ${files.length} uploaded. ` : "") + refused.join(" · "));
   }
 
-  async function handleDownload(attachment: Attachment) {
-    setDownloadingId(attachment.id);
-    const r = await downloadAttachment(attachment);
+  async function handleDownload(a: Attachment) {
+    setDownloadingId(a.id);
+    const r = await downloadAttachment(a);
     setDownloadingId(null);
-    if (!r.ok) setError(`${attachment.file_name}: ${r.message}`);
+    if (!r.ok) setError(`${a.file_name}: ${r.message}`);
   }
 
-  async function handleDelete(att: Attachment) {
+  async function handleDelete(a: Attachment) {
     setConfirmDeleteId(null);
-    setDeletingId(att.id);
-    const r = await deleteAttachment(orderId, att.id);
+    setDeletingId(a.id);
+    const r = await deleteAttachment(orderId, a.id);
     setDeletingId(null);
-    if (!r.ok) setError(`${att.file_name} was not deleted: ${r.message}`);
+    if (!r.ok) setError(`${a.file_name} was not deleted: ${r.message}`);
   }
+
+  async function handleMove(a: Attachment, groupId: number) {
+    setMovingId(a.id);
+    const r = await moveAttachment(orderId, a.id, groupId);
+    setMovingId(null);
+    if (!r.ok) setError(`${a.file_name} was not moved: ${r.message}`);
+  }
+
+  async function makeGroup(name: string): Promise<FileGroup | null> {
+    setBusy(true);
+    setError("");
+    const r = await createFileGroup(orderId, name);
+    setBusy(false);
+    if (!r.ok) { setError(r.message); return null; }
+    return r.value;
+  }
+
+  async function handleRename() {
+    if (!renaming) return;
+    setBusy(true);
+    const r = await renameFileGroup(orderId, renaming.id, renaming.name);
+    setBusy(false);
+    if (!r.ok) { setError(r.message); return; }
+    setRenaming(null);
+  }
+
+  async function handleDeleteGroup(g: FileGroup) {
+    setConfirmGroupId(null);
+    setBusy(true);
+    const r = await deleteFileGroup(orderId, g.id);
+    setBusy(false);
+    if (!r.ok) setError(`“${g.name}” was not deleted: ${r.message}`);
+  }
+
+  /** Where a file may move: any other group, but never a room's for a receipt or a customer's file. */
+  const movesFor = (a: Attachment) => groups.filter((g) => g.id !== a.group_id && (a.kind === "general" || !followsRoom(g)));
+
+  /** One file's row -- the same in a group and in "Not in a group". */
+  const fileRow = (a: Attachment) => (
+
+                      <div key={a.id} className="flex items-center gap-2.5 px-3 py-2 rounded-lg"
+                        style={{ background: "rgba(255,255,255,0.04)", border: "0.5px solid rgba(255,255,255,0.10)" }}>
+                        <FileIcon type={a.file_type} />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-xs text-[#e8e3da] truncate">{a.file_name}</p>
+                            {a.kind === "proof_of_delivery" && (
+                              <span className="flex-shrink-0 text-[8px] uppercase tracking-wider px-1.5 py-px rounded-full bg-[rgba(143,190,112,0.14)] border border-[rgba(143,190,112,0.40)] text-[#a9cf8f]">receipt</span>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-[rgba(232,227,218,0.40)]">
+                            {formatBytes(a.file_size)} · {a.uploaded_by} · {formatDay(a.created_at)}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {deletingId === a.id || movingId === a.id ? (
+                            <Loader2 className="w-3 h-3 animate-spin text-[rgba(232,227,218,0.50)]" />
+                          ) : confirmDeleteId === a.id ? (
+                            <>
+                              <button onClick={() => void handleDelete(a)} className="text-[10px] text-red-400 hover:text-red-300 px-1.5 py-0.5 rounded border border-red-900/50">Delete</button>
+                              <button onClick={() => setConfirmDeleteId(null)} className="text-[10px] text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] px-1.5 py-0.5 rounded border border-white/10">Cancel</button>
+                            </>
+                          ) : (
+                            <>
+                              {!readOnly && movesFor(a).length > 0 && (
+                                <select aria-label={`Move ${a.file_name} to`} value=""
+                                  onChange={(e) => { const to = Number(e.target.value); if (to) void handleMove(a, to); }}
+                                  className="text-[10px] rounded px-1 py-0.5 max-w-[9rem]" style={FIELD_STYLE}>
+                                  <option value="">Move to…</option>
+                                  {movesFor(a).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                                </select>
+                              )}
+                              <button onClick={() => void handleDownload(a)} disabled={downloadingId === a.id} title="Download"
+                                className="p-1 text-[rgba(232,227,218,0.55)] hover:text-[#e8e3da] transition-colors">
+                                {downloadingId === a.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+                              </button>
+                              {!readOnly && (
+                                <button onClick={() => setConfirmDeleteId(a.id)} title="Delete"
+                                  className="p-1 text-[rgba(232,227,218,0.55)] hover:text-red-400 transition-colors">
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </div>
+  );
 
   const firstLoad = list.files === null;
 
   return (
     <div className="px-6 py-5 border-b border-white/10">
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
         <p className="text-[10px] uppercase tracking-[0.16em] text-cream/50 font-medium">
-          Attachments {attachments.length > 0 && <span className="text-cream/65 ml-1">({attachments.length})</span>}
+          Files {attachments.length > 0 && <span className="text-cream/65 ml-1">({attachments.length})</span>}
         </p>
         {!readOnly && (
-        <div className="flex items-center gap-1.5">
-          {receiptOffered && (
-            <button
-              onClick={() => receiptInputRef.current?.click()}
-              disabled={uploading}
-              title="Signed delivery receipt — required before this order can be marked Delivered"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-cream/18 bg-white/4 text-[11px] uppercase tracking-wider text-cream/85 hover:bg-white/8 hover:border-terracotta/40 transition-all disabled:opacity-50"
-            >
-              <FileCheck className="w-3 h-3" /> Receipt
-            </button>
-          )}
-          <button
-            onClick={() => pick(current.specRef)}
-            disabled={uploading}
-            title={current.specRef ? `Files uploaded here are filed under ${current.label}` : undefined}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-cream/18 bg-white/4 text-[11px] uppercase tracking-wider text-cream/85 hover:bg-white/8 hover:border-terracotta/40 transition-all disabled:opacity-50"
-          >
-            {uploading ? (
-              <><Loader2 className="w-3 h-3 animate-spin" /> Uploading…</>
-            ) : (
-              <><Upload className="w-3 h-3" /> {current.specRef ? `Upload to ${current.label}` : "Upload"}</>
+          <div className="flex items-center gap-1.5">
+            {receiptOffered && (
+              <button onClick={() => receiptInputRef.current?.click()} disabled={busy}
+                title="Signed delivery receipt — required before this order can be marked Delivered. Filed in Proof of delivery."
+                className={PILL}>
+                <FileCheck className="w-3 h-3" /> Receipt
+              </button>
             )}
-          </button>
-        </div>
+            <button onClick={() => setNewName(newName === null ? "" : null)} disabled={busy} className={PILL}>
+              <FolderPlus className="w-3 h-3" /> New group
+            </button>
+          </div>
         )}
         {!readOnly && (
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            className="hidden"
+          <input ref={fileInputRef} type="file" multiple className="hidden"
             onChange={(e) => void handleUpload(e, "general")}
-            accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv"
-          />
+            accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" />
         )}
         {receiptOffered && (
-          <input
-            ref={receiptInputRef}
-            type="file"
-            multiple
-            className="hidden"
-            onChange={(e) => void handleUpload(e, "proof_of_delivery")}
-            accept="image/*,.pdf"
-          />
+          <input ref={receiptInputRef} type="file" multiple className="hidden"
+            onChange={(e) => void handleUpload(e, "proof_of_delivery")} accept="image/*,.pdf" />
         )}
       </div>
 
-      {error && (
-        <div className="flex items-start justify-between gap-2 mb-2 px-2.5 py-1.5 bg-red-950/30 border border-red-900/50 rounded-lg">
-          <p className="text-[11px] text-red-400">{error}</p>
-          <button onClick={() => setError("")} title="Dismiss"><X className="w-3 h-3 text-red-400" /></button>
+      {newName !== null && !readOnly && (
+        <form className="flex items-center gap-2 mb-3"
+          onSubmit={async (e) => { e.preventDefault(); if (await makeGroup(newName)) setNewName(null); }}>
+          <input autoFocus value={newName} onChange={(e) => setNewName(e.target.value)} maxLength={80}
+            placeholder="Group name, e.g. Drawings" aria-label="New group name" className={FIELD + " flex-1"} style={FIELD_STYLE} />
+          <button type="submit" disabled={busy || !newName.trim()} className={SMALL}>Create</button>
+          <button type="button" onClick={() => setNewName(null)} className={SMALL}>Cancel</button>
+        </form>
+      )}
+
+      {choosing && !readOnly && (
+        <div role="dialog" aria-label="Which group?" className="mb-3 rounded-lg px-3 py-2.5"
+          style={{ background: "rgba(255,255,255,0.04)", border: "0.5px solid rgba(255,255,255,0.14)" }}>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[11px] text-cream/80">Which group should the file go in?</p>
+            <button onClick={() => setChoosing(false)} title="Cancel"><X className="w-3 h-3 text-cream/50" /></button>
+          </div>
+          {groups.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {groups.map((g) => (
+                <button key={g.id} onClick={() => { setChoosing(false); pick(g.id); }} className={SMALL + " normal-case tracking-normal text-[11px] py-1"}>
+                  {g.name}
+                </button>
+              ))}
+            </div>
+          )}
+          <form className="flex items-center gap-2"
+            onSubmit={async (e) => { e.preventDefault(); const g = await makeGroup(chooserNew); if (g) { setChoosing(false); pick(g.id); } }}>
+            <input value={chooserNew} onChange={(e) => setChooserNew(e.target.value)} maxLength={80}
+              placeholder={groups.length ? "Or a new group…" : "A name for its group, e.g. Acknowledgments"}
+              aria-label="A new group for the file" className={FIELD + " flex-1"} style={FIELD_STYLE} />
+            <button type="submit" disabled={busy || !chooserNew.trim()} className={SMALL}>Create &amp; choose file</button>
+          </form>
         </div>
       )}
 
-      {/* ⚠ A FAILED LOAD SAYS SO. It used to read as "No files on this order". */}
+      {error && (
+        <div className="flex items-start justify-between gap-2 mb-2 px-2.5 py-1.5 bg-red-950/30 border border-red-900/50 rounded-lg">
+          <p role="alert" className="text-[11px] text-red-400">{error}</p>
+          <button onClick={() => setError("")} title="Dismiss"><X className="w-3 h-3 text-red-400" /></button>
+        </div>
+      )}
       {list.error && (
         <div className="flex items-center justify-between gap-2 mb-2 px-2.5 py-1.5 bg-red-950/30 border border-red-900/50 rounded-lg">
           <p className="text-[11px] text-red-400">
@@ -247,108 +317,106 @@ export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPa
         </div>
       )}
 
-      {/* ⚠ THE BINS, BY WHO PUT THE FILE THERE AND WHERE IT IS FILED. Customer
-          uploads arrive with a quote request and are never added here; the
-          designer's own files are the ones staff add, under the job or under a
-          room. A receipt keeps its own badge inside Designer; the delivery gate
-          reads `kind`, not this tab. Room bins show even when empty: an empty
-          room is where its first drawing goes. */}
-      {!firstLoad && (attachments.length > 0 || rooms.length > 0) && (
-        <div className="flex items-center gap-1.5 mb-3 flex-wrap">
-          {bins.map((b) => (
-            <button
-              key={b.key}
-              onClick={() => setBin(b.key)}
-              className={`px-3 py-1 rounded-full text-[10px] uppercase tracking-wider transition-all border ${
-                current.key === b.key
-                  ? "bg-white/10 border-cream/25 text-cream"
-                  : "bg-white/4 border-white/10 text-cream/55 hover:text-cream/80"
-              }`}
-            >
-              {b.label} <span className="opacity-65 ml-1">{count(b.key)}</span>
-            </button>
-          ))}
-        </div>
-      )}
-
       {firstLoad ? (
         list.error ? null : (
           <div className="flex items-center justify-center py-4">
             <Loader2 className="w-4 h-4 animate-spin text-[rgba(232,227,218,0.30)]" />
           </div>
         )
-      ) : shown.length === 0 ? (
-        readOnly || !current.uploads ? (
-          <p className="text-[11px] text-[rgba(232,227,218,0.30)] py-3">
-            {current.key === "customer" ? "The customer attached nothing."
-              : current.specRef ? `Nothing filed under ${current.label}.` : "No files on this order."}
-          </p>
-        ) : (
-        <button
-          onClick={() => pick(current.specRef)}
-          className="w-full border border-dashed border-[rgba(255,255,255,0.10)] rounded-lg py-4 flex flex-col items-center gap-1.5 hover:border-[rgba(86,100,72,0.55)] transition-colors group"
-        >
-          <Paperclip className="w-4 h-4 text-[rgba(232,227,218,0.30)] group-hover:text-[rgba(232,227,218,0.50)] transition-colors" />
-          <span className="text-[11px] text-[rgba(232,227,218,0.30)] group-hover:text-[rgba(232,227,218,0.50)] transition-colors">
-            {current.specRef ? `Click to attach files to ${current.label}` : "Click to attach files"}
-          </span>
-          <span className="text-[10px] text-[#3e3e3e]">PDF, images, docs up to 20MB</span>
-        </button>
-        )
+      ) : groups.length === 0 && loose.length === 0 ? (
+        <p className="text-[11px] text-[rgba(232,227,218,0.40)] py-3">
+          {readOnly ? "No files on this order." : "No groups yet. Make one — “Drawings”, “Measurements” — and attach files to it."}
+        </p>
       ) : (
-        <div className="flex flex-col gap-1.5">
-          {shown.map(({ a: att, setId }) => (
-            <div
-              key={att.id}
-              className="flex items-center gap-2.5 px-3 py-2 bg-[#111] border border-[rgba(255,255,255,0.10)] rounded-lg group hover:border-[rgba(86,100,72,0.55)] transition-colors"
-            >
-              <FileIcon type={att.file_type} />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <p className="text-xs text-[#e8e3da] truncate">{att.file_name}</p>
-                  {att.kind === "proof_of_delivery" && (
-                    <span className="flex-shrink-0 text-[8px] uppercase tracking-wider px-1.5 py-px rounded-full bg-[rgba(143,190,112,0.14)] border border-[rgba(143,190,112,0.40)] text-[#8fbe70]">
-                      receipt
-                    </span>
+        <div className="flex flex-col gap-3">
+          {groups.map((g) => {
+            const inIt = filesIn(g);
+            const holdsReceipt = inIt.some((a) => a.kind === "proof_of_delivery");
+            const changeable = !readOnly && !followsRoom(g);
+            return (
+              <section key={g.id} id={fileGroupAnchor(g.id)} aria-label={g.name} className="rounded-lg px-3 py-2.5"
+                style={{ background: "rgba(255,255,255,0.025)", border: "0.5px solid rgba(255,255,255,0.10)" }}>
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                  {renaming?.id === g.id ? (
+                    <form className="flex items-center gap-2 flex-1" onSubmit={(e) => { e.preventDefault(); void handleRename(); }}>
+                      <input autoFocus value={renaming.name} onChange={(e) => setRenaming({ id: g.id, name: e.target.value })} maxLength={80}
+                        aria-label={`Rename ${g.name}`} className={FIELD + " flex-1"} style={FIELD_STYLE} />
+                      <button type="submit" disabled={busy || !renaming.name.trim()} className={SMALL}>Save</button>
+                      <button type="button" onClick={() => setRenaming(null)} className={SMALL}>Cancel</button>
+                    </form>
+                  ) : (
+                    <>
+                      <p className="text-[12px] font-medium text-cream/90">{g.name}</p>
+                      <span className="text-[10px] text-cream/45">{inIt.length} file{inIt.length === 1 ? "" : "s"}</span>
+                      {followsRoom(g) && <span className="text-[10px] text-cream/35" title="Renamed and deleted with its room, in Custom Job Specs">· follows its room</span>}
+                      <div className="ml-auto flex items-center gap-1.5">
+                        {!readOnly && (
+                          <button onClick={() => pick(g.id)} disabled={busy} className={SMALL + " flex items-center gap-1"}>
+                            <Upload className="w-2.5 h-2.5" /> Upload
+                          </button>
+                        )}
+                        {changeable && (
+                          <>
+                            <button onClick={() => setRenaming({ id: g.id, name: g.name })} disabled={busy} title="Rename" className={SMALL + " flex items-center gap-1"}>
+                              <Pencil className="w-2.5 h-2.5" /> Rename
+                            </button>
+                            <button onClick={() => setConfirmGroupId(g.id)} disabled={busy} title="Delete the group and its files" className={SMALL + " flex items-center gap-1"}>
+                              <Trash2 className="w-2.5 h-2.5" /> Delete
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </>
                   )}
                 </div>
-                <p className="text-[10px] text-[rgba(232,227,218,0.30)]">
-                  {formatBytes(att.file_size)} · {att.uploaded_by} · {formatDay(att.created_at)}
-                  {setName(setId) && <> · {setName(setId)}</>}
-                </p>
-              </div>
-              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                {deletingId === att.id ? (
-                  <Loader2 className="w-3 h-3 animate-spin text-[rgba(232,227,218,0.50)]" />
-                ) : confirmDeleteId === att.id ? (
-                  <>
-                    <button onClick={() => void handleDelete(att)} className="text-[10px] text-red-400 hover:text-red-300 px-1.5 py-0.5 rounded border border-red-900/50 transition-colors">Delete</button>
-                    <button onClick={() => setConfirmDeleteId(null)} className="text-[10px] text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] px-1.5 py-0.5 rounded border border-[rgba(255,255,255,0.10)] transition-colors">Cancel</button>
-                  </>
-                ) : (
-                  <>
-                    <button
-                      onClick={() => void handleDownload(att)}
-                      disabled={downloadingId === att.id}
-                      title="Download"
-                      className="p-1 text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] transition-colors"
-                    >
-                      {downloadingId === att.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
-                    </button>
-                    {!readOnly && (
-                      <button
-                        onClick={() => setConfirmDeleteId(att.id)}
-                        title="Delete"
-                        className="p-1 text-[rgba(232,227,218,0.50)] hover:text-red-400 transition-colors"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
+
+                {confirmGroupId === g.id && (
+                  <div role="alertdialog" aria-label={`Delete ${g.name}?`} className="mb-2 px-2.5 py-2 rounded-lg bg-red-950/30 border border-red-900/50">
+                    <p className="text-[11px] text-red-300">
+                      {inIt.length > 0
+                        ? <>Delete “{g.name}” and its {inIt.length} file{inIt.length === 1 ? "" : "s"}? The files are deleted with it {"—"} move any you want to keep to another group first.</>
+                        : <>Delete the empty group “{g.name}”?</>}
+                    </p>
+                    {holdsReceipt && (
+                      <p className="text-[11px] text-red-300 mt-1">
+                        It holds the signed delivery receipt: deleting it means the order needs a new receipt before it can be delivered.
+                      </p>
                     )}
-                  </>
+                    <div className="flex gap-2 mt-2">
+                      <button onClick={() => void handleDeleteGroup(g)} className="text-[10px] text-red-300 hover:text-red-200 px-2 py-0.5 rounded border border-red-900/60">
+                        Delete group{inIt.length > 0 ? " and files" : ""}
+                      </button>
+                      <button onClick={() => setConfirmGroupId(null)} className="text-[10px] text-cream/60 hover:text-cream px-2 py-0.5 rounded border border-white/15">Cancel</button>
+                    </div>
+                  </div>
                 )}
-              </div>
-            </div>
-          ))}
+
+                {inIt.length === 0 ? (
+                  readOnly ? (
+                    <p className="text-[11px] text-[rgba(232,227,218,0.30)] py-1">Nothing in this group.</p>
+                  ) : (
+                    <button onClick={() => pick(g.id)} className="w-full border border-dashed border-[rgba(255,255,255,0.10)] rounded-lg py-3 flex flex-col items-center gap-1 hover:border-[rgba(255,255,255,0.20)] transition-colors group">
+                      <Paperclip className="w-3.5 h-3.5 text-[rgba(232,227,218,0.30)] group-hover:text-[rgba(232,227,218,0.50)]" />
+                      <span className="text-[11px] text-[rgba(232,227,218,0.35)] group-hover:text-[rgba(232,227,218,0.55)]">Click to attach files to {g.name}</span>
+                      <span className="text-[10px] text-cream/25">PDF, images, docs up to 20MB</span>
+                    </button>
+                  )
+                ) : (
+                  <div className="flex flex-col gap-1.5">
+                    {inIt.map(fileRow)}
+                  </div>
+                )}
+              </section>
+            );
+          })}
+          {loose.length > 0 && (
+            <section aria-label="Not in a group" className="rounded-lg px-3 py-2.5"
+              style={{ background: "rgba(232,181,106,0.05)", border: "0.5px solid rgba(232,181,106,0.30)" }}>
+              <p className="text-[12px] font-medium text-cream/90 mb-0.5">Not in a group</p>
+              <p className="text-[10px] text-cream/45 mb-2">Uploaded before file groups. Move each into a group.</p>
+              <div className="flex flex-col gap-1.5">{loose.map(fileRow)}</div>
+            </section>
+          )}
         </div>
       )}
     </div>

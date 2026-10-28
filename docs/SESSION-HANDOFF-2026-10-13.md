@@ -492,6 +492,33 @@ Each line points at the section that owns the detail.
    real modal: each note written and saved sends the identical request; a
    Shopify order's notes and visibility line shown; Attachments still opens
    its pane; who may write a note unchanged (item 53).
+   ✅ STEP 5a–5c built 2026-10-27, FILE GROUPS (Garrett, 2026-10-26): groups
+   belong to one order, named by people; a file is uploaded INTO one; deleting
+   a group deletes its files after a prompt (which adds a warning when it holds
+   the signed receipt). The OMS makes "Customer uploads" (quote form, promoted
+   claim) and "Proof of delivery" (a receipt) and finds them by ROLE — ordinary
+   groups, renamable and deletable; the next such file makes a fresh one. A
+   custom job's rooms and style groups each have a group ("Kitchen", "Kitchen —
+   Island") that FOLLOWS the room — created, renamed and deleted with it, files
+   included, inside custom_specs_save_area / _remove_area; never renamed or
+   deleted from the Files tab. `kind` is untouched: the gates read it, so where a
+   receipt is filed never decides Delivered; a receipt or a customer's file never
+   goes into a room's group. ROWS FIRST, THEN STORAGE for every group delete (an
+   orphan is left to storage_orphans() and the sweep). "Attach a file" asks
+   which group (or a new one), then opens the picker (Garrett). Migrations:
+   `2026-10-27-file-groups-a.sql` BEFORE the deploy (the table; group_id
+   nullable; realtime; the functions; a back-fill of every existing room's
+   group) and `-b.sql` AFTER it (group_id NOT NULL; spec_ref dropped — refusing,
+   by name, any file still in no group; the Files tab lists such a file under
+   "Not in a group"). `patch_file_groups.py`. Proved: both migrations on
+   PostgreSQL 16 from production's custom-specs state; the real routes on real
+   PostgreSQL (group create/rename/delete, upload into a group, receipts by
+   role, moves, a room deleted with its files, the quote form and a claim
+   promotion into Customer uploads, archived and held orders refused); the real
+   Files tab, cache and realtime. 5a: the one test file was deleted first.
+   STILL TO DO — 5d: the Overview's group tiles (opening the Files tab at a
+   group, `fileGroupAnchor`), and the specs panel's room attachments; then
+   step 4.
    **Mockup parity** — two structural differences remain (old Open 8).
 9. **Customer notifications.** Nothing sends the production notification
    promised on every cabinet order (OPERATIONS §2, "The promise that is not
@@ -812,7 +839,10 @@ Each line points at the section that owns the detail.
     so a change the server refuses stays on screen until a reload. Today that
     is Modify's dates. To fix in step 3c, which changes Modify anyway; the
     customer Edit was built non-optimistic from the start.
-53. **A colleague can write a note on an order someone else holds** (found
+53. ✅ DECIDED (Garrett, 2026-10-27): NOT locked. "If someone on the support
+    team in Help Scout wants to add a note for an order they should be able
+    to." The difference from attachments is deliberate. As found:
+    **A colleague can write a note on an order someone else holds** (found
     2026-10-26, building step 3d) — a QUESTION for Garrett, not a fix. The
     note textareas were read-only only when the order is archived
     (`readOnly`), never when another member holds it (`canEdit`), and the
@@ -822,6 +852,17 @@ Each line points at the section that owns the detail.
     notes were not. Step 3d kept today's rule. Also: `updateNotes` and
     `updateInternalNotes` paint first and ignore a refusal, as
     `updateOrderDetails` did (item 52).
+54. **`updateNotes` / `updateInternalNotes` paint first and ignore a refusal**
+    (split out of 53, 2026-10-27) — the flaw item 52 fixed in
+    `updateOrderDetails`. Rare for notes; not urgent.
+55. **The single-file delete removes the stored file BEFORE its row**
+    (`attachments/[id]` DELETE; noted 2026-10-27). If the row delete then
+    fails, the row points at nothing. Groups delete rows first and leave an
+    orphan to the sweep instead; the single-file delete should match.
+56. **Dead after phase B** (2026-10-27): `attachmentBin`, `AttachmentBin`,
+    `specRefLocation`, `specRefResolves` in `lib/data.ts` — the Files tab no
+    longer uses bins and the upload route no longer reads spec_ref. Remove
+    once phase B has run.
 
 ### Found 2026-10-14
 

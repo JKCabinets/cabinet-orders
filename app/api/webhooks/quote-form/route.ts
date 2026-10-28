@@ -8,6 +8,7 @@ import {
 } from "@/lib/fileValidation";
 import { stripImageMetadata } from "@/lib/stripExif";
 import { verifyTurnstile } from "@/lib/turnstile";
+import { fileGroupForRole } from "@/lib/fileGroups";
 
 /**
  * Origins allowed to call this endpoint from a browser.
@@ -457,6 +458,7 @@ export async function POST(req: NextRequest) {
 
   // === Save uploaded files ===
   const uploadedFiles: { name: string; path: string }[] = [];
+  let customerGroup: number | null | undefined;
   for (const file of incomingFiles) {
     // ⚠ GENERATED, NOT THE SENDER'S NAME. The original is kept as the label in
     // file_name, where it is data. In the path it would be an instruction, and
@@ -491,7 +493,13 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
-    const { error: dbError } = await supabase.from("order_attachments").insert({
+    // ⚠ INTO "Customer uploads" (2026-10-27, item 8 step 5), found by role.
+    // No group, no row: treated as a failed save -- warned, and skipped.
+    customerGroup ??= await fileGroupForRole(orderId, "customer_uploads");
+    const { error: dbError } = customerGroup === null
+      ? { error: { message: "no \u201cCustomer uploads\u201d group" } }
+      : await supabase.from("order_attachments").insert({
+      group_id: customerGroup,
       order_id: orderId,
       file_name: cleanInput(file.name),
       file_path: filePath,
@@ -523,7 +531,9 @@ export async function POST(req: NextRequest) {
   // === Legacy URL-only path (allow-listed hosts only) ===
   if (legacyAttachmentUrl && incomingFiles.length === 0) {
     const fileName = legacyAttachmentUrl.split("/").pop()?.split("?")[0] || "Customer Attachment";
-    await supabase.from("order_attachments").insert({
+    customerGroup ??= await fileGroupForRole(orderId, "customer_uploads");
+    if (customerGroup !== null) await supabase.from("order_attachments").insert({
+      group_id: customerGroup,
       order_id: orderId,
       file_name: cleanInput(fileName),
       file_path: legacyAttachmentUrl,

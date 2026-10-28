@@ -17,7 +17,7 @@ import {
 // after a failed create; nothing else here read them.
 import { fieldsToClearOnBackwardMove } from "./stageLogic";
 import { useRealtimeOrders, useRealtimeProjects, useRealtimeActivity, useRealtimeAttachments } from "./useRealtimeOrders";
-import { attachmentsChanged, attachmentRemoved, refreshShownAttachments } from "./attachments";
+import { attachmentsChanged, attachmentRemoved, fileGroupRemoved, refreshShownAttachments } from "./attachments";
 import { usePresence } from "./usePresence";
 
 /** What archiveOrder and unarchiveOrder resolve with. */
@@ -499,6 +499,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useRealtimeAttachments({
     onChange: attachmentsChanged,
     onRemoved: attachmentRemoved,
+    onGroupRemoved: fileGroupRemoved,
     onReconnect: refreshShownAttachments,
   });
 

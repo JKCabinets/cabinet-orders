@@ -3,6 +3,7 @@ import { requireAuth, rateLimitOr429, cleanInput } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import { createWarranty } from "@/lib/createWarranty";
 import { pushClaimNotes } from "@/lib/claimHelpScout";
+import { fileGroupForRole } from "@/lib/fileGroups";
 
 /**
  * POST /api/claim-submissions/[id]/promote — turn a public submission into a
@@ -218,6 +219,7 @@ export async function POST(
   // rather than merely absent.
   const paths: string[] = Array.isArray(sub.photo_paths) ? sub.photo_paths : [];
   let copied = 0;
+  let customerGroup: number | null | undefined;
   for (const path of paths) {
     try {
       const { data: blob, error: dlErr } = await supabase.storage
@@ -233,7 +235,11 @@ export async function POST(
         .upload(dest, bytes, { contentType: blob.type || "image/jpeg", upsert: false });
       if (upErr) throw new Error(upErr.message);
 
+      // ⚠ INTO "Customer uploads" (2026-10-27, item 8 step 5), found by role.
+      customerGroup ??= await fileGroupForRole(claimId, "customer_uploads");
+      if (customerGroup === null) throw new Error("no \u201cCustomer uploads\u201d group");
       const { error: rowErr } = await supabase.from("order_attachments").insert({
+        group_id: customerGroup,
         order_id: claimId,
         file_name: cleanInput(fileName),
         file_path: dest,
