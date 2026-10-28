@@ -17,10 +17,10 @@ import { useStore } from "@/lib/store";
 import { AvatarWithProfile } from "./AvatarWithProfile";
 import { useToast } from "./Toast";
 import { checkAttachmentGate } from "@/lib/stageGates";
-import { AttachmentsPanel, type AttachmentsPanelHandle } from "./AttachmentsPanel";
+import { AttachmentsPanel } from "./AttachmentsPanel";
+import { FileGroupTiles } from "./FileGroupTiles";
 import { AttachFileCard, type AttachFileCardHandle } from "./AttachFileCard";
-import { AckFileMark, AckInUseNote } from "./AckFileMark";
-import { useAttachmentsFor, refreshAttachments, downloadAttachment, deleteAttachment, type Attachment } from "@/lib/attachments";
+// (The purchase's Files tab is AttachmentsPanel per group since 5d, 2026-10-28.)
 import { FullOrderGroup, GroupIssueTag } from "./FullOrderGroup";
 import { OrderHeaderCards, ConsentMissingPill, ShopifyGonePill } from "./OrderHeaderCards";
 import { ClaimCloseButton, ClaimOutcomePill } from "./ClaimClose";
@@ -342,12 +342,16 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
   const [pinError, setPinError] = useState(false);
   const pinInputRef = useRef<HTMLInputElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
-  const attachmentsRef = useRef<AttachmentsPanelHandle>(null);
+  // A tile opens the Files tab AT its group (2026-10-28, 5d); n re-asks.
+  const [filesFocus, setFilesFocus] = useState<{ orderId: string; groupId: number | null; n: number } | null>(null);
   // The "Attach a file" card under the Next Action band (2026-10-27, Garrett).
   const [attachCardOpen, setAttachCardOpen] = useState(false);
   const attachCardRef = useRef<AttachFileCardHandle>(null);
+  // "Upload receipt": the same card, for a signed receipt (2026-10-28, 5d).
+  const [receiptCardOpen, setReceiptCardOpen] = useState(false);
+  const receiptCardRef = useRef<AttachFileCardHandle>(null);
   const ackPanelRef = useRef<AcknowledgmentPanelHandle>(null);
-  const attachmentsAnchorRef = useRef<HTMLDivElement>(null);
+  // (The Files pane's scroll anchor went with the pane, 2026-10-28.)
 
   // When the modal opens because of a missing-attachment gate, show a
   // banner and auto-jump to the attachment area. The banner stays visible
@@ -402,7 +406,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
   const [itemsGroupId, setItemsGroupId] = useState<string | null>(null);
   // Which of the three bottom cards is expanded. One at a time -- three open
   // at once is the height problem this was meant to solve.
-  const [openPane, setOpenPane] = useState<"customer" | "internal" | "files" | null>(null);
+  const [openPane, setOpenPane] = useState<"customer" | "internal" | null>(null);
   // No tab counts (2026-10-22, item 8: Garrett dropped Full Order's with the
   // mockup's layout). Files never had one: ProjectFiles was once the only thing
   // that fetched the attachments, so a count shown before that tab opened would
@@ -550,6 +554,10 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
   // step 3b): ONCE, outside the two layouts -- inside the non-custom one,
   // TypeScript already knows the type is not "custom".
   const canEditCustomer = (liveOrder.type === "custom" || liveOrder.type === "warranty") && canEdit && !readOnly;
+  const openFilesAt = (groupId: number | null) => {
+    setTab("files");
+    setFilesFocus((f) => ({ orderId: liveOrder.id, groupId, n: (f?.n ?? 0) + 1 }));
+  };
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -1456,10 +1464,8 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                 </p>
                 <div className="flex items-center gap-2 flex-wrap">
                   <button
-                    onClick={() => {
-                      setOpenPane("files");
-                      requestAnimationFrame(() => attachmentsRef.current?.openReceiptPicker());
-                    }}
+                    // The receipt card, in this click (2026-10-28, 5d).
+                    onClick={() => receiptCardRef.current?.pick()}
                     className="px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all"
                     style={{
                       background: "rgba(184,130,106,0.22)",
@@ -1525,10 +1531,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                           onClick: () => attachCardRef.current?.pick() },
                     proof_of_delivery: {
                       label: "Upload receipt",
-                      onClick: () => {
-                        setOpenPane("files");
-                        requestAnimationFrame(() => attachmentsRef.current?.openReceiptPicker());
-                      },
+                      onClick: () => receiptCardRef.current?.pick(),
                     },
                   }}
                   overrides={{
@@ -1575,6 +1578,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
           {canEdit && !readOnly && (
             <div className="px-6">
               <AttachFileCard ref={attachCardRef} orderId={liveOrder.id} open={attachCardOpen} onOpenChange={setAttachCardOpen} />
+              <AttachFileCard ref={receiptCardRef} purpose="receipt" orderId={liveOrder.id} open={receiptCardOpen} onOpenChange={setReceiptCardOpen} />
             </div>
           )}
 
@@ -1591,12 +1595,10 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
               attachments panel -- roughly 380px of an Overview that has to fit
               without scrolling.
 
-              ⚠ THE PANELS ARE HIDDEN WITH CSS, NOT UNMOUNTED. AttachmentsPanel
-              exposes openReceiptPicker() through an imperative handle, and the
-              modal calls it for a missing receipt. Conditional rendering would
-              leave attachmentsRef.current null and the call would do nothing,
-              silently. (A missing attachment opens the Attach a file card under
-              the Next Action band instead, since 2026-10-27.) */}
+              ⚠ FILES ARE THE FILES TAB'S (2026-10-28, 5d; Garrett): the Overview
+              shows FileGroupTiles, and a tile opens the tab at its group. The
+              hidden Files pane, kept mounted for openReceiptPicker(), is gone:
+              "Upload receipt" and "Attach a file" are cards under the band. */}
           {liveOrder.type === "custom" ? (
             <div className="px-6 py-4 grid grid-cols-1 md:grid-cols-2 gap-2.5 items-start">
               <div className="flex flex-col gap-2.5 min-w-0">
@@ -1608,15 +1610,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                   onStageChange={onStageChange}
                   canEdit={canEdit}
                 />
-                <button
-                  onClick={() => setOpenPane(openPane === "files" ? null : "files")}
-                  className="glass-sage rounded-panel px-3.5 py-3 text-left transition-all hover:brightness-110"
-                >
-                  <p className={LABEL + " mb-0.5"}>Attachments</p>
-                  <p className="text-[11px] text-cream/70 truncate">
-                    Drawings, receipts, measurements
-                  </p>
-                </button>
+                <FileGroupTiles orderId={liveOrder.id} onOpen={openFilesAt} />{/* the custom layout */}
                 {notesCard}{/* the custom layout */}
               </div>
               <div className="flex flex-col gap-2.5 min-w-0">
@@ -1640,15 +1634,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                 canEdit={canEdit}
               />
               {notesCard}{/* the other layout */}
-              <button
-                onClick={() => setOpenPane(openPane === "files" ? null : "files")}
-                className="glass-sage rounded-panel px-3.5 py-3 text-left transition-all hover:brightness-110"
-              >
-                <p className={LABEL + " mb-0.5"}>Attachments</p>
-                <p className="text-[11px] text-cream/70 truncate">
-                  Drawings, receipts, measurements
-                </p>
-              </button>
+              <FileGroupTiles orderId={liveOrder.id} onOpen={openFilesAt} />{/* the other layout */}
             </div>
           )}
 
@@ -1666,15 +1652,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
             />
           )}
 
-          {/* Always mounted -- see the note above. Only its visibility changes. */}
-          <div ref={attachmentsAnchorRef} className={openPane === "files" ? "" : "hidden"}>
-            {/* ⚠ READ-ONLY FOR SOMEBODY ELSE'S CLAIM TOO (2026-09-30), like every
-                other panel here: a colleague was shown Upload and Delete and
-                refused after the fact. orderType decides whether a receipt is
-                offered at all. */}
-            <AttachmentsPanel ref={attachmentsRef} orderId={liveOrder.id} orderType={liveOrder.type} readOnly={readOnly || !canEdit}
-              specs={liveOrder.type === "custom" ? liveOrder.custom_specs : null} />
-          </div>
+          {/* (The Files pane that stood here is gone: files are the Files tab's, 2026-10-28.) */}
 
             {/* Acknowledgments: per-vendor .xlsx reconciliation.
 
@@ -1824,11 +1802,25 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
             // so a label cannot mean two sets of files. ProjectFiles stays for
             // Shopify purchases, whose files span the groups of a project.
             ? <AttachmentsPanel orderId={liveOrder.id} orderType={liveOrder.type} readOnly={readOnly || !canEdit}
-                specs={liveOrder.custom_specs} />
-            // ⚠ WHO MAY DELETE (2026-10-28): the claim is the PURCHASE's, so the
-            // modal's canEdit holds for every group here; archiving can be one
-            // group's, so each row asks archivedVia of its own group.
-            : <ProjectFiles groups={projectGroups} canEdit={canEdit} purchase={purchaseOfRow} />)}
+                specs={liveOrder.custom_specs}
+                focusGroupId={filesFocus?.orderId === liveOrder.id ? filesFocus.groupId : null} focusKey={filesFocus?.n} />
+            // ⚠ THE ONE PLACE FOR FILES (2026-10-28, 5d; Garrett). Each group of
+            // the purchase, headed, with the WHOLE panel -- file groups, Upload,
+            // New group, Move, Rename, Delete, Receipt -- where this was a flat
+            // list with Download and Delete. Read-only by each group's own
+            // archive and the purchase's claim (the modal's canEdit: the claim
+            // is the purchase's).
+            : <div>
+                {projectGroups.map((g) => (
+                  <div key={g.id}>
+                    {projectGroups.length > 1 && (
+                      <p className="px-6 pt-5 text-[11px] uppercase tracking-[0.16em] text-cream/60">{GROUP_LABEL[g.type] ?? g.id}</p>
+                    )}
+                    <AttachmentsPanel orderId={g.id} orderType={g.type} readOnly={archivedVia(g, purchaseOfRow) !== null || !canEdit}
+                      focusGroupId={filesFocus?.orderId === g.id ? filesFocus.groupId : null} focusKey={filesFocus?.n} />
+                  </div>
+                ))}
+              </div>)}
 
           {/* Activity — the SELECTED GROUP's trail, not the project's.
               order_activity hangs off orders.order_id, and a merged
@@ -2568,145 +2560,5 @@ const GROUP_LABEL: Record<string, string> = {
   warranty: "Warranty claim",
 };
 
-/**
- * Every file on the project, across every group -- read-only.
- *
- * Uploading stays on the Overview tab under the selected group, where
- * AttachmentsPanel's imperative handle is always mounted and the
- * needs-attachment flow can reach it. This view exists because when you are
- * looking for a signed delivery receipt you do not know, and should not have to
- * know, which group it hangs off.
- *
- * ⚠ READS THE SHARED LIST (lib/attachments, 2026-09-30), one per group:
- * order_attachments has an order_id and no project column, so the group ids
- * ARE the query. An upload on the Overview tab is here without a refetch, and
- * opening this tab refetches, so a colleague's upload appears. A group whose
- * files could not be loaded SAYS SO -- it used to be skipped in silence, which
- * read as that group having no files.
- */
-function ProjectFiles({ groups, canEdit, purchase }: {
-  groups: Order[];
-  /** The purchase's claim allows changes (or an admin is editing): one answer for every group. */
-  canEdit: boolean;
-  purchase: Parameters<typeof archivedVia>[1];
-}) {
-  const lists = useAttachmentsFor(groups.map((g) => g.id));
-  // ⚠ IT LISTED FILES IT COULD NOT OPEN (until 2026-10-19): a name, its group,
-  // its kind -- and no way to get the file. Every row now has the panel's
-  // Download, through the same downloadAttachment. This tab is every type's
-  // but a custom job's, so a claim's photos were unopenable here too.
-  const [openingId, setOpeningId] = useState<number | null>(null);
-  const [openError, setOpenError] = useState<string | null>(null);
-  async function open(a: Attachment) {
-    setOpeningId(a.id);
-    setOpenError(null);
-    const r = await downloadAttachment(a);
-    setOpeningId(null);
-    if (!r.ok) setOpenError(`${a.file_name}: ${r.message}`);
-  }
-  const labelOf = (g: Order) => GROUP_LABEL[g.type] ?? g.id;
-  const rows = groups.flatMap((g) => (lists[g.id]?.files ?? []).map((a) => ({ g, a })));
-  const failed = groups.filter((g) => lists[g.id]?.error);
-  const waiting = groups.some((g) => lists[g.id]?.files === null && !lists[g.id]?.error);
-
-  if (waiting && rows.length === 0 && failed.length === 0) {
-    return <div className="px-6 py-5 text-[12px] text-cream/45">Loading files…</div>;
-  }
-
-  return (
-    <div className="px-6 py-5 flex flex-col gap-2">
-      {openError && (
-        <p role="alert" className="text-[11px] text-red-400 px-1">{openError}</p>
-      )}
-      {failed.map((g) => (
-        <div key={"err-" + g.id} className="flex items-center justify-between gap-2 px-3 py-2 rounded-brand bg-red-950/30 border border-red-900/50">
-          <p className="text-[11px] text-red-400">
-            {labelOf(g)}: its files could not be loaded — {lists[g.id]?.error}
-          </p>
-          <button onClick={() => refreshAttachments(g.id)} className="text-[10px] text-red-300 hover:text-red-200">Retry</button>
-        </div>
-      ))}
-      {rows.length === 0 && failed.length === 0 ? (
-        <div className="py-3 text-center">
-          <p className="text-[12px] text-cream/45">No files on this project yet.</p>
-          <p className="text-[11px] text-cream/30 mt-1">
-            Upload from a group on the Overview tab.
-          </p>
-        </div>
-      ) : rows.map(({ g, a }) => (
-        <ProjectFileRow key={a.id} g={g} a={a} label={labelOf(g)} opening={openingId === a.id} onOpen={() => void open(a)}
-          deletable={canEdit && archivedVia(g, purchase) === null} />
-      ))}
-    </div>
-  );
-}
-
-/**
- * One file in the purchase's Files tab (2026-10-28): Download, and DELETE --
- * this tab had only Download, so a kept acknowledgment nobody needed could be
- * removed only from the group's own pane. The same confirm, the same rules: not
- * on an archived group, not on one somebody else holds (the route refuses both
- * anyway); and for the acknowledgment In use, a line saying the verdict stays.
- */
-function ProjectFileRow({ g, a, label, opening, onOpen, deletable }: {
-  g: Order; a: Attachment; label: string; opening: boolean; onOpen: () => void; deletable: boolean;
-}) {
-  const [confirming, setConfirming] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  async function remove() {
-    setConfirming(false);
-    setDeleting(true);
-    setError(null);
-    const r = await deleteAttachment(g.id, a.id);
-    setDeleting(false);
-    if (!r.ok) setError(`${a.file_name} was not deleted: ${r.message}`);
-  }
-  return (
-    <div className="rounded-brand px-3 py-2"
-      style={{ background: "rgba(255,255,255,0.03)", border: "0.5px solid rgba(255,255,255,0.10)" }}>
-      <div className="flex items-center gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <p className="text-[12px] text-cream/85 truncate">{a.file_name}</p>
-            {a.kind === "acknowledgment" && <AckFileMark orderId={g.id} attachmentId={a.id} />}
-          </div>
-          <p className="text-[10px] text-cream/40 mt-0.5">
-            {label}
-            {a.kind === "acknowledgment" && " · acknowledgment"}
-            {a.kind === "proof_of_delivery" && " · signed delivery receipt"}
-            {a.kind === "customer_upload" && " · from the customer"}
-          </p>
-        </div>
-        {deleting ? (
-          <Loader2 className="w-3 h-3 animate-spin text-[rgba(232,227,218,0.50)]" />
-        ) : confirming ? (
-          <div className="flex items-center gap-1">
-            {a.kind === "acknowledgment" && <AckInUseNote orderId={g.id} attachmentId={a.id} />}
-            <button onClick={() => void remove()} className="text-[10px] text-red-400 hover:text-red-300 px-1.5 py-0.5 rounded border border-red-900/50">Delete</button>
-            <button onClick={() => setConfirming(false)} className="text-[10px] text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] px-1.5 py-0.5 rounded border border-white/10">Cancel</button>
-          </div>
-        ) : (
-          <div className="flex items-center gap-1">
-            <button
-              onClick={onOpen}
-              disabled={opening}
-              title="Download"
-              aria-label={`Download ${a.file_name}`}
-              className="p-1 text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] transition-colors disabled:opacity-50"
-            >
-              {opening ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
-            </button>
-            {deletable && (
-              <button onClick={() => setConfirming(true)} title="Delete" aria-label={`Delete ${a.file_name}`}
-                className="p-1 text-[rgba(232,227,218,0.50)] hover:text-red-400 transition-colors">
-                <Trash2 className="w-3 h-3" />
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-      {error && <p role="alert" className="text-[11px] text-red-400 mt-1">{error}</p>}
-    </div>
-  );
-}
+// (ProjectFiles and ProjectFileRow -- the purchase's flat file list -- were
+// replaced by an AttachmentsPanel per group in 5d, 2026-10-28.)

@@ -27,11 +27,16 @@ export interface AttachFileCardHandle {
   pick: () => void;
 }
 
-const GROUP = "Acknowledgments";
+/** What the card attaches (2026-10-28, 5d): "Attach a file", or a signed receipt. */
+export type AttachPurpose = "acknowledgment" | "receipt";
 const BUTTON = "text-[12px] px-3 py-1.5 rounded-full transition-all bg-white/5 border border-cream/20 text-cream/85 hover:bg-white/10 hover:text-cream flex items-center gap-1.5";
 
-export const AttachFileCard = forwardRef<AttachFileCardHandle, { orderId: string; open: boolean; onOpenChange: (open: boolean) => void }>(
-  function AttachFileCard({ orderId, open, onOpenChange }, ref) {
+export const AttachFileCard = forwardRef<AttachFileCardHandle, { orderId: string; open: boolean; onOpenChange: (open: boolean) => void; purpose?: AttachPurpose }>(
+  function AttachFileCard({ orderId, open, onOpenChange, purpose = "acknowledgment" }, ref) {
+  // ⚠ A RECEIPT IS FILED BY THE SERVER, by its kind, in "Proof of delivery";
+  // an acknowledgment-or-attachment goes in "Acknowledgments" by role.
+  const GROUP = purpose === "receipt" ? "Proof of delivery" : "Acknowledgments";
+  const TITLE = purpose === "receipt" ? "Upload the signed receipt" : "Attach a file";
   const [phase, setPhase] = useState<"ask" | "uploading" | "done">("ask");
   const [error, setError] = useState("");
   const [doneText, setDoneText] = useState("");
@@ -63,7 +68,9 @@ export const AttachFileCard = forwardRef<AttachFileCardHandle, { orderId: string
     const attached: string[] = [];
     const refused: string[] = [];
     for (const f of files) {
-      const r = await uploadAttachment(orderId, f, "general", null, "acknowledgments");
+      const r = purpose === "receipt"
+        ? await uploadAttachment(orderId, f, "proof_of_delivery")
+        : await uploadAttachment(orderId, f, "general", null, "acknowledgments");
       if (r.ok) attached.push(f.name); else refused.push(r.message);
     }
     if (attached.length === 0) { setError(refused.join(" · ")); setPhase("ask"); return; }
@@ -79,14 +86,14 @@ export const AttachFileCard = forwardRef<AttachFileCardHandle, { orderId: string
       style={{ gridTemplateRows: open ? "1fr" : "0fr", opacity: open ? 1 : 0 }}>
       <div className="overflow-hidden min-h-0">
         <div className="pt-2.5">
-          <div role="region" aria-label="Attach a file" className="glass-sage rounded-panel px-5 py-4">
+          <div role="region" aria-label={TITLE} className="glass-sage rounded-panel px-5 py-4">
             <div className="flex items-start gap-3">
               <span className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
                 style={{ background: "rgba(184,130,106,0.14)", border: "0.5px solid rgba(184,130,106,0.40)" }}>
                 {phase === "done" ? <Check className="w-4 h-4" style={{ color: "#a9cf8f" }} /> : <Paperclip className="w-4 h-4" style={{ color: "#d9a888" }} />}
               </span>
               <div className="flex-1 min-w-0">
-                <p className="text-[14px] text-cream/90">Attach a file</p>
+                <p className="text-[14px] text-cream/90">{TITLE}</p>
                 {phase === "done" ? (
                   <p role="status" className="text-[12px] text-cream/70 mt-0.5">{doneText}</p>
                 ) : phase === "uploading" ? (
@@ -114,7 +121,7 @@ export const AttachFileCard = forwardRef<AttachFileCardHandle, { orderId: string
     {/* ⚠ BESIDE THE INERT WRAPPER, NOT IN IT: pick() opens this while the card is
         still closed (inert), and a click into an inert subtree may be ignored. */}
     <input ref={inputRef} type="file" multiple className="hidden" onChange={(e) => void onFiles(e)}
-      accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" />
+      accept={purpose === "receipt" ? "image/*,.pdf" : "image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv"} />
     </>
   );
 });

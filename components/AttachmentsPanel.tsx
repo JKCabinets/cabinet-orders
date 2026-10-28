@@ -26,7 +26,7 @@
  * Changed: rows sit on the OMS's surface, not #111, and their actions are
  * always shown, not only on hover.
  */
-import { useState, useRef, forwardRef, useImperativeHandle } from "react";
+import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from "react";
 import { Paperclip, Upload, X, Download, FileText, Image, File, Loader2, Trash2, FileCheck, RotateCcw, FolderPlus, Pencil } from "lucide-react";
 import type { OrderType, CustomSpecs } from "@/lib/data";
 import { typeEverRequires } from "@/lib/requirements";
@@ -45,6 +45,13 @@ interface AttachmentsPanelProps {
   readOnly?: boolean;
   /** No longer read: a room's files are filed in its group (2026-10-27). Kept so callers need not change. */
   specs?: CustomSpecs | null;
+  /**
+   * Open AT this group (2026-10-28, 5d): an Overview tile scrolls the Files tab
+   * to its section and highlights it a moment. `focusKey` changes on every
+   * request, so asking for the same group twice still scrolls.
+   */
+  focusGroupId?: number | null;
+  focusKey?: number;
 }
 
 export interface AttachmentsPanelHandle {
@@ -79,7 +86,7 @@ const FIELD_STYLE: React.CSSProperties = { background: "rgba(255,255,255,0.04)",
 export const fileGroupAnchor = (groupId: number) => `file-group-${groupId}`;
 
 export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPanelProps>(
-  function AttachmentsPanel({ orderId, orderType, readOnly = false }, ref) {
+  function AttachmentsPanel({ orderId, orderType, readOnly = false, focusGroupId = null, focusKey }, ref) {
   const list = useAttachments(orderId);
   const attachments: Attachment[] = list.files ?? [];
   const groups: FileGroup[] = list.groups ?? [];
@@ -98,6 +105,17 @@ export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPa
   const uploadTo = useRef<number | null>(null);
 
   const receiptOffered = !readOnly && typeEverRequires(orderType, "proof_of_delivery");
+
+  // Open at a group: once its section exists, scroll to it and light it up.
+  const [highlight, setHighlight] = useState<number | null>(null);
+  const groupsLoaded = list.groups !== null;
+  useEffect(() => {
+    if (focusGroupId === null || !groupsLoaded) return;
+    document.getElementById(fileGroupAnchor(focusGroupId))?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setHighlight(focusGroupId);
+    const t = setTimeout(() => setHighlight(null), 1600);
+    return () => clearTimeout(t);
+  }, [focusGroupId, focusKey, groupsLoaded]);
   const filesIn = (g: FileGroup) => attachments.filter((a) => a.group_id === g.id);
   // ⚠ A FILE IN NO GROUP can exist only between phase A and the deploy (the old
   // code uploading without one). Shown, so it can be filed -- phase B refuses
@@ -315,8 +333,10 @@ export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPa
             const holdsReceipt = inIt.some((a) => a.kind === "proof_of_delivery");
             const changeable = !readOnly && !followsRoom(g);
             return (
-              <section key={g.id} id={fileGroupAnchor(g.id)} aria-label={g.name} className="rounded-lg px-3 py-2.5"
-                style={{ background: "rgba(255,255,255,0.025)", border: "0.5px solid rgba(255,255,255,0.10)" }}>
+              <section key={g.id} id={fileGroupAnchor(g.id)} aria-label={g.name} className="rounded-lg px-3 py-2.5 transition-[border-color,box-shadow] duration-500"
+                data-highlighted={highlight === g.id ? "" : undefined}
+                style={{ background: "rgba(255,255,255,0.025)", border: `0.5px solid ${highlight === g.id ? "rgba(217,168,136,0.75)" : "rgba(255,255,255,0.10)"}`,
+                  boxShadow: highlight === g.id ? "0 0 0 2px rgba(217,168,136,0.25)" : "none" }}>
                 <div className="flex items-center gap-2 mb-2 flex-wrap">
                   {renaming?.id === g.id ? (
                     <form className="flex items-center gap-2 flex-1" onSubmit={(e) => { e.preventDefault(); void handleRename(); }}>

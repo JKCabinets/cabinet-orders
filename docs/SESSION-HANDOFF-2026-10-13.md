@@ -586,7 +586,22 @@ Each line points at the section that owns the detail.
    adds "In use: the verdict stays, only the file goes" to the confirm, in both
    Files views (AckInUseNote; useAckFileState is the one answer AckFileMark and
    the note share). Proved on the real modal and store.
-   STILL TO DO — 5d: the Overview's group tiles (opening the Files tab at a
+   ✅ STEP 5d built 2026-10-28, `patch_files_tab.py` (Garrett: "one Files tab
+   with everything, tiles on the Overview, the old card and pane gone"). A
+   Shopify order's files had lived in two views: the purchase's Files tab (a
+   flat list: Download, Delete) and a hidden pane behind the Overview's
+   "Attachments" card (every file-group action). Now: the Files tab is the one
+   place — each group of the purchase headed, with the whole AttachmentsPanel
+   (read-only by its own archive and the purchase's claim); a custom job's tab
+   was the panel already. The Overview shows FileGroupTiles (each file group,
+   its count; a tile opens the tab AT that group: scrolled to, highlighted a
+   moment — AttachmentsPanel focusGroupId). "Upload receipt" (the Next Action
+   remedy and the delivery banner) is an AttachFileCard with purpose
+   "receipt", like "Attach a file"; it had worked through the hidden pane.
+   ProjectFiles/ProjectFileRow and the pane's code are gone. Proved on the
+   real modal and store.
+   STILL TO DO — the specs panel's room attachments (with step 4); the
+   Overview's group tiles were the rest of 5d (opening the Files tab at a
    group, `fileGroupAnchor`), and the specs panel's room attachments; then
    step 4.
    **Mockup parity** — two structural differences remain (old Open 8).
