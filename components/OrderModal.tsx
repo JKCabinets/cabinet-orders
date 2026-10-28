@@ -19,8 +19,8 @@ import { useToast } from "./Toast";
 import { checkAttachmentGate } from "@/lib/stageGates";
 import { AttachmentsPanel, type AttachmentsPanelHandle } from "./AttachmentsPanel";
 import { AttachFileCard, type AttachFileCardHandle } from "./AttachFileCard";
-import { AckFileMark } from "./AckFileMark";
-import { useAttachmentsFor, refreshAttachments, downloadAttachment, type Attachment } from "@/lib/attachments";
+import { AckFileMark, AckInUseNote } from "./AckFileMark";
+import { useAttachmentsFor, refreshAttachments, downloadAttachment, deleteAttachment, type Attachment } from "@/lib/attachments";
 import { FullOrderGroup, GroupIssueTag } from "./FullOrderGroup";
 import { OrderHeaderCards, ConsentMissingPill, ShopifyGonePill } from "./OrderHeaderCards";
 import { ClaimCloseButton, ClaimOutcomePill } from "./ClaimClose";
@@ -1825,7 +1825,10 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
             // Shopify purchases, whose files span the groups of a project.
             ? <AttachmentsPanel orderId={liveOrder.id} orderType={liveOrder.type} readOnly={readOnly || !canEdit}
                 specs={liveOrder.custom_specs} />
-            : <ProjectFiles groups={projectGroups} />)}
+            // ⚠ WHO MAY DELETE (2026-10-28): the claim is the PURCHASE's, so the
+            // modal's canEdit holds for every group here; archiving can be one
+            // group's, so each row asks archivedVia of its own group.
+            : <ProjectFiles groups={projectGroups} canEdit={canEdit} purchase={purchaseOfRow} />)}
 
           {/* Activity — the SELECTED GROUP's trail, not the project's.
               order_activity hangs off orders.order_id, and a merged
@@ -2581,7 +2584,12 @@ const GROUP_LABEL: Record<string, string> = {
  * files could not be loaded SAYS SO -- it used to be skipped in silence, which
  * read as that group having no files.
  */
-function ProjectFiles({ groups }: { groups: Order[] }) {
+function ProjectFiles({ groups, canEdit, purchase }: {
+  groups: Order[];
+  /** The purchase's claim allows changes (or an admin is editing): one answer for every group. */
+  canEdit: boolean;
+  purchase: Parameters<typeof archivedVia>[1];
+}) {
   const lists = useAttachmentsFor(groups.map((g) => g.id));
   // ⚠ IT LISTED FILES IT COULD NOT OPEN (until 2026-10-19): a name, its group,
   // its kind -- and no way to get the file. Every row now has the panel's
@@ -2626,34 +2634,79 @@ function ProjectFiles({ groups }: { groups: Order[] }) {
           </p>
         </div>
       ) : rows.map(({ g, a }) => (
-        <div
-          key={a.id}
-          className="flex items-center gap-3 rounded-brand px-3 py-2"
-          style={{ background: "rgba(255,255,255,0.03)", border: "0.5px solid rgba(255,255,255,0.10)" }}
-        >
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <p className="text-[12px] text-cream/85 truncate">{a.file_name}</p>
-              {a.kind === "acknowledgment" && <AckFileMark orderId={g.id} attachmentId={a.id} />}
-            </div>
-            <p className="text-[10px] text-cream/40 mt-0.5">
-              {labelOf(g)}
-              {a.kind === "acknowledgment" && " · acknowledgment"}
-              {a.kind === "proof_of_delivery" && " · signed delivery receipt"}
-              {a.kind === "customer_upload" && " · from the customer"}
-            </p>
-          </div>
-          <button
-            onClick={() => void open(a)}
-            disabled={openingId === a.id}
-            title="Download"
-            aria-label={`Download ${a.file_name}`}
-            className="p-1 text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] transition-colors disabled:opacity-50"
-          >
-            {openingId === a.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
-          </button>
-        </div>
+        <ProjectFileRow key={a.id} g={g} a={a} label={labelOf(g)} opening={openingId === a.id} onOpen={() => void open(a)}
+          deletable={canEdit && archivedVia(g, purchase) === null} />
       ))}
+    </div>
+  );
+}
+
+/**
+ * One file in the purchase's Files tab (2026-10-28): Download, and DELETE --
+ * this tab had only Download, so a kept acknowledgment nobody needed could be
+ * removed only from the group's own pane. The same confirm, the same rules: not
+ * on an archived group, not on one somebody else holds (the route refuses both
+ * anyway); and for the acknowledgment In use, a line saying the verdict stays.
+ */
+function ProjectFileRow({ g, a, label, opening, onOpen, deletable }: {
+  g: Order; a: Attachment; label: string; opening: boolean; onOpen: () => void; deletable: boolean;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function remove() {
+    setConfirming(false);
+    setDeleting(true);
+    setError(null);
+    const r = await deleteAttachment(g.id, a.id);
+    setDeleting(false);
+    if (!r.ok) setError(`${a.file_name} was not deleted: ${r.message}`);
+  }
+  return (
+    <div className="rounded-brand px-3 py-2"
+      style={{ background: "rgba(255,255,255,0.03)", border: "0.5px solid rgba(255,255,255,0.10)" }}>
+      <div className="flex items-center gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <p className="text-[12px] text-cream/85 truncate">{a.file_name}</p>
+            {a.kind === "acknowledgment" && <AckFileMark orderId={g.id} attachmentId={a.id} />}
+          </div>
+          <p className="text-[10px] text-cream/40 mt-0.5">
+            {label}
+            {a.kind === "acknowledgment" && " · acknowledgment"}
+            {a.kind === "proof_of_delivery" && " · signed delivery receipt"}
+            {a.kind === "customer_upload" && " · from the customer"}
+          </p>
+        </div>
+        {deleting ? (
+          <Loader2 className="w-3 h-3 animate-spin text-[rgba(232,227,218,0.50)]" />
+        ) : confirming ? (
+          <div className="flex items-center gap-1">
+            {a.kind === "acknowledgment" && <AckInUseNote orderId={g.id} attachmentId={a.id} />}
+            <button onClick={() => void remove()} className="text-[10px] text-red-400 hover:text-red-300 px-1.5 py-0.5 rounded border border-red-900/50">Delete</button>
+            <button onClick={() => setConfirming(false)} className="text-[10px] text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] px-1.5 py-0.5 rounded border border-white/10">Cancel</button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1">
+            <button
+              onClick={onOpen}
+              disabled={opening}
+              title="Download"
+              aria-label={`Download ${a.file_name}`}
+              className="p-1 text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] transition-colors disabled:opacity-50"
+            >
+              {opening ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+            </button>
+            {deletable && (
+              <button onClick={() => setConfirming(true)} title="Delete" aria-label={`Delete ${a.file_name}`}
+                className="p-1 text-[rgba(232,227,218,0.50)] hover:text-red-400 transition-colors">
+                <Trash2 className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+      {error && <p role="alert" className="text-[11px] text-red-400 mt-1">{error}</p>}
     </div>
   );
 }

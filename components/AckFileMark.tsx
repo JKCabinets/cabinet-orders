@@ -21,11 +21,33 @@ import { useAckStatus } from "@/lib/ackStatus";
 
 const PILL = "flex-shrink-0 inline-flex items-center gap-1 text-[8px] uppercase tracking-wider px-1.5 py-px rounded-full border";
 
-export function AckFileMark({ orderId, attachmentId }: { orderId: string; attachmentId: number }) {
+/** The file's standing, from the panel's cached status: null when it is history. */
+export function useAckFileState(orderId: string, attachmentId: number): "in_use" | "out_of_date" | "didnt_match" | null {
   const status = useAckStatus(orderId, true);
   const latest = Object.values(status.ackByVendor).find((a) => a?.attachment_id === attachmentId);
   if (!latest) return null;
-  if (latest.verdict === "green" && !latest.stale) {
+  return latest.verdict === "green" ? (latest.stale ? "out_of_date" : "in_use") : "didnt_match";
+}
+
+/**
+ * Said in a delete's confirm when the file is the one IN USE (2026-10-28):
+ * deleting it removes only the file. The verdict lives in the submission's row
+ * -- the panel, the Next Action band and the Entered gate read that -- so the
+ * order stands exactly as it was.
+ */
+export function AckInUseNote({ orderId, attachmentId }: { orderId: string; attachmentId: number }) {
+  if (useAckFileState(orderId, attachmentId) !== "in_use") return null;
+  return (
+    <span className="text-[10px] text-cream/55 mr-1" title="The verdict stays with the submission; the Entered gate does not depend on the file.">
+      In use: the verdict stays, only the file goes.
+    </span>
+  );
+}
+
+export function AckFileMark({ orderId, attachmentId }: { orderId: string; attachmentId: number }) {
+  const state = useAckFileState(orderId, attachmentId);
+  if (!state) return null;
+  if (state === "in_use") {
     return (
       <span title="The acknowledgment this order is using" className={PILL}
         style={{ color: "#a9cf8f", background: "rgba(143,190,112,0.14)", borderColor: "rgba(143,190,112,0.40)" }}>
@@ -33,7 +55,7 @@ export function AckFileMark({ orderId, attachmentId }: { orderId: string; attach
       </span>
     );
   }
-  if (latest.verdict === "green") {
+  if (state === "out_of_date") {
     return (
       <span title="It matched, but the order has changed since: submit a new one" className={PILL}
         style={{ color: "#e8b56a", background: "rgba(232,181,106,0.12)", borderColor: "rgba(232,181,106,0.40)" }}>

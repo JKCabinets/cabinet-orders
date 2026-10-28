@@ -577,6 +577,15 @@ Each line points at the section that owns the detail.
    summariseAcks); the mark reads the panel's cached status, no request of its
    own. Proved: the real routes on real PostgreSQL (correct ×3, wrong, correct,
    then the order's phone changed); the real Files tab in all three states.
+   ✅ FOLLOW-UP 2026-10-28, `patch_files_delete.py` (Garrett: "just cant delete
+   the old ones"): the purchase's Files tab (ProjectFiles) had only Download;
+   Delete lived only in each group's own pane. Each row is now ProjectFileRow,
+   with Delete and the same confirm and rules — not on an archived group
+   (archivedVia, per row's own group), not on a purchase somebody else holds
+   (the modal's canEdit: the claim is the purchase's). The acknowledgment In use
+   adds "In use: the verdict stays, only the file goes" to the confirm, in both
+   Files views (AckInUseNote; useAckFileState is the one answer AckFileMark and
+   the note share). Proved on the real modal and store.
    STILL TO DO — 5d: the Overview's group tiles (opening the Files tab at a
    group, `fileGroupAnchor`), and the specs panel's room attachments; then
    step 4.

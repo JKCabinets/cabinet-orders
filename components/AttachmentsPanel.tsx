@@ -30,7 +30,7 @@ import { useState, useRef, forwardRef, useImperativeHandle } from "react";
 import { Paperclip, Upload, X, Download, FileText, Image, File, Loader2, Trash2, FileCheck, RotateCcw, FolderPlus, Pencil } from "lucide-react";
 import type { OrderType, CustomSpecs } from "@/lib/data";
 import { typeEverRequires } from "@/lib/requirements";
-import { AckFileMark } from "./AckFileMark";
+import { AckFileMark, AckInUseNote } from "./AckFileMark";
 import {
   useAttachments, uploadAttachment, deleteAttachment, downloadAttachment, refreshAttachments,
   createFileGroup, renameFileGroup, deleteFileGroup, moveAttachment, followsRoom,
@@ -205,6 +205,7 @@ export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPa
                             <Loader2 className="w-3 h-3 animate-spin text-[rgba(232,227,218,0.50)]" />
                           ) : confirmDeleteId === a.id ? (
                             <>
+                              {a.kind === "acknowledgment" && <AckInUseNote orderId={orderId} attachmentId={a.id} />}
                               <button onClick={() => void handleDelete(a)} className="text-[10px] text-red-400 hover:text-red-300 px-1.5 py-0.5 rounded border border-red-900/50">Delete</button>
                               <button onClick={() => setConfirmDeleteId(null)} className="text-[10px] text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] px-1.5 py-0.5 rounded border border-white/10">Cancel</button>
                             </>

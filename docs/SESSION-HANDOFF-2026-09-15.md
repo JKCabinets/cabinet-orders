@@ -2413,6 +2413,8 @@ patch_ack_rule.py
 patch_docs_ack_rule.py
 patch_ack_in_use.py
 patch_docs_ack_in_use.py
+patch_files_delete.py
+patch_docs_files_delete.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it
