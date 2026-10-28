@@ -966,6 +966,20 @@ Each line points at the section that owns the detail.
     parser (HCI, J&K) — and it applies to Waypoint orders too: a file in the
     Files tab satisfies it whatever the acknowledgment says. Acknowledgment
     files themselves no longer count (patch_ack_files); this is the rest.
+58. ✅ FOUND AND FIXED 2026-10-28, `patch_specs_files_warning.py` — A PROMPT
+    THAT SAID FILES WERE SAFE WHILE THEY WERE DELETED. Since file groups (5c),
+    removing a room deletes its file group and files, and saving a room
+    without a style group deletes that style group's (Garrett's decision, done
+    in custom_specs_save_area / _remove_area). The specs panel was not
+    updated: removing a room said "Files filed under it stay on the job.";
+    removing a style group asked nothing. Now the room's prompt gives the count
+    ("…and its 3 files with them. They cannot be recovered." / "No files are
+    filed under it."), a style group holding files asks first ("Its 2 files
+    are deleted when you save the room."), and the room's Save says so while
+    such a removal is pending ("Saving deletes 2 files (“Island”)"). Counted
+    from the Files tab's cached list. Proved on the real panel, against the
+    box's. Found while starting step 4 — the lesson: a behaviour change must
+    reach every screen that DESCRIBES the behaviour, not only those that do it.
 
 ### Found 2026-10-14
 

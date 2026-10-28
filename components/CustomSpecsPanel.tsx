@@ -6,6 +6,7 @@ import {
   type Order, type CustomSpecArea, type CustomSpecSet,
 } from "@/lib/data";
 import { useToast } from "./Toast";
+import { useAttachments } from "@/lib/attachments";
 import { Plus, Copy, Trash2, ChevronDown, ChevronRight, Loader2, Check, RotateCcw } from "lucide-react";
 
 /**
@@ -76,6 +77,20 @@ export function CustomSpecsPanel({
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [justSaved, setJustSaved] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+
+  // ⚠ HOW MANY FILES A REMOVAL DELETES (2026-10-28). Since file groups (5c) a
+  // room's or style group's files go WITH it (Garrett: "Delete its file group
+  // and files too, with the same warning prompt") -- and this panel still said
+  // they "stay on the job". Counted from the cached list the Files tab shows:
+  // a room's group carries the room's id as spec_ref, a style group's its own.
+  const fileList = useAttachments(order.id);
+  const filesUnder = (specIds: string[]) => {
+    const groupIds = new Set((fileList.groups ?? []).filter((g) => g.spec_ref && specIds.includes(g.spec_ref)).map((g) => g.id));
+    return (fileList.files ?? []).filter((f) => f.group_id !== null && groupIds.has(f.group_id)).length;
+  };
+  const filesWord = (n: number) => `${n} file${n === 1 ? "" : "s"}`;
+  /** A style group whose removal would delete files: asked about first. */
+  const [confirmSet, setConfirmSet] = useState<string | null>(null);
 
   // Let go of what the store now shows for itself.
   useEffect(() => {
@@ -223,7 +238,9 @@ export function CustomSpecsPanel({
     ...r,
     sets: [...r.sets, { ...set, id: newSpecId("set"), name: set.name ? `${set.name} (copy)` : "" }],
   }));
-  // Part of editing the room, saved with it; the save unlinks the set's files.
+  // Part of editing the room, saved with it. ⚠ THE SAVE DELETES THE SET'S FILES
+  // with its file group (since 5c), so the trash asks first when it holds any,
+  // and the room's Save names them while the removal is pending.
   const removeSet = (id: string, setId: string) => edit(id, r => ({ ...r, sets: r.sets.filter(s => s.id !== setId) }));
   const setField = (id: string, setId: string, key: keyof CustomSpecSet, v: string) =>
     edit(id, r => ({ ...r, sets: r.sets.map(s => (s.id === setId ? { ...s, [key]: v } : s)) }));
@@ -266,6 +283,14 @@ export function CustomSpecsPanel({
           {list.map((id) => {
             const room = readOnly ? roomOf(storedRoom(id)!) : shown(id);
             const isCollapsed = collapsed[id];
+            // Everything filed under the room: its own group and each style
+            // group's, saved or in the draft.
+            const roomFiles = filesUnder([id, ...room.sets.map((s) => s.id), ...(storedRoom(id)?.sets ?? []).map((s) => s.id)]);
+            // Saved style groups this draft has removed: the Save deletes their files.
+            const savingDeletes = readOnly ? [] : (storedRoom(id)?.sets ?? [])
+              .filter((s) => !room.sets.some((x) => x.id === s.id))
+              .map((s) => ({ name: s.name.trim() || "a style group", n: filesUnder([s.id]) }))
+              .filter((x) => x.n > 0);
             const dirty = !readOnly && isDirty(id);
             const stale = !readOnly && changedElsewhere(id);
             const gone = !readOnly && removedElsewhere(id);
@@ -303,7 +328,8 @@ export function CustomSpecsPanel({
                 {confirmRemove === id && (
                   <div className="mx-3 mb-2 px-3 py-2 rounded-brand flex items-center justify-between gap-3" style={{ background: "rgba(220,80,60,0.08)", border: "0.5px solid rgba(220,80,60,0.35)" }}>
                     <p className="text-[11px] text-cream/80">
-                      Remove {room.name ? `“${room.name}”` : "this room"}? Its specifications are deleted{dirty ? ", with your unsaved edits" : ""}. Files filed under it stay on the job.
+                      Remove {room.name ? `“${room.name}”` : "this room"}? Its specifications are deleted{dirty ? ", with your unsaved edits" : ""}
+                      {roomFiles > 0 ? `, and its ${filesWord(roomFiles)} with them. They cannot be recovered.` : ". No files are filed under it."}
                     </p>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                       <button onClick={() => void removeRoom(id)} className="text-[10px] text-red-400 hover:text-red-300 px-2 py-0.5 rounded border border-red-900/50">Remove</button>
@@ -338,12 +364,24 @@ export function CustomSpecsPanel({
                               <button onClick={() => copySet(id, set)} title="Duplicate this style group" className="p-1.5 rounded-full hover:bg-white/10 text-cream/40 hover:text-cream/80">
                                 <Copy className="w-3.5 h-3.5" />
                               </button>
-                              <button onClick={() => removeSet(id, set.id)} title="Remove this style group (saved with the room)" className="p-1.5 rounded-full hover:bg-white/10 text-cream/40 hover:text-red-400">
+                              <button onClick={() => (filesUnder([set.id]) > 0 ? setConfirmSet(set.id) : removeSet(id, set.id))} title="Remove this style group (saved with the room)" className="p-1.5 rounded-full hover:bg-white/10 text-cream/40 hover:text-red-400">
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             </>
                           )}
                         </div>
+                        {confirmSet === set.id && (
+                          <div role="alertdialog" aria-label={`Remove ${set.name || "this style group"}?`} className="mb-2 px-3 py-2 rounded-brand flex items-center justify-between gap-3"
+                            style={{ background: "rgba(220,80,60,0.08)", border: "0.5px solid rgba(220,80,60,0.35)" }}>
+                            <p className="text-[11px] text-cream/80">
+                              Remove {set.name ? `“${set.name}”` : "this style group"}? Its {filesWord(filesUnder([set.id]))} {filesUnder([set.id]) === 1 ? "is" : "are"} deleted when you save the room.
+                            </p>
+                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                              <button onClick={() => { setConfirmSet(null); removeSet(id, set.id); }} className="text-[10px] text-red-400 hover:text-red-300 px-2 py-0.5 rounded border border-red-900/50">Remove</button>
+                              <button onClick={() => setConfirmSet(null)} className="text-[10px] text-cream/60 hover:text-cream px-2 py-0.5 rounded border border-white/10">Cancel</button>
+                            </div>
+                          </div>
+                        )}
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
                           <div>
                             <p className="text-[9px] uppercase tracking-wider text-cream/35 mb-1">Cabinet manufacturer</p>
@@ -367,6 +405,11 @@ export function CustomSpecsPanel({
 
                     {!readOnly && (
                       <div className="flex items-center justify-end gap-2 pt-1">
+                        {savingDeletes.length > 0 && (
+                          <span role="alert" className="text-[10px]" style={{ color: "#e89090" }}>
+                            Saving deletes {filesWord(savingDeletes.reduce((t, x) => t + x.n, 0))} ({savingDeletes.map((x) => `“${x.name}”`).join(", ")})
+                          </span>
+                        )}
                         {dirty && <span className="text-[10px] text-cream/40">Unsaved changes</span>}
                         {justSaved === id && !dirty && (
                           <span className="flex items-center gap-1 text-[10px]" style={{ color: "#b8d0bd" }}>
