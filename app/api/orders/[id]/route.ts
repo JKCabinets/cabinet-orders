@@ -9,7 +9,7 @@ import { purchaseOf, archivedVia, archivedReadOnly } from "@/lib/archived";
 import { trackingTargetStage, typeRecordsTracking, type OrderCategory } from "@/lib/categories";
 import { pushClaimNotes } from "@/lib/claimHelpScout";
 import { removeOrderFiles } from "@/lib/orderFiles";
-import { orderAllVendorsGreen } from "@/lib/acknowledgments";
+import { orderAckRequirementMet } from "@/lib/acknowledgments";
 import { requirementsFor, typeEverRequires } from "@/lib/requirements";
 
 /** Push order updates back to Shopify */
@@ -396,14 +396,17 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
       // a failed one would pass this gate by being kept.
       .neq("kind", "acknowledgment")
       .limit(1);
-    if (!(await orderAllVendorsGreen(id)) && (!attachments || attachments.length === 0)) {
+    // ⚠ VENDOR BY VENDOR (2026-10-28, item 57): Waypoint needs its green
+    // acknowledgment -- a file no longer stands in for it; HCI and J&K a green
+    // one or any file. See ackRequirementMet.
+    if (!(await orderAckRequirementMet(id, (attachments ?? []).length > 0))) {
       const reason =
         typeof body.override_ack === "string"
           ? cleanInput(body.override_ack).trim().slice(0, 300)
           : "";
       if (!reason) {
         return NextResponse.json(
-          { error: "Attach at least one file before marking this order as Entered" },
+          { error: "Before Entered: a matching acknowledgment for Waypoint lines, and for HCI or J&K lines an acknowledgment or any file." },
           { status: 400 },
         );
       }

@@ -64,26 +64,33 @@ export async function checkDeliveryProofGate(
 }
 
 /**
- * Returns ok=true if the order has at least one attachment, else ok=false
- * with reason="no-attachments". Used to gate New→Entered transitions.
+ * The New -> Entered gate, as the server answers it (2026-10-28, item 57).
+ *
+ * ⚠ ONE RULE, ASKED OF THE SERVER. This counted the order's files -- every
+ * kind, so a kept (even FAILED) acknowledgment passed it, and it knew nothing
+ * of Waypoint needing a green one. Now it reads the enrichment's
+ * ackRequirementMet: the same function the PATCH route's gate asks.
  */
 export async function checkAttachmentGate(orderId: string): Promise<GateResult> {
   try {
-    const res = await fetch(`/api/orders/attachments?orderId=${encodeURIComponent(orderId)}`);
+    const res = await fetch("/api/orders/enrichment", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: [orderId] }),
+    });
     if (!res.ok) {
-      return { ok: false, reason: "network", message: "Could not verify attachments" };
+      return { ok: false, reason: "network", message: "Could not verify the acknowledgment" };
     }
     const data = await res.json();
-    const count = (data.data ?? []).length;
-    if (count === 0) {
+    const e = (data.data ?? {})[orderId] as { ackRequirementMet?: boolean; ackGreen?: boolean; hasAttachment?: boolean } | undefined;
+    const met = e?.ackRequirementMet ?? (Boolean(e?.ackGreen) || Boolean(e?.hasAttachment));
+    if (!met) {
       return {
         ok: false,
         reason: "no-attachments",
-        message: "Attach at least one file before marking this order as Entered",
+        message: "Before Entered: a matching acknowledgment for Waypoint lines, and for HCI or J&K lines an acknowledgment or any file.",
       };
     }
     return { ok: true };
   } catch {
-    return { ok: false, reason: "network", message: "Could not verify attachments" };
+    return { ok: false, reason: "network", message: "Could not verify the acknowledgment" };
   }
 }

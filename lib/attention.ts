@@ -85,7 +85,7 @@ export type AttentionEnrichment = RequirementEnrichment;
 const ENRICHED_REASONS: Record<string, { kind: AttentionKind; label: string }> = {
   ack_or_attachment: {
     kind: "ack_missing",
-    label: "Cannot leave New — no acknowledgment and no attachment",
+    label: "Cannot leave New — acknowledgment missing or not matching",
   },
   proof_of_delivery: {
     kind: "receipt_missing",

@@ -911,7 +911,19 @@ Each line points at the section that owns the detail.
     `specRefLocation`, `specRefResolves` in `lib/data.ts` — the Files tab no
     longer uses bins and the upload route no longer reads spec_ref. Remove
     once phase B has run.
-57. **A red Waypoint acknowledgment does not block Entered if ANY other file is
+57. ✅ DECIDED AND FIXED 2026-10-28, `patch_ack_rule.py` (Garrett): "Waypoint
+    orders need a green acknowledgment; any file counts only for HCI and J&K."
+    Vendor by vendor (ackRequirementMet, lib/acknowledgments): Waypoint lines a
+    green, current acknowledgment; any other vendor a green one or any file; a
+    mixed order both; unresolved vendors a file. ONE function, asked by the
+    PATCH gate and the enrichment — and through the enrichment by the Next
+    Action checklist and checkAttachmentGate (the board and the modal), which
+    had counted every file itself, kept acknowledgments included. Wording says
+    what each vendor needs. Proved: the rule case by case; the real routes on
+    real PostgreSQL (SHO-1065 red + a file: Entered under the first patch,
+    refused with this one, allowed once green; J&K with and without a file);
+    the client gate. As found:
+    **A red Waypoint acknowledgment does not block Entered if ANY other file is
     on the order** (noted 2026-10-28; a QUESTION for Garrett). The requirement
     is "an acknowledgment OR an attachment" — deliberate for vendors with no
     parser (HCI, J&K) — and it applies to Waypoint orders too: a file in the

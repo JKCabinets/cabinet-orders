@@ -1430,8 +1430,10 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                   Acknowledgment or file <em className="italic-storm">required</em>
                 </p>
                 <p className="text-[11px] text-cream/65">
-                  Upload the manufacturer&apos;s acknowledgment, or attach any file for this
-                  order in the Attachments section below, before moving to Entered.
+                  {/* Vendor by vendor (2026-10-28, item 57): a file never stands in for Waypoint's. */}
+                  {ackStatus.hasWaypoint
+                    ? "Upload Waypoint's acknowledgment, and it must match this order, before moving to Entered."
+                    : "Upload the manufacturer's acknowledgment, or attach any file for this order, before moving to Entered."}
                 </p>
               </div>
             )}

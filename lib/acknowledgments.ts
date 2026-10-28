@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { lookupVendorsForSkus } from "@/lib/vendorLookup";
+import { isWaypointVendor } from "@/lib/vendorFamily";
 import { ackIsStale } from "@/lib/ackFingerprint";
 import type { SkuItem } from "@/lib/skuDecoder";
 import { doorStyleMap, colorMapAll } from "@/lib/skuDecoder";
@@ -127,6 +128,30 @@ export function allVendorsGreen(
 }
 
 /**
+ * ⚠ "AN ACKNOWLEDGMENT OR AN ATTACHMENT", VENDOR BY VENDOR (2026-10-28,
+ * Garrett, item 57): "Waypoint orders need a green acknowledgment; any file
+ * counts only for HCI and J&K." Each vendor on the order is met on its own:
+ *   Waypoint      a green acknowledgment, current with the order
+ *   any other     a green acknowledgment, OR any file (kinds other than
+ *                 `acknowledgment`) -- HCI and J&K have no parser to make one
+ * An order mixing vendors needs both. One whose vendors cannot be resolved is
+ * met by a file, as before. THE ONE RULE: the PATCH route's Entered gate, the
+ * enrichment (and through it the Next Action checklist and the client gates)
+ * all ask this.
+ */
+export function ackRequirementMet(
+  vendors: string[],
+  ackByVendor: Record<string, AckSummary | null>,
+  hasFile: boolean,
+): boolean {
+  if (vendors.length === 0) return hasFile;
+  return vendors.every((v) => {
+    const green = ackByVendor[v]?.verdict === "green" && !ackByVendor[v]?.stale;
+    return isWaypointVendor(v) ? green : green || hasFile;
+  });
+}
+
+/**
  * One order's worth. Unchanged signature and unchanged behaviour — a fetch
  * followed by the pure summariser above, so every existing caller exercises
  * the same rule the batch path uses.
@@ -153,7 +178,8 @@ export async function latestAckByVendor(
  * resolves the order's vendors and their latest acks. Returns false if the order
  * is missing or no vendors resolve.
  */
-export async function orderAllVendorsGreen(orderId: string): Promise<boolean> {
+/** The order's vendors and each one's latest acknowledgment; null if the order is missing. */
+async function orderVendorAcks(orderId: string): Promise<{ vendors: string[]; ackByVendor: Record<string, AckSummary | null> } | null> {
   const { data: order } = await supabase
     .from("orders")
     // ⚠ name and ship_to are here for the FINGERPRINT. reconcileAck gates on
@@ -161,17 +187,28 @@ export async function orderAllVendorsGreen(orderId: string): Promise<boolean> {
     .select("vendor, sku_items, name, ship_to, customer_phone")
     .eq("id", orderId)
     .single();
-  if (!order) return false;
+  if (!order) return null;
 
   const skuItems: SkuItem[] = Array.isArray(order.sku_items) ? order.sku_items : [];
   const lookup = await lookupVendorsForSkus(skuItems, order.vendor);
   const vendors = lookup.uniqueVendors;
-  if (vendors.length === 0) return false;
+  if (vendors.length === 0) return { vendors, ackByVendor: {} };
+  return { vendors, ackByVendor: await latestAckByVendor(orderId, vendors, order) };
+}
 
-  const ackByVendor = await latestAckByVendor(orderId, vendors, order);
+export async function orderAllVendorsGreen(orderId: string): Promise<boolean> {
+  const got = await orderVendorAcks(orderId);
+  if (!got) return false;
   // The verdict itself lives in allVendorsGreen, shared with the enrichment
   // endpoint. Blocking on a stale green is the point: the designer entered
   // THESE lines into the manufacturer's system and the acknowledgment matched
   // THEM.
-  return allVendorsGreen(vendors, ackByVendor);
+  return allVendorsGreen(got.vendors, got.ackByVendor);
+}
+
+/** The Entered gate's question, for one order: see ackRequirementMet. */
+export async function orderAckRequirementMet(orderId: string, hasFile: boolean): Promise<boolean> {
+  const got = await orderVendorAcks(orderId);
+  if (!got) return false;
+  return ackRequirementMet(got.vendors, got.ackByVendor, hasFile);
 }

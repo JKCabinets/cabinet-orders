@@ -57,8 +57,14 @@ export type RequirementSource = "row" | "enrich";
 export interface RequirementEnrichment {
   /** A green, non-stale acknowledgment covering every vendor on the order. */
   ackGreen?: boolean;
-  /** Any attachment at all, of any kind. */
+  /** Any attachment, of any kind but `acknowledgment` (2026-10-28). */
   hasAttachment?: boolean;
+  /**
+   * "An acknowledgment or an attachment", VENDOR BY VENDOR (2026-10-28, item
+   * 57): computed by the server with the PATCH gate's own function. Absent
+   * from an older server: then ackGreen || hasAttachment, as before.
+   */
+  ackRequirementMet?: boolean;
   /** An attachment with kind = 'proof_of_delivery'. */
   hasProofOfDelivery?: boolean;
 }
@@ -142,9 +148,10 @@ export const REQUIREMENTS: Record<OrderType, Record<string, Requirement[]>> = {
     "New": [
       enrichReq(
         "ack_or_attachment",
-        "an acknowledgment or an attachment",
-        "Upload the manufacturer acknowledgment, or attach any file for this order",
-        (e) => (e.ackGreen === undefined && e.hasAttachment === undefined)
+        "the manufacturer's acknowledgment",
+        "Waypoint: upload its acknowledgment, which must match. HCI and J&K: attach theirs, or any file for this order",
+        (e) => e.ackRequirementMet !== undefined ? e.ackRequirementMet
+          : (e.ackGreen === undefined && e.hasAttachment === undefined)
           ? undefined
           : Boolean(e.ackGreen) || Boolean(e.hasAttachment),
         true, // the route refuses New -> Entered without one or the other
