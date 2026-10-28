@@ -31,6 +31,11 @@ export type AckSummary = {
    * "Painted Harbor" rather than only "PH". Empty when the maps are not loaded.
    */
   names?: { door: Record<string, string>; color: Record<string, string> };
+  /**
+   * The submission's KEPT FILE (2026-10-28): what the Files tabs mark "In use"
+   * on the vendor's latest submission. Null when it has none, or it was deleted.
+   */
+  attachment_id: number | null;
 };
 
 /** Door-style and colour names for the codes in these SKUs (read from the end: colour last). */
@@ -61,11 +66,13 @@ export type AckRow = {
   uploaded_at: string;
   result_json: ReconcileResult;
   lines_fingerprint: string | null;
+  /** Absent before 2026-10-28's migration; null once its file is deleted. */
+  attachment_id?: number | null;
 };
 
 /** The select list, in one place, so the batch query cannot drift from this one. */
 export const ACK_SELECT =
-  "vendor, verdict, uploaded_at, result_json, lines_fingerprint";
+  "vendor, verdict, uploaded_at, result_json, lines_fingerprint, attachment_id";
 
 /**
  * Newest acknowledgment per vendor, with staleness judged. NO I/O.
@@ -90,6 +97,7 @@ export function summariseAcks(
         verdict: r.verdict,
         uploaded_at: r.uploaded_at,
         result: r.result_json,
+        attachment_id: r.attachment_id ?? null,
         names: codeNames([
           ...(r.result_json?.lines ?? []).map((l) => l.composite_sku),
           ...(Array.isArray(order?.sku_items) ? order!.sku_items.map((i) => i.sku) : []),

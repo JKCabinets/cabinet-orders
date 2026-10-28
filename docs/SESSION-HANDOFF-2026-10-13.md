@@ -564,6 +564,19 @@ Each line points at the section that owns the detail.
    stage routes on real PostgreSQL with Garrett's two files (wrong, correct,
    wrong, wrong); the card in a test DOM. Parsing was tested with SheetJS
    0.18.5 (npm) — the sandbox cannot reach cdn.sheetjs.com for 0.20.3.
+   ✅ FOLLOW-UP 2026-10-28, `patch_ack_in_use.py` (Garrett, after deploying
+   both): a PASSING acknowledgment was never replaced, so resubmitting the
+   correct one kept copy after copy. Garrett: "mark the one that's currently
+   being used by the order with a green check and the other file can be deleted
+   at that point. This keeps a history while also giving the option to clean
+   up." `AckFileMark` beside each kept acknowledgment in both Files tabs: the
+   file of its vendor's LATEST submission is ✓ In use (matched, current),
+   ⚠ Out of date (matched, the order changed since) or ✕ Didn't match (failed;
+   still replaced by the next submission); every other is unmarked history,
+   deletable as any file. The summary now carries attachment_id (ACK_SELECT,
+   summariseAcks); the mark reads the panel's cached status, no request of its
+   own. Proved: the real routes on real PostgreSQL (correct ×3, wrong, correct,
+   then the order's phone changed); the real Files tab in all three states.
    STILL TO DO — 5d: the Overview's group tiles (opening the Files tab at a
    group, `fileGroupAnchor`), and the specs panel's room attachments; then
    step 4.

@@ -7,6 +7,8 @@ export type AckSummary = {
   verdict: "green" | "red";
   uploaded_at: string;
   result: ReconcileResult;
+  /** The submission's kept file (2026-10-28): marked "In use" in the Files tabs. */
+  attachment_id?: number | null;
   /** The order changed after this verdict was reached. A stale green is not a green. */
   stale?: boolean;
 };

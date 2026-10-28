@@ -30,6 +30,7 @@ import { useState, useRef, forwardRef, useImperativeHandle } from "react";
 import { Paperclip, Upload, X, Download, FileText, Image, File, Loader2, Trash2, FileCheck, RotateCcw, FolderPlus, Pencil } from "lucide-react";
 import type { OrderType, CustomSpecs } from "@/lib/data";
 import { typeEverRequires } from "@/lib/requirements";
+import { AckFileMark } from "./AckFileMark";
 import {
   useAttachments, uploadAttachment, deleteAttachment, downloadAttachment, refreshAttachments,
   createFileGroup, renameFileGroup, deleteFileGroup, moveAttachment, followsRoom,
@@ -190,6 +191,7 @@ export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPa
                             {a.kind === "acknowledgment" && (
                               <span className="flex-shrink-0 text-[8px] uppercase tracking-wider px-1.5 py-px rounded-full bg-[rgba(184,130,106,0.14)] border border-[rgba(184,130,106,0.40)] text-[#d9a888]">acknowledgment</span>
                             )}
+                            {a.kind === "acknowledgment" && <AckFileMark orderId={orderId} attachmentId={a.id} />}
                             {a.kind === "proof_of_delivery" && (
                               <span className="flex-shrink-0 text-[8px] uppercase tracking-wider px-1.5 py-px rounded-full bg-[rgba(143,190,112,0.14)] border border-[rgba(143,190,112,0.40)] text-[#a9cf8f]">receipt</span>
                             )}

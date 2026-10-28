@@ -19,6 +19,7 @@ import { useToast } from "./Toast";
 import { checkAttachmentGate } from "@/lib/stageGates";
 import { AttachmentsPanel, type AttachmentsPanelHandle } from "./AttachmentsPanel";
 import { AttachFileCard, type AttachFileCardHandle } from "./AttachFileCard";
+import { AckFileMark } from "./AckFileMark";
 import { useAttachmentsFor, refreshAttachments, downloadAttachment, type Attachment } from "@/lib/attachments";
 import { FullOrderGroup, GroupIssueTag } from "./FullOrderGroup";
 import { OrderHeaderCards, ConsentMissingPill, ShopifyGonePill } from "./OrderHeaderCards";
@@ -2631,9 +2632,13 @@ function ProjectFiles({ groups }: { groups: Order[] }) {
           style={{ background: "rgba(255,255,255,0.03)", border: "0.5px solid rgba(255,255,255,0.10)" }}
         >
           <div className="flex-1 min-w-0">
-            <p className="text-[12px] text-cream/85 truncate">{a.file_name}</p>
+            <div className="flex items-center gap-1.5 min-w-0">
+              <p className="text-[12px] text-cream/85 truncate">{a.file_name}</p>
+              {a.kind === "acknowledgment" && <AckFileMark orderId={g.id} attachmentId={a.id} />}
+            </div>
             <p className="text-[10px] text-cream/40 mt-0.5">
               {labelOf(g)}
+              {a.kind === "acknowledgment" && " · acknowledgment"}
               {a.kind === "proof_of_delivery" && " · signed delivery receipt"}
               {a.kind === "customer_upload" && " · from the customer"}
             </p>
