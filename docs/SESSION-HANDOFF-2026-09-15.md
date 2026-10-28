@@ -2423,6 +2423,8 @@ patch_website_prefs.py
 patch_docs_website_prefs.py
 patch_specs_restyle.py
 patch_docs_specs_restyle.py
+patch_room_file_groups.py
+patch_docs_room_file_groups.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

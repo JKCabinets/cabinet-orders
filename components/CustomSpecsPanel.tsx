@@ -82,19 +82,19 @@ export function CustomSpecsPanel({
   const [justSaved, setJustSaved] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
-  // ⚠ HOW MANY FILES A REMOVAL DELETES (2026-10-28). Since file groups (5c) a
-  // room's or style group's files go WITH it (Garrett: "Delete its file group
-  // and files too, with the same warning prompt") -- and this panel still said
-  // they "stay on the job". Counted from the cached list the Files tab shows:
-  // a room's group carries the room's id as spec_ref, a style group's its own.
+  // ⚠ HOW MANY FILES A ROOM'S REMOVAL DELETES (2026-10-28). Since file groups
+  // (5c) a room's files go WITH it (Garrett: "Delete its file group and files
+  // too, with the same warning prompt") -- this panel once said they "stay on
+  // the job". ONE GROUP PER ROOM (Garrett, after 4b), carrying the room's id as
+  // spec_ref; a style group has none, so removing one deletes nothing.
   const fileList = useAttachments(order.id);
   const filesUnder = (specIds: string[]) => {
     const groupIds = new Set((fileList.groups ?? []).filter((g) => g.spec_ref && specIds.includes(g.spec_ref)).map((g) => g.id));
     return (fileList.files ?? []).filter((f) => f.group_id !== null && groupIds.has(f.group_id)).length;
   };
   const filesWord = (n: number) => `${n} file${n === 1 ? "" : "s"}`;
-  /** A style group whose removal would delete files: asked about first. */
-  const [confirmSet, setConfirmSet] = useState<string | null>(null);
+  // (A style group's removal asked first when it held files; style groups hold
+  // none since files are the room's, 2026-10-28.)
 
   // Let go of what the store now shows for itself.
   useEffect(() => {
@@ -246,9 +246,8 @@ export function CustomSpecsPanel({
     ...r,
     sets: [...r.sets, { ...set, id: newSpecId("set"), name: set.name ? `${set.name} (copy)` : "" }],
   }));
-  // Part of editing the room, saved with it. ⚠ THE SAVE DELETES THE SET'S FILES
-  // with its file group (since 5c), so the trash asks first when it holds any,
-  // and the room's Save names them while the removal is pending.
+  // Part of editing the room, saved with it. It touches no files: a style
+  // group has no file group of its own (one per room, 2026-10-28).
   const removeSet = (id: string, setId: string) => edit(id, r => ({ ...r, sets: r.sets.filter(s => s.id !== setId) }));
   const setField = (id: string, setId: string, key: keyof CustomSpecSet, v: string) =>
     edit(id, r => ({ ...r, sets: r.sets.map(s => (s.id === setId ? { ...s, [key]: v } : s)) }));
@@ -257,9 +256,9 @@ export function CustomSpecsPanel({
   // A RESTYLE: every action above is the same function it was -- drafts, the
   // per-room save, conflicts, item 58's removal prompts. What is new is how it
   // looks; the fields' SUGGESTIONS (manufacturer from the vendors, door style
-  // and colour for that manufacturer, typing still free); and each room's and
-  // style group's FILES, through its file group (5c): Attach Files on the
-  // room, Add attachment on the style group, the files as chips that open.
+  // and colour for that manufacturer, typing still free); and each ROOM's
+  // FILES, through its file group (5c): Attach Files, the files as chips that
+  // open. One group per room, not per style group (Garrett, 2026-10-28).
   const options = useSkuOptions(!readOnly);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadTo = useRef<number | null>(null);
@@ -360,14 +359,8 @@ export function CustomSpecsPanel({
           {list.map((id) => {
             const room = readOnly ? roomOf(storedRoom(id)!) : shown(id);
             const isCollapsed = collapsed[id];
-            // Everything filed under the room: its own group and each style
-            // group's, saved or in the draft.
-            const roomFiles = filesUnder([id, ...room.sets.map((s) => s.id), ...(storedRoom(id)?.sets ?? []).map((s) => s.id)]);
-            // Saved style groups this draft has removed: the Save deletes their files.
-            const savingDeletes = readOnly ? [] : (storedRoom(id)?.sets ?? [])
-              .filter((s) => !room.sets.some((x) => x.id === s.id))
-              .map((s) => ({ name: s.name.trim() || "a style group", n: filesUnder([s.id]) }))
-              .filter((x) => x.n > 0);
+            // Everything filed under the room: its one group (2026-10-28).
+            const roomFiles = filesUnder([id]);
             const dirty = !readOnly && isDirty(id);
             const stale = !readOnly && changedElsewhere(id);
             const gone = !readOnly && removedElsewhere(id);
@@ -447,8 +440,7 @@ export function CustomSpecsPanel({
                       </p>
                     )}
                     {room.sets.map((set) => {
-                      const setGroup = groupFor(set.id);
-                      const setFiles = filesIn(setGroup?.id);
+                      // (No file group of its own: its files are the room's, 2026-10-28.)
                       const sug = optionsFor(options, set.manufacturer ?? "");
                       return (
                       <div key={set.id} className="rounded-lg px-3 py-2.5" style={{ background: "rgba(255,255,255,0.025)", border: "0.5px solid rgba(255,255,255,0.08)" }}>
@@ -462,24 +454,13 @@ export function CustomSpecsPanel({
                               <button onClick={() => copySet(id, set)} title="Duplicate this style group" className="p-1.5 rounded-full hover:bg-white/10 text-cream/40 hover:text-cream/80">
                                 <Copy className="w-3.5 h-3.5" />
                               </button>
-                              <button onClick={() => (filesUnder([set.id]) > 0 ? setConfirmSet(set.id) : removeSet(id, set.id))} title="Remove this style group (saved with the room)" className="p-1.5 rounded-full hover:bg-white/10 text-cream/40 hover:text-red-400">
+                              <button onClick={() => removeSet(id, set.id)} title="Remove this style group (saved with the room)" className="p-1.5 rounded-full hover:bg-white/10 text-cream/40 hover:text-red-400">
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             </>
                           )}
                         </div>
-                        {confirmSet === set.id && (
-                          <div role="alertdialog" aria-label={`Remove ${set.name || "this style group"}?`} className="mb-2 px-3 py-2 rounded-brand flex items-center justify-between gap-3"
-                            style={{ background: "rgba(220,80,60,0.08)", border: "0.5px solid rgba(220,80,60,0.35)" }}>
-                            <p className="text-[11px] text-cream/80">
-                              Remove {set.name ? `“${set.name}”` : "this style group"}? Its {filesWord(filesUnder([set.id]))} {filesUnder([set.id]) === 1 ? "is" : "are"} deleted when you save the room.
-                            </p>
-                            <div className="flex items-center gap-1.5 flex-shrink-0">
-                              <button onClick={() => { setConfirmSet(null); removeSet(id, set.id); }} className="text-[10px] text-red-400 hover:text-red-300 px-2 py-0.5 rounded border border-red-900/50">Remove</button>
-                              <button onClick={() => setConfirmSet(null)} className="text-[10px] text-cream/60 hover:text-cream px-2 py-0.5 rounded border border-white/10">Cancel</button>
-                            </div>
-                          </div>
-                        )}
+                        {/* (No question on removing a style group: its files are the room's.) */}
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
                           <div>
                             <p className={LABEL}>Cabinet Manufacturer</p>
@@ -498,21 +479,7 @@ export function CustomSpecsPanel({
                             {field(set.notes, (v) => setField(id, set.id, "notes", v), "Add note…")}
                           </div>
                         </div>
-                        <div className="flex items-center gap-1.5 flex-wrap mt-2">
-                          <span className="flex items-center gap-1 text-[10px] text-cream/50"><Paperclip className="w-3 h-3" /> Attachments</span>
-                          {chipsOf(setFiles)}
-                          {!readOnly && (
-                            <button
-                              onClick={() => setGroup && pick(setGroup.id)}
-                              disabled={!setGroup || uploading !== null}
-                              title={setGroup ? `Attach to “${setGroup.name}”` : "Save the room first, then attach files"}
-                              className={PILL}
-                            >
-                              {uploading === setGroup?.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />} Add attachment
-                            </button>
-                          )}
-                          {readOnly && setFiles.length === 0 && <span className="text-[10px] text-cream/30">none</span>}
-                        </div>
+                        {/* (A style group's Attachments row went with its file group: the room's Attach Files holds them, 2026-10-28.) */}
                       </div>
                       );
                     })}
@@ -526,11 +493,7 @@ export function CustomSpecsPanel({
 
                     {!readOnly && (
                       <div className="flex items-center justify-end gap-2 pt-1">
-                        {savingDeletes.length > 0 && (
-                          <span role="alert" className="text-[10px]" style={{ color: "#e89090" }}>
-                            Saving deletes {filesWord(savingDeletes.reduce((t, x) => t + x.n, 0))} ({savingDeletes.map((x) => `“${x.name}”`).join(", ")})
-                          </span>
-                        )}
+                        {/* (Saving a room deletes no files since one group per room, 2026-10-28.) */}
                         {dirty && <span className="text-[10px] text-cream/40">Unsaved changes</span>}
                         {justSaved === id && !dirty && (
                           <span className="flex items-center gap-1 text-[10px]" style={{ color: "#b8d0bd" }}>

@@ -629,6 +629,20 @@ Each line points at the section that owns the detail.
    read-only GET /api/sku-options (names only, any signed-in member — the only
    route to sku_mappings was admin-only). Proved: the route on real PostgreSQL
    (a member; a not-yet-coded name left out; signed out 401); the real panel.
+   ✅ FOLLOW-UP 2026-10-28, `patch_room_file_groups.py` + `2026-10-28-room-
+   file-groups.sql` (Garrett: "instead of file groups per style group. Just
+   have one per overall room group. It gets to busy"): ONE FILE GROUP PER
+   ROOM. The migration MOVES every style-group group's files into its room's
+   group (none deleted; one whose style group is in no room kept as an
+   ordinary group), deletes the emptied groups, takes 'set' out of the allowed
+   roles, and rewrites custom_specs_save_area / _remove_area: a save makes and
+   renames only the room's group; removing a STYLE GROUP touches no files;
+   removing a room deletes its group and files, as before. The panel: no
+   Attachments row on a style group, no question or Save warning on removing
+   one; the room's Attach Files and chips hold them all. This supersedes 5c's
+   "a room's AND style group's group". Proved: the migration on PostgreSQL 16
+   from today's state (files moved, an orphan kept, twice); the functions
+   after it; the real panel.
    STILL TO DO — the specs panel's room attachments (with step 4); the
    Overview's group tiles were the rest of 5d (opening the Files tab at a
    group, `fileGroupAnchor`), and the specs panel's room attachments; then
