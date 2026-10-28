@@ -980,7 +980,14 @@ Each line points at the section that owns the detail.
     notes were not. Step 3d kept today's rule. Also: `updateNotes` and
     `updateInternalNotes` paint first and ignore a refusal, as
     `updateOrderDetails` did (item 52).
-54. **`updateNotes` / `updateInternalNotes` paint first and ignore a refusal**
+54. ✅ FIXED 2026-10-28, `patch_notes_confirmed.py`: both savers wait for
+    the server, apply only a confirmed note (trimmed, as cleanInput stores
+    it) and return the refusal; the Notes card keeps a refused note unsaved
+    with "Not saved: <reason>", shows "Saving…", and keeps text typed while a
+    save is out (the confirmed note does not reset it). Proved on the real
+    modal and store, against the box's (refused: Save vanished, the store
+    held the unsaved text). As found:
+    **`updateNotes` / `updateInternalNotes` paint first and ignore a refusal**
     (split out of 53, 2026-10-27) — the flaw item 52 fixed in
     `updateOrderDetails`. Rare for notes; not urgent.
 55. **The single-file delete removes the stored file BEFORE its row**
@@ -1009,6 +1016,22 @@ Each line points at the section that owns the detail.
     parser (HCI, J&K) — and it applies to Waypoint orders too: a file in the
     Files tab satisfies it whatever the acknowledgment says. Acknowledgment
     files themselves no longer count (patch_ack_files); this is the rest.
+61. **Deleting an order paints first** (found 2026-10-28, fixing 54): the
+    store's deleteOrder removes the row, then sends the DELETE and ignores the
+    answer, so a refused delete makes the order vanish until a reload. Same
+    shape as 52 and 54.
+60. **A colour removed from Shopify is marked discontinued, not deleted**
+    (Garrett, 2026-10-28: "when a color is removed from shopify, the oms
+    should keep it but mark it as discontinued and grey it out"; the Nano
+    colours themselves were deleted by hand, the store not being live). To
+    build: a full Sync marks a mapping discontinued (its own column, set and
+    cleared only by the Sync — `active` is the admin's own switch and must not
+    be overturned) when no current variant uses it — J&K by the finish code a
+    SKU ends with, HCI by the Color option's name; Waypoint's colours come
+    from Avis, not judged. Discontinued: still decodes past orders, greyed on
+    the Mappings page, not suggested in the specs panel, current again if it
+    returns; a vendor with no current variants is never judged. Also: the
+    specs suggestions (4b) should leave out INACTIVE mappings.
 59. ✅ FIXED 2026-10-28, `patch_removed_variants.py` + `2026-10-28-shopify-
     products-removed.sql`: variants Shopify no longer has are MARKED
     (shopify_products.removed_at), not deleted — vendor lookup reads the table

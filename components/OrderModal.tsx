@@ -328,6 +328,12 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
   const [notesChanged, setNotesChanged] = useState(false);
   const [internalNotes, setInternalNotes] = useState(order.internal_notes ?? "");
   const [internalNotesChanged, setInternalNotesChanged] = useState(false);
+  // ⚠ SAVED WHEN THE SERVER SAYS SO (item 54): a refused save keeps the note
+  // unsaved and shows why. Typing WHILE a save is out is kept: the store's
+  // confirmed note then does not reset the text, and the note stays unsaved.
+  const [notesSaving, setNotesSaving] = useState<"customer" | "internal" | null>(null);
+  const [notesError, setNotesError] = useState<{ customer?: string; internal?: string }>({});
+  const typedWhileSaving = useRef({ customer: false, internal: false });
   const [enteredGateError, setEnteredGateError] = useState(false);
   /** Set to the target stage when the server refuses for a missing receipt. */
   const [deliveryGate, setDeliveryGate] = useState<Stage | null>(null);
@@ -572,11 +578,13 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
   }, [onClose, pendingStage, aboutOpen]);
 
   useEffect(() => {
+    if (typedWhileSaving.current.customer) { typedWhileSaving.current.customer = false; return; }
     setNotes(liveOrder.notes);
     setNotesChanged(false);
   }, [liveOrder.notes]);
 
   useEffect(() => {
+    if (typedWhileSaving.current.internal) { typedWhileSaving.current.internal = false; return; }
     setInternalNotes(liveOrder.internal_notes ?? "");
     setInternalNotesChanged(false);
   }, [liveOrder.internal_notes]);
@@ -780,14 +788,26 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
     doMoveStage(stage, pin);
   }
 
-  function handleSaveNotes() {
-    updateNotes(liveOrder.id, notes);
-    setNotesChanged(false);
+  async function handleSaveNotes() {
+    setNotesSaving("customer");
+    setNotesError((e) => ({ ...e, customer: undefined }));
+    typedWhileSaving.current.customer = false;
+    const refused = await updateNotes(liveOrder.id, notes);
+    setNotesSaving((s) => (s === "customer" ? null : s));
+    if (refused) { setNotesError((e) => ({ ...e, customer: refused })); return; }
+    // Saved. Typing since the click stays unsaved; otherwise it is saved even
+    // when the stored note did not change (then the reset above never runs).
+    if (!typedWhileSaving.current.customer) setNotesChanged(false);
   }
 
-  function handleSaveInternalNotes() {
-    updateInternalNotes(liveOrder.id, internalNotes);
-    setInternalNotesChanged(false);
+  async function handleSaveInternalNotes() {
+    setNotesSaving("internal");
+    setNotesError((e) => ({ ...e, internal: undefined }));
+    typedWhileSaving.current.internal = false;
+    const refused = await updateInternalNotes(liveOrder.id, internalNotes);
+    setNotesSaving((s) => (s === "internal" ? null : s));
+    if (refused) { setNotesError((e) => ({ ...e, internal: refused })); return; }
+    if (!typedWhileSaving.current.internal) setInternalNotesChanged(false);
   }
 
   function handleDelete() {
@@ -892,7 +912,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                   Overview tab, in their own words rather than the form's keys. */}
               <textarea
                   value={notes}
-                  onChange={(e) => { setNotes(e.target.value); setNotesChanged(true); }}
+                  onChange={(e) => { setNotes(e.target.value); setNotesChanged(true); if (notesSaving === "customer") typedWhileSaving.current.customer = true; }}
                   readOnly={readOnly}
                   placeholder="No customer note yet."
                   rows={3}
@@ -905,10 +925,13 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                   }}
                 />
               {notesChanged && (
-                <button onClick={handleSaveNotes}
-                  className="mt-2 text-[11px] uppercase tracking-wider font-medium text-terracotta hover:brightness-110">
-                  Save note
+                <button onClick={() => void handleSaveNotes()} disabled={notesSaving === "customer"}
+                  className="mt-2 text-[11px] uppercase tracking-wider font-medium text-terracotta hover:brightness-110 disabled:opacity-60">
+                  {notesSaving === "customer" ? "Saving…" : "Save note"}
                 </button>
+              )}
+              {notesError.customer && (
+                <p role="alert" className="mt-1 text-[11px] text-red-400">Not saved: {notesError.customer}</p>
               )}
             </>
           ) : (
@@ -938,7 +961,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
             <>
               <textarea
                 value={internalNotes}
-                onChange={(e) => { setInternalNotes(e.target.value); setInternalNotesChanged(true); }}
+                onChange={(e) => { setInternalNotes(e.target.value); setInternalNotesChanged(true); if (notesSaving === "internal") typedWhileSaving.current.internal = true; }}
                 readOnly={readOnly}
                 placeholder="No internal note yet."
                 rows={3}
@@ -951,10 +974,13 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                 }}
               />
               {internalNotesChanged && (
-                <button onClick={handleSaveInternalNotes}
-                  className="mt-2 text-[11px] uppercase tracking-wider font-medium text-terracotta hover:brightness-110">
-                  Save internal note
+                <button onClick={() => void handleSaveInternalNotes()} disabled={notesSaving === "internal"}
+                  className="mt-2 text-[11px] uppercase tracking-wider font-medium text-terracotta hover:brightness-110 disabled:opacity-60">
+                  {notesSaving === "internal" ? "Saving…" : "Save internal note"}
                 </button>
+              )}
+              {notesError.internal && (
+                <p role="alert" className="mt-1 text-[11px] text-red-400">Not saved: {notesError.internal}</p>
               )}
             </>
           ) : (
@@ -1865,8 +1891,8 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
             {!readOnly && (notesChanged || internalNotesChanged) && (
               <button
                 onClick={() => {
-                  if (notesChanged) handleSaveNotes();
-                  if (internalNotesChanged) handleSaveInternalNotes();
+                  if (notesChanged) void handleSaveNotes();
+                  if (internalNotesChanged) void handleSaveInternalNotes();
                 }}
                 className="px-3 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-medium transition-all"
                 style={{

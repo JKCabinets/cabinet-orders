@@ -86,8 +86,9 @@ interface StoreCtx {
    *  flag: the route refuses an empty one and writes it to the activity
    *  trail. Same contract as `overrideDeliveryProof`. */
   moveStage: (id: string, stage: Stage, enteredByName?: string, adminPin?: string, overrideAck?: string, overrideDeliveryProof?: string) => Promise<{ ok: boolean; pinRequired?: boolean; error?: string }>;
-  updateNotes: (id: string, notes: string) => Promise<void>;
-  updateInternalNotes: (id: string, internal_notes: string) => Promise<void>;
+  /** The server's refusal, or null once it has stored the note (item 54). */
+  updateNotes: (id: string, notes: string) => Promise<string | null>;
+  updateInternalNotes: (id: string, internal_notes: string) => Promise<string | null>;
   /** Groups whose PROJECT is archived are NOT in `allOrders`. This is. */
   allOrdersIncludingArchived: Order[];
   archiveProject: (id: string, archived: boolean) => Promise<{ ok: boolean; message?: string }>;
@@ -674,16 +675,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const updateNotes = useCallback(async (id: string, notes: string) => {
-    const update = (list: Order[]) => list.map(o => o.id === id ? { ...o, notes } : o);
-    setRawOrders(prev => update(prev));
-    await apiCall(`/api/orders/${id}`, "PATCH", { notes });
+  // ⚠ A NOTE IS SAVED WHEN THE SERVER SAYS SO (item 54, 2026-10-28). These
+  // painted the note first and ignored the answer, so a refused save -- an
+  // archived order, someone else's claim -- showed as saved until a reload: the
+  // flaw item 52 fixed in updateOrderDetails, done the same way. Stored as the
+  // server stores it (cleanInput trims, nothing else).
+  const updateNotes = useCallback(async (id: string, notes: string): Promise<string | null> => {
+    const res = await apiCall(`/api/orders/${id}`, "PATCH", { notes }) as { __error?: string; __message?: string } | null;
+    if (res && res.__error) return res.__message ?? res.__error;
+    setRawOrders(prev => prev.map(o => o.id === id ? { ...o, notes: notes.trim() } : o));
+    return null;
   }, []);
 
-  const updateInternalNotes = useCallback(async (id: string, internal_notes: string) => {
-    const update = (list: Order[]) => list.map(o => o.id === id ? { ...o, internal_notes } : o);
-    setRawOrders(prev => update(prev));
-    await apiCall(`/api/orders/${id}`, "PATCH", { internal_notes });
+  const updateInternalNotes = useCallback(async (id: string, internal_notes: string): Promise<string | null> => {
+    const res = await apiCall(`/api/orders/${id}`, "PATCH", { internal_notes }) as { __error?: string; __message?: string } | null;
+    if (res && res.__error) return res.__message ?? res.__error;
+    setRawOrders(prev => prev.map(o => o.id === id ? { ...o, internal_notes: internal_notes.trim() } : o));
+    return null;
   }, []);
 
 
