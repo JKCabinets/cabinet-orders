@@ -538,6 +538,8 @@ export async function POST(req: NextRequest) {
       price: parseFloat(String(variant.price ?? "0")),
       inventory_quantity: Number(variant.inventory_quantity ?? 0),
       synced_at: new Date().toISOString(),
+      product_id: productId,
+      removed_at: null,
     }));
     if (rows.length > 0) {
       const { error } = await supabase
@@ -545,7 +547,15 @@ export async function POST(req: NextRequest) {
         .upsert(rows, { onConflict: "id" });
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     }
-    return NextResponse.json({ received: true, synced: rows.length });
+    // ⚠ THIS PRODUCT's variants it no longer lists are marked removed (item
+    // 59) -- the website team's pricing app removes finishes across products.
+    // Only rows that know this product are touched; the next full Sync fills
+    // product_id for older ones.
+    const { data: marked, error: markErr } = await supabase.rpc("shopify_mark_removed", {
+      p_seen: rows.map((r) => r.id), p_product_id: productId,
+    });
+    if (markErr) return NextResponse.json({ error: markErr.message }, { status: 500 });
+    return NextResponse.json({ received: true, synced: rows.length, removed: Number(marked ?? 0) });
   }
 
   const shopifyId = String(payload.id ?? "");

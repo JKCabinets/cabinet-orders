@@ -1009,7 +1009,19 @@ Each line points at the section that owns the detail.
     parser (HCI, J&K) — and it applies to Waypoint orders too: a file in the
     Files tab satisfies it whatever the acknowledgment says. Acknowledgment
     files themselves no longer count (patch_ack_files); this is the rest.
-59. **The product list keeps variants Shopify deleted** (2026-10-28; Garrett:
+59. ✅ FIXED 2026-10-28, `patch_removed_variants.py` + `2026-10-28-shopify-
+    products-removed.sql`: variants Shopify no longer has are MARKED
+    (shopify_products.removed_at), not deleted — vendor lookup reads the table
+    for past orders, so a deleted row would strand their lines. A full Sync
+    marks every variant it did not see (shopify_mark_removed, a function: the
+    ~1,000 ids are too many for a URL filter), never when Shopify answers with
+    nothing, and revives one that returns; the products/update webhook marks
+    THAT product's dropped variants (product_id, new; the next full Sync fills
+    it for older rows). The admin list shows current variants only and the
+    Sync says how many it hid. Lookups, export and enrichment unchanged.
+    Proved on real PostgreSQL with the real Sync and webhook (Shopify's API
+    stood in). As found:
+    **The product list keeps variants Shopify deleted** (2026-10-28; Garrett:
     later). The website team removed HCI's Nano finishes and wrote "a Sync
     should clear them" — not in the OMS: the products/update webhook and the
     Sync (app/api/shopify/sync) only UPSERT the variants Shopify has, never

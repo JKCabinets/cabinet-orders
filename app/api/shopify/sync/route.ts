@@ -96,6 +96,9 @@ export async function POST(req: NextRequest) {
           price: parseFloat(String(variant.price ?? "0")),
           inventory_quantity: Number(variant.inventory_quantity ?? 0),
           synced_at: new Date().toISOString(),
+          // Its product, and current: a variant Shopify returns again is no longer removed.
+          product_id: String(product.id ?? ""),
+          removed_at: null,
         });
       }
     }
@@ -107,7 +110,17 @@ export async function POST(req: NextRequest) {
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ ok: true, synced: rows.length, products: allProducts.length });
+    // ⚠ THE REST IS MARKED REMOVED (item 59). Every page above returned before
+    // anything was written if it failed, so reaching here means the WHOLE
+    // catalogue. Never when Shopify returned nothing: an empty answer is far
+    // likelier a fault than an empty store, and would mark everything.
+    let removed = 0;
+    if (rows.length > 0) {
+      const { data: marked, error: markErr } = await supabase.rpc("shopify_mark_removed", { p_seen: rows.map((r) => String(r.id)) });
+      if (markErr) return NextResponse.json({ error: markErr.message }, { status: 500 });
+      removed = Number(marked ?? 0);
+    }
+    return NextResponse.json({ ok: true, synced: rows.length, products: allProducts.length, removed });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }
@@ -138,6 +151,8 @@ export async function GET(req: NextRequest) {
     let query = supabase
       .from("shopify_products")
       .select("*")
+      // Variants Shopify no longer has are kept for past orders' lookups, not listed (item 59).
+      .is("removed_at", null)
       .order("vendor")
       .order("title")
       .range(from, from + pageSize - 1);
