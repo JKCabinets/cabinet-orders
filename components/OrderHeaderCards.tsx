@@ -92,7 +92,7 @@ export function OrderHeaderCards({ order, team, ack, project }: { order: Order; 
         <div className="rounded-lg p-2" style={{ border: "0.5px solid rgba(255,255,255,0.12)" }}>
           <Row label="Keyed By" value={keyedBy} />
           <Row label="Ordered On" value={orDash(orderDate(order))} />
-          <Row label="PO" value={poReference(order)} flag={!!issue.name} />
+          <Row label="PO" value={poReference(order)} flag={!!issue.name || !!fields.po} note={fields.po} />
           <Row label="Status" value={orDash(order.stage)} />
           {String(order.internal_notes ?? "").trim() && (
             <Row label="Internal notes" small value={

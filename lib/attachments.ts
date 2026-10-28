@@ -41,7 +41,7 @@ import { invalidateEnrichment } from "@/lib/useOrderEnrichment";
  * /api/orders/attachments/[id].
  */
 
-export type AttachmentKind = "general" | "proof_of_delivery" | "customer_upload";
+export type AttachmentKind = "general" | "proof_of_delivery" | "customer_upload" | "acknowledgment";
 
 /** A row of order_attachments, as GET /api/orders/attachments returns it. */
 export interface Attachment {
@@ -250,6 +250,8 @@ export async function uploadAttachment(
   orderId: string, file: File, kind: "general" | "proof_of_delivery",
   /** A room or style group of a custom job to file it under; null is the job itself. */
   groupId: number | null = null,
+  /** Or the group the OMS keeps by role, found or made by the server (2026-10-28). */
+  groupRole: "acknowledgments" | null = null,
 ): Promise<Outcome<Attachment>> {
   const form = new FormData();
   form.append("file", file);
@@ -258,6 +260,7 @@ export async function uploadAttachment(
   // ⚠ INTO A GROUP (2026-10-27). A receipt needs none: the server files it in
   // the order's "Proof of delivery" by role.
   if (groupId !== null) form.append("group_id", String(groupId));
+  if (groupRole !== null) form.append("group_role", groupRole);
   let res: Response;
   try {
     res = await fetch("/api/orders/attachments", { method: "POST", body: form });

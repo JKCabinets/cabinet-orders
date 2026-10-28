@@ -392,6 +392,9 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
       .from("order_attachments")
       .select("id")
       .eq("order_id", id)
+      // ⚠ An acknowledgment kept as a file is not "an attachment" (2026-10-28):
+      // a failed one would pass this gate by being kept.
+      .neq("kind", "acknowledgment")
       .limit(1);
     if (!(await orderAllVendorsGreen(id)) && (!attachments || attachments.length === 0)) {
       const reason =

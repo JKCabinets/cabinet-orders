@@ -21,7 +21,7 @@ export function buildDiscrepancyMessage(
     if (!ack || ack.verdict !== "red") continue;
     const r: ReconcileResult = ack.result;
     for (const f of r.fields.filter((x) => !x.matched)) {
-      lines.push(`• ${f.field === "name" ? "Name" : f.field === "address" ? "Shipping address" : f.field}: order "${f.order_value || "—"}" vs ack "${f.ack_value || "—"}"`);
+      lines.push(`• ${f.field === "name" ? "Name" : f.field === "address" ? "Shipping address" : f.field === "phone" ? "Phone" : f.field === "po" ? "PO" : f.field}: order "${f.order_value || "—"}" vs ack "${f.ack_value || "—"}"`);
     }
     for (const l of r.lines.filter((x) => x.status !== "match")) {
       lines.push(`• ${l.composite_sku} — ${describeLineIssue(l, { terse: true })}`);

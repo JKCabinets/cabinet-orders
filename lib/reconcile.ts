@@ -49,6 +49,13 @@ export interface OrderForReconcile {
   sku_items: OrderLineItem[];
   /** The order's phone (2026-10-07): compared with the one in the acknowledgment's ship-to. */
   customer_phone?: string | null;
+  /**
+   * The ORDER NUMBER the acknowledgment's PO must name -- "SHO-1065" (2026-10-28,
+   * Garrett). The team types "<last name>-<order number>" into Waypoint's PO;
+   * only the number is checked, the name being the ship-to name check's job.
+   * Omitted, the PO is not checked.
+   */
+  order_number?: string | null;
 }
 
 export type LineStatus = "match" | "qty_mismatch" | "mod_mismatch" | "missing_from_ack" | "extra_in_ack";
@@ -115,7 +122,7 @@ export interface LineResult {
 }
 
 export interface FieldResult {
-  field: "name" | "address" | "phone";
+  field: "name" | "address" | "phone" | "po";
   matched: boolean;
   order_value: string;
   ack_value: string;
@@ -133,6 +140,8 @@ export interface ReconcileResult {
   name_ok: boolean;
   /** Absent on results from before 2026-10-07, when the phone was not checked. */
   phone_ok?: boolean;
+  /** Absent on results from before 2026-10-28, when the PO was not checked. */
+  po_ok?: boolean;
 }
 
 /**
@@ -226,6 +235,19 @@ export function normAddress(s: string): string {
  */
 export function skuKey(s: string): string {
   return (s ?? "").replace(/[^0-9A-Za-z]/g, "").toUpperCase();
+}
+
+/**
+ * Does the acknowledgment's PO name this order? The order number must appear
+ * as a WHOLE token -- "Battles-SHO-1065" names SHO-1065, "SHO-10650" and
+ * "XSHO-1065" do not -- case and spaces aside. An empty PO names nothing.
+ */
+export function poNamesOrder(po: string | null | undefined, orderNumber: string): boolean {
+  const p = String(po ?? "").replace(/\s+/g, "").toUpperCase();
+  const n = String(orderNumber ?? "").replace(/\s+/g, "").toUpperCase();
+  if (!p || !n) return false;
+  const esc = n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[^A-Z0-9])${esc}($|[^A-Z0-9])`).test(p);
 }
 
 export function reconcileAck(
@@ -326,24 +348,35 @@ export function reconcileAck(
   const ackPhone = phoneKey(ack.ship_address);
   const phone_ok = !orderPhone || !ackPhone || orderPhone === ackPhone;
 
+  // --- Gate 5: PO (2026-10-28) ---
+  // ⚠ A WRONG PO IS RED (Garrett): it is an acknowledgment for another order --
+  // "Battles-SHO-1050" uploaded on SHO-1065 matched every other check but the
+  // name and phone. Until now this route only cross-checked it against the
+  // GROUP id (SHO-1065-CAB, which no PO is), outside the verdict, and nothing
+  // showed the answer. Checked only when the caller says which number.
+  const orderNumber = (order.order_number ?? "").trim();
+  const po_ok = !orderNumber || poNamesOrder(ack.po, orderNumber);
+
   const fields: FieldResult[] = [
     { field: "name", matched: name_ok, order_value: order.name, ack_value: ack.ship_name },
     { field: "address", matched: address_ok, order_value: order.ship_to, ack_value: ack.ship_address },
     { field: "phone", matched: phone_ok, order_value: order.customer_phone ?? "", ack_value: phoneIn(ack.ship_address) },
+    ...(orderNumber ? [{ field: "po" as const, matched: po_ok, order_value: orderNumber, ack_value: (ack.po ?? "").trim() }] : []),
   ];
 
   const verdict: "green" | "red" =
-    lines_ok && address_ok && name_ok && phone_ok ? "green" : "red";
+    lines_ok && address_ok && name_ok && phone_ok && po_ok ? "green" : "red";
 
   return {
     verdict,
     matched_order_id: order.id,
-    po_matched: true,
+    po_matched: po_ok,
     lines,
     fields,
     lines_ok,
     address_ok,
     name_ok,
     phone_ok,
+    po_ok,
   };
 }

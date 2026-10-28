@@ -6,6 +6,7 @@ import type { ReconcileResult } from "@/lib/reconcile";
 import { useToast } from "./Toast";
 import { useAckStatus, invalidateAck } from "@/lib/ackStatus";
 import { invalidateEnrichment } from "@/lib/useOrderEnrichment";
+import { attachmentsChanged } from "@/lib/attachments";
 import { buildDiscrepancyMessage } from "./OrderEntryActions";
 
 export interface AcknowledgmentPanelHandle {
@@ -138,6 +139,7 @@ export const AcknowledgmentPanel = forwardRef<AcknowledgmentPanelHandle, Acknowl
         const verdict: string | undefined = data?.result?.verdict;
         invalidateAck(orderId); // refresh row + modal from the new latest row
         invalidateEnrichment(); // and the next-action checklist, which reads the batch endpoint
+        attachmentsChanged(orderId); // and Files: the acknowledgment is kept there (2026-10-28)
         showToast(
           verdict === "green" ? "Acknowledgment matched" : "Acknowledgment has discrepancies — see details",
           { kind: verdict === "green" ? "success" : "warn" }

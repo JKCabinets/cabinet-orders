@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, requireOrderClaim, withClaimOverrideLog, type ClaimOverrideLog, rateLimitOr429 } from "@/lib/auth";
+import { requireAuth, requireOrderClaim, withClaimOverrideLog, type ClaimOverrideLog, rateLimitOr429, cleanInput } from "@/lib/auth";
 import { purchaseOf, archivedVia, archivedReadOnly } from "@/lib/archived";
 import { supabase } from "@/lib/supabase";
 import { type SkuItem } from "@/lib/skuDecoder";
 import { linesForAckVendor, ackFingerprint } from "@/lib/ackFingerprint";
 import { parseWaypointAck, type Grid } from "@/lib/waypointAck";
 import { reconcileAck, type OrderForReconcile } from "@/lib/reconcile";
+import { displayOrderNumber } from "@/lib/data";
+import { fileGroupForRole, removeStoredFiles } from "@/lib/fileGroups";
+import { ATTACHMENT_BUCKET } from "@/lib/orderFiles";
+import { ensureSkuMaps } from "@/lib/skuMappings";
 import * as XLSX from "xlsx";
 
 /**
@@ -28,6 +32,7 @@ import * as XLSX from "xlsx";
 
 const VENDOR = "Waypoint Cabinetry"; // canonical vendors-table string for Waypoint
 const MAX_BYTES = 5 * 1024 * 1024;
+const XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 /**
  * Log a rejected ack upload so an intermittent failure is diagnosable
@@ -94,12 +99,30 @@ export const POST = withClaimOverrideLog(async function POST(
     return NextResponse.json({ error: "File too large (max 5 MB)" }, { status: 413 });
   }
 
+  // ⚠ READ ONCE (2026-10-28): the bytes parsed are the bytes kept.
+  const bytes = Buffer.from(await file.arrayBuffer());
+
+  // ⚠ THE SKU TABLES BEFORE THE PARSE (2026-10-28). The parser turns
+  // "410F-PAINTED SAGE" into a composite through sku_mappings, which load once
+  // per process -- and lib/skuMappings' rule is that a caller awaits them. This
+  // route did not: cold (just after a deploy, before any other route loaded
+  // them) a CORRECT acknowledgment parsed as bare "W930" and was recorded red.
+  // Unloadable, nothing is checked: a verdict without them would be wrong.
+  try {
+    await ensureSkuMaps();
+  } catch (e) {
+    logAckReject(id, "sku_maps_unavailable", file, { reason: e instanceof Error ? e.message : String(e) });
+    return NextResponse.json(
+      { error: "Could not load the SKU tables, so the acknowledgment was not checked. Please retry." },
+      { status: 503 },
+    );
+  }
+
   // ── Parse the workbook into a 0-indexed cell grid (grid[0] = row 1) ──────
   let sheetName: string;
   let grid: Grid;
   try {
-    const buf = Buffer.from(await file.arrayBuffer());
-    const wb = XLSX.read(buf, { type: "buffer" });
+    const wb = XLSX.read(bytes, { type: "buffer" });
     sheetName = wb.SheetNames[0];
     const ws = sheetName ? wb.Sheets[sheetName] : undefined;
     const ref = ws?.["!ref"];
@@ -197,13 +220,56 @@ export const POST = withClaimOverrideLog(async function POST(
     ship_to: order.ship_to ?? "",
     sku_items: ackLines,
     customer_phone: order.customer_phone ?? "",
+    // The PO must name this order's NUMBER (2026-10-28): SHO-1065, not the group's SHO-1065-CAB.
+    order_number: displayOrderNumber(order),
   };
 
   const result = reconcileAck(ack, orderForReconcile);
 
-  // PO cross-check (non-blocking): the team types the SHO id into Waypoint's PO field.
-  const norm = (s: string) => s.replace(/\s+/g, "").toUpperCase();
-  const poMatchesOrder = ack.po ? norm(ack.po) === norm(order.id) : false;
+  // ⚠ THE PO IS CHECKED BY reconcileAck NOW, inside the verdict (2026-10-28).
+  // This compared it with order.id -- the GROUP (SHO-1065-CAB), which no PO
+  // names -- outside the verdict, and nothing displayed the answer.
+  const poMatchesOrder = result.po_matched;
+
+  // ── Keep the acknowledgment as a FILE (2026-10-28, Garrett) ─────────────
+  // Every submission, pass or fail, in the order's "Acknowledgments" group, of
+  // kind `acknowledgment` -- a kind the Entered gate does NOT count as "an
+  // attachment", or a failed acknowledgment would satisfy it by being kept.
+  // Kept BEFORE the submission is recorded: no row without its file.
+  const who = session.user.name ?? session.user.username;
+  const ackGroup = await fileGroupForRole(order.id, "acknowledgments");
+  if (ackGroup === null) {
+    logAckReject(id, "group_unavailable", file);
+    return NextResponse.json(
+      { error: "Could not find or make this order's \u201cAcknowledgments\u201d group, so nothing was recorded. Please retry." },
+      { status: 500 },
+    );
+  }
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").replace(/^\.+/, "_").slice(0, 200) || "acknowledgment.xlsx";
+  const filePath = `${order.id}/${Date.now()}-${safeName}`;
+  const { error: storeErr } = await supabase.storage
+    .from(ATTACHMENT_BUCKET).upload(filePath, bytes, { contentType: XLSX_TYPE, upsert: false });
+  if (storeErr) {
+    logAckReject(id, "file_store_failed", file, { reason: storeErr.message });
+    return NextResponse.json({ error: "Could not keep the acknowledgment file, so nothing was recorded. Please retry." }, { status: 500 });
+  }
+  const { data: kept, error: keptErr } = await supabase.from("order_attachments").insert({
+    order_id: order.id, file_name: cleanInput(safeName), file_path: filePath, file_size: file.size,
+    file_type: XLSX_TYPE, uploaded_by: cleanInput(who), kind: "acknowledgment", group_id: ackGroup,
+  }).select("id").single();
+  if (keptErr || !kept) {
+    await supabase.storage.from(ATTACHMENT_BUCKET).remove([filePath]);
+    logAckReject(id, "file_row_failed", file, { reason: keptErr?.message ?? "no row" });
+    return NextResponse.json({ error: "Could not keep the acknowledgment file, so nothing was recorded. Please retry." }, { status: 500 });
+  }
+
+  // ⚠ A FAILED SUBMISSION'S FILE GOES WHEN THE NEXT ONE IS SUBMITTED (Garrett):
+  // found now, deleted only once this one is recorded. A passed one stays.
+  const { data: earlierRed } = await supabase
+    .from("order_acknowledgments").select("attachment_id")
+    .eq("order_id", order.id).eq("vendor", VENDOR).eq("verdict", "red");
+  const replaced = (earlierRed ?? []).map((r: { attachment_id: number | null }) => r.attachment_id)
+    .filter((x): x is number => typeof x === "number");
 
   // ── Persist one acknowledgment row (full history) ───────────────────────
   const { error: insErr } = await supabase.from("order_acknowledgments").insert({
@@ -215,16 +281,16 @@ export const POST = withClaimOverrideLog(async function POST(
     parsed_json: ack,
     result_json: result,
     uploaded_by: session.user.id,
-    // ⚠ WHAT THIS VERDICT WAS ABOUT. Hashed from exactly the fields
-    // reconcileAck compares, so the stage gate can tell a green ack that still
-    // describes the order from one that describes lines since edited away.
-    // Requires migrations/2026-08-27-ack-lines-fingerprint.sql.
+    attachment_id: kept.id,
     lines_fingerprint: ackFingerprint(
       order.name ?? "", order.ship_to ?? "", ackLines, order.customer_phone ?? "",
     ),
   });
   if (insErr) {
     // Surface the failure — never report success on a failed write (Principle #3).
+    // The file kept for it goes too: no file claims a submission that is not there.
+    await supabase.from("order_attachments").delete().eq("id", kept.id);
+    await supabase.storage.from(ATTACHMENT_BUCKET).remove([filePath]);
     logAckReject(id, "insert_failed", file, {
       reason: insErr.message,
       verdict: result.verdict,
@@ -235,12 +301,23 @@ export const POST = withClaimOverrideLog(async function POST(
     );
   }
 
+  // Rows first, then the stored files (an orphan is the sweep's).
+  let replacedFiles = 0;
+  if (replaced.length > 0) {
+    const { data: gone } = await supabase.from("order_attachments").delete().in("id", replaced).select("file_path");
+    const paths = ((gone ?? []) as { file_path: string }[]).map((g) => g.file_path);
+    replacedFiles = paths.length;
+    await removeStoredFiles(paths);
+  }
+
   return NextResponse.json({
     result,
     vendor: VENDOR,
     waypoint_order: ack.waypoint_order,
     po: ack.po,
     po_matches_order: poMatchesOrder,
+    kept_file_id: kept.id,
+    replaced_failed_files: replacedFiles,
     waypoint_line_count: ackLines.length,
     total_line_count: skuItems.length,
   });

@@ -17,6 +17,9 @@ import { ATTACHMENT_BUCKET } from "@/lib/orderFiles";
 export const ROLE_GROUP_NAME = {
   customer_uploads: "Customer uploads",
   proof_of_delivery: "Proof of delivery",
+  // A manufacturer acknowledgment, and "Attach a file" for the
+  // acknowledgment-or-attachment requirement (2026-10-28, Garrett).
+  acknowledgments: "Acknowledgments",
 } as const;
 export type OmsGroupRole = keyof typeof ROLE_GROUP_NAME;
 

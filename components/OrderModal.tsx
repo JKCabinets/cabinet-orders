@@ -18,7 +18,7 @@ import { AvatarWithProfile } from "./AvatarWithProfile";
 import { useToast } from "./Toast";
 import { checkAttachmentGate } from "@/lib/stageGates";
 import { AttachmentsPanel, type AttachmentsPanelHandle } from "./AttachmentsPanel";
-import { AttachFileCard } from "./AttachFileCard";
+import { AttachFileCard, type AttachFileCardHandle } from "./AttachFileCard";
 import { useAttachmentsFor, refreshAttachments, downloadAttachment, type Attachment } from "@/lib/attachments";
 import { FullOrderGroup, GroupIssueTag } from "./FullOrderGroup";
 import { OrderHeaderCards, ConsentMissingPill, ShopifyGonePill } from "./OrderHeaderCards";
@@ -344,6 +344,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
   const attachmentsRef = useRef<AttachmentsPanelHandle>(null);
   // The "Attach a file" card under the Next Action band (2026-10-27, Garrett).
   const [attachCardOpen, setAttachCardOpen] = useState(false);
+  const attachCardRef = useRef<AttachFileCardHandle>(null);
   const ackPanelRef = useRef<AcknowledgmentPanelHandle>(null);
   const attachmentsAnchorRef = useRef<HTMLDivElement>(null);
 
@@ -1516,7 +1517,9 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                           onClick: () => ackPanelRef.current?.openFilePicker() }
                       : { label: "Attach a file",
                           // The card directly below this band (2026-10-27).
-                          onClick: () => setAttachCardOpen(true) },
+                          // ⚠ THE PICKER, IN THIS CLICK (2026-10-28, Garrett): no question --
+                          // the file goes in "Acknowledgments"; the card is feedback only.
+                          onClick: () => attachCardRef.current?.pick() },
                     proof_of_delivery: {
                       label: "Upload receipt",
                       onClick: () => {
@@ -1568,7 +1571,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
               can slide; inert while closed. */}
           {canEdit && !readOnly && (
             <div className="px-6">
-              <AttachFileCard orderId={liveOrder.id} open={attachCardOpen} onClose={() => setAttachCardOpen(false)} />
+              <AttachFileCard ref={attachCardRef} orderId={liveOrder.id} open={attachCardOpen} onOpenChange={setAttachCardOpen} />
             </div>
           )}
 

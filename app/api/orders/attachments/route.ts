@@ -120,7 +120,14 @@ export const POST = withClaimOverrideLog(async function POST(
   // KIND, so where it is filed never decides that.
   const rawGroup = formData.get("group_id");
   const sentGroupId = rawGroup === null || rawGroup === "" ? null : Number(rawGroup);
-  if (kind === "general" && (sentGroupId === null || !Number.isInteger(sentGroupId) || sentGroupId <= 0)) {
+  // Or a ROLE (2026-10-28): "Attach a file" for the acknowledgment-or-
+  // attachment requirement files into "Acknowledgments", found or made here.
+  const rawRole = formData.get("group_role");
+  const sentRole = rawRole === null || rawRole === "" ? null : String(rawRole);
+  if (sentRole !== null && sentRole !== "acknowledgments") {
+    return NextResponse.json({ error: "group_role must be \"acknowledgments\"" }, { status: 422 });
+  }
+  if (kind === "general" && sentRole === null && (sentGroupId === null || !Number.isInteger(sentGroupId) || sentGroupId <= 0)) {
     return NextResponse.json(
       { error: "group_required", message: "Choose a group for this file. (If you see no groups, reload the page.)" },
       { status: 422 },
@@ -194,6 +201,15 @@ export const POST = withClaimOverrideLog(async function POST(
     if (g === null) {
       return NextResponse.json(
         { error: "group_unavailable", message: "Could not find or make this order's \u201cProof of delivery\u201d group, so nothing was uploaded. Try again." },
+        { status: 500 },
+      );
+    }
+    groupId = g;
+  } else if (sentRole === "acknowledgments") {
+    const g = await fileGroupForRole(orderId, "acknowledgments");
+    if (g === null) {
+      return NextResponse.json(
+        { error: "group_unavailable", message: "Could not find or make this order's \u201cAcknowledgments\u201d group, so nothing was uploaded. Try again." },
         { status: 500 },
       );
     }

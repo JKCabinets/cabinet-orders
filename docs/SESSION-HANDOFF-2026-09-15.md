@@ -2407,6 +2407,8 @@ patch_file_groups.py
 patch_docs_file_groups.py
 patch_attach_card.py
 patch_docs_attach_card.py
+patch_ack_files.py
+patch_docs_ack_files.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

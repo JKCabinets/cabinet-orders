@@ -531,6 +531,39 @@ Each line points at the section that owns the detail.
    openFilePicker() are gone; its handle keeps openReceiptPicker(). Proved on
    the real modal, both versions, for both paths. Phase B was held for this and
    is independent of it.
+   ✅ FOLLOW-UP 2026-10-28, `patch_ack_files.py` + `2026-10-28-acknowledgment-
+   files.sql` (Garrett, after testing on SHO-1065 with a correct and a wrong
+   acknowledgment):
+   • THE PO IS A REAL CHECK. reconcileAck never compared it (po_matched was
+     hard-coded true); the route compared it with order.id — the GROUP,
+     SHO-1065-CAB, which no PO is — outside the verdict, and nothing displayed
+     it. Now a fifth check inside the verdict: the PO must contain the ORDER
+     NUMBER (displayOrderNumber) as a whole token (Garrett: the number only —
+     the name is the ship-to check's). "Battles-SHO-1050" on SHO-1065 is red;
+     an empty PO is red. Shown in the panel's count, the Manual Push wording
+     ("PO"), and as a flag on Full Order's PO row.
+   • AN ACKNOWLEDGMENT IS KEPT AS A FILE — it was discarded after parsing —
+     in the order's "Acknowledgments" group (made by the OMS, role
+     `acknowledgments`), kind `acknowledgment`. Every submission, pass or fail;
+     a FAILED one's file is deleted when the next is submitted (Garrett).
+     Linked from its history row (order_acknowledgments.attachment_id, SET
+     NULL). ⚠ ITS OWN KIND ON PURPOSE: "an acknowledgment or an attachment"
+     counts ANY file, so kept as an ordinary file a failed acknowledgment would
+     unblock Entered — proved on the box's code. Both gates (the PATCH route,
+     the enrichment) count every kind but this one.
+   • "ATTACH A FILE" ASKS NOTHING: the band's click opens the picker in that
+     click; the file goes in "Acknowledgments" by role (upload route
+     `group_role`); the card is feedback only. Opened by a blocked move, it
+     offers "Choose a file".
+   • THE ROUTE NOW AWAITS THE SKU TABLES before parsing (lib/skuMappings'
+     rule). It never did: cold — after a deploy, before another route loaded
+     them — a CORRECT acknowledgment parsed as bare "W930" and was recorded
+     red. Proved on the box's code. Unloadable: 503, nothing recorded.
+   Proved: the migration on PostgreSQL 16 from production's state (rebuilt
+   from the real migrations); the real acknowledgment, upload, enrichment and
+   stage routes on real PostgreSQL with Garrett's two files (wrong, correct,
+   wrong, wrong); the card in a test DOM. Parsing was tested with SheetJS
+   0.18.5 (npm) — the sandbox cannot reach cdn.sheetjs.com for 0.20.3.
    STILL TO DO — 5d: the Overview's group tiles (opening the Files tab at a
    group, `fileGroupAnchor`), and the specs panel's room attachments; then
    step 4.
@@ -878,6 +911,12 @@ Each line points at the section that owns the detail.
     `specRefLocation`, `specRefResolves` in `lib/data.ts` — the Files tab no
     longer uses bins and the upload route no longer reads spec_ref. Remove
     once phase B has run.
+57. **A red Waypoint acknowledgment does not block Entered if ANY other file is
+    on the order** (noted 2026-10-28; a QUESTION for Garrett). The requirement
+    is "an acknowledgment OR an attachment" — deliberate for vendors with no
+    parser (HCI, J&K) — and it applies to Waypoint orders too: a file in the
+    Files tab satisfies it whatever the acknowledgment says. Acknowledgment
+    files themselves no longer count (patch_ack_files); this is the rest.
 
 ### Found 2026-10-14
 

@@ -70,7 +70,7 @@ export interface AckIssues {
   /** Lines the vendor acknowledged that are not on the order AT ALL -- not the same cabinet with a different code. */
   extras: { sku: string; text: string }[];
   /** The customer's name, address or phone as the acknowledgment has them, where they differ. */
-  fields: { name?: string; address?: string; phone?: string };
+  fields: { name?: string; address?: string; phone?: string; po?: string };
   /** Discrepancies: a paired line counts once. */
   count: number;
   /** A red acknowledgment older than the order's last change. */
@@ -181,6 +181,7 @@ export function ackIssues(acks: Record<string, AckLike>, order?: AckOrderContext
       if (f.matched) continue;
       if (f.field === "name") { out.fields.name = `The acknowledgment has "${f.ack_value || "nothing"}"`; out.count += 1; }
       if (f.field === "phone") { out.fields.phone = `The acknowledgment has ${f.ack_value || "no phone"}`; out.count += 1; }
+      if (f.field === "po") { out.fields.po = `The acknowledgment's PO is ${f.ack_value ? `\u201c${f.ack_value}\u201d` : "empty"}; this order is ${f.order_value}`; out.count += 1; }
       if (f.field === "address") {
         const addressDiffers = !order || normAddress(order.ship_to ?? "") !== normAddress(f.ack_value);
         if (addressDiffers) { out.fields.address = `The acknowledgment has "${withoutPhone(f.ack_value) || "nothing"}"`; out.count += 1; }

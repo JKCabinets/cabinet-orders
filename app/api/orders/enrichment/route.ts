@@ -120,7 +120,9 @@ export async function POST(req: NextRequest) {
   const anyAttachment = new Set<string>();
   const proofOfDelivery = new Set<string>();
   for (const a of (attachmentRows ?? []) as Array<{ order_id: string; kind: string }>) {
-    anyAttachment.add(a.order_id);
+    // ⚠ NOT AN ACKNOWLEDGMENT (2026-10-28): kept as files, a FAILED one would
+    // otherwise satisfy "an acknowledgment or an attachment" by being kept.
+    if (a.kind !== "acknowledgment") anyAttachment.add(a.order_id);
     if (a.kind === "proof_of_delivery") proofOfDelivery.add(a.order_id);
   }
 

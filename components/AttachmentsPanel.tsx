@@ -187,6 +187,9 @@ export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPa
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5">
                             <p className="text-xs text-[#e8e3da] truncate">{a.file_name}</p>
+                            {a.kind === "acknowledgment" && (
+                              <span className="flex-shrink-0 text-[8px] uppercase tracking-wider px-1.5 py-px rounded-full bg-[rgba(184,130,106,0.14)] border border-[rgba(184,130,106,0.40)] text-[#d9a888]">acknowledgment</span>
+                            )}
                             {a.kind === "proof_of_delivery" && (
                               <span className="flex-shrink-0 text-[8px] uppercase tracking-wider px-1.5 py-px rounded-full bg-[rgba(143,190,112,0.14)] border border-[rgba(143,190,112,0.40)] text-[#a9cf8f]">receipt</span>
                             )}
