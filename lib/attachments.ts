@@ -61,7 +61,7 @@ export interface Attachment {
    */
   kind: AttachmentKind;
   /** The room or style group it is filed under, on a custom job; null = the job. */
-  spec_ref?: string | null;   // retired by file groups (phase B); the group says where a file is filed
+  // (spec_ref, dropped by phase B: a file's GROUP says where it is filed.)
   /** The file group it is filed in (2026-10-27, item 8 step 5). Required once phase B runs. */
   group_id: number | null;
 }
@@ -70,19 +70,20 @@ export interface Attachment {
  * A FILE GROUP (2026-10-27, item 8 step 5; Garrett, 2026-10-26): belongs to one
  * order, named by people; a file is uploaded INTO one. `role` is what the OMS
  * made it for -- null for a group people made. A room's or style group's group
- * ("area" / "set") follows its room: renamed and deleted through Custom Job
+ * ("area") follows its room: renamed and deleted through Custom Job
  * Specs, never here.
  */
 export interface FileGroup {
   id: number;
   name: string;
-  role: "customer_uploads" | "proof_of_delivery" | "area" | "set" | null;
+  // As the database allows them (2026-10-28): no "set" since one group per room.
+  role: "customer_uploads" | "proof_of_delivery" | "acknowledgments" | "area" | null;
   spec_ref: string | null;
   created_at: string | null;
 }
 
 /** A room's or style group's group: renamed and deleted with its room, not from the Files tab. */
-export const followsRoom = (g: Pick<FileGroup, "role">) => g.role === "area" || g.role === "set";
+export const followsRoom = (g: Pick<FileGroup, "role">) => g.role === "area";
 
 export interface AttachmentList {
   /** null until a load has succeeded once. */

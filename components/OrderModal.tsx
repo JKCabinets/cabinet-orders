@@ -1,13 +1,12 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo } from "react";
-import { X, Check, Clock, ChevronRight, Archive, RotateCcw, Trash2, Loader2, Download, FileText, Truck, Inbox, ClipboardCheck, Factory, PackageCheck, Search, ShoppingCart, Send, Wrench, ShieldAlert, CircleCheck, CircleDot, Hash, CalendarDays, User, Mail, MapPin, Layers, StickyNote } from "lucide-react";
+import { X, Check, Clock, Archive, RotateCcw, Trash2, Loader2, Download, FileText, Truck, Inbox, ClipboardCheck, Factory, PackageCheck, Search, ShoppingCart, Send, Wrench, ShieldAlert, CircleCheck, CircleDot, Hash, CalendarDays, User, Mail, MapPin, Layers, StickyNote } from "lucide-react";
 import { stageSentence } from "@/lib/stageSentences";
-import clsx from "clsx";
+// (clsx, imported and never used, removed in item 56.)
 import { useSession } from "next-auth/react";
 import {
   Order, Stage, ORDER_STAGES, STAGE_LIST_BY_TYPE,
-  AVATAR_COLOR_STYLES,
   isPaymentHoldStatus, paymentHoldActive, paymentHoldLabel,
   displayOrderNumber, nextStageFor, poReference, archivesAsOrder, archivedVia,
   sourceLabel, type TeamMember,
@@ -213,10 +212,7 @@ const SECTION_BORDER: React.CSSProperties = {
   borderBottom: "0.5px solid rgba(255,255,255,0.10)",
 };
 
-const CELL: React.CSSProperties = {
-  borderTop: "0.5px solid rgba(255,255,255,0.08)",
-  borderLeft: "0.5px solid rgba(255,255,255,0.08)",
-};
+// (CELL, a style nothing used since the stage panel's restyle, removed in item 56.)
 // ⚠ 50% ON A DARK PANEL IS A WATERMARK. Every field name in the modal uses
 // this, and under it every value sat at 65% -- so the cards read as a grey
 // wash and the words got lost. The label is still quieter than its value;
@@ -359,13 +355,8 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
   const ackPanelRef = useRef<AcknowledgmentPanelHandle>(null);
   // (The Files pane's scroll anchor went with the pane, 2026-10-28.)
 
-  // When the modal opens because of a missing-attachment gate, show a
-  // banner and auto-jump to the attachment area. The banner stays visible
-  // until the user uploads a file (the attachment panel re-renders, the
-  // gate would now pass) or they dismiss it manually.
-  const [showGateBanner, setShowGateBanner] = useState(
-    initialReason === "needs-attachment",
-  );
+  // (A needs-attachment open showed a banner; nothing read it since the Attach a
+  // file card, which the effect below opens. Its state went in item 56.)
   /**
    * Glow the tracking field when the modal was opened because a move was
    * refused for want of a number.

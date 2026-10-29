@@ -1002,7 +1002,19 @@ Each line points at the section that owns the detail.
     (`attachments/[id]` DELETE; noted 2026-10-27). If the row delete then
     fails, the row points at nothing. Groups delete rows first and leave an
     orphan to the sweep instead; the single-file delete should match.
-56. **Dead after phase B** (2026-10-27): `attachmentBin`, `AttachmentBin`,
+56. ✅ DONE 2026-10-28, `patch_dead_code.py`: removed — lib/data's four bins
+    helpers; Attachment.spec_ref (a dropped column); every "set" role check
+    (lib/attachments' type and followsRoom; the rename, delete and move
+    routes — the database refuses the role since one group per room); the
+    Files pane's imperative handle (openReceiptPicker; nothing holds it since
+    5d); six unused names in OrderModal (ChevronRight, clsx,
+    AVATAR_COLOR_STYLES, CELL, the gate banner's state); and comments that
+    described removed code (the upload route's spec_ref checks; "deleting a
+    room UNLINKS its files"). Corrected: FileGroup's roles now include
+    "acknowledgments". Proved: typecheck, no unused names in the changed
+    files, and three UI tests (Files tab, specs rooms, In use marks) whose
+    results are byte-identical to when they were proven. As found:
+    **Dead after phase B** (2026-10-27): `attachmentBin`, `AttachmentBin`,
     `specRefLocation`, `specRefResolves` in `lib/data.ts` — the Files tab no
     longer uses bins and the upload route no longer reads spec_ref. Remove
     once phase B has run.

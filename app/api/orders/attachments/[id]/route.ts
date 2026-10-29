@@ -186,7 +186,7 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
   if (!group || group.order_id !== attachment.order_id) {
     return NextResponse.json({ error: "group_unknown", message: "That group is not on this order any more. Reload to see its groups." }, { status: 422 });
   }
-  if ((group.role === "area" || group.role === "set") && attachment.kind !== "general") {
+  if (group.role === "area" && attachment.kind !== "general") {
     return NextResponse.json({ error: "group_kind", message: "A delivery receipt or a customer's file belongs to the order, not to a room." }, { status: 422 });
   }
   if (group.id === attachment.group_id) return NextResponse.json({ ok: true });

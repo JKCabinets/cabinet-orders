@@ -2431,6 +2431,8 @@ patch_notes_confirmed.py
 patch_docs_notes_confirmed.py
 patch_file_delete_order.py
 patch_docs_file_delete_order.py
+patch_dead_code.py
+patch_docs_dead_code.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

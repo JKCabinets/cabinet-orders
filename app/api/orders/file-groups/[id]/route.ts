@@ -58,7 +58,7 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
   const gated = await gate(req, id, overrides, "File group renamed", "file-groups:patch");
   if (gated instanceof NextResponse) return gated;
   const { auth, g } = gated;
-  if (g.role === "area" || g.role === "set") return FOLLOWS_ROOM("rename");
+  if (g.role === "area") return FOLLOWS_ROOM("rename");
   const name = cleanGroupName(body.name);
   if (!name) {
     return NextResponse.json({ error: "group_name_invalid",
@@ -88,7 +88,7 @@ export const DELETE = withClaimOverrideLog(async function DELETE(
   const gated = await gate(req, id, overrides, "File group deleted", "file-groups:delete");
   if (gated instanceof NextResponse) return gated;
   const { auth, g } = gated;
-  if (g.role === "area" || g.role === "set") return FOLLOWS_ROOM("delete");
+  if (g.role === "area") return FOLLOWS_ROOM("delete");
   const { data, error } = await supabase.rpc("delete_file_group", { p_order_id: g.order_id, p_group_id: g.id });
   if (error || !data) return NextResponse.json({ error: error?.message ?? "No answer from the database" }, { status: 500 });
   const r = data as { result: string; removed_files?: string[] };

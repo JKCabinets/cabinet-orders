@@ -26,7 +26,7 @@
  * Changed: rows sit on the OMS's surface, not #111, and their actions are
  * always shown, not only on hover.
  */
-import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Paperclip, Upload, X, Download, FileText, Image, File, Loader2, Trash2, FileCheck, RotateCcw, FolderPlus, Pencil } from "lucide-react";
 import type { OrderType, CustomSpecs } from "@/lib/data";
 import { typeEverRequires } from "@/lib/requirements";
@@ -54,11 +54,8 @@ interface AttachmentsPanelProps {
   focusKey?: number;
 }
 
-export interface AttachmentsPanelHandle {
-  /** The Next Action band's "Upload receipt": straight to the picker; the server files a receipt by role.
-   *  ("Attach a file" is the AttachFileCard under the band, since 2026-10-27.) */
-  openReceiptPicker: () => void;
-}
+// (AttachmentsPanelHandle went in item 56, 2026-10-28: "Upload receipt" is a card
+// under the band since 5d, so nothing holds this panel by a ref.)
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -85,8 +82,7 @@ const FIELD_STYLE: React.CSSProperties = { background: "rgba(255,255,255,0.04)",
 /** A group's section id: the Overview's group tiles open the Files tab at it (step 5d). */
 export const fileGroupAnchor = (groupId: number) => `file-group-${groupId}`;
 
-export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPanelProps>(
-  function AttachmentsPanel({ orderId, orderType, readOnly = false, focusGroupId = null, focusKey }, ref) {
+export function AttachmentsPanel({ orderId, orderType, readOnly = false, focusGroupId = null, focusKey }: AttachmentsPanelProps) {
   const list = useAttachments(orderId);
   const attachments: Attachment[] = list.files ?? [];
   const groups: FileGroup[] = list.groups ?? [];
@@ -124,9 +120,7 @@ export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPa
   const loose = attachments.filter((a) => a.group_id === null || !known.has(a.group_id));
   const pick = (groupId: number) => { uploadTo.current = groupId; fileInputRef.current?.click(); };
 
-  useImperativeHandle(ref, () => ({
-    openReceiptPicker: () => receiptInputRef.current?.click(),
-  }), []);
+  // (Its imperative handle went in item 56; the Receipt button below opens the picker.)
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>, kind: "general" | "proof_of_delivery") {
     const files = e.target.files ? Array.from(e.target.files) : [];
@@ -422,4 +416,4 @@ export const AttachmentsPanel = forwardRef<AttachmentsPanelHandle, AttachmentsPa
       )}
     </div>
   );
-});
+}

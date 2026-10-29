@@ -110,10 +110,7 @@ export const POST = withClaimOverrideLog(async function POST(
   }
   const kind = kindStr as AttachmentKind;
 
-  // ⚠ spec_ref FILES THE UPLOAD UNDER A ROOM OR A STYLE GROUP of a custom job
-  // (handoff item 24, step 3; 2026-09-30). Optional, and empty is the same as
-  // absent: the file belongs to the job itself. Its shape is checked here;
-  // whether the job HAS that room is checked once the order is read, below.
+  // (A room is a file group since 2026-10-27: no spec_ref is sent or read.)
   // ⚠ A FILE IS UPLOADED INTO A GROUP (2026-10-27, item 8 step 5; Garrett). A
   // general file names its group; a receipt is filed in the order's "Proof of
   // delivery" group by ROLE, whatever was sent -- the delivery gate reads its
@@ -183,18 +180,8 @@ export const POST = withClaimOverrideLog(async function POST(
   const claimGate = await requireOrderClaim(orderId, auth.session, overrides, "Attachment added");
   if (claimGate instanceof NextResponse) return claimGate;
 
-  // ⚠ A ROOM THE JOB DOES NOT HAVE IS REFUSED, WITH THE REASON, BEFORE A BYTE IS
-  // WRITTEN -- never stored as a pointer to nothing. Read against the job's
-  // STORED specs: a room another tab has not saved yet does not exist, and one
-  // somebody removed is gone. specRefResolves is the same reading the views use.
-  //
-  // ⚠ ONE RACE IS LEFT, AND IT IS SAFE. A room removed between this check and the
-  // insert below leaves this file pointing at an id that no longer exists:
-  // custom_specs_remove_area unlinks the files it can see, and this one was not
-  // there yet. It then reads as filed under the job -- the fallback agreed in
-  // item 24 -- and ids are never reused, so it cannot surface in another room.
-  // Closing the race would mean inserting through a function that locks the
-  // order row; a file in the job's own bin is not worth that.
+  // (The room checks that stood here went with spec_ref, 2026-10-27: a group
+  // that is not on this order is refused below, by group_id.)
   let groupId: number;
   if (kind === "proof_of_delivery") {
     const g = await fileGroupForRole(orderId, "proof_of_delivery");

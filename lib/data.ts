@@ -1029,13 +1029,12 @@ export function activityDate(): string {
  * not one set carrying two styles. Everything about this shape follows from
  * that: areas hold sets, sets hold one of each.
  *
- * ⚠ IDS ARE GENERATED AND NEVER REUSED. Attachments point at an area or a set
- * by id (`order_attachments.spec_ref`), so renaming "Kitchen" to "Main Kitchen"
- * cannot orphan a drawing. Deleting an area or set UNLINKS its files rather
- * than removing them -- done by the database functions that save and remove a
- * room (migrations/2026-09-30-custom-specs-rooms.sql), in the same transaction
- * as the change. Until 2026-09-30 this sentence described nothing: no code
- * unlinked anything.
+ * ⚠ IDS ARE GENERATED AND NEVER REUSED. A room's FILE GROUP carries the room's
+ * id (`order_file_groups.spec_ref`), so renaming "Kitchen" to "Main Kitchen"
+ * renames its group and cannot orphan a drawing. Removing a room DELETES its
+ * group and files (Garrett, 2026-10-27); a style group has no group of its own
+ * (one per room, 2026-10-28). Both done by the database functions that save
+ * and remove a room, in the same transaction as the change.
  *
  * ⚠ `v` IS THE SHAPE'S VERSION, not the job's. It exists so a reader can tell
  * which shape it is holding rather than inferring it from which keys are
@@ -1122,59 +1121,14 @@ export function readCustomSpecs(raw: unknown): CustomSpecs {
 /** A room or style-group id: the shape newSpecId makes and custom_specs_problem() requires. */
 export const SPEC_ID_RE = /^[as]_[0-9a-f]{8}$/;
 
-/**
- * Where a spec_ref points on this job: the room, and the style group when it
- * names one. null: nowhere -- an id this job does not have, or no longer has.
- *
- * ⚠ THE ONE READING OF A spec_ref (2026-09-30). The upload route refuses a ref
- * this cannot place; attachmentBin files a ref it cannot place under the job
- * itself -- which is where a file lands if its room was removed between the
- * route's check and its insert. Ids are never reused, so such a file can never
- * surface in somebody else's room.
- */
-export function specRefLocation(specs: CustomSpecs, ref: string): { areaId: string; setId?: string } | null {
-  for (const a of specs.areas) {
-    if (a.id === ref) return { areaId: a.id };
-    if (a.sets.some((s) => s.id === ref)) return { areaId: a.id, setId: ref };
-  }
-  return null;
-}
-
-/** Is `ref` a room or a style group on this job? See specRefLocation. */
-export function specRefResolves(specs: CustomSpecs, ref: string): boolean {
-  return specRefLocation(specs, ref) !== null;
-}
-
-/** Which bin a file is shown in. `room:<area id>` for a custom job's rooms. */
-export type AttachmentBin = "designer" | "customer" | `room:${string}`;
-
-/**
- * The bin a file is shown in -- for EVERY view of an order's files (2026-10-01;
- * Garrett: the same bins wherever files are shown).
- *
- *   customer        what arrived with the customer's request (kind customer_upload)
- *   room:<id>       filed under that room, or under one of its style groups
- *                   (setId says which -- shown in the room's bin, tagged)
- *   designer        everything else: the job's own files, receipts included, and
- *                   any file whose room is gone
- *
- * The customer's files come first and are never filed under a room: the staff
- * route only files `general` files, and the quote webhook files nothing.
- */
-export function attachmentBin(
-  a: { kind: string; spec_ref: string | null },
-  specs: CustomSpecs,
-): { bin: AttachmentBin; setId?: string } {
-  if (a.kind === "customer_upload") return { bin: "customer" };
-  const at = a.spec_ref ? specRefLocation(specs, a.spec_ref) : null;
-  return at ? { bin: `room:${at.areaId}`, setId: at.setId } : { bin: "designer" };
-}
+// (specRefLocation, specRefResolves, AttachmentBin and attachmentBin -- the Files
+// tab's old bins -- went with file groups, item 56, 2026-10-28.)
 
 /**
  * A new id for an area or a set.
  *
- * ⚠ PREFIXED so an id says what it points at: an attachment's spec_ref can be
- * read without loading the specs to find out whether it means an area or a set.
+ * ⚠ PREFIXED so an id says what it is -- "a_" a room, "s_" a style group --
+ * without loading the specs. A room's FILE GROUP carries its id as spec_ref.
  */
 export function newSpecId(kind: "area" | "set"): string {
   return `${kind === "area" ? "a" : "s"}_${crypto.randomUUID().slice(0, 8)}`;
