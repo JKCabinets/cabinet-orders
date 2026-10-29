@@ -1036,6 +1036,24 @@ Each line points at the section that owns the detail.
     parser (HCI, J&K) — and it applies to Waypoint orders too: a file in the
     Files tab satisfies it whatever the acknowledgment says. Acknowledgment
     files themselves no longer count (patch_ack_files); this is the rest.
+63. ✅ FOUND AND FIXED 2026-10-29, `patch_keep_backorders.py` — EVERY SHOPIFY
+    ORDER UPDATE ERASED THE PURCHASE'S BACKORDERS. orders/updated rebuilds each
+    group's sku_items from the payload (Shopify is the source of what was
+    bought), and the rebuilt lines carried nothing staff set: one refund, edit
+    or payment change cleared every line's backordered, expected_ready_date
+    and backorder_notes. Found by READING the webhook whole for feature 9 (an
+    OMS fulfilment sends exactly such an update, and would then have fulfilled
+    the backordered line it had just held back); a search had not shown it.
+    Now keepStaffLineFields carries those three over from the stored line,
+    matched in line order by variant id + SKU, then variant id, then SKU, each
+    stored line once — identical lines keep their marks in order, a removed
+    line takes its mark with it. AND every read and write on that path is
+    checked (project lookup, project update — the payment status the refund
+    hold reads — groups read, group update): a failure logs update_failed and
+    answers 500 so Shopify retries; they answered "received" and recorded
+    nothing. Proved on the real webhook and PostgreSQL against the box's
+    (marks erased on an ordinary update, identical lines and a reorder; a
+    failed update answered 200).
 62. ✅ ANSWERED 2026-10-28 — **`jk-sku-builder`** (OPERATIONS §3's open
     question). The website team: it is the SKU builder (Shopify app
     "Sku-variation-builder", GitHub JKCabinets/shopify-sku-builder, Render at

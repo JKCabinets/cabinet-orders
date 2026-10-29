@@ -479,6 +479,49 @@ function groupFields(items: BuiltItem[]) {
   };
 }
 
+/**
+ * ⚠ WHAT ONLY THE OMS KNOWS ABOUT A LINE SURVIVES A SHOPIFY UPDATE (item 63,
+ * 2026-10-29). orders/updated rebuilds every group's lines from the payload --
+ * Shopify is the source of what was bought -- and the rebuilt lines carried
+ * nothing staff had set: one refund, edit or payment change erased every
+ * backorder mark on the purchase, its flag, ready date and notes. Shown on the
+ * real webhook before this was written. These fields are carried over from the
+ * stored line; everything else still comes from the payload.
+ *
+ * Matched in Shopify's line order, in three passes, each stored line used at
+ * most once: variant id AND SKU; then variant id; then SKU, for lines that have
+ * no variant id. So two identical lines keep their marks in order, a line
+ * removed in Shopify takes its mark with it, and a reordered payload moves no
+ * mark onto the wrong line.
+ */
+const STAFF_LINE_FIELDS = ["backordered", "expected_ready_date", "backorder_notes"] as const;
+
+function keepStaffLineFields(rebuilt: BuiltItem[], stored: unknown): BuiltItem[] {
+  const prior = Array.isArray(stored) ? (stored as Record<string, unknown>[]) : [];
+  if (!prior.some((p) => p && STAFF_LINE_FIELDS.some((k) => p[k] !== undefined))) return rebuilt;
+  const vid = (v: unknown) => String(v ?? "").trim();
+  const sku = (v: unknown) => String(v ?? "").trim().toUpperCase();
+  const passes: Array<(r: BuiltItem, p: Record<string, unknown>) => boolean> = [
+    (r, p) => !!vid(r.variant_id) && vid(r.variant_id) === vid(p.variant_id) && sku(r.sku) === sku(p.sku),
+    (r, p) => !!vid(r.variant_id) && vid(r.variant_id) === vid(p.variant_id),
+    (r, p) => !vid(r.variant_id) && !vid(p.variant_id) && !!sku(r.sku) && sku(r.sku) === sku(p.sku),
+  ];
+  const out = rebuilt.map((r) => ({ ...r }) as BuiltItem & Record<string, unknown>);
+  const used = new Set<number>();
+  const matched = new Set<number>();
+  for (const pass of passes) {
+    out.forEach((r, ri) => {
+      if (matched.has(ri)) return;
+      const pi = prior.findIndex((p, i) => !used.has(i) && !!p && pass(r, p));
+      if (pi < 0) return;
+      used.add(pi);
+      matched.add(ri);
+      for (const k of STAFF_LINE_FIELDS) if (prior[pi][k] !== undefined) r[k] = prior[pi][k];
+    });
+  }
+  return out;
+}
+
 export async function POST(req: NextRequest) {
   // Pre-emptively reject oversized payloads (defense in depth — also check
   // Content-Length if present).
@@ -777,8 +820,18 @@ export async function POST(req: NextRequest) {
   if (topic === "orders/updated") {
     if (payload.cancelled_at) return NextResponse.json({ received: true, skipped: "cancelled" });
 
-    const { data: project } = await supabase
+    // ⚠ EVERY READ AND WRITE ON THIS PATH IS CHECKED (item 63). They were not:
+    // a failed read or write still answered Shopify "received", so nothing
+    // retried it and nothing recorded it -- the webhook_events table exists
+    // because of exactly this ("six unchecked .delete() calls and an
+    // unconditional success log"). A failure now logs update_failed and answers
+    // 500, and Shopify retries; repeating this update is safe.
+    const { data: project, error: projectReadErr } = await supabase
       .from("projects").select("id").eq("shopify_id", shopifyId).maybeSingle();
+    if (projectReadErr) {
+      logWebhook("update_failed", { topic, shopify_id: shopifyId, scope: "project_read", reason: projectReadErr.message });
+      return NextResponse.json({ error: projectReadErr.message }, { status: 500 });
+    }
 
     if (project) {
       const today = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "America/Phoenix" });
@@ -794,7 +847,7 @@ export async function POST(req: NextRequest) {
       // production-complete cron all resolve through the project
       // (paymentRecordOf in lib/data). The groups carry no copy:
       // orders_payment_standalone_only forbids one.
-      await supabase.from("projects").update({
+      const { error: projectUpdateErr } = await supabase.from("projects").update({
         ship_to: shipTo,
         customer_phone: customerPhone,
         customer_email: customerEmail,
@@ -805,15 +858,25 @@ export async function POST(req: NextRequest) {
         ...consentColumns(consent),
         updated_at: new Date().toISOString(),
       }).eq("id", project.id);
+      // The payment status the refund hold and the production cron read.
+      if (projectUpdateErr) {
+        logWebhook("update_failed", { topic, shopify_id: shopifyId, order_id: project.id, scope: "project", reason: projectUpdateErr.message });
+        return NextResponse.json({ error: projectUpdateErr.message }, { status: 500 });
+      }
 
-      const { data: groups } = await supabase
+      const { data: groups, error: groupsReadErr } = await supabase
         .from("orders")
         // ⚠ tracking_number and carrier are SELECTED because the fulfilment
         // path below compares against them. Without the stored value it cannot
         // tell "Shopify is telling us something new" from "Shopify is
-        // re-sending what we already have".
-        .select("id, type, stage, tracking_number, carrier")
+        // re-sending what we already have". sku_items, so what only the OMS
+        // knows about each line is carried over (item 63).
+        .select("id, type, stage, tracking_number, carrier, sku_items")
         .eq("project_id", project.id);
+      if (groupsReadErr) {
+        logWebhook("update_failed", { topic, shopify_id: shopifyId, order_id: project.id, scope: "groups_read", reason: groupsReadErr.message });
+        return NextResponse.json({ error: groupsReadErr.message }, { status: 500 });
+      }
       const groupRows = groups ?? [];
 
       const fulfillments = (payload.fulfillments as Array<Record<string, unknown>>) ?? [];
@@ -881,7 +944,7 @@ export async function POST(req: NextRequest) {
           detail: f.detail,
           sku: f.skus || "\u2014",
           notes,
-          sku_items: bucket.items,
+          sku_items: keepStaffLineFields(bucket.items, g.sku_items),
           needs_review: f.needsReview,
           ship_to: shipTo,
           customer_phone: customerPhone,
@@ -933,7 +996,11 @@ export async function POST(req: NextRequest) {
           if (target && g.stage !== target) updates.stage = target;
         }
 
-        await supabase.from("orders").update(updates).eq("id", g.id);
+        const { error: groupUpdateErr } = await supabase.from("orders").update(updates).eq("id", g.id);
+        if (groupUpdateErr) {
+          logWebhook("update_failed", { topic, shopify_id: shopifyId, order_id: g.id, scope: "group", reason: groupUpdateErr.message });
+          return NextResponse.json({ error: groupUpdateErr.message }, { status: 500 });
+        }
 
         // ⚠ THE GROUP THAT MOVED GETS THE ROW.
         //

@@ -2438,6 +2438,8 @@ patch_docs_delete_order.py
 patch_docs_sku_builder.py
 patch_discontinued_colours.py
 patch_docs_discontinued_colours.py
+patch_keep_backorders.py
+patch_docs_keep_backorders.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it
