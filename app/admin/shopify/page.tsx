@@ -20,7 +20,7 @@ export default function ShopifySyncPage() {
   const [syncing, setSyncing] = useState(false);
   const [search, setSearch] = useState("");
   const [lastSynced, setLastSynced] = useState<string | null>(null);
-  const [syncResult, setSyncResult] = useState<{ synced: number; products: number; removed?: number } | null>(null);
+  const [syncResult, setSyncResult] = useState<{ synced: number; products: number; removed?: number; discontinued?: number; restored?: number } | null>(null);
   // ⚠ "Import orders" lived here until 2026-09-16 -- see the note below.
   const [paymentBackfilling, setPaymentBackfilling] = useState(false);
   const [paymentBackfillResult, setPaymentBackfillResult] = useState<{ updated: number; remaining: number; message: string } | null>(null);
@@ -54,7 +54,7 @@ export default function ShopifySyncPage() {
       const res = await fetch("/api/shopify/sync", { method: "POST" });
       const data = await res.json();
       if (data.ok) {
-        setSyncResult({ synced: data.synced, products: data.products, removed: data.removed });
+        setSyncResult({ synced: data.synced, products: data.products, removed: data.removed, discontinued: data.discontinued, restored: data.restored });
         await fetchProducts();
       }
     } catch {}
@@ -185,6 +185,8 @@ export default function ShopifySyncPage() {
             <span className="flex items-center gap-1 text-[11px] text-green-400">
               <Check className="w-3 h-3" /> {syncResult.synced} variants from {syncResult.products} products
               {(syncResult.removed ?? 0) > 0 && ` · ${syncResult.removed} no longer in Shopify, hidden`}
+              {(syncResult.discontinued ?? 0) > 0 && ` · ${syncResult.discontinued} colour${syncResult.discontinued === 1 ? "" : "s"} discontinued`}
+              {(syncResult.restored ?? 0) > 0 && ` · ${syncResult.restored} colour${syncResult.restored === 1 ? "" : "s"} back in Shopify`}
             </span>
           )}
           {lastSynced && !syncResult && !paymentBackfillResult && (

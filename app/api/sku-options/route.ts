@@ -21,16 +21,18 @@ export async function GET(req: NextRequest) {
 
   const [vendorsRes, mapsRes] = await Promise.all([
     supabase.from("vendors").select("name").order("name", { ascending: true }),
-    supabase.from("sku_mappings").select("vendor, kind, avis_name, sku_code"),
+    supabase.from("sku_mappings").select("vendor, kind, avis_name, sku_code, active, discontinued_at"),
   ]);
   if (vendorsRes.error || mapsRes.error) {
     return NextResponse.json({ error: (vendorsRes.error ?? mapsRes.error)!.message }, { status: 500 });
   }
 
   const byVendor: Record<string, { door_styles: string[]; colors: string[] }> = {};
-  for (const r of (mapsRes.data ?? []) as { vendor: string | null; kind: string | null; avis_name: string | null; sku_code: string | null }[]) {
-    // A name seen but not yet coded is not a real choice yet.
+  for (const r of (mapsRes.data ?? []) as { vendor: string | null; kind: string | null; avis_name: string | null; sku_code: string | null; active: boolean | null; discontinued_at: string | null }[]) {
+    // A name seen but not yet coded is not a real choice yet; nor is one an
+    // admin deactivated, or a colour Shopify no longer sells (item 60).
     if (!r.sku_code || !r.avis_name || !r.vendor) continue;
+    if (r.active === false || r.discontinued_at) continue;
     const name = r.avis_name.trim();
     if (!name) continue;
     const b = (byVendor[r.vendor] ??= { door_styles: [], colors: [] });

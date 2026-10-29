@@ -9,6 +9,7 @@ import type { ReviewReason } from "@/lib/data";
 import { readConsent, type TermsConsent } from "@/lib/consent";
 import { logWebhook } from "@/lib/webhookLog";
 import { removeShopifyPurchase } from "@/lib/shopifyRemoval";
+import { colorOptionOf } from "@/lib/shopifyColor";
 // isSampleVendor and lookupVendorsForSkus are no longer imported here.
 // Classification moved into lib/categories (one implementation, shared with
 // grouping), and the per-line vendor now comes from the payload rather than
@@ -540,6 +541,8 @@ export async function POST(req: NextRequest) {
       synced_at: new Date().toISOString(),
       product_id: productId,
       removed_at: null,
+      color_option: colorOptionOf(payload, variant),
+      options_at: new Date().toISOString(),
     }));
     if (rows.length > 0) {
       const { error } = await supabase
@@ -555,6 +558,11 @@ export async function POST(req: NextRequest) {
       p_seen: rows.map((r) => r.id), p_product_id: productId,
     });
     if (markErr) return NextResponse.json({ error: markErr.message }, { status: 500 });
+    // The colours (item 60). Not fatal: the product is saved, and a failed
+    // judgement is redone by the next update or full Sync -- a 500 would only
+    // have Shopify resend what is already stored.
+    const { error: judgeErr } = await supabase.rpc("sku_judge_discontinued");
+    if (judgeErr) console.error(`[webhook] products/update ${productId}: colours not judged: ${judgeErr.message}`);
     return NextResponse.json({ received: true, synced: rows.length, removed: Number(marked ?? 0) });
   }
 

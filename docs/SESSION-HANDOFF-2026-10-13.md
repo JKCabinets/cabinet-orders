@@ -1065,7 +1065,23 @@ Each line points at the section that owns the detail.
     store's deleteOrder removes the row, then sends the DELETE and ignores the
     answer, so a refused delete makes the order vanish until a reload. Same
     shape as 52 and 54.
-60. **A colour removed from Shopify is marked discontinued, not deleted**
+60. ✅ BUILT 2026-10-28, `patch_discontinued_colours.py` + `2026-10-28-
+    discontinued-colours.sql`: sku_mappings.discontinued_at, set and cleared
+    only by sku_judge_discontinued(), run after every full Sync and product
+    update. J&K judged by the code its SKUs end with (W2130-S5); HCI by the
+    Color option's value (shopify_products.color_option, read by the option's
+    NAME — lib/shopifyColor, one reading for Sync and webhook); Waypoint never.
+    Never on partial data: HCI waits until every current HCI variant has its
+    options recorded (the first full Sync); a vendor with no current variants
+    is not judged; an uncoded name is not judged. Discontinued: still decodes,
+    faded on the Mappings page ("· discontinued <date> — no longer in Shopify;
+    past orders still decode", and a count), left out of the specs
+    suggestions — as INACTIVE mappings now are too; current again if it
+    returns. Checked first against production's data (vendor names, HCI's
+    option names, J&K's codes). Proved on real PostgreSQL with the real Sync,
+    webhook, suggestions and admin routes, and the real Mappings page. As
+    designed:
+    **A colour removed from Shopify is marked discontinued, not deleted**
     (Garrett, 2026-10-28: "when a color is removed from shopify, the oms
     should keep it but mark it as discontinued and grey it out"; the Nano
     colours themselves were deleted by hand, the store not being live). To

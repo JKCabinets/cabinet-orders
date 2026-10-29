@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin, parseBoundedInt } from "@/lib/auth";
+import { colorOptionOf } from "@/lib/shopifyColor";
 import { supabase } from "@/lib/supabase";
 import { getShopifyToken, isValidShopifyDomain } from "@/lib/shopify";
 
@@ -43,7 +44,7 @@ export async function POST(req: NextRequest) {
     const token = await getShopifyToken();
 
     let allProducts: Record<string, unknown>[] = [];
-    let url: string = `https://${domain}/admin/api/2024-01/products.json?limit=250&fields=id,title,vendor,variants`;
+    let url: string = `https://${domain}/admin/api/2024-01/products.json?limit=250&fields=id,title,vendor,variants,options`;
     let pagesFetched = 0;
 
     while (url) {
@@ -99,6 +100,9 @@ export async function POST(req: NextRequest) {
           // Its product, and current: a variant Shopify returns again is no longer removed.
           product_id: String(product.id ?? ""),
           removed_at: null,
+          // Its Color option, and that its options were read (item 60).
+          color_option: colorOptionOf(product, variant),
+          options_at: new Date().toISOString(),
         });
       }
     }
@@ -120,7 +124,13 @@ export async function POST(req: NextRequest) {
       if (markErr) return NextResponse.json({ error: markErr.message }, { status: 500 });
       removed = Number(marked ?? 0);
     }
-    return NextResponse.json({ ok: true, synced: rows.length, products: allProducts.length, removed });
+    // ⚠ THEN THE COLOURS (item 60): a mapping no current variant uses is
+    // discontinued, one used again is current. See sku_judge_discontinued().
+    const { data: judged, error: judgeErr } = await supabase.rpc("sku_judge_discontinued");
+    if (judgeErr) return NextResponse.json({ error: `the products were saved, but the colours were not judged: ${judgeErr.message}` }, { status: 500 });
+    const j = (judged ?? {}) as { marked?: number; restored?: number };
+    return NextResponse.json({ ok: true, synced: rows.length, products: allProducts.length, removed,
+      discontinued: Number(j.marked ?? 0), restored: Number(j.restored ?? 0) });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }

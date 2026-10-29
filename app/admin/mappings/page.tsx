@@ -30,6 +30,8 @@ interface MappingRow {
   active: boolean;
   /** False for selector values that never need a code (e.g. "Recessed Toe Kick"). */
   code_required: boolean;
+  /** Set by the Shopify Sync when no current variant uses this colour (item 60). */
+  discontinued_at?: string | null;
 }
 
 const KIND_LABEL: Record<string, string> = {
@@ -308,11 +310,12 @@ export default function MappingsPage() {
       />
 
       <div className="max-w-4xl mx-auto px-6 lg:px-8 pb-12">
-        <div className="grid grid-cols-3 gap-3 mb-6">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
           {[
             { label: "Mappings", value: rows.length },
             { label: "Needs a code", value: needsCode.length },
             { label: "Inactive", value: rows.filter((r) => !r.active).length },
+            { label: "Discontinued", value: rows.filter((r) => !!r.discontinued_at).length },
           ].map((s) => (
             <div
               key={s.label}
@@ -515,7 +518,7 @@ function MappingRowView({
         !first && "border-t border-[rgba(255,255,255,0.07)]",
         missing && "bg-[rgba(224,168,72,0.06)]",
         exempt && "opacity-70",
-        !row.active && "opacity-50",
+        (!row.active || !!row.discontinued_at) && "opacity-50",
       )}
     >
       <div className="min-w-0 flex-1">
@@ -523,6 +526,7 @@ function MappingRowView({
         <p className="text-[10px] text-[rgba(232,227,218,0.30)]">
           {row.role} · {row.source}
           {!row.active && " · inactive"}
+          {row.discontinued_at && ` · discontinued ${new Date(row.discontinued_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "America/Phoenix" })} — no longer in Shopify; past orders still decode`}
         </p>
       </div>
 

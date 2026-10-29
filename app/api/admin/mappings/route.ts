@@ -18,7 +18,7 @@ import { refreshSkuMaps } from "@/lib/skuDecoder";
  * Admin only. The page's role check is UX; this is the actual gate.
  */
 
-const SELECT = "id, vendor, kind, avis_name, sku_code, source, role, active, code_required";
+const SELECT = "id, vendor, kind, avis_name, sku_code, source, role, active, code_required, discontinued_at";
 
 /** Codes are short, uppercase, alphanumeric (410F, PL, RD, RTKB, BUTT). */
 const CODE_RE = /^[A-Z0-9-]{1,24}$/;
