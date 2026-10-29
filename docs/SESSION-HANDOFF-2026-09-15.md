@@ -2440,6 +2440,7 @@ patch_discontinued_colours.py
 patch_docs_discontinued_colours.py
 patch_keep_backorders.py
 patch_docs_keep_backorders.py
+patch_docs_handoff_2026_10_29.py
 ```
 
 ⚠ **The list above is checked, not remembered.** On 2026-09-30 a pass over it

@@ -233,20 +233,31 @@ receipt that backs it.
 
 **Nothing sends that notification.** It goes to every cabinet order.
 
-## Planned notifications
+**How it will be kept (decided 2026-10-29, Garrett — the design in full is
+`docs/SESSION-HANDOFF-2026-10-29.md` §4):** Shopify's own shipping
+confirmation ("Order #1065 shipped" / "Your cabinets have shipped"), sent
+when the OMS marks the cabinet lines fulfilled on their ship date. Until
+that phase ships, the promise stays unkept.
 
-Each requires a staff **confirm/deny prompt**:
+## Notifications — decided 2026-10-29 (supersedes the August plan)
 
-1. Ship-from-factory date set (the production finish)
-2. Production date changed
-3. Estimated delivery date scheduled, with what to prepare for
-4. Delivery date changed
-5. Delivery accepted and signed for
+The design in full, every point decided with Garrett, is
+`docs/SESSION-HANDOFF-2026-10-29.md` §4. In brief — at most seven emails per
+order:
 
-Plus a **scheduled** one on the last day of the production range — the heads-up
-that cabinets are on the way. That fires from the existing
-`production-complete` cron, which already evaluates the right condition, and is
-the only trigger with nobody present to confirm it.
+- **Shopify (2):** the order confirmation; the shipping confirmation, sent
+  when an order is marked fulfilled — by the OMS, automatically, on each ship
+  date (8:00 a.m. Arizona), after a "still on schedule?" check the business
+  day before. No tracking on cabinets; backordered lines on their own date.
+- **The OMS, through Help Scout (3), each confirmed by staff:** ship date
+  changed; delivery date changed; delivered (with "Report any visible
+  shipping damage within 48 hours of delivery."). One conversation per
+  purchase, subject "Order #1065".
+- **Dropped from the August plan:** "ship-from-factory date set" / "in
+  production" (it over-informs), "estimated delivery date scheduled" (the
+  delivery agent and the customer arrange it; we are not told), and the
+  scheduled "on the way" email (Shopify's shipping confirmation is that
+  message — one or the other, never both).
 
 ## Rules for anything customer-facing
 
@@ -657,6 +668,11 @@ reason.
 
 ## Microsoft 365 / Graph — set up 2026-08-18
 
+⚠ **NOT THE NOTIFICATION CHANNEL (decided 2026-10-29).** Customer
+notifications go through Help Scout, one conversation per purchase, whose
+credentials are already on the box — see `docs/SESSION-HANDOFF-2026-10-29.md`
+§4. This app and its secret stay unused; nothing on the box signs in with it.
+
 Outbound transactional email via **Graph, app-only auth**, from the
 **`no-reply@jkcabinets2you.com`** shared mailbox (free — no licence).
 
@@ -691,10 +707,19 @@ The OMS now owns all five subscriptions, created through
 `POST /api/shopify/webhooks` and visible at `GET /api/shopify/webhooks`. That
 endpoint is the only reliable view.
 
-- **Fulfilment notification: TURNED OFF.** The OMS will own everything after
-  the order confirmation.
+- ⚠ **The shipping confirmation — CORRECTED 2026-10-29.** This said
+  "Fulfilment notification: TURNED OFF. The OMS will own everything after the
+  order confirmation." The website team (2026-10-29): Shopify sends its
+  shipping confirmation when an order is marked fulfilled; its template picks
+  its version by the shipment ("Your cabinets have shipped") and hides
+  tracking on cabinets; samples get it when their label is bought. Feature 9
+  relies on it — the OMS will mark cabinet lines fulfilled. **Verify it is ON
+  (Settings → Notifications) before phase 1 goes live.**
 - Shopify still sends the **order confirmation** — tied to checkout, keep it.
 - Point the store's customer-facing email at Help Scout so replies land there.
+- **Shopify's sender stays `info@`** (website team, 2026-10-29): the order
+  confirmation tells customers to reply, and Help Scout's mailbox (373175) is
+  `info@`. A plan to move Shopify's emails to `no-reply@` conflicts with this.
 
 ## Help Scout — chosen 2026-08-18
 

@@ -1,7 +1,12 @@
 # SESSION HANDOFF — 2026-10-13
 
-Covers 2026-10-06 → 2026-10-13: items 29–47 of the running record. **Start
-here.** Successor to `docs/SESSION-HANDOFF-2026-09-15.md`, which stays as the
+⚠ **SINCE 2026-10-29 START AT `docs/SESSION-HANDOFF-2026-10-29.md`** — the
+state of things, the method lessons, and feature 9's complete design and
+phase 1 plan. THIS file still holds the OPEN LIST (§6) and the item-by-item
+record, items 8 and 52–64 included.
+
+Covers 2026-10-06 → 2026-10-13: items 29–47 of the running record. It was the
+start point until 2026-10-29. Successor to `docs/SESSION-HANDOFF-2026-09-15.md`, which stays as the
 detailed record — items 0–47 in full, every decision with its reasoning, and
 the process lessons — and is still true wherever this file does not say
 otherwise.
@@ -353,7 +358,11 @@ Each line points at the section that owns the detail.
 
 ### Unbuilt, decided
 
-5. **Moving a file to another room**, and **filing under a style group from a
+5. ✅ CLOSED 2026-10-29 by file groups (item 8, step 5): the Files tab's Move
+   moves a file between any of an order's groups, a room's included; and
+   "filing under a style group" was superseded when Garrett chose ONE file
+   group per room (2026-10-28). As first written:
+   **Moving a file to another room**, and **filing under a style group from a
    screen** (the route already accepts a style group's id) — item 24.
 6. ✅ (built 2026-10-21, `patch_attachments_realtime.py` + migration
    `2026-10-21-attachments-realtime.sql`: a read policy for `authenticated` and
@@ -406,7 +415,9 @@ Each line points at the section that owns the detail.
    ⚠ (2026-10-19) It EXISTS: every `order_activity` row has a real
    `created_at`, and since gap 12 the client has it as each entry's `at`. What
    is left is reading a stage's moves out of the trail, not storing anything.
-8. **Mockup parity — the Overview to Garrett's mockup** (redefined 2026-10-22:
+8. ✅ DONE 2026-10-28 — every step below built, deployed and checked live by
+   Garrett; the palette kept (decision A). **Mockup parity — the Overview to
+   Garrett's mockup** (redefined 2026-10-22:
    "I like the layout and style of the mockup a lot better"). The old note's
    "Next Action is a cell in a strip" was stale — it is already a full-width
    band. DECIDED (Garrett, 2026-10-22): A — KEEP TODAY'S PALETTE, take the
@@ -643,14 +654,17 @@ Each line points at the section that owns the detail.
    "a room's AND style group's group". Proved: the migration on PostgreSQL 16
    from today's state (files moved, an orphan kept, twice); the functions
    after it; the real panel.
-   STILL TO DO — the specs panel's room attachments (with step 4); the
-   Overview's group tiles were the rest of 5d (opening the Files tab at a
-   group, `fileGroupAnchor`), and the specs panel's room attachments; then
-   step 4.
-   **Mockup parity** — two structural differences remain (old Open 8).
-9. **Customer notifications.** Nothing sends the production notification
-   promised on every cabinet order (OPERATIONS §2, "The promise that is not
-   yet kept"); the planned list is there.
+   (Nothing remains: 5d's tiles and step 4's room attachments were built
+   above — the "still to do" and "two structural differences" lines that
+   stood here were stale, removed 2026-10-29.)
+9. **Customer notifications — DESIGNED 2026-10-29 with Garrett, every point:
+   `docs/SESSION-HANDOFF-2026-10-29.md` §4.** Phase 1 (the OMS marks cabinet
+   lines fulfilled in Shopify on each ship date, so Shopify's shipping
+   confirmation goes out; a "still on schedule?" check the business day
+   before) is next, as ONE deploy; phase 2 is three staff-confirmed Help Scout
+   emails. It supersedes OPERATIONS' August plan. Nothing sends the
+   production notification promised on every cabinet order until phase 1
+   ships (OPERATIONS §2, "The promise that is not yet kept").
 
 ### Known gaps
 
@@ -1036,6 +1050,16 @@ Each line points at the section that owns the detail.
     parser (HCI, J&K) — and it applies to Waypoint orders too: a file in the
     Files tab satisfies it whatever the acknowledgment says. Acknowledgment
     files themselves no longer count (patch_ack_files); this is the rest.
+64. **A mixed order's acknowledgment line does not say which vendor is still
+    missing** (found 2026-10-29 from Garrett's screenshot of SHO-1067, J&K +
+    Waypoint). Waypoint's acknowledgment MATCHED, yet "The manufacturer's
+    acknowledgment" stays unticked — correctly: a mixed order needs both
+    (item 57), J&K's part is outstanding, and the Waypoint acknowledgment's
+    file is kind `acknowledgment`, which never counts as "any file". But the
+    line's remedy is the generic sentence, so it reads as if Waypoint's did
+    not count. It should say per vendor: "Waypoint: matched. J&K: still needs
+    its acknowledgment or any file." Small; offered alongside feature 9's
+    phase 1, Garrett to say.
 63. ✅ FOUND AND FIXED 2026-10-29, `patch_keep_backorders.py` — EVERY SHOPIFY
     ORDER UPDATE ERASED THE PURCHASE'S BACKORDERS. orders/updated rebuilds each
     group's sku_items from the payload (Shopify is the source of what was
