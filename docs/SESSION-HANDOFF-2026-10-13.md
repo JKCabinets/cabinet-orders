@@ -1036,7 +1036,19 @@ Each line points at the section that owns the detail.
     parser (HCI, J&K) — and it applies to Waypoint orders too: a file in the
     Files tab satisfies it whatever the acknowledgment says. Acknowledgment
     files themselves no longer count (patch_ack_files); this is the rest.
-61. **Deleting an order paints first** (found 2026-10-28, fixing 54): the
+61. ✅ FIXED 2026-10-28, `patch_delete_order.py` — and WORSE THAN FOUND: the
+    Delete button had NO QUESTION, so one click deleted a custom job and every
+    file it had, irreversibly. Now Delete asks ("Delete this job and its 3
+    files? It cannot be undone." — the count from the Files card's cached
+    list), the store's deleteOrder waits for the server and returns its
+    refusal, and the modal closes only once the job is gone; a refusal stays,
+    "Not deleted: <reason>". The server's storage-first order is KEPT, on
+    purpose (lib/orderFiles: a half-failed ORDER delete leaves the order to
+    delete again, nothing meant to be kept is lost — unlike one file, item
+    55). Proved on the real modal and store against the box's (one click:
+    deleted at once, modal closed, the job gone from the screen though the
+    server refused). As found:
+    **Deleting an order paints first** (found 2026-10-28, fixing 54): the
     store's deleteOrder removes the row, then sends the DELETE and ignores the
     answer, so a refused delete makes the order vanish until a reload. Same
     shape as 52 and 54.

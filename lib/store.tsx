@@ -101,7 +101,8 @@ interface StoreCtx {
    */
   archiveOrder: (id: string) => Promise<ArchiveResult>;
   unarchiveOrder: (id: string) => Promise<ArchiveResult>;
-  deleteOrder: (id: string) => Promise<void>;
+  /** The server's refusal, or null once the order is gone (item 61). */
+  deleteOrder: (id: string) => Promise<string | null>;
   /** Close a warranty claim, Approved or Denied (2026-10-13). Resolves with the server's refusal, if any. */
   closeClaim: (id: string, outcome: "approved" | "denied", reason: string) => Promise<ArchiveResult>;
   /** Record consent a customer gave by email, on their purchase (2026-10-13). */
@@ -860,9 +861,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return null;
   }, []);
 
-  const deleteOrder = useCallback(async (id: string) => {
+  // ⚠ GONE WHEN THE SERVER SAYS SO (item 61, 2026-10-28). This removed the row,
+  // then sent the DELETE and ignored the answer -- so a refused delete (someone
+  // else's job, archived work) made the order vanish until a reload: the flaw
+  // of 52 and 54. Nothing is removed from the screen until the server has.
+  const deleteOrder = useCallback(async (id: string): Promise<string | null> => {
+    const res = await apiCall(`/api/orders/${id}`, "DELETE") as { __error?: string; __message?: string } | null;
+    if (res && res.__error) return res.__message ?? res.__error;
     setRawOrders(prev => prev.filter(o => o.id !== id));
-    await apiCall(`/api/orders/${id}`, "DELETE");
+    return null;
   }, []);
 
   // ⚠ NOT OPTIMISTIC: the server checks the conversation with Help Scout, and

@@ -19,6 +19,7 @@ import { checkAttachmentGate } from "@/lib/stageGates";
 import { AttachmentsPanel } from "./AttachmentsPanel";
 import { FileGroupTiles } from "./FileGroupTiles";
 import { AttachFileCard, type AttachFileCardHandle } from "./AttachFileCard";
+import { useAttachments } from "@/lib/attachments";
 // (The purchase's Files tab is AttachmentsPanel per group since 5d, 2026-10-28.)
 import { FullOrderGroup, GroupIssueTag } from "./FullOrderGroup";
 import { OrderHeaderCards, ConsentMissingPill, ShopifyGonePill } from "./OrderHeaderCards";
@@ -551,6 +552,14 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
   // step 3b): ONCE, outside the two layouts -- inside the non-custom one,
   // TypeScript already knows the type is not "custom".
   const canEditCustomer = (liveOrder.type === "custom" || liveOrder.type === "warranty") && canEdit && !readOnly;
+  // ⚠ DELETE ASKS FIRST, AND WAITS (item 61, 2026-10-28). It deleted on one
+  // click -- a custom job and every file it had, irreversibly -- then closed
+  // before the server answered. Now it asks, naming the files, and the modal
+  // closes only once the server has deleted; a refusal stays, with its reason.
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const jobFiles = useAttachments(liveOrder.id); // the Files card's own cached list
   const openFilesAt = (groupId: number | null) => {
     setTab("files");
     setFilesFocus((f) => ({ orderId: liveOrder.id, groupId, n: (f?.n ?? 0) + 1 }));
@@ -801,8 +810,12 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
     if (!typedWhileSaving.current.internal) setInternalNotesChanged(false);
   }
 
-  function handleDelete() {
-    deleteOrder(liveOrder.id);
+  async function handleDelete() {
+    setDeleting(true);
+    setDeleteError(null);
+    const refused = await deleteOrder(liveOrder.id);
+    setDeleting(false);
+    if (refused) { setConfirmDelete(false); setDeleteError(refused); return; }
     onClose();
   }
 
@@ -1120,9 +1133,28 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
             )}
             {/* Custom jobs only (2026-10-13): a Shopify order is removed in
                 Shopify, and a claim is closed, never deleted. */}
-            {!readOnly && liveOrder.source === "Manual" && liveOrder.type === "custom" && (
+            {!readOnly && liveOrder.source === "Manual" && liveOrder.type === "custom" && confirmDelete && (
+              <div role="alertdialog" aria-label="Delete this custom job?" className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg"
+                style={{ background: "rgba(220,80,60,0.10)", border: "0.5px solid rgba(220,80,60,0.40)" }}>
+                <span className="text-[10px] text-cream/80">
+                  Delete this job{jobFiles.files === null ? " and its files" : jobFiles.files.length > 0 ? ` and its ${jobFiles.files.length} file${jobFiles.files.length === 1 ? "" : "s"}` : ""}? It cannot be undone.
+                </span>
+                <button onClick={() => void handleDelete()} disabled={deleting}
+                  className="text-[10px] uppercase tracking-wider text-red-400 hover:text-red-300 px-2 py-0.5 rounded border border-red-900/50 disabled:opacity-60">
+                  {deleting ? "Deleting…" : "Delete"}
+                </button>
+                <button onClick={() => setConfirmDelete(false)} disabled={deleting}
+                  className="text-[10px] uppercase tracking-wider text-cream/60 hover:text-cream px-2 py-0.5 rounded border border-white/10 disabled:opacity-60">
+                  Cancel
+                </button>
+              </div>
+            )}
+            {deleteError && (
+              <span role="alert" className="text-[10px] text-red-400 max-w-[20rem]">Not deleted: {deleteError}</span>
+            )}
+            {!readOnly && liveOrder.source === "Manual" && liveOrder.type === "custom" && !confirmDelete && (
               <button
-                onClick={handleDelete}
+                onClick={() => { setDeleteError(null); setConfirmDelete(true); }}
                 title="Delete order"
                 className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-[10px] transition-all hover:text-red-400"
                 style={{
