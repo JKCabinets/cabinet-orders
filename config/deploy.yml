@@ -27,13 +27,9 @@ ssh:
 # that handles Let's Encrypt automatically. It listens on 80/443 and
 # routes to our container on port 3000.
 #
-# sslip.io is a free wildcard DNS service: any subdomain like
-# `5-78-220-153.sslip.io` automatically resolves to 5.78.220.153.
-# This lets us get a Let's Encrypt cert WITHOUT setting up DNS for
-# our real domain yet. Perfect for the testing phase.
-#
-# When we cut over the production domain, we'll change the host below
-# to `ordersjkcabinets2you.com` and update DNS to point at this IP.
+# The hosts are the production domain (cut over from a temporary
+# sslip.io address before 2026-08). DNS (GoDaddy) points both at this IP;
+# a new server changes the IP above and DNS, nothing here.
 proxy:
   ssl: true
   hosts:
@@ -87,7 +83,8 @@ env:
   clear:
     NODE_ENV: production
     # NextAuth needs to know its own URL to construct callback links.
-    # This changes when we cut over to the real domain.
+    # The www host: Shopify's webhook callback is derived from it, and a
+    # non-www URL would redirect -- which Shopify treats as a failed delivery.
     NEXTAUTH_URL: https://www.ordersjkcabinets2you.com
     PORT: "3000"
     HOSTNAME: "0.0.0.0"

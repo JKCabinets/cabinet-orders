@@ -1,5 +1,12 @@
 # Realtime Phase 1 — Specification
 
+⚠ **HISTORICAL — implemented in May 2026 and changed since; NOT the source of
+truth.** True now (OMS-STATE §3 and §5): a Shopify purchase's claim lives on
+the PROJECT (`projects.claimed_by`, since 2026-08-25), not
+`orders.claimed_by_user_id`; a row can be claimed at ANY stage, not only New; a
+stage move no longer clears a claim (removed 2026-09-01); and six tables
+publish, not `orders` alone. Kept as the design record.
+
 **Status:** Approved for implementation
 **Author:** Garrett + Claude
 **Date:** 2026-05-20

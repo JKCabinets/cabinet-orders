@@ -1,5 +1,13 @@
 # Known-wrong — additions for `HANDOFF-2026-08-20-BUILD.md` §10
 
+⚠ **REVIEWED 2026-10-29 — EVERY "STILL OPEN" BELOW IS CLOSED.** §3:
+`isStageOfferedForType` (`lib/data`) asks whether a stage is offered for a
+type, and the order route checks both questions; the sample flow is New →
+Shipped → Delivered. §4: `shapeOrder` maps `orders.shopify_id` (2026-10-05);
+its caution about `addOrder`'s explicit payload still stands. §5: decided
+2026-10-19 (Garrett, OMS-STATE §4) — custom jobs and claims clear nothing on a
+backward move. The record below is as written.
+
 **2026-08-25.** Supersedes a draft of 2026-08-20 that listed two bulk-route
 defects. Both are gone — not fixed, but **deleted along with the feature that
 had them** when `/api/orders/bulk` became a cleanup tool. That is worth knowing

@@ -1,5 +1,15 @@
 # Start here — session handoff, 2026-09-08
 
+⚠ **SUPERSEDED — DO NOT START HERE.** This was the start point on 2026-09-08;
+start at `docs/SESSION-HANDOFF-2026-10-29.md`. Its method (§1) still holds and
+is carried in the later handoffs. Everything that looks forward is overtaken:
+the next-action panel (§3) was built — it is the Overview's band — and three
+of §6's traps are now FALSE: the acknowledgment `.xlsx` IS stored, as a file of
+kind `acknowledgment` (2026-10-28); `NextActionPanel.tsx` IS in the repo;
+notifications go through Shopify and Help Scout, not Graph (2026-10-29). The
+enrichment returns more than §4 says (OMS-STATE §4). Kept as the record of
+that day.
+
 You are picking up work on the JK Cabinets OMS. This file is written to be the
 first thing you read and to be enough on its own to start safely.
 

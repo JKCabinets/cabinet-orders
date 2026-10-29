@@ -1,6 +1,11 @@
 # Disaster Recovery Plan
 
-Last updated: 2026-05-20
+Last updated: 2026-05-20 · reviewed 2026-10-29
+
+⚠ **REVIEWED 2026-10-29 — AND NEVER EXERCISED.** No recovery has been run from
+this document (OPERATIONS §12: "Test the Hetzner restore once"). Corrected that
+day: the domain replaces the old sslip.io addresses; the cron scripts and their
+schedule are NOT in the repo; Supabase's point-in-time recovery is unconfirmed.
 
 This document is the playbook for recovering the cabinet-orders app
 when something has gone seriously wrong. Read top to bottom.
@@ -28,7 +33,9 @@ Each scenario has a section below.
   OR). IPv4: `5.78.220.153`. Login: `ssh garrett@5.78.220.153`.
 - **HTTPS proxy:** kamal-proxy container on the same server, ports 80/443.
 - **Database:** Supabase project (see Supabase dashboard for the project
-  ref). Pro tier with daily backups + PITR.
+  ref). Pro tier with daily backups. ⚠ Whether point-in-time recovery (PITR)
+  is enabled, and its retention, is UNCONFIRMED (OPERATIONS §12) — check
+  before relying on Scenario 3's PITR steps.
 - **Attachments:** Supabase Storage, bucket `order-attachments`. NOT
   separately backed up (known gap).
 - **DNS:** ordersjkcabinets2you.com — A record points to Hetzner IP.
@@ -38,7 +45,10 @@ Each scenario has a section below.
   gitignored). Backup copies: laptop at `~/backups/cabinet-orders/`,
   password manager as secure note.
 - **Cron jobs:** user crontab on Hetzner, scripts in
-  `/home/garrett/cron-jobs/`. Schedule mirrors original `vercel.json`.
+  `/home/garrett/cron-jobs/` — ⚠ NOT IN THE REPO: their only copy is the box
+  and its 7-day Hetzner backup (OPERATIONS §11). The schedule is OMS-STATE
+  §6's table. (This said it "mirrors original `vercel.json`", which no longer
+  exists.)
 
 ## Scenario 1: Bad deploy on Hetzner (rollback)
 
@@ -121,6 +131,9 @@ If laptop is also gone, restore from password manager: paste the contents
 of the secure note into a new `.env.kamal` on the server. Set mode 600:
 `chmod 600 ~/cabinet-orders/.env.kamal`.
 
+`.kamal/secrets` comes back with the clone: it is tracked in git and holds no
+values — a loader that reads `.env.kamal` (OPERATIONS §5).
+
 ### Generate server's own SSH key for Kamal localhost SSH
 
     ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N ""
@@ -133,16 +146,21 @@ If it's a new server, the IP changed. Edit `config/deploy.yml`:
 
     servers:
       web:
-        - <NEW_HETZNER_IP>
+        hosts:
+          - <NEW_HETZNER_IP>
 
-    env:
-      clear:
-        NEXTAUTH_URL: https://<NEW-IP-WITH-DASHES>.sslip.io
+Leave `NEXTAUTH_URL` alone: it is the domain,
+`https://www.ordersjkcabinets2you.com`, and stays so — only the host above and
+DNS change. (This once set an sslip.io address, from before the domain
+cutover.)
 
 ### Restore cron jobs
 
-Copy `run-cron.sh` from this repo into `~/cron-jobs/run-cron.sh`, make it
-executable, schedule via `crontab -e` (see `vercel.json` for the schedule).
+⚠ **The cron scripts are not in this repo** (until handoff item 65 is done).
+Restore `~/cron-jobs/` — `run-cron.sh`, `check-registry-token.sh`,
+`healthchecks.map` — and the crontab from the Hetzner backup, their only copy
+(7 days); then check the schedule against OMS-STATE §6's table. This said to
+copy `run-cron.sh` "from this repo" and to see `vercel.json`; neither exists.
 
     grep '^CRON_SECRET=' ~/cabinet-orders/.env.kamal | cut -d '=' -f 2- > ~/.cron-secret
     chmod 600 ~/.cron-secret
@@ -175,15 +193,20 @@ You need to restore Supabase to a previous point in time.
 
 ### Point-in-time recovery (PITR)
 
-For losses you discovered quickly:
+⚠ Only if PITR is enabled — unconfirmed (OPERATIONS §12). For losses you
+discovered quickly:
 
 1. Supabase dashboard → Database → Point-in-time Recovery
+2. Choose a time just BEFORE the loss and follow Supabase's prompts. (The steps
+   beyond the first were never written down here; use Supabase's own
+   documentation at the time.)
+
 ### Caveat: storage attachments
 
-Supabase database backups do NOT include the `order-attachments` storage
-
-bucket. If your data loss involved files, the database metadata about
-them is restorable but the actual files may not be. Known gap.
+Supabase database backups do NOT include the storage buckets
+(`order-attachments`, `claim-photos`, `team-avatars`). If your data loss
+involved files, the rows that name them are restorable but the files
+themselves may not be. Known gap.
 
 ## Scenario 4: Lost laptop and all local backups
 
@@ -219,8 +242,8 @@ re-acquire keys from Supabase/GitHub/Shopify dashboards, rebuild
 
 After recovering from any scenario above:
 
-- [ ] `curl -k https://5-78-220-153.sslip.io/api/health` returns
-  `{"status":"ok",...}`
+- [ ] `curl https://www.ordersjkcabinets2you.com/api/health` returns
+  `{"status":"ok",...}` (no auth, by design)
 - [ ] Browser load works: page renders, no 502s
 - [ ] Login works for a test user
 - [ ] Orders list loads with current data
@@ -228,6 +251,9 @@ After recovering from any scenario above:
 - [ ] One Shopify webhook fires successfully
 - [ ] Cron jobs are scheduled: `crontab -l`
 - [ ] Most recent `cron.log` entries show successful runs
+- [ ] Shopify's webhook subscriptions reach the app: signed in as an admin,
+  `/api/shopify/webhooks` lists five topics (OPERATIONS §8)
+- [ ] healthchecks.io: all six checks green within a day (OPERATIONS §6)
 
 ## Maintaining this doc
 

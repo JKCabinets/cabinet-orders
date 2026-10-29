@@ -2,6 +2,16 @@
 
 **As of 2026-09-15 · supersedes OPERATIONS-2026-08-18.md**
 
+⚠ **AMENDED 2026-10-29.** §2: how the unkept promise will be kept, and the
+notifications decided — superseding the August plan. §8: Graph is not the
+channel; Shopify's shipping confirmation corrected (it read "TURNED OFF");
+Shopify's sender stays `info@`. §1: "Select Cabinetry" is what customers see;
+the acknowledgment's PO check and kept files; Entered vendor by vendor. §5:
+what three credentials' failure now means; five cron routes. §6–§7: deletions
+ARE reconciled (since 2026-10-19); the planned fulfilment run. §10: this
+period's decisions. §11–§12: the cron scripts exist only on the box; three
+items overtaken.
+
 ⚠ **AMENDED 2026-10-13.** Every statement the 2026-09-30 note listed as wrong
 is corrected in place: §2's public lookup, §3's and §6's check count (six of
 thirteen), §5's Graph secret, §7's missing jobs, §9's NO ACTION edge, §12's
@@ -93,6 +103,10 @@ Shopify's vendor list — the product vendor is `Waypoint Cabinetry`. It is
 accepted by the code in case a line ever carries it, and it should not be
 treated as a vendor anyone will see on an order.
 
+⚠ **BUT CUSTOMERS DO SEE IT** (website team, 2026-10-29): the storefront and the
+order email call Waypoint's lines "Select Cabinetry", and feature 9's emails
+name them the same way. Not a Shopify vendor STRING — that stays true.
+
 ⚠ **No hardware vendor is known.** `lib/categories.ts` carries
 `HARDWARE_VENDORS = ["Top Knobs", "Blum"]`, taken from a mockup and never seen
 in a real payload. **Create one test product carrying the intended string and
@@ -140,6 +154,10 @@ because it lived nowhere:
    the vendor PDF. **A wrong phone on the acknowledgment turns it red**
    (2026-10-07): the delivery company calls that number, and an order can sit
    waiting on one nobody answers.
+   **The PO is checked too** (2026-10-28): it must contain the order number.
+   **Every acknowledgment is kept** as a file in the order's "Acknowledgments"
+   group, the one in use marked ✓ In use (⚠ Out of date once the order
+   changes; ✕ Didn't match on a failure).
 
 **An order flagged "No terms consent"** (2026-10-07) reached us without the
 customer ticking the policies box — every website checkout requires it, so
@@ -185,6 +203,10 @@ order type.
 ⚠ **Only Waypoint has a parser.** HCI and J&K use different acknowledgment
 formats, and neither is implemented. Their orders satisfy the gate with an
 attached file instead.
+
+⚠ **SINCE 2026-10-28 (Garrett, item 57) A FILE NO LONGER STANDS IN FOR
+WAYPOINT'S.** Its lines need the green acknowledgment; a mixed order needs
+both; an acknowledgment's own kept file never counts as "a file".
 
 ⚠ **A green acknowledgment goes stale if the order changes afterwards.** It is
 evidence about a specific set of lines; if a customer amends the order, the
@@ -395,20 +417,20 @@ Also held, not in use by these systems: `jkkitchencabinets2you.com`,
 
 | Credential | Lives in | Expiry | Symptom when it dies |
 |---|---|---|---|
-| **Microsoft Graph client secret** | Entra only — **not on the box**: no Graph credential in `.env.kamal` or `.kamal/secrets` (checked 2026-09-08 and 2026-10-13). App **"JK Cabinets OMS — transactional email"**, client ID `e8560b8d-6d3c-4547-8c2e-d01eb2986069` | **17 August 2028** (recorded 2026-10-21; reminder 17 July 2028) | Nothing on the box uses it today. Once Graph email is built: **every email the OMS sends stops** |
+| **Microsoft Graph client secret** | Entra only — **not on the box**: no Graph credential in `.env.kamal` or `.kamal/secrets` (checked 2026-09-08 and 2026-10-13). App **"JK Cabinets OMS — transactional email"**, client ID `e8560b8d-6d3c-4547-8c2e-d01eb2986069` | **17 August 2028** (recorded 2026-10-21; reminder 17 July 2028) | Nothing on the box uses it, and nothing will: Graph is NOT the notification channel (2026-10-29, §8) |
 | **GHCR token** (GitHub PAT, classic) | `.env.kamal` | Expired 2026-08-18 **and again 2026-09-16**. **Checked weekly since 2026-09-16** — `check-registry-token.sh` logs the expiry date and alarms 14 days ahead (§6) | `kamal deploy` → **`denied: denied`** at docker login |
 | **`SHOPIFY_WEBHOOK_SECRET`** | `.env.kamal` | No expiry | Webhook HMAC fails closed — **orders stop ingesting** |
 | **`SHOPIFY_WEBHOOK_SECRET_FALLBACK`** | `.env.kamal` | Empty when idle | Rotation slot — see below |
-| **`SHOPIFY_CLIENT_ID` / `_SECRET`** | `.env.kamal` | — | Shopify API calls fail; stage sync stops |
+| **`SHOPIFY_CLIENT_ID` / `_SECRET`** | `.env.kamal` | — | Shopify API calls fail; stage sync stops — and once feature 9's phase 1 ships, cabinet FULFILMENTS stop, and with them Shopify's shipping emails to customers. The app's permissions: §8 |
 | **`AVIS_API_TOKEN`** | `.env.kamal` | No expiry; never rotated | Nightly catalogue sync fails; healthchecks alarms |
 | **`ADMIN_BACKWARD_PIN`** | `.env.kamal` | Rotated 2026-07-28 | Backward moves fail closed (correct) |
 | **`SUPABASE_SERVICE_ROLE_KEY` / `_JWT_SECRET` / `NEXT_PUBLIC_*`** | `.env.kamal` | — | Everything stops / Realtime fails |
 | **`NEXTAUTH_SECRET`** | `.env.kamal` | — | All sessions invalidated |
-| **`CRON_SECRET`** | `~/.cron-secret` | — | All four crons 401; healthchecks alarms |
+| **`CRON_SECRET`** | `~/.cron-secret` | — | Every cron route 401s — five today (§7), six once the fulfilment run ships; healthchecks alarms |
 | **`QUOTE_WEBHOOK_SECRET`** | `.env.kamal` | Set 2026-09-24 | A speed bump, not a control (below). Empty, the check is skipped and Turnstile still guards |
 | **`TURNSTILE_SECRET_KEY`** | `.env.kamal` | No expiry | The quote form answers 503; the page offers the phone number |
 | **`TURNSTILE_CLAIMS_SECRET_KEY`** (2026-10-01) | `.env.kamal` | No expiry | The claims form answers 503; the page offers the email route |
-| **`HELPSCOUT_APP_ID`**, **`HELPSCOUT_APP_SECRET`** (2026-10-05) | `.env.kamal` | No expiry. The app acts as the Help Scout user who created it, who must stay active | Claims stay `pending` in the OMS; `helpscout-sync` alarms within the hour |
+| **`HELPSCOUT_APP_ID`**, **`HELPSCOUT_APP_SECRET`** (2026-10-05) | `.env.kamal` | No expiry. The app acts as the Help Scout user who created it, who must stay active | Claims stay `pending` in the OMS; `helpscout-sync` alarms within the hour; and once phase 2 ships, customer notifications cannot be sent |
 | `HELPSCOUT_MAILBOX_ID` (2026-10-05) | `config/deploy.yml` — not secret: `373175`, info@ | — | As above |
 | **`UPSTASH_REDIS_REST_URL` / `_TOKEN`** | `.env.kamal` | — | Rate-limit behaviour unverified |
 
@@ -598,11 +620,12 @@ the reason — previously `curl -f` discarded it and logged only `error: 500`.
 
 ## Still not monitored
 
-- ⚠ **Deletions in Shopify.** `webhook-health` reconciles in one direction
-  only — orders Shopify has that the OMS lacks. An order the OMS holds that
-  Shopify has deleted is invisible to it, because a poll of current orders
-  never notices an absence. Deletions depend entirely on the webhook
-  arriving, which on 2026-09-15 it did while achieving nothing. See §9.
+- ✅ ~~**Deletions in Shopify.**~~ **MONITORED SINCE 2026-10-19** (item 10):
+  `webhook-health` also asks Shopify about every purchase the OMS holds,
+  removes one Shopify no longer has (one that claims refer to is kept, marked
+  and archived) and goes red naming it; more than one gone in a run removes
+  none. This entry read "reconciles in one direction only … Deletions depend
+  entirely on the webhook arriving".
 - **Refunds.** `payment_status` updates within seconds and blocks forward
   movement — including the overnight production run, since 2026-09-16 — and a
   held order shows in the work queue as "Refund acknowledgment required".
@@ -621,9 +644,10 @@ the reason — previously `curl -f` discarded it and logged only `error: 500`.
 | 07:30 daily | 12:30am | `sync-avis-catalog` | Reconciles the option catalogue. Never writes a SKU code, never deletes, refuses an empty catalogue. |
 | 08:00 daily | 1:00am | `production-complete` | In production → At cross dock once the ship-from-factory date passes. Sole owner of that transition. |
 | 14:00 weekdays | 7:00am | `teams-digest` | Posts the morning briefing card to Teams — see below |
-| **hourly at :20** | | **`webhook-health`** | **Reconciles Shopify's orders against the OMS** |
+| **hourly at :20** | | **`webhook-health`** | **Reconciles Shopify's orders against the OMS, both ways** — since 2026-10-19 also every held purchase against Shopify |
 | every 15 min | | `helpscout-sync` | Website claims, and each claim's progress notes, to Help Scout (§6) |
 | 15:00 Mondays | 8:00am | `check-registry-token.sh` | The registry token: alarms 14 days before it expires (§6). A script, not a route |
+| *planned:* 15:00 daily | 8:00am | *the cabinet fulfilment run* | Feature 9 phase 1, **NOT YET BUILT**: marks each vendor's cabinet lines fulfilled on their ship date, so Shopify emails the customer |
 
 **`teams-digest` posts** since 2026-10-21 ("JK Cabinets — Morning briefing":
 totals, each type, an "Open the SLA page" button); until then
@@ -716,7 +740,10 @@ endpoint is the only reliable view.
   relies on it — the OMS will mark cabinet lines fulfilled. **Verify it is ON
   (Settings → Notifications) before phase 1 goes live.**
 - Shopify still sends the **order confirmation** — tied to checkout, keep it.
-- Point the store's customer-facing email at Help Scout so replies land there.
+- Point the store's customer-facing email at Help Scout so replies land there
+  — ✓ DONE per the website team (2026-10-29): the sender is `info@`, Help
+  Scout's mailbox. Garrett to confirm in Shopify (Settings → Notifications →
+  Sender email).
 - **Shopify's sender stays `info@`** (website team, 2026-10-29): the order
   confirmation tells customers to reply, and Help Scout's mailbox (373175) is
   `info@`. A plan to move Shopify's emails to `no-reply@` conflicts with this.
@@ -770,6 +797,8 @@ diagnosable after a deploy.
 has that the OMS lacks. The reverse — a row we hold that Shopify deleted —
 is invisible to it, because a poll of current orders never notices an
 absence. Deletions depend entirely on the webhook arriving.
+(⚠ True when written. Since 2026-10-19 the hourly check reconciles deletions
+too — §6.)
 
 **⚠ An order vanished from one list and not another (2026-09-15).**
 SHO-1052 was archived as a project AND as two individual groups, then
@@ -1031,6 +1060,9 @@ reloads, and cannot save — accepted, because a custom job is one designer's
 (Garrett, 2026-09-30). A refusal keeps the designer's typing; a conflict replaces
 it with what was stored, and says so. An unreadable document is refused and
 named, never emptied.
+⚠ **SINCE 2026-10-27/28 A REMOVED ROOM'S FILES ARE DELETED WITH IT**, after a
+prompt that lists them: files live in FILE GROUPS, one per room (Garrett). The
+"unlinking" above was the model before.
 
 **HELP SCOUT HANDLES EVERY CUSTOMER REPLY; THE OMS SENDS NO EMAIL** (Garrett,
 2026-10-01). A claim's customer is told it arrived by the website's own received
@@ -1038,6 +1070,11 @@ page, with its reference, and every human answer goes through Help Scout. An
 automated email would need a sending service, a credential and a send log, all
 new. Later, perhaps: messages the OMS drafts with a claim's details filled in,
 for the team to send themselves.
+⚠ **2026-10-29 (Garrett): customer notifications go through Help Scout too** —
+as replies on one conversation per purchase, each shown to staff and sent only
+on Send (feature 9 phase 2; designed, not built). Still no sending service,
+credential or send log of the OMS's own. The "shipped" message is Shopify's
+own shipping confirmation (phase 1).
 
 **SINCE 2026-10-05 EVERY WEBSITE CLAIM BECOMES A HELP SCOUT CONVERSATION**
 (Garrett): the OMS sends it on after recording it, never before, so a Help
@@ -1122,6 +1159,30 @@ into Postgres, the assistant into Help Scout) are small. **healthchecks.io must
 stay off-box**, Graph-out and Help Scout-in are correct separation not
 duplication, and Supabase must stay managed so the database has an independent
 recovery story.
+⚠ **SUPERSEDED IN PART 2026-10-29:** Help Scout is the way OUT as well
+(customer notifications), and Graph is unused.
+
+**DECIDED 2026-10-26 → 10-29 (Garrett).** Each in full in the session handoffs —
+`SESSION-HANDOFF-2026-10-13.md` §6 (items 8, 53, 57, 60) and
+`SESSION-HANDOFF-2026-10-29.md` §4:
+
+- **FILE GROUPS, NAMED BY PEOPLE** (10-26). Every file is in one group of one
+  order; the OMS makes Customer uploads, Proof of delivery and Acknowledgments
+  by role; a custom job's ROOM has one that follows it — rooms only, not style
+  groups (10-28: "it gets too busy").
+- **NOTES ARE OPEN TO EVERYONE** (10-27, item 53), not locked to the claim.
+- **EVERY ACKNOWLEDGMENT IS KEPT** (10-28): the one in use marked, the rest
+  history that can be deleted; a failed one's file replaced by the next.
+- **ENTERED, VENDOR BY VENDOR** (10-28, item 57): Waypoint needs its green
+  acknowledgment; HCI and J&K a green one or any file.
+- **A COLOUR SHOPIFY DROPS IS MARKED DISCONTINUED, NEVER DELETED** (10-28,
+  item 60), judged by Shopify's Color option names. The two Nano finishes were
+  deleted by hand, the store not being live.
+- **CUSTOMER NOTIFICATIONS** (10-29): Shopify's shipping confirmation, sent when
+  the OMS fulfils each vendor's cabinet lines on their ship date, after a
+  "still on schedule?" check the business day before; three staff-confirmed
+  Help Scout emails — ship date changed, delivery date changed, delivered.
+  "In production" and "delivery confirmed" were dropped as over-informing.
 
 ---
 
@@ -1150,6 +1211,11 @@ recovery story.
 `.env.kamal`, `~/.cron-secret`, `~/cron-jobs/` and the crontab — the files that
 exist nowhere else.
 
+⚠ **THE CRON SCRIPTS ARE NOT IN THE REPO** (found 2026-10-29): `run-cron.sh`
+and `check-registry-token.sh` live only in `~/cron-jobs/`, so this backup is
+their only copy, for 7 days. `docs/RECOVERY.md` said to copy them "from this
+repo". Committing them is open (handoff item 65).
+
 Two caveats: **a 7-day window is short for a silent problem** — the failure
 mode this system actually has — and **the restore has never been tested**.
 
@@ -1177,6 +1243,8 @@ covers the box, not the database, and the database is where the orders are.
   requirement for everyone. The in-app text was corrected to name both
   remedies. ⚠ Fixing the wording also uncovered that the modal's Entered button
   was broken in BOTH directions — see the 2026-09-08 handoff §3.
+  ⚠ **OVERTAKEN FOR WAYPOINT 2026-10-28 (Garrett, item 57):** a file no longer
+  stands in for its acknowledgment.
 
 - **~~⚠ Should the New → Entered gate be tightened to match what we tell
   people?~~** *(superseded by the entry above; kept for the reasoning.)*
@@ -1213,6 +1281,12 @@ covers the box, not the database, and the database is where the orders are.
   order confirmation tells every cabinet customer we will notify them when
   production finishes and it is on its way. Nothing can send that message, and
   the cron that would fire it runs unattended at 1am.
+
+  ⚠ **THE PLAN ABOVE WAS REPLACED 2026-10-29 (Garrett).** Not Graph: the
+  "shipped" message is Shopify's own shipping confirmation, sent when the OMS
+  fulfils the cabinet lines (8:00 a.m. Arizona, not the 1am cron); the others
+  are staff-confirmed Help Scout replies — `docs/SESSION-HANDOFF-2026-10-29.md`
+  §4. Nothing sends until it is built.
 
 - **⚠ THE `public_api` ROLE DOES NOT EXIST.** Found 2026-09-08. `pg_roles` has
   no such role, and both public endpoints run as the **service role** — full
@@ -1331,7 +1405,9 @@ so the first one to fail takes the rest with it.
   proven catch. The seven are `jk-sync-failure`, `jk-orphan-mapping`,
   `jk-option-rename`, `jk-new-option-values`, `jk-stale-sync`, `jk-storefront`,
   `jk-orders-overdue`. See §6 for the panel-side follow-up.
-- **Point the Shopify store contact email at Help Scout.**
+- ✓ ~~**Point the Shopify store contact email at Help Scout.**~~ Done per the
+  website team (2026-10-29): the sender is `info@`, Help Scout's mailbox —
+  Garrett to confirm in Shopify (§8).
 - **Retire Tidio** once the Beacon is live.
 - **Confirm what the TnC Terms Checkbox app persists.** If it only gates the
   checkout button and writes nothing to the order, that is a silent gap in
@@ -1345,6 +1421,7 @@ so the first one to fail takes the rest with it.
 - **Business hours**, and whether the SLA clock should respect business days.
   It currently runs on wall-clock hours including weekends: an order arriving
   Friday 5pm is hard-flagged by Sunday afternoon with nobody working.
+  ✅ **DECIDED 2026-10-20 (Garrett): as intended** — §7.
 - **Retention rules** for claim submissions and their uploads, before the
   public intake goes live.
 - **Rotate** the Shopify webhook secret and the Avis token — now possible

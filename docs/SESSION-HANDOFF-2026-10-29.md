@@ -6,7 +6,7 @@ notifications) designed in full, with phase 1 ready to build**. **Start here.**
 
 ⚠ **THE OPEN LIST STAYS IN `docs/SESSION-HANDOFF-2026-10-13.md` §6.** One home,
 or a correction lands on one copy and misses the other. That file is also the
-item-by-item record of everything below (items 8 and 52–64), each with how
+item-by-item record of everything below (items 8 and 52–67), each with how
 it was proved. This file is the summary and the plan.
 
 **Read in this order before touching anything:**
@@ -31,10 +31,10 @@ Then read whole every file you are about to change (§2.1).
   every read and write on that path is checked"*
 - `HEAD~17` = `4f20fc1e5186363215ad9d2bc332c3022fc62c22` (the Attach a file
   card). Every deploy chain since has checked this pair.
-- ⚠ **Then THIS FILE's own commit lands on top** (docs only, #18 below): after
-  it, `HEAD`'s subject is *"Docs: the 2026-10-29 handoff — feature 9 designed,
-  phase 1 next"* and **`HEAD~18`** = `4f20fc1e…`. The next deploy chain checks
-  that pair.
+- ⚠ **Then two docs-only commits land on top** — #18, this file, and #19, the
+  review of every living doc (below). After them, `HEAD`'s subject is *"Docs:
+  the living docs brought up to date (2026-10-29 review)"* and **`HEAD~19`** =
+  `4f20fc1e…`. The next deploy chain checks that pair.
 
 **The commits since `4f20fc1e`, oldest first** — 1–17 deployed and checked
 live by Garrett; 18 is this file's own (docs only):
@@ -59,6 +59,7 @@ live by Garrett; 18 is this file's own (docs only):
 | 16 | `patch_discontinued_colours.py` | Item 60: colours Shopify no longer sells marked discontinued | `2026-10-28-discontinued-colours.sql`, before |
 | 17 | `patch_keep_backorders.py` | Item 63: Shopify updates no longer erase backorders; every read and write on that path checked | — |
 | 18 | `patch_docs_handoff_2026_10_29.py` | Docs only: this file; the 10-13 handoff's items 5, 8, 9, 64; OPERATIONS §2 and §8 | — |
+| 19 | `patch_docs_review_2026_10_29.py` + nine `git rm` | Docs only: every living doc read whole and brought up to date (§3); the README replaced; nine obsolete root files deleted (Garrett) | — |
 
 **Done by hand, not by patch:** the Nano White (`WHN`) and Nano Green (`GRN`)
 HCI colour mappings were deleted on 2026-10-28 (Garrett: the store is not
@@ -92,10 +93,16 @@ W930, the Waypoint line marked backordered as item 63's live check).
   Their message left Owner and Cost as unfilled placeholders; our record says
   ~$17/month.
 
-**A snapshot of the repo as on the box after commit 18:** `repo26.tar.gz` —
-309 files: the 299 of `repo25.tar.gz`, the nine new files of commits 1–17
+⚠ **THE GHCR REGISTRY TOKEN EXPIRES 2026-11-16** (the system map, as of
+2026-09-22). The weekly check alarms 14 days ahead, from about November 2; not
+renewed, every deploy fails `denied: denied` (OPERATIONS §5). Item 66.
+
+**A snapshot of the repo as on the box after commit 19:** `repo26.tar.gz` —
+300 files: the 299 of `repo25.tar.gz`, the nine new files of commits 1–17
 (four migrations, `AckFileMark`, `FileGroupTiles`, `app/api/sku-options`,
-`lib/skuOptions`, `lib/shopifyColor`) and this file. Its sha256 is published
+`lib/skuOptions`, `lib/shopifyColor`) and this file, less the nine commit 19
+deleted (`DELETE_THESE_FILES.txt`, `PHASE-A-NOTES.md`, seven loose
+`patch_*.py`). Its sha256 is published
 beside it as `repo26.tar.gz.sha256` (it cannot be written here: the snapshot
 contains this file). A sandbox can reset mid-session; start from it rather
 than rebuilding from patches, and check it against the box before patching.
@@ -185,6 +192,18 @@ vendor, **58** removal prompts tell the truth, **59** removed variants marked,
 **60** discontinued colours, **61** delete asks first, **62** the SKU builder
 answered, **63** backorders kept across Shopify updates. **Item 5** (moving a
 file between rooms) is closed by file groups' Move.
+
+**The docs, reviewed 2026-10-29 (commit 19).** Every living doc read whole
+against this period's changes; 85 stale statements corrected, each marked where
+it stands with its date: OMS-STATE (file groups, acknowledgments kept as files,
+the product list following Shopify, backorders kept, six realtime tables, the
+vendor-by-vendor gate), OPERATIONS (deletions ARE reconciled, five cron routes,
+three credentials' symptoms, this period's decisions), RECOVERY (the domain, the
+cron scripts only on the box, PITR unconfirmed), the system map, the advisories,
+`config/deploy.yml`'s comments. Three docs that read as current were bannered —
+the 09-08 "Start here", the realtime spec, KNOWN-WRONG's "still open" items. The
+README was the original scaffold's and is replaced by a pointer. Records — the
+dated handoffs, SECURITY.md (already bannered) — are left as written.
 
 ---
 
@@ -439,7 +458,10 @@ them first.
 **Still to read whole before building:** `components/OrderModal.tsx` (2 613
 lines — the Production & Delivery card, and what it passes the band),
 `lib/store.tsx` (1 176 — how dates are saved), every consumer of
-`AttentionKind` (find them from the directory listing, then read each whole),
+`AttentionKind` (find them from the directory listing, then read each whole —
+as of 2026-09-08 they were `app/work/WorkClient` with 3 call sites,
+`app/dashboard/…Client` with 4 and `components/Sidebar` with 4, per
+`SESSION-HANDOFF-NEXT-SESSION.md` §6; verify, don't trust it),
 and `~/cron-jobs/run-cron.sh` on the box.
 
 **The parts, one deploy:**
@@ -468,6 +490,8 @@ The list lives in `SESSION-HANDOFF-2026-10-13.md` §6. Open there now: **9**
 (this design), **25** and **26** (upgrades, waiting), **48** (v14's comment;
 `orders` REPLICA IDENTITY), **50** (the trail's shaping written three times),
 **64** (new — a mixed order's acknowledgment line does not say which vendor
-is still missing). Also: `lib/store.tsx` imports `React` unused (pre-existing);
+is still missing), **65** (the cron scripts are not in the repo), **66** (the
+registry token expires 2026-11-16), **67** (a stale header comment in the
+webhook-subscriptions route). Also: `lib/store.tsx` imports `React` unused (pre-existing);
 any backorder marked BEFORE item 63's deploy may already have been erased by a
 later Shopify update (not reconstructable).

@@ -4,6 +4,11 @@ Record of dependency-scanner findings that have been **reviewed and consciously
 not actioned**, with the reasoning, so a future scan doesn't re-investigate them
 from scratch. Reviewed 2026-07-28.
 
+⚠ **Re-read 2026-10-29.** Next.js moved to 16.4.0 on 2026-10-07, when `npm audit
+--omit=dev` reported 0 — the `sharp` and `postcss` entries below name
+`next@16.2.x` and may be gone. Re-check with `npm ls sharp postcss` before
+relying on them.
+
 Anything NOT listed here should be treated as un-triaged and investigated.
 
 ---
@@ -14,8 +19,8 @@ Anything NOT listed here should be treated as un-triaged and investigated.
 (ReDoS, CWE-1333).
 
 **Installed:** `xlsx@0.20.3`, sourced from the SheetJS CDN
-(`https://cdn.sheetjs.com/xlsx-latest/xlsx-latest.tgz` in package.json), NOT the
-npm registry.
+(`https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz` in package.json — pinned
+since 2026-10-07; it was `xlsx-latest`, OMS-STATE §7), NOT the npm registry.
 
 **Why it still shows, and why it's a false positive:**
 - Prototype Pollution was fixed in SheetJS **0.19.3**. We are on 0.20.3.

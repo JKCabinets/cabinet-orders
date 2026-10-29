@@ -3,7 +3,7 @@
 ⚠ **SINCE 2026-10-29 START AT `docs/SESSION-HANDOFF-2026-10-29.md`** — the
 state of things, the method lessons, and feature 9's complete design and
 phase 1 plan. THIS file still holds the OPEN LIST (§6) and the item-by-item
-record, items 8 and 52–64 included.
+record, items 8 and 52–67 included.
 
 Covers 2026-10-06 → 2026-10-13: items 29–47 of the running record. It was the
 start point until 2026-10-29. Successor to `docs/SESSION-HANDOFF-2026-09-15.md`, which stays as the
@@ -1050,6 +1050,23 @@ Each line points at the section that owns the detail.
     parser (HCI, J&K) — and it applies to Waypoint orders too: a file in the
     Files tab satisfies it whatever the acknowledgment says. Acknowledgment
     files themselves no longer count (patch_ack_files); this is the rest.
+65. **The cron scripts are not in the repo** (found 2026-10-29, reviewing
+    RECOVERY). `run-cron.sh` and `check-registry-token.sh` live only in
+    `~/cron-jobs/` on the box; their only other copy is Hetzner's 7-day backup.
+    RECOVERY said to copy `run-cron.sh` "from this repo" and to read the
+    schedule from `vercel.json` — neither exists. Commit them (and a copy of
+    the crontab) under `scripts/cron/`, with `healthchecks.map` left out (its
+    URLs are secrets in effect). A code change: pull them whole from the box,
+    read them, commit.
+66. **The GHCR registry token expires 2026-11-16** (per the system map, as of
+    2026-09-22). `check-registry-token.sh` alarms 14 days ahead — from about
+    November 2. Not renewed, every `kamal deploy` fails `denied: denied`, as on
+    2026-08-18 and 2026-09-16. Garrett: a classic PAT with `write:packages`
+    and `read:packages`, into `.env.kamal`, checked with `docker login` before
+    the next deploy (OPERATIONS §5).
+67. **`app/api/shopify/webhooks/route.ts`'s header says POST "register
+    products/update"** — it registers all five topics (`TOPICS`). A comment;
+    fix it with the next code change to that file.
 64. **A mixed order's acknowledgment line does not say which vendor is still
     missing** (found 2026-10-29 from Garrett's screenshot of SHO-1067, J&K +
     Waypoint). Waypoint's acknowledgment MATCHED, yet "The manufacturer's
