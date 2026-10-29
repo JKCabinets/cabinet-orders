@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, requireOrderClaim, withClaimOverrideLog, type ClaimOverrideLog, rateLimitOr429 } from "@/lib/auth";
 import { purchaseOf, archivedVia, archivedReadOnly } from "@/lib/archived";
 import { supabase } from "@/lib/supabase";
+import { removeStoredFiles } from "@/lib/fileGroups";
 import { activityDate } from "@/lib/data";
 
 // GET /api/orders/attachments/[id] — get signed download URL
@@ -98,13 +99,27 @@ export const DELETE = withClaimOverrideLog(async function DELETE(
   const claimGate = await requireOrderClaim(attachment.order_id, auth.session, overrides, "Attachment deleted");
   if (claimGate instanceof NextResponse) return claimGate;
 
-  // Delete from storage (best effort — if it fails we still remove the DB
-  // row so the UI doesn't keep showing a phantom attachment)
-  await supabase.storage.from("order-attachments").remove([attachment.file_path]);
-
-  // Delete from DB
-  const { error } = await supabase.from("order_attachments").delete().eq("id", id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  // ⚠ THE ROW FIRST, THEN THE STORED FILE (item 55, 2026-10-28) -- the order
+  // every other delete keeps: a group's, a room's, a replaced acknowledgment's.
+  // This removed the stored file first, ignoring whether it went, so a row
+  // delete that then failed left the Files tab listing a file whose contents
+  // were gone -- every download failing, nothing saying why. Now a failed row
+  // delete deletes NOTHING and says so; a failed storage removal leaves only an
+  // unreferenced copy -- space, not a broken file -- logged and in the audit
+  // entry, so it can be swept.
+  const { data: gone, error } = await supabase.from("order_attachments").delete().eq("id", id).select("id");
+  if (error) {
+    return NextResponse.json(
+      { error: "delete_failed", message: `${attachment.file_name} was not deleted: ${error.message}` },
+      { status: 500 },
+    );
+  }
+  // Someone else deleted it a moment ago: it is gone, as asked.
+  if (!gone || gone.length === 0) return NextResponse.json({ ok: true });
+  const stored = await removeStoredFiles([attachment.file_path]);
+  if (stored.failed > 0) {
+    console.error(`[attachments] ${id}: row deleted; its stored file could not be removed and is unreferenced at ${attachment.file_path}`);
+  }
 
   // Audit-log every deletion. Useful when an attachment goes missing and we
   // need to know who removed it. Deletes ARE restricted by ownership now
@@ -119,6 +134,9 @@ export const DELETE = withClaimOverrideLog(async function DELETE(
         order_id: attachment.order_id,
         file_name: attachment.file_name,
         original_uploader: attachment.uploaded_by,
+        // false: the row went, its stored copy did not (item 55) -- one to sweep.
+        stored_file_removed: stored.failed === 0,
+        file_path: attachment.file_path,
       },
     });
   } catch { /* non-critical */ }

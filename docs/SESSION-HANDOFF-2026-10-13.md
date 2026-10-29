@@ -990,7 +990,15 @@ Each line points at the section that owns the detail.
     **`updateNotes` / `updateInternalNotes` paint first and ignore a refusal**
     (split out of 53, 2026-10-27) — the flaw item 52 fixed in
     `updateOrderDetails`. Rare for notes; not urgent.
-55. **The single-file delete removes the stored file BEFORE its row**
+55. ✅ FIXED 2026-10-28, `patch_file_delete_order.py`: the row first, then
+    the stored file (removeStoredFiles, as the groups do). A failed row
+    delete deletes nothing and says "<file> was not deleted: <reason>"; a
+    failed storage removal leaves an unreferenced copy, logged, with
+    stored_file_removed: false and its path in the audit entry; a file
+    already deleted by someone else answers ok. Proved on real PostgreSQL
+    against the box's (a refused row delete: the box had removed the stored
+    file first, leaving the row listed with its contents gone). As found:
+    **The single-file delete removes the stored file BEFORE its row**
     (`attachments/[id]` DELETE; noted 2026-10-27). If the row delete then
     fails, the row points at nothing. Groups delete rows first and leave an
     orphan to the sweep instead; the single-file delete should match.
