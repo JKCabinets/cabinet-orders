@@ -328,7 +328,7 @@ stripping `#`, trimming, uppercasing, prepending `SHO-`.
 | **Shopify apps** | Aris Product Options $24 · TnC Terms Checkbox $12.99 · Workflow Transactional Email $0 | | $36.99 |
 | *(Shopify tax)* | AZ state 5.60% + county 1.10% + Queen Creek 2.25% | | ~$6.80 |
 | **Help Scout** | Helpdesk: email, live chat, knowledge base | Standard, 1 user | **$32.57** inc. tax — trial to Sep 1, **first charge Sep 2** |
-| **`jk-sku-builder`** | ⚠ A SECOND application — see below | | **~$17 total** — $7.00 host + $9.91 Supabase compute, the latter already inside the Supabase row above |
+| **`jk-sku-builder`** | The SKU builder, **RETIRING** (2026-10-28) — see below | | **~$17 total** — $7.00 host + $9.91 Supabase compute, the latter already inside the Supabase row above |
 | **Upstash Redis** | Rate limiting (`rateLimitOr429`) | **Free tier** | $0.00 |
 | **GitHub + GHCR** | Repo and container registry | **Free** | $0.00 |
 | **healthchecks.io** | Dead-man's switch. **6 real checks of 13 on the account** — see §6 | **Free** | $0.00 |
@@ -337,14 +337,24 @@ stripping `#`, trimming, uppercasing, prepending `SHO-`.
 | **Avis Plus API** | Waypoint option catalogue, 60 req/min | | |
 | **Tidio** | Current chat widget — **to retire** | | |
 
-⚠ **`jk-sku-builder` is a second application nobody has documented.** It costs
-**~$17/month: ~$7 for its own host (platform unidentified), plus ~$9.91 for its
-own Supabase project — which is folded into the "2× micro compute" of the
-Supabase row above.** That is roughly 9% of the monthly total, **split across
-two line items**: the table reads $7, and the two figures only reconcile if you
-know where the rest is hiding. It appears nowhere in the build handoff or the
-system map. **What is it, is it live, does it touch the same Shopify store, and
-does the OMS depend on it?**
+✅ **`jk-sku-builder` — ANSWERED 2026-10-28, by the website team.** It is the
+**SKU builder**: the Shopify app "Sku-variation-builder" (code at GitHub
+`JKCabinets/shopify-sku-builder`), running on **Render** at
+`shopify-sku-builder.onrender.com`, with its own Supabase project. It drew the
+HCI and J&K finish swatches on product pages and wrote the full SKU (`_sku` and
+`SKU`) into cart lines. **Since 2026-10-28 JK ProductStudio (formerly JK
+Pricing) does that work** — reading its lists from Shopify, hosted by Shopify,
+no server of its own; test order #1066 confirmed it. The website team is
+**retiring** the SKU builder: uninstalling it, deleting the Render service and
+its database, archiving the repo. **~$17/month goes with it** (the $7 host, and
+one of the Supabase row's "2× micro compute") — owner and exact cost to be
+confirmed by them.
+
+**The OMS never called it** — checked 2026-10-28: no code names it, and the
+running app's 36 settings hold no onrender address. **What the OMS does read is
+`_sku`** on each order line, now written by ProductStudio — and never trusted
+blindly: the order webhook checks it derives from the variant's own SKU in
+Shopify, flags a mismatch `sku_mismatch` and rebuilds.
 
 **Upstash is doing ~301 commands a month** — about ten a day. Zero cost, but
 worth knowing it is a whole vendor and network dependency for that volume.
@@ -588,7 +598,7 @@ the reason — previously `curl -f` discarded it and logged only `error: 500`.
   Nothing alerts outside the app. Worth revisiting once order volume is real.
 - Email send failures (once notifications exist)
 - Credential expiry — all of §5
-- The `jk-sku-builder` application
+- (The `jk-sku-builder` application: retiring, 2026-10-28 — §3.)
 - Anything in the storefront
 
 ---
@@ -1226,7 +1236,8 @@ covers the box, not the database, and the database is where the orders are.
   single operational risk**, and a people problem rather than a technical one.
 - **Supabase PITR status and retention.**
 - **Test the Hetzner restore once.** An untested backup is a hypothesis.
-- **What `jk-sku-builder` is**, whether it is live, and what depends on it.
+- ✅ **What `jk-sku-builder` is** — answered 2026-10-28 (§3): the SKU builder,
+  retiring; the OMS never called it.
 
 ⚠ **The sole-admin, restore and PITR items above are one chain, not three
 separate gaps.** A single credential holder · files that exist only on the box

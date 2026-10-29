@@ -1036,6 +1036,19 @@ Each line points at the section that owns the detail.
     parser (HCI, J&K) — and it applies to Waypoint orders too: a file in the
     Files tab satisfies it whatever the acknowledgment says. Acknowledgment
     files themselves no longer count (patch_ack_files); this is the rest.
+62. ✅ ANSWERED 2026-10-28 — **`jk-sku-builder`** (OPERATIONS §3's open
+    question). The website team: it is the SKU builder (Shopify app
+    "Sku-variation-builder", GitHub JKCabinets/shopify-sku-builder, Render at
+    shopify-sku-builder.onrender.com), which drew HCI and J&K swatches and wrote
+    `_sku` / `SKU` into cart lines; JK ProductStudio (the pricing app, hosted
+    by Shopify, no server) does that since 2026-10-28 (test order #1066). Being
+    retired — app, Render service, database, repo; ~$17/month. The OMS never
+    called it: no code names it, and the running app's 36 settings hold no
+    onrender address. The OMS reads `_sku`, now ProductStudio's, verified
+    against the variant's SKU (sku_mismatch otherwise). OPERATIONS §3 and the
+    system map updated; the dated handoffs (08-20, 08-26, 08-27) are left as
+    the record of the question as asked. Owner and exact cost: the website
+    team's message left them as placeholders.
 61. ✅ FIXED 2026-10-28, `patch_delete_order.py` — and WORSE THAN FOUND: the
     Delete button had NO QUESTION, so one click deleted a custom job and every
     file it had, irreversibly. Now Delete asks ("Delete this job and its 3

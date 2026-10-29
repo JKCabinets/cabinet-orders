@@ -79,9 +79,9 @@
   <text x="1054" y="415" class="box-sub">ordersjkcabinets2you.com — the OMS</text>
   <text x="1054" y="432" class="box-sub">renewals: Jan and Apr 2027</text>
   <rect x="50" y="501.5" width="640" height="92" rx="8" fill="#fff" stroke="#d8d3c8" stroke-width="1.5"/>
-  <text x="64" y="526.5" class="box-title">jk-sku-builder — a SECOND application</text>
-  <text x="64" y="544" class="box-sub">its own host and its own Supabase compute, ~$17/mo total</text>
-  <text x="64" y="562" class="box-sub">not drawn further here: it does not touch the OMS box, the OMS database or any flow below</text>
+  <text x="64" y="526.5" class="box-title">jk-sku-builder — the SKU builder, RETIRING (2026-10-28)</text>
+  <text x="64" y="544" class="box-sub">Render (shopify-sku-builder.onrender.com) + its own Supabase, ~$17/mo — being removed</text>
+  <text x="64" y="562" class="box-sub">the OMS never called it; JK ProductStudio (Shopify-hosted) writes _sku / SKU since 10-28</text>
   <text x="64" y="579" class="ptr">→ OPERATIONS §3 for what it is and why it is separate</text>
   <text x="50" y="627.0" class="zone">THE APPLICATION — one Hetzner CPX31, every request through proxy.ts</text>
   <rect x="50" y="643.0" width="1300" height="239" rx="10" fill="#fdfcfa" stroke="#d8d3c8" stroke-width="1.5"/>
