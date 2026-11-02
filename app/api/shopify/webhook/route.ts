@@ -1009,21 +1009,35 @@ export async function POST(req: NextRequest) {
       // old test asked whether the WHOLE order was fulfilled, which a
       // cabinets-plus-samples checkout never is, so the one signal worth having
       // was recorded only on single-category orders.
-      for (const fl of fulfillments) {
-        const dropShip = [...fulfilmentCategories(fl)]
-          .filter(c => !fulfilmentIsAuthoritative(c));
-        if (dropShip.length === 0) continue;
-        // NOT nothing: a fulfilment on a drop-ship vendor means the
-        // MANUFACTURER DISPATCHED. That is the real trigger behind the
-        // notification the order confirmation already promises ("we will
-        // notify you when your order has finished production and is on its
-        // way"), which is currently planned off the production-complete cron
-        // inferring dispatch from a date. Logged rather than discarded, so the
-        // signal exists by the time that work lands.
+      // ⚠ THE OMS MAKES CABINET FULFILMENTS NOW (2026-11-02, feature 9 phase 1):
+      // the daily run marks each vendor's lines fulfilled on its ship date, so
+      // Shopify sends its shipping confirmation -- and each one arrives back here.
+      // It is recognised by its Shopify fulfilment id in the run's record and
+      // logged as the OMS's own; any other cabinet fulfilment (made by hand in
+      // Shopify, or by a vendor) is logged as before. Neither moves a stage:
+      // cabinet stages are the OMS's (fulfilmentIsAuthoritative). If the record
+      // cannot be read, the old outcome stands, marked unchecked.
+      const dropShipFls = fulfillments.filter(fl =>
+        [...fulfilmentCategories(fl)].some(c => !fulfilmentIsAuthoritative(c)));
+      const flGid = (fl: Record<string, unknown>) =>
+        String(fl.admin_graphql_api_id ?? (fl.id != null ? `gid://shopify/Fulfillment/${fl.id}` : ""));
+      let omsMade: Set<string> | null = new Set();
+      if (dropShipFls.length > 0) {
+        const { data: made, error: madeErr } = await supabase.from("shopify_fulfilments")
+          .select("shopify_fulfillment_id").in("shopify_fulfillment_id", dropShipFls.map(flGid).filter(Boolean));
+        omsMade = madeErr ? null : new Set((made ?? []).map((r: { shopify_fulfillment_id: string }) => r.shopify_fulfillment_id));
+      }
+      for (const fl of dropShipFls) {
+        const dropShip = [...fulfilmentCategories(fl)].filter(c => !fulfilmentIsAuthoritative(c));
+        if (omsMade?.has(flGid(fl))) {
+          logWebhook("fulfilment_by_oms", { order_id: project.id, fulfillment: flGid(fl), categories: dropShip.join(",") });
+          continue;
+        }
         logWebhook("fulfilment_not_applied", {
           order_id: project.id, reason: "drop_ship_vendor",
           categories: dropShip.join(","),
           carrier: String(fl.tracking_company ?? ""),
+          ...(omsMade === null && { oms_record: "unchecked" }),
         });
       }
 

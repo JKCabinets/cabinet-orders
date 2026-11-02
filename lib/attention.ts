@@ -1,5 +1,7 @@
 import type { Order, OrderType } from "@/lib/data";
 import { paymentHoldActive, paymentHoldLabel, STAGE_LIST_BY_TYPE } from "@/lib/data";
+import { dueShipChecks } from "@/lib/shipDates";
+import { formatMDY } from "@/lib/dates";
 import { slaRuleFor, slaTier, slaAgeHours, hoursInStage, formatStageAge } from "@/lib/sla";
 import { requirementsFor, type RequirementEnrichment } from "@/lib/requirements";
 
@@ -44,7 +46,9 @@ export type AttentionKind =
   | "unclaimed"
   | "payment_hold"
   | "ack_missing"
-  | "receipt_missing";
+  | "receipt_missing"
+  // "Still on schedule?" (2026-11-02, feature 9 phase 1): lib/shipDates.
+  | "ship_check";
 
 export interface AttentionReason {
   kind: AttentionKind;
@@ -215,6 +219,23 @@ export function attentionFor(
         detail: `${formatStageAge(sinceCreated)} unclaimed`,
       });
     }
+  }
+
+  // ── "Still on schedule?" (2026-11-02, feature 9 phase 1) ───────────────
+  // From the business day before a ship date through the date itself, until
+  // answered "On schedule" for that date (lib/shipDates -- the run's own rule).
+  // A WARNING, not a block: unanswered, the run marks the lines shipped at
+  // 8 a.m. Arizona all the same. A row-readable reason, so every list sees it.
+  // The purchase stops it when this list already says the purchase is held.
+  for (const c of dueShipChecks(order, now, paymentHoldActive(order))) {
+    reasons.push({
+      kind: "ship_check",
+      severity: "medium",
+      label: "Still on schedule?",
+      detail: c.scope === "vendor"
+        ? `${c.vendor} ships ${formatMDY(c.date)}`
+        : `${c.sku} (backordered) ready ${formatMDY(c.date)}`,
+    });
   }
 
   return reasons;

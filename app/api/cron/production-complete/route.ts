@@ -97,8 +97,9 @@ export async function GET(req: NextRequest) {
     // activity row saying the order had advanced, and still counted toward
     // the reported total -- so the one record that would reveal the failure
     // asserted the opposite. There is nothing to DO about a failure here
-    // except not lie about it, which matters more once this cron owns a
-    // customer notification.
+    // except not lie about it. (The customer's shipping email is NOT this
+    // cron's: the cabinet-fulfilment run marks the lines shipped in Shopify on
+    // the ship date, and Shopify sends it -- 2026-11-02.)
     const { error: updateError } = await supabase
       .from("orders")
       .update({

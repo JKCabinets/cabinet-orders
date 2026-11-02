@@ -60,6 +60,15 @@ const HEALTH_GROUPS: { key: string; label: string; detail: string; checks: strin
     checks: ["production-complete", "teams-digest"],
   },
   {
+    // 2026-11-02 (feature 9 phase 1): its own row -- it is what makes Shopify
+    // email customers that their cabinets shipped. It fails when Shopify refuses
+    // a fulfilment, a line cannot be found, or the run runs out of time.
+    key: "fulfilment",
+    label: "Shopify fulfilment",
+    detail: "Cabinet lines marked shipped, so Shopify emails the customer",
+    checks: ["cabinet-fulfilment"],
+  },
+  {
     // 2026-10-05: the retry job that sends website claims on to Help Scout.
     // It fails only when a claim has been stuck for about an hour.
     key: "helpscout",

@@ -12,6 +12,7 @@ import { removeOrderFiles } from "@/lib/orderFiles";
 import { orderAckRequirementMet } from "@/lib/acknowledgments";
 import { requirementsFor, typeEverRequires } from "@/lib/requirements";
 import { mergeStaffLineEdits } from "@/lib/lineFields";
+import { shipDateEdit } from "@/lib/shipDateEdits";
 
 /** Push order updates back to Shopify */
 async function syncToShopify(
@@ -205,7 +206,7 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
     // ⚠ sku_items is here for a SHOPIFY group's line edit (2026-10-29): the
     // stored lines are the base, and only their staff fields change -- see
     // mergeStaffLineEdits below.
-    .select("stage, type, archived, payment_status, payment_hold_cleared_for, project_id, tracking_number, carrier, production_start_date, production_est_finish_date, delivery_date, scheduled_delivery_date, name, customer_email, customer_phone, ship_to, delivery_method, sku_items")
+    .select("stage, type, archived, payment_status, payment_hold_cleared_for, project_id, tracking_number, carrier, production_start_date, production_est_finish_date, delivery_date, scheduled_delivery_date, name, customer_email, customer_phone, ship_to, delivery_method, sku_items, vendor, vendor_ship_dates, ship_checks, shipped_in_shopify")
     .eq("id", id)
     .single();
   if (!currentRow) {
@@ -832,8 +833,33 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
     }
   }
 
+  // ── Ship dates: per vendor, "On schedule", and the locks (2026-11-02) ──
+  // Feature 9 phase 1. ASKED LAST, of the row AS IT WOULD BE WRITTEN -- after
+  // the line merge and the backward-move clearing -- so no path round a lock
+  // exists: a shipped vendor's date cannot change or be cleared, a shipped
+  // line's backorder cannot change (lib/shipDateEdits, Garrett's sentences).
+  const shipEdit = shipDateEdit(
+    currentRow as unknown as Parameters<typeof shipDateEdit>[0], body, updates,
+    { id: auth.session.user.id, name: auth.session.user.name ?? auth.session.user.username },
+    new Date().toISOString(), !!clearedFields && "production_est_finish_date" in clearedFields,
+  );
+  if (!shipEdit.ok) {
+    return NextResponse.json({ error: shipEdit.error, message: shipEdit.message }, { status: shipEdit.status });
+  }
+  Object.assign(updates, shipEdit.set);
+  // ⚠ THE GROUP'S DATE, WHEN THE VENDOR DATES SET IT, IS PUT IN THE BODY: the
+  // trail's and Shopify's write-back's dateChanged() read the body, and the
+  // latest vendor date IS a change to "Est. Production Finish".
+  if (shipEdit.finish !== undefined) body.production_est_finish_date = shipEdit.finish;
+
   const { error } = await supabase.from("orders").update(updates).eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  // What was stored for the ship fields, returned for the store to apply --
+  // it applies what it SENT, and the group's date here is derived.
+  const stored = Object.fromEntries(
+    (["production_est_finish_date", "vendor_ship_dates", "ship_checks", "sku_items"] as const)
+      .filter((k) => updates[k] !== undefined).map((k) => [k, updates[k]]),
+  );
 
   // Where the row ACTUALLY landed. Returned on every path below, because a
   // caller cannot otherwise tell an advance from a plain save: TrackingEntry
@@ -923,10 +949,13 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
   // the same. A delivery date removed says so.
   const dateChanged = (f: "production_start_date" | "production_est_finish_date" | "delivery_date" | "scheduled_delivery_date") =>
     body[f] !== undefined && (body[f] || null) !== (currentRow[f] || null);
-  if (!autoAdvancedTo
+  // A vendor's own date says it more exactly (below) -- not told twice.
+  const vendorDatesOnly = body.vendor_ship_dates !== undefined && !dateChanged("production_start_date");
+  if (!autoAdvancedTo && !vendorDatesOnly
       && (dateChanged("production_start_date") || dateChanged("production_est_finish_date"))) {
     activityTexts.push(`Production dates updated by ${who}`);
   }
+  activityTexts.push(...shipEdit.notes);
 
   const deliveryChanged = (["delivery_date", "scheduled_delivery_date"] as const).filter(dateChanged);
   if (deliveryChanged.length > 0) {
@@ -1123,14 +1152,14 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
 
       return NextResponse.json({
         ok: true,
-        data: { stage: finalStage },
+        data: { stage: finalStage, stored },
         shopify_synced: syncResult.ok,
         shopify_error: syncResult.ok ? undefined : syncResult.error,
       });
     }
   }
 
-  return NextResponse.json({ ok: true, data: { stage: finalStage } });
+  return NextResponse.json({ ok: true, data: { stage: finalStage, stored } });
 });
 
 /**

@@ -180,13 +180,14 @@ export const FIRST_STAGE_BY_CATEGORY: Record<OrderCategory, string> = {
  * delivery-proof gate exists: we are not the ones delivering, so the signed
  * receipt is the only proof we get.
  *
- * ⚠ NOT NOTHING, THOUGH — a cabinet fulfilment means the MANUFACTURER
- * DISPATCHED. That is the real trigger behind the notification the order
- * confirmation already promises ("we will notify you when your order has
- * finished production and is on its way"), which is currently planned off the
- * production-complete cron inferring dispatch from a date. A fulfilment event
- * is better evidence than a date. Not built here; recorded so it is not
- * rediscovered. See the notifications work in the session handoff.
+ * ⚠ THE OMS MAKES THEM NOW (2026-11-02, feature 9 phase 1). The order
+ * confirmation promises "we will notify you when your order has finished
+ * production and is on its way"; the daily cabinet-fulfilment run keeps it by
+ * marking each vendor's lines fulfilled in Shopify on its ship date (and each
+ * backordered line on its own), so SHOPIFY sends its shipping confirmation.
+ * Those fulfilments come back through the webhook and are logged as the OMS's
+ * own (fulfilment_by_oms). Still not a stage: a fulfilment here never moves a
+ * cabinet group -- its stages are the OMS's.
  */
 export function fulfilmentIsAuthoritative(category: OrderCategory): boolean {
   return category === "sample" || category === "hardware";

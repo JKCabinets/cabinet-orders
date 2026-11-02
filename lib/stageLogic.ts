@@ -380,6 +380,15 @@ export function fieldsToClearOnBackwardMove(
   else if (productionPos >= 0 && target.idx === productionPos) {
     clear.production_est_finish_date = null;
   }
+  // ⚠ THE PER-VENDOR DATES GO WITH THE SHIP DATE, AT THE SAME MOVES (Garrett,
+  // 2026-10-29), and the "On schedule" answers with them: re-entry is a fresh
+  // recording. The database refuses vendor dates left behind without the
+  // group's. A shipped vendor's date is never cleared: the order route
+  // refuses the move (lib/shipDateEdits).
+  if ("production_est_finish_date" in clear) {
+    clear.vendor_ship_dates = null;
+    clear.ship_checks = null;
+  }
 
   // ⚠ ONE TRUTH PER ITEM.
   //
@@ -443,6 +452,9 @@ export function describeFieldsCleared(cleared: Record<string, string | null> | n
     // omission this trail exists to prevent.
     tracking_number: "tracking number",
     carrier: "tracking number",
+    // With the finish date, under its label: they are the same date, per vendor.
+    vendor_ship_dates: "production finish",
+    ship_checks: "production finish",
   };
   // Dedupe (delivery_date + scheduled_delivery_date both map to "delivery date")
   const set = new Set<string>();

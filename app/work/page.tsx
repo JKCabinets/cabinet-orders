@@ -16,7 +16,7 @@ import type { AttentionKind } from "@/lib/attention";
 
 const REASONS: readonly AttentionKind[] = [
   "sla_breached", "sla_due_soon", "blocked_missing_data",
-  "unclaimed", "payment_hold", "ack_missing", "receipt_missing",
+  "unclaimed", "payment_hold", "ack_missing", "receipt_missing", "ship_check",
 ];
 
 export default async function WorkPage({

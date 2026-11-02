@@ -3,11 +3,17 @@ import { getShopifyToken } from "@/lib/shopify";
 /**
  * shopifyStageSync.ts — push an OMS stage onto the matching Shopify order.
  *
- * Extracted so production-complete and delivery-complete share ONE
- * implementation. They previously differed: production synced to Shopify,
- * delivery did not, so an order marked Delivered in the OMS still showed
- * "At cross dock" in Shopify forever. Two copies would have drifted the same
- * way again.
+ * Extracted so production-complete and delivery-complete shared ONE
+ * implementation. They had differed: production synced to Shopify, delivery
+ * did not, so an order marked Delivered in the OMS still showed "At cross
+ * dock" in Shopify forever. (delivery-complete is gone -- delivery is
+ * confirmed by a person, 2b479e6 -- and production-complete is the caller.)
+ *
+ * ⚠ IT WRITES THE STAGE, NOT A FULFILMENT. Marking cabinet lines shipped in
+ * Shopify, which is what sends the customer's shipping email, is the daily
+ * cabinet-fulfilment run's (lib/shopifyFulfil, 2026-11-02).
+ * ⚠ REST 2024-01, a retired version: Shopify answers it with its oldest
+ * supported one. Found 2026-10-29; an open item, not changed here.
  *
  * Writes the "Production Stage" note attribute and merges the stage into the
  * order's tags. Both are merges, never replacements — see mergeTags.

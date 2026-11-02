@@ -68,6 +68,7 @@ const REASON_FILTERS: { key: AttentionKind | null; label: string }[] = [
   { key: "sla_due_soon", label: "Due soon" },
   { key: "unclaimed", label: "Unclaimed" },
   { key: "payment_hold", label: "Payment hold" },
+  { key: "ship_check", label: "Still on schedule?" },
 ];
 
 /** A queue entry: a purchase with its orders, or a standalone row. */
