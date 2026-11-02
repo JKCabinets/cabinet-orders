@@ -58,3 +58,36 @@ export function activityStamp(entry: { at?: string | null; time?: string | null 
   const clock = new Date(t).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: PHOENIX });
   return `${phoenixMDY(t)} ${clock}`;
 }
+
+/**
+ * ⚠ ARIZONA'S DATE, "2026-11-02" (2026-10-29, feature 9 phase 1). What day it
+ * is for the business -- when a ship date has come, when "Still on schedule?"
+ * shows. `new Date().toISOString().slice(0, 10)` is UTC's date, which in
+ * Arizona (UTC-7, no daylight saving) is TOMORROW from 5 p.m.: a line due
+ * today read overdue, "ready" came a day early (five places found 2026-10-29).
+ * Read from the clock's own parts in America/Phoenix, never from a formatted
+ * string whose shape depends on the locale.
+ */
+export function arizonaToday(now: number = Date.now()): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: PHOENIX, year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date(now));
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+/**
+ * The business day before an ISO date: Friday for a Saturday, Sunday or
+ * Monday, otherwise the day before (Garrett, 2026-10-29: "Still on schedule?"
+ * shows on the business day before the ship date -- Friday for a Monday).
+ * Calendar arithmetic only, in UTC, where an ISO date has no clock to shift.
+ * Not a date: returned unchanged. Holidays are not business days off here.
+ */
+export function businessDayBefore(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return iso;
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  const back = { 0: 2, 1: 3, 6: 1 }[d.getUTCDay() as 0 | 1 | 6] ?? 1;
+  d.setUTCDate(d.getUTCDate() - back);
+  return d.toISOString().slice(0, 10);
+}

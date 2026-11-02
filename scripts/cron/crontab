@@ -1,0 +1,59 @@
+# Edit this file to introduce tasks to be run by cron.
+# 
+# Each task to run has to be defined through a single line
+# indicating with different fields when the task will be run
+# and what command to run for the task
+# 
+# To define the time you can provide concrete values for
+# minute (m), hour (h), day of month (dom), month (mon),
+# and day of week (dow) or use '*' in these fields (for 'any').
+# 
+# Notice that tasks will be started based on the cron's system
+# daemon's notion of time and timezones.
+# 
+# Output of the crontab jobs (including errors) is sent through
+# email to the user the crontab file belongs to (unless redirected).
+# 
+# For example, you can run a backup of all your user accounts
+# at 5 a.m every week with:
+# 0 5 * * 1 tar -zcf /var/backups/home.tgz /home/
+# 
+# For more information see the manual pages of crontab(5) and cron(8)
+# 
+# m h  dom mon dow   command
+# JK Cabinets order management — cron jobs
+# ⚠ TWO COPIES, ONE TRUTH (2026-10-29, item 65): committed as
+# scripts/cron/crontab; the box's installed crontab is what runs. The deploy
+# chain diffs them (crontab -l | diff - scripts/cron/crontab). Ping URLs live in
+# ~/cron-jobs/healthchecks.map on the box only, keyed by endpoint path (and
+# "registry-token"), never here.
+# All times UTC. Server is configured for UTC.
+
+# Production-complete: 8:00 AM UTC daily
+0 8 * * * /home/garrett/cron-jobs/run-cron.sh /api/cron/production-complete
+
+# No delivery-complete job: delivery is human-confirmed (removed in 2b479e6).
+
+# Teams digest: 2:00 PM UTC, weekdays only (Mon-Fri)
+0 14 * * 1-5 /home/garrett/cron-jobs/run-cron.sh /api/cron/teams-digest
+
+# Avis catalog sync: 7:30 AM UTC daily, ahead of the production-complete job
+30 7 * * * /home/garrett/cron-jobs/run-cron.sh /api/cron/sync-avis-catalog
+
+# Ingestion check: hourly. Reconciles orders both ways -- every Shopify order
+# past a 15-minute grace is in the OMS, and every purchase the OMS holds is
+# still in Shopify -- and alarms on a difference (ingestion died silently
+# 2026-08-19 to 08-20).
+20 * * * * /home/garrett/cron-jobs/run-cron.sh /api/cron/webhook-health
+
+# GHCR registry token: weekly, alarms 14 days before expiry (handoff item 21)
+0 15 * * 1 /home/garrett/cron-jobs/check-registry-token.sh
+
+# Claims to Help Scout: every 15 minutes, sends any website claim not yet in Help Scout (2026-10-05)
+*/15 * * * * /home/garrett/cron-jobs/run-cron.sh /api/cron/helpscout-sync
+
+# Cabinet fulfilment: 3:00 PM UTC (8:00 AM Arizona) daily. Marks each cabinet
+# vendor's lines fulfilled in Shopify on its ship date, and each backordered
+# line on its own -- Shopify then emails the customer (feature 9 phase 1,
+# 2026-10-29). After production-complete, which moves the group at 8:00 UTC.
+0 15 * * * /home/garrett/cron-jobs/run-cron.sh /api/cron/cabinet-fulfilment

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Plus, Trash2, Check, X, Pencil, AlertTriangle } from "lucide-react";
 import { SkuItem } from "@/lib/data";
 import { useStore } from "@/lib/store";
@@ -43,6 +43,19 @@ export function OrderDetails({ orderId, skuItems, readOnly = false, ack }: Order
   const { updateOrderDetails } = useStore();
 
   const [localSkuItems, setLocalSkuItems] = useState<SkuItem[]>(skuItems);
+  /**
+   * ⚠ THE STORED LINES, NOT A COPY TAKEN ONCE (2026-10-29, feature 9 phase 1).
+   * The list was copied from props when the editor opened and never again, so
+   * a Shopify update, a Re-decode or another tab's change left it stale -- and
+   * the next save sent that stale list whole, over them. It now follows the
+   * stored lines, except while a save of its own is out.
+   */
+  const latestLines = useRef(skuItems);
+  latestLines.current = skuItems;
+  const savingLines = useRef(false);
+  useEffect(() => { if (!savingLines.current) setLocalSkuItems(skuItems); }, [skuItems]);
+  // The server's sentence when it refuses (item 52's rule, here at last).
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [addingItem, setAddingItem] = useState(false);
   const [newSku, setNewSku] = useState("");
   const [newQty, setNewQty] = useState("1");
@@ -125,10 +138,26 @@ export function OrderDetails({ orderId, skuItems, readOnly = false, ack }: Order
     return { count: flagged.length, reasons: seen.join(", ") };
   }, [localSkuItems]);
 
-  async function saveSkuItems(items: SkuItem[]) {
+  /**
+   * ⚠ SAVED WHEN THE SERVER SAYS SO (2026-10-29). This showed the change,
+   * ignored the answer and flashed "Saved" -- so a refused edit stayed on
+   * screen as if saved: item 52's flaw, which this editor still had. A refusal
+   * now puts the stored lines back and says why; an editor closes only on a
+   * save. Resolves whether it saved.
+   */
+  async function saveSkuItems(items: SkuItem[]): Promise<boolean> {
+    setSaveError(null);
     setLocalSkuItems(items);
-    await updateOrderDetails(orderId, { sku_items: items });
+    savingLines.current = true;
+    const refused = await updateOrderDetails(orderId, { sku_items: items });
+    savingLines.current = false;
+    if (refused) {
+      setLocalSkuItems(latestLines.current);
+      setSaveError(refused);
+      return false;
+    }
     flash();
+    return true;
   }
 
   function flash() {
@@ -144,7 +173,7 @@ export function OrderDetails({ orderId, skuItems, readOnly = false, ack }: Order
       description: newDesc.trim() || undefined,
     };
     const updated = [...localSkuItems, item];
-    await saveSkuItems(updated);
+    if (!(await saveSkuItems(updated))) return;
     setNewSku(""); setNewQty("1"); setNewDesc(""); setAddingItem(false);
   }
 
@@ -155,8 +184,7 @@ export function OrderDetails({ orderId, skuItems, readOnly = false, ack }: Order
 
   async function updateSkuItem(idx: number, updates: Partial<SkuItem>) {
     const updated = localSkuItems.map((item, i) => i === idx ? { ...item, ...updates } : item);
-    await saveSkuItems(updated);
-    setEditingItemIdx(null);
+    if (await saveSkuItems(updated)) setEditingItemIdx(null);
   }
 
   /**
@@ -177,8 +205,7 @@ export function OrderDetails({ orderId, skuItems, readOnly = false, ack }: Order
           backorder_notes: "",
         };
     const updated = localSkuItems.map((item, i) => i === idx ? { ...item, ...updates } : item);
-    await saveSkuItems(updated);
-    setBackorderIdx(null);
+    if (await saveSkuItems(updated)) setBackorderIdx(null);
   }
 
   // Render one SKU row by index. Pulled out into a function so we can
@@ -330,6 +357,7 @@ export function OrderDetails({ orderId, skuItems, readOnly = false, ack }: Order
       <div className="flex items-center justify-between mb-4">
         <p className="text-[10px] uppercase tracking-[0.16em] text-cream/50 font-medium">Order details</p>
         {saved && <span className="text-[10px] text-cream/55 italic">Saved</span>}
+        {saveError && <span role="alert" className="text-[10px] max-w-[22rem] text-right" style={{ color: "#e08585" }}>Not saved: {saveError}</span>}
       </div>
 
       {/* SKU Items */}

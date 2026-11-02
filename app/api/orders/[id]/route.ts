@@ -11,6 +11,7 @@ import { pushClaimNotes } from "@/lib/claimHelpScout";
 import { removeOrderFiles } from "@/lib/orderFiles";
 import { orderAckRequirementMet } from "@/lib/acknowledgments";
 import { requirementsFor, typeEverRequires } from "@/lib/requirements";
+import { mergeStaffLineEdits } from "@/lib/lineFields";
 
 /** Push order updates back to Shopify */
 async function syncToShopify(
@@ -201,7 +202,10 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
     // request that supplies the date and the stage together.
     // ⚠ The other three dates are here so the activity block can tell a date
     // that CHANGED from one that was merely sent (2026-10-14) -- see there.
-    .select("stage, type, archived, payment_status, payment_hold_cleared_for, project_id, tracking_number, carrier, production_start_date, production_est_finish_date, delivery_date, scheduled_delivery_date, name, customer_email, customer_phone, ship_to, delivery_method")
+    // ⚠ sku_items is here for a SHOPIFY group's line edit (2026-10-29): the
+    // stored lines are the base, and only their staff fields change -- see
+    // mergeStaffLineEdits below.
+    .select("stage, type, archived, payment_status, payment_hold_cleared_for, project_id, tracking_number, carrier, production_start_date, production_est_finish_date, delivery_date, scheduled_delivery_date, name, customer_email, customer_phone, ship_to, delivery_method, sku_items")
     .eq("id", id)
     .single();
   if (!currentRow) {
@@ -692,7 +696,27 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
   if (body.member)                 updates.member     = body.member;
   if (body.door_style !== undefined) updates.door_style = cleanInput(body.door_style as string);
   if (body.color !== undefined)    updates.color      = cleanInput(body.color as string);
-  if (body.sku_items !== undefined) updates.sku_items = body.sku_items;
+  // ⚠ ON A SHOPIFY GROUP, ONLY THE STAFF FIELDS CHANGE (2026-10-29, feature 9
+  // phase 1; Garrett: every writer keeps the line id and the backorder fields).
+  // This stored what was sent, so a line kept Shopify's line id -- and Shopify
+  // kept its lines -- only while every client sent them back, and the line
+  // editor sends the copy it took when it opened. Now the STORED lines are the
+  // base: each sent line must be the stored line at its place, and only its
+  // backorder fields are taken (lib/lineFields). A copy taken before the lines
+  // changed is refused, 409, rather than written over them. A custom job's or a
+  // claim's lines are the OMS's own, and are stored as sent, as before.
+  if (body.sku_items !== undefined) {
+    if (currentRow.project_id) {
+      const merged = mergeStaffLineEdits(currentRow.sku_items, body.sku_items);
+      if (!merged.ok) {
+        return NextResponse.json({ error: merged.error, message: merged.message },
+          { status: merged.error === "lines_changed" ? 409 : 422 });
+      }
+      updates.sku_items = merged.lines;
+    } else {
+      updates.sku_items = body.sku_items;
+    }
+  }
   if (body.delivery_date !== undefined) updates.delivery_date = body.delivery_date;
   if (body.scheduled_delivery_date !== undefined) updates.scheduled_delivery_date = body.scheduled_delivery_date;
   if (body.delivery_window !== undefined) updates.delivery_window = cleanInput(body.delivery_window as string);

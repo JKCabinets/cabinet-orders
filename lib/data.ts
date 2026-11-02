@@ -174,10 +174,23 @@ export interface SkuModification {
   label: string; // human label, e.g. 'Reduce Depth to 4"'
 }
 
+/** An "On schedule" answer: the date it was given for, who (team member id), when (ISO). */
+export interface ShipCheckAnswer { date: string; by: string; at: string }
+
 export interface SkuItem {
   sku: string;
   /** Shopify variant id, captured at ingest. Authoritative key for vendor resolution. */
   variant_id?: string;
+  /**
+   * Shopify's id for THIS LINE, its number as text (2026-10-29, feature 9
+   * phase 1; lib/lineFields' lineItemIdOf). Written by the webhook on create
+   * and on every update; a line stored before then gets it at its next Shopify
+   * update. Two lines can share a variant id -- two Waypoint cabinets on one
+   * variant in two finishes -- and never this, so the fulfilment run and item
+   * 63's carry-over match on it first. Absent on a custom job's or a claim's
+   * lines, which come from no Shopify line.
+   */
+  line_item_id?: string;
   /**
    * The Shopify vendor for THIS line, captured at ingest from
    * line_items[].vendor -- the same field that decides which group of a
@@ -204,6 +217,14 @@ export interface SkuItem {
   backordered?: boolean;
   expected_ready_date?: string | null; // YYYY-MM-DD
   backorder_notes?: string;
+  /**
+   * "Still on schedule?" answered "On schedule" for this backordered line
+   * (2026-10-29, feature 9 phase 1): the ready date it was given for, who,
+   * when. It counts only while `expected_ready_date` is that date -- a changed
+   * date asks again. A staff field (lib/lineFields' STAFF_LINE_FIELDS: kept
+   * across Shopify updates) that ONLY the order route writes, never a client.
+   */
+  ready_confirmed?: ShipCheckAnswer;
   /**
    * Decoded display fields, persisted at ingest for ALL vendors (Waypoint
    * from Avis names, HCI/J&K from their composite SKU) so the UI never
@@ -317,6 +338,23 @@ export interface Order {
   // Production timeline
   production_start_date?: string | null;
   production_est_finish_date?: string | null;
+  /**
+   * ⚠ A MIXED CABINET GROUP'S SHIP DATE PER VENDOR (2026-10-29, feature 9
+   * phase 1): {"J&K Cabinetry": "2026-11-01", "Waypoint Cabinetry": "2026-11-10"}.
+   * Null on a single-vendor group, and on a mixed group whose vendors ship
+   * together: then production_est_finish_date is every vendor's. When set, the
+   * database holds production_est_finish_date to the LATEST of them -- the day
+   * the group moves to At cross dock. lib/shipDates reads it; nothing else should.
+   */
+  vendor_ship_dates?: Record<string, string> | null;
+  /** "Still on schedule?" answered "On schedule", per vendor (lib/shipDates). */
+  ship_checks?: Record<string, ShipCheckAnswer> | null;
+  /**
+   * What the OMS has marked shipped in Shopify: "vendor:<name>" and
+   * "line:<key>" -> when (ISO). Written ONLY by the database, from the
+   * fulfilment record (migration 2026-10-29). Read it through lib/shipDates.
+   */
+  shipped_in_shopify?: Record<string, string> | null;
   // Delivery
   delivery_date?: string | null;
   scheduled_delivery_date?: string | null;
@@ -489,7 +527,9 @@ export function shapeOrder(raw: Record<string, unknown>): Order {
     stage_events: Array.isArray(raw.stage_events) ? (raw.stage_events as StageEvent[]) : [],
     door_style: (raw.door_style as string) ?? "",
     color: (raw.color as string) ?? "",
-    sku_items: (raw.sku_items as { sku: string; quantity: number; description?: string }[]) ?? [],
+    // ⚠ SkuItem[], AND PASSED THROUGH WHOLE (2026-10-29): every field a line
+    // carries -- its Shopify line id, its backorder -- reaches the browser.
+    sku_items: (raw.sku_items as SkuItem[]) ?? [],
     // ⚠ A FIELD ABSENT FROM THIS MAPPER IS undefined IN EVERY BROWSER, however
     // full the column is, and the TYPE WILL NOT SAY SO -- both of these are
     // optional on Order, so a mapper that skips them still compiles. Added here
@@ -526,6 +566,11 @@ export function shapeOrder(raw: Record<string, unknown>): Order {
     stage_entered_at: (raw.stage_entered_at as string | null) ?? null,
     production_start_date: (raw.production_start_date as string | null) ?? null,
     production_est_finish_date: (raw.production_est_finish_date as string | null) ?? null,
+    // ⚠ THE THREE FEATURE-9 COLUMNS (2026-10-29), or they are undefined on every
+    // screen however correctly the database holds them.
+    vendor_ship_dates: (raw.vendor_ship_dates as Record<string, string> | null) ?? null,
+    ship_checks: (raw.ship_checks as Record<string, ShipCheckAnswer> | null) ?? null,
+    shipped_in_shopify: (raw.shipped_in_shopify as Record<string, string> | null) ?? null,
     scheduled_delivery_date: (raw.scheduled_delivery_date as string | null) ?? null,
     // The other three delivery fields Order declares. Unmapped until
     // 2026-08-20, so they were undefined on every row on every load path.

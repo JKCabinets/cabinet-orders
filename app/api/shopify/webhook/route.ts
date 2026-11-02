@@ -10,6 +10,7 @@ import { readConsent, type TermsConsent } from "@/lib/consent";
 import { logWebhook } from "@/lib/webhookLog";
 import { removeShopifyPurchase } from "@/lib/shopifyRemoval";
 import { colorOptionOf } from "@/lib/shopifyColor";
+import { keepStaffLineFields, lineItemIdOf } from "@/lib/lineFields";
 // isSampleVendor and lookupVendorsForSkus are no longer imported here.
 // Classification moved into lib/categories (one implementation, shared with
 // grouping), and the per-line vendor now comes from the payload rather than
@@ -211,6 +212,11 @@ function buildOrder(payload: Record<string, unknown>) {
     // then dropped by `.filter`; now it falls back, and a line with nothing at
     // all is KEPT + flagged missing_sku rather than silently disappearing.
     const variantIdStr = String(i.variant_id ?? "");
+    // ⚠ SHOPIFY'S OWN ID FOR THIS LINE (2026-10-29, feature 9 phase 1), in one
+    // form (lib/lineFields). Two Waypoint cabinets on one variant in two finishes
+    // are two lines with one variant id; this is what tells them apart -- for
+    // the fulfilment run, and as item 63's first pass. Absent, nothing is stored.
+    const lineItemId = lineItemIdOf(i.id);
     const rawSku = typeof i.sku === "string" ? i.sku.trim() : "";
     const baseVariantSku = rawSku || variantIdStr;
     // The variant's own SKU from Shopify product data — the tamper-proof
@@ -328,6 +334,7 @@ function buildOrder(payload: Record<string, unknown>) {
       // key for vendor resolution (shopify_products.id) — two vendors can share
       // a base SKU but never a variant_id.
       variant_id: variantIdStr,
+      ...(lineItemId ? { line_item_id: lineItemId } : {}),
       // The Shopify vendor for THIS line, retained at ingest.
       //
       // Without it the input that decided a line's group is kept nowhere: a
@@ -479,48 +486,9 @@ function groupFields(items: BuiltItem[]) {
   };
 }
 
-/**
- * ⚠ WHAT ONLY THE OMS KNOWS ABOUT A LINE SURVIVES A SHOPIFY UPDATE (item 63,
- * 2026-10-29). orders/updated rebuilds every group's lines from the payload --
- * Shopify is the source of what was bought -- and the rebuilt lines carried
- * nothing staff had set: one refund, edit or payment change erased every
- * backorder mark on the purchase, its flag, ready date and notes. Shown on the
- * real webhook before this was written. These fields are carried over from the
- * stored line; everything else still comes from the payload.
- *
- * Matched in Shopify's line order, in three passes, each stored line used at
- * most once: variant id AND SKU; then variant id; then SKU, for lines that have
- * no variant id. So two identical lines keep their marks in order, a line
- * removed in Shopify takes its mark with it, and a reordered payload moves no
- * mark onto the wrong line.
- */
-const STAFF_LINE_FIELDS = ["backordered", "expected_ready_date", "backorder_notes"] as const;
-
-function keepStaffLineFields(rebuilt: BuiltItem[], stored: unknown): BuiltItem[] {
-  const prior = Array.isArray(stored) ? (stored as Record<string, unknown>[]) : [];
-  if (!prior.some((p) => p && STAFF_LINE_FIELDS.some((k) => p[k] !== undefined))) return rebuilt;
-  const vid = (v: unknown) => String(v ?? "").trim();
-  const sku = (v: unknown) => String(v ?? "").trim().toUpperCase();
-  const passes: Array<(r: BuiltItem, p: Record<string, unknown>) => boolean> = [
-    (r, p) => !!vid(r.variant_id) && vid(r.variant_id) === vid(p.variant_id) && sku(r.sku) === sku(p.sku),
-    (r, p) => !!vid(r.variant_id) && vid(r.variant_id) === vid(p.variant_id),
-    (r, p) => !vid(r.variant_id) && !vid(p.variant_id) && !!sku(r.sku) && sku(r.sku) === sku(p.sku),
-  ];
-  const out = rebuilt.map((r) => ({ ...r }) as BuiltItem & Record<string, unknown>);
-  const used = new Set<number>();
-  const matched = new Set<number>();
-  for (const pass of passes) {
-    out.forEach((r, ri) => {
-      if (matched.has(ri)) return;
-      const pi = prior.findIndex((p, i) => !used.has(i) && !!p && pass(r, p));
-      if (pi < 0) return;
-      used.add(pi);
-      matched.add(ri);
-      for (const k of STAFF_LINE_FIELDS) if (prior[pi][k] !== undefined) r[k] = prior[pi][k];
-    });
-  }
-  return out;
-}
+// (2026-10-29) STAFF_LINE_FIELDS and keepStaffLineFields moved to lib/lineFields,
+// with Shopify's line item id as the first pass -- one home for what only the
+// OMS knows about a line, read by this route, the order route and the run.
 
 export async function POST(req: NextRequest) {
   // Pre-emptively reject oversized payloads (defense in depth — also check
