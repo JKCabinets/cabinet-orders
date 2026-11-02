@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { Calendar, Check, Send, Upload, Zap } from "lucide-react";
-import { nextStageFor, type Order, type PaymentFields } from "@/lib/data";
+import { nextStageFor, type Order, type PaymentFields, type SkuItem } from "@/lib/data";
 import { requirementsFor, dateControlsFor, type RequirementEnrichment, type RequirementState } from "@/lib/requirements";
-import { productionAutoAdvance } from "@/lib/autoAdvance";
+import { productionAutoAdvance, productionAutoAdvanceSkip } from "@/lib/autoAdvance";
 import { typeCarriesTracking } from "@/lib/categories";
-import { formatMDY } from "@/lib/dates";
+import { formatMDY, weekdayMonthDay, monthDay } from "@/lib/dates";
+import { cabinetVendorsOf, vendorShipDate, dueShipChecks, type DueCheck } from "@/lib/shipDates";
 
 /**
  * What this row needs before it can move, and the controls that do it.
@@ -97,6 +98,12 @@ export type DateFields = {
   scheduled_delivery_date?: string | null;
   /** A claim's, saved with its delivery date (2026-10-13). */
   tracking_number?: string | null;
+  /** A mixed cabinet group's ship date per vendor (2026-11-02, feature 9). */
+  vendor_ship_dates?: Record<string, string> | null;
+  /** "Still on schedule?" answered "On schedule" (the server stamps who and when). */
+  ship_check?: { vendor: string; date: string } | { line_key: string; date: string };
+  /** A backordered line's "Delayed: new date": the lines with its ready date moved. */
+  sku_items?: SkuItem[];
 };
 
 /** Requirements the production-date pair satisfies, at either stage. */
@@ -229,6 +236,19 @@ export function NextActionPanel({
   const [saveError, setSaveError] = useState<string | null>(null);
   useEffect(() => { setSaveError(null); }, [openDate]);
 
+  // ⚠ A MIXED CABINET GROUP SHIPS PER VENDOR (2026-11-02, feature 9 phase 1):
+  // one "ships from the factory" date each; the server makes the latest the
+  // group's (lib/shipDateEdits), so the band sends no group date of its own.
+  const vendors = cabinetVendorsOf(order);
+  const perVendor = vendors.length > 1;
+  const [vendorDates, setVendorDates] = useState<Record<string, string>>(
+    () => Object.fromEntries(vendors.map((v) => [v, vendorShipDate(order, v) ?? ""])));
+  // "Still on schedule?" -- which check is open on "Delayed: new date", and its date.
+  const [delayFor, setDelayFor] = useState<string | null>(null);
+  const [delayDate, setDelayDate] = useState("");
+  const [checkSaving, setCheckSaving] = useState<string | null>(null);
+  const [checkError, setCheckError] = useState<{ key: string; text: string } | null>(null);
+
   async function save(patch: DateFields) {
     setSaving(true);
     setSaveError(null);
@@ -317,9 +337,42 @@ export function NextActionPanel({
         : ready
           ? (autoAdvance
               ? `Moves to ${autoAdvance.to} on ${formatMDY(autoAdvance.on)}, when production ends.`
+                // (2026-11-02, §4.2 item 9) A cabinet order's lines are marked
+                // shipped in Shopify on the date, and Shopify emails the customer.
+                + (order.type === "order" ? " Shopify then emails the customer that it shipped." : "")
               : `Ready to move to ${next}.`)
           : `Move to ${next} once ${listOf(blocking.map((o) => o.req.label))} `
             + `${blocking.length === 1 ? "is" : "are"} recorded.`;
+
+  // ⚠ "STILL ON SCHEDULE?" (2026-11-02, feature 9 phase 1). The run's own rule
+  // (lib/shipDates), asked of the purchase as production-complete asks it: the
+  // band never asks about a date the run will not act on. The wording is the
+  // approved staff check (docs/SESSION-HANDOFF-2026-10-29.md §4.4), exactly.
+  // "On schedule" is recorded (the server stamps who and when); "Delayed: new
+  // date" saves the new date -- the vendor's own on a mixed group, the group's
+  // on a single vendor, the ready date on a backordered line -- and the run
+  // follows it. Unanswered, the run marks it shipped on the date all the same.
+  const checks: DueCheck[] = dueShipChecks(order, Date.now(), !!productionAutoAdvanceSkip(order, project));
+  const checkKey = (c: DueCheck) => (c.scope === "vendor" ? `vendor:${c.vendor}` : `line:${c.key ?? c.index}`);
+  async function answer(c: DueCheck, delayed: string | null) {
+    const k = checkKey(c);
+    setCheckSaving(k);
+    setCheckError(null);
+    const patch: DateFields = !delayed
+      ? { ship_check: c.scope === "vendor" ? { vendor: c.vendor, date: c.date } : { line_key: c.key ?? "", date: c.date } }
+      : c.scope === "vendor"
+        ? (perVendor
+            ? { vendor_ship_dates: Object.fromEntries(vendors.map((v) => [v, v === c.vendor ? delayed : (vendorShipDate(order, v) ?? delayed)])) }
+            : { production_est_finish_date: delayed })
+        : { sku_items: (order.sku_items ?? []).map((l, i) => (i === c.index ? { ...l, expected_ready_date: delayed } : l)) };
+    try {
+      const refused = await onSaveDates(patch);
+      if (typeof refused === "string") { setCheckError({ key: k, text: refused }); return; }
+      setDelayFor(null);
+    } finally {
+      setCheckSaving(null);
+    }
+  }
 
   return (
     <div className="px-5 py-4" style={flush ? undefined : { borderLeft: HAIRLINE }}>
@@ -400,12 +453,21 @@ export function NextActionPanel({
               <p role="alert" className="text-[11px] max-w-[22rem] text-right" style={{ color: "#e08585" }}>{saveError}</p>
             )}
             {openDate === "production" && (
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 flex-wrap justify-end">
                 <input type="date" value={prodStart} onChange={(e) => setProdStart(e.target.value)}
                   title="Production starts" aria-label="Production start date" autoFocus style={DATE_INPUT} />
                 <span className="text-cream/30 text-[11px]">&rarr;</span>
-                <input type="date" value={prodFinish} onChange={(e) => setProdFinish(e.target.value)}
-                  title="Ship from factory" aria-label="Ship from factory date" style={DATE_INPUT} />
+                {perVendor ? vendors.map((v) => (
+                  <label key={v} className="flex items-center gap-1 text-[10px] text-cream/55">
+                    {v}
+                    <input type="date" value={vendorDates[v] ?? ""}
+                      onChange={(e) => setVendorDates((d) => ({ ...d, [v]: e.target.value }))}
+                      title={`${v} ships from the factory`} aria-label={`${v} ship from factory date`} style={DATE_INPUT} />
+                  </label>
+                )) : (
+                  <input type="date" value={prodFinish} onChange={(e) => setProdFinish(e.target.value)}
+                    title="Ship from factory" aria-label="Ship from factory date" style={DATE_INPUT} />
+                )}
                 {/* ⚠ BOTH DATES, THOUGH ONLY THE START ONE GATES. The start date
                     advances the row; the estimated finish is what
                     `production-complete` later advances ON, so a row saved with
@@ -413,9 +475,11 @@ export function NextActionPanel({
                     Asking for both here is the difference between one trip and
                     two. */}
                 <button
-                  onClick={() => save({ production_start_date: prodStart || null,
-                                        production_est_finish_date: prodFinish || null })}
-                  disabled={saving || (isClaim ? !(prodStart || prodFinish) : !prodStart)}
+                  onClick={() => save(perVendor
+                    ? { production_start_date: prodStart || null, vendor_ship_dates: vendorDates }
+                    : { production_start_date: prodStart || null, production_est_finish_date: prodFinish || null })}
+                  disabled={saving || (isClaim ? !(prodStart || prodFinish) : !prodStart)
+                    || (perVendor && vendors.some((v) => !vendorDates[v]))}
                   title={isClaim
                     ? "Save the dates on this claim"
                     : prodStart
@@ -526,6 +590,55 @@ export function NextActionPanel({
           )}
         </div>
       </div>
+      {checks.length > 0 && (
+        <div className="mt-3 flex flex-col gap-2">
+          {checks.map((c) => {
+            const k = checkKey(c);
+            const subject = c.scope === "vendor" ? c.vendor : `${c.sku} (backordered)`;
+            return (
+              <div key={k} role="group" aria-label="Still on schedule?"
+                className="rounded-lg px-3 py-2 flex items-center gap-3 flex-wrap"
+                style={{ border: HAIRLINE, background: "rgba(255,255,255,0.03)" }}>
+                <div className="flex-1 min-w-[16rem]">
+                  <p className="text-[12px] text-cream/85">
+                    <strong>{subject} ships from the factory on {weekdayMonthDay(c.date)}.</strong> Still on schedule?
+                  </p>
+                  <p className="text-[11px] text-cream/50 italic">
+                    If nobody answers, it&apos;s marked shipped on {monthDay(c.date)}, and Shopify emails the customer.
+                  </p>
+                  {checkError?.key === k && (
+                    <p role="alert" className="text-[11px] mt-1" style={{ color: "#e08585" }}>{checkError.text}</p>
+                  )}
+                </div>
+                {!readOnly && (delayFor === k ? (
+                  <div className="flex items-center gap-1.5">
+                    <input type="date" value={delayDate} onChange={(e) => setDelayDate(e.target.value)}
+                      aria-label={`New date for ${subject}`} autoFocus style={DATE_INPUT} />
+                    <button onClick={() => answer(c, delayDate)}
+                      disabled={!!checkSaving || !delayDate || delayDate === c.date} className={PILL_QUIET}>
+                      {checkSaving === k ? "\u2026" : "Save"}
+                    </button>
+                    <button onClick={() => setDelayFor(null)} disabled={!!checkSaving}
+                      className={PILL + " text-cream/45 hover:text-cream/75"}>
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5">
+                    <button onClick={() => answer(c, null)} disabled={!!checkSaving} className={PILL_QUIET}>
+                      {checkSaving === k ? "\u2026" : "On schedule"}
+                    </button>
+                    <button onClick={() => { setDelayFor(k); setDelayDate(c.date); setCheckError(null); }}
+                      disabled={!!checkSaving} className={PILL_QUIET}>
+                      Delayed: new date
+                    </button>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

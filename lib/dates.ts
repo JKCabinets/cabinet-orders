@@ -91,3 +91,25 @@ export function businessDayBefore(iso: string): string {
   d.setUTCDate(d.getUTCDate() - back);
   return d.toISOString().slice(0, 10);
 }
+
+const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTH = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function isoParts(iso: string | null | undefined): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso ?? "");
+  return m ? new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))) : null;
+}
+/**
+ * "Sat Nov 1" -- the approved staff check's own form (docs/SESSION-HANDOFF-
+ * 2026-10-29.md §4.4: "J&K Cabinetry ships from the factory on Sat Nov 1.").
+ * Built from the date's parts, not toLocaleDateString, whose en-US form puts
+ * a comma after the weekday. Not a date: returned unchanged.
+ */
+export function weekdayMonthDay(iso: string | null | undefined): string {
+  const d = isoParts(iso);
+  return d ? `${WEEKDAY[d.getUTCDay()]} ${MONTH[d.getUTCMonth()]} ${d.getUTCDate()}` : (iso ?? "");
+}
+/** "Nov 1" -- the same check's second line ("it's marked shipped on Nov 1"). */
+export function monthDay(iso: string | null | undefined): string {
+  const d = isoParts(iso);
+  return d ? `${MONTH[d.getUTCMonth()]} ${d.getUTCDate()}` : (iso ?? "");
+}

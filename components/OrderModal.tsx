@@ -32,6 +32,7 @@ import { typeCarriesTracking } from "@/lib/categories";
 import type { DateFields } from "./NextActionPanel";
 import { requirementsFor } from "@/lib/requirements";
 import { formatMDY, orderDate, activityStamp, stageDate } from "@/lib/dates";
+import { cabinetVendorsOf, vendorShipDate, shippedOnText } from "@/lib/shipDates";
 import { useOrderEnrichment } from "@/lib/useOrderEnrichment";
 import { NextActionPanel } from "./NextActionPanel";
 import { CustomSpecsPanel } from "./CustomSpecsPanel";
@@ -2127,6 +2128,17 @@ function StageInputsCard({
   // The server's sentence when it refuses (item 52): Modify stays open on it.
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  // ⚠ PER VENDOR, AND LOCKED ONCE SHIPPED (2026-11-02, feature 9 phase 1).
+  // A mixed cabinet group carries a ship date per vendor; a vendor whose lines
+  // are marked shipped in Shopify shows "Marked shipped in Shopify on …" in
+  // place of its input, and its date is re-sent unchanged -- the server refuses
+  // any change to it (Garrett: the server, not just the screen).
+  const vendors = cabinetVendorsOf(order);
+  const perVendor = vendors.length > 1;
+  const effectiveDates = () => Object.fromEntries(vendors.map((v) => [v, vendorShipDate(order, v) ?? ""]));
+  const [vendorDates, setVendorDates] = useState<Record<string, string>>(effectiveDates);
+  const shippedNote = (v: string) => shippedOnText(order, `vendor:${v}`);
+
   // Re-sync when the row changes underneath: the cron advances rows and a
   // fulfilment can write dates while this is open.
   useEffect(() => {
@@ -2134,7 +2146,10 @@ function StageInputsCard({
     setProdFinish(order.production_est_finish_date ?? "");
     setDeliveryDate(order.scheduled_delivery_date ?? "");
     setShippingMethod(order.delivery_method ?? "");
-  }, [order.production_start_date, order.production_est_finish_date, order.scheduled_delivery_date, order.delivery_method]);
+    setVendorDates(effectiveDates());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order.production_start_date, order.production_est_finish_date, order.scheduled_delivery_date, order.delivery_method,
+      JSON.stringify(order.vendor_ship_dates ?? null), JSON.stringify(order.shipped_in_shopify ?? null)]);
 
   /**
    * ⚠ A CLAIM RECORDS ITS DATES AND TRACKING NUMBER (Garrett, 2026-10-13).
@@ -2151,9 +2166,15 @@ function StageInputsCard({
     setSaving(true);
     setSaveError(null);
     try {
+      // A mixed group's vendor dates go as vendor dates only when it already has
+      // them or one changed -- an untouched save does not turn it per-vendor.
+      const vendorChanged = vendors.some((v) => vendorDates[v] !== (vendorShipDate(order, v) ?? ""));
+      const shipDates = perVendor && (order.vendor_ship_dates || vendorChanged)
+        ? { vendor_ship_dates: vendorDates }
+        : { production_est_finish_date: prodFinish || null };
       const refused = await updateOrderDetails(order.id, {
         production_start_date: prodStart || null,
-        production_est_finish_date: prodFinish || null,
+        ...shipDates,
         scheduled_delivery_date: deliveryDate || null,
         delivery_method: shippingMethod.trim(),
         ...(isWarranty ? { tracking_number: trackingNum.trim() || null } : {}),
@@ -2212,6 +2233,11 @@ function StageInputsCard({
               [Factory, "Production", order.production_start_date || order.production_est_finish_date
                 ? `${formatMDY(order.production_start_date) || "?"} \u2192 ${formatMDY(order.production_est_finish_date) || "?"}`
                 : notSet],
+              // Per vendor (2026-11-02): each vendor's own date, and whether it shipped.
+              ...(perVendor || vendors.some((v) => shippedNote(v))
+                ? vendors.map((v): DetailRow => [Factory, v, shippedNote(v)
+                    ?? (formatMDY(vendorShipDate(order, v)) ? `Ships from the factory ${formatMDY(vendorShipDate(order, v))}` : notSet)])
+                : []),
               // Scheduled, not actual. A date the customer has not been given
               // is not a promise, and this is the internal view.
               [CalendarDays, "Delivery target", formatMDY(order.scheduled_delivery_date || order.delivery_date) || notSet],
@@ -2234,8 +2260,19 @@ function StageInputsCard({
               <input type="date" value={prodStart} onChange={(e) => setProdStart(e.target.value)}
                 title="Production starts" aria-label="Production start date" style={CARD_DATE_INPUT} />
               <span className="text-cream/30 text-[11px]">&rarr;</span>
-              <input type="date" value={prodFinish} onChange={(e) => setProdFinish(e.target.value)}
-                title="Ship from factory" aria-label="Ship from factory date" style={CARD_DATE_INPUT} />
+              {perVendor ? vendors.map((v) => (
+                <label key={v} className="flex items-center gap-1 text-[10px] text-cream/55">
+                  {v}
+                  {shippedNote(v)
+                    ? <span className="text-cream/70">{shippedNote(v)}</span>
+                    : <input type="date" value={vendorDates[v] ?? ""}
+                        onChange={(e) => setVendorDates((d) => ({ ...d, [v]: e.target.value }))}
+                        title={`${v} ships from the factory`} aria-label={`${v} ship from factory date`} style={CARD_DATE_INPUT} />}
+                </label>
+              )) : vendors[0] && shippedNote(vendors[0])
+                ? <span className="text-[11px] text-cream/70">{shippedNote(vendors[0])}</span>
+                : <input type="date" value={prodFinish} onChange={(e) => setProdFinish(e.target.value)}
+                    title="Ship from factory" aria-label="Ship from factory date" style={CARD_DATE_INPUT} />}
               <input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)}
                 title="Delivery target" aria-label="Delivery target" style={CARD_DATE_INPUT} />
               <input type="text" value={shippingMethod} onChange={(e) => setShippingMethod(e.target.value)}
@@ -2248,8 +2285,8 @@ function StageInputsCard({
               )}
               <button
                 onClick={saveDates}
-                disabled={saving}
-                title="Save the dates on this order"
+                disabled={saving || (perVendor && vendors.some((v) => !vendorDates[v]))}
+                title={perVendor && vendors.some((v) => !vendorDates[v]) ? "Set a ship date for each vendor" : "Save the dates on this order"}
                 className="text-[10px] uppercase tracking-wider px-3 py-1.5 rounded-full transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30 disabled:opacity-40"
               >
                 {saving ? "\u2026" : "Save"}

@@ -181,6 +181,11 @@ export function dueShipChecks(g: ShipGroup, now: number, purchaseStops: boolean)
     const date = lineShipDate(g, l);
     if (!date || !inWindow(date) || lineShipped(g, l)) return;
     if (l.ready_confirmed?.date === date) return;
+    // ⚠ A LINE RIDING IN ITS VENDOR'S SHIPMENT (its date IS the vendor's, the
+    // vendor not yet shipped) is asked about through the vendor: one shipment,
+    // one question (2026-11-02; dueFulfilments puts it in the vendor's fulfilment).
+    const vendor = lineVendor(l, g);
+    if (date === vendorShipDate(g, vendor) && !shippedAt(g, `vendor:${vendor}`)) return;
     out.push({ scope: "line", vendor: lineVendor(l, g), date, index, key: lineKeyOf(l), sku: l.sku });
   });
   return out;
