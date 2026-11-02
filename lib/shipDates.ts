@@ -32,7 +32,11 @@ export type ShipGroup = Pick<Order,
 
 const lines = (g: ShipGroup): SkuItem[] => (Array.isArray(g.sku_items) ? g.sku_items : []);
 
-/** A line's vendor: its own (from Shopify, since 2026-08-24), else the group's. */
+/**
+ * A line's vendor: its own (from Shopify, since 2026-08-24), else the group's.
+ * ⚠ THE SAME FIRST ANSWER AS lib/vendorLookup's layer 0 (2026-11-02, feature
+ * 10, decision E): on every line that has its own vendor, the two agree.
+ */
 export function lineVendor(line: SkuItem, g: ShipGroup): string {
   return String(line.vendor || g.vendor || "").trim();
 }

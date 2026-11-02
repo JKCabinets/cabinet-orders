@@ -3,6 +3,13 @@
  * fail-safe chain so a single bad/ambiguous signal can never silently mislabel.
  *
  * Resolution order, per line item:
+ *   0. THE LINE'S OWN VENDOR (2026-11-02, feature 10, Garrett's decision E) —
+ *      what Shopify sent with the line, stored by the webhook on every line
+ *      since 2026-08-24. The most direct answer there is: Shopify's own word
+ *      for this line, not our product cache's. ⚠ ONE RULE FOR A LINE'S VENDOR:
+ *      lib/shipDates' `lineVendor` asks this first too, so the acknowledgment
+ *      gate, the vendor PDFs, the cabinet-line sections and the fulfilment run
+ *      agree on every line that has one. Layers 1–4 answer only for older lines.
  *   1. variant_id  — the Shopify variant id captured at order ingest. This is
  *      globally unique and is the primary key of `shopify_products` (id), so it
  *      is collision-proof: two different vendors can share a base SKU (e.g.
@@ -42,6 +49,8 @@ const VENDOR_JK = "J&K Cabinetry";
 export interface ResolvableItem {
   sku: string;
   variant_id?: string | null;
+  /** The line's own Shopify vendor (layer 0), where the line has one. */
+  vendor?: string | null;
 }
 
 export interface VendorLookupResult {
@@ -155,9 +164,16 @@ export function resolveVendors(
   const vendorBySku = new Map<string, string>();
   const fallback = (fallbackOrderVendor ?? "").trim();
 
-  // ── Layer 1: variant_id (authoritative, collision-proof) ──────────────────
+  // ── Layer 0: the line's own Shopify vendor (2026-11-02, decision E) ───────
   for (const item of skuItems) {
     if (!item.sku) continue;
+    const own = String(item.vendor ?? "").trim();
+    if (own) vendorBySku.set(item.sku, own);
+  }
+
+  // ── Layer 1: variant_id (authoritative, collision-proof) ──────────────────
+  for (const item of skuItems) {
+    if (!item.sku || vendorBySku.has(item.sku)) continue;
     const vid = String(item.variant_id ?? "").trim();
     if (!vid) continue;
     const v = maps.byVariantId.get(vid);
