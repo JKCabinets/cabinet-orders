@@ -1991,6 +1991,23 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
  * alike and cannot drift apart.
  */
 type DetailRow = [typeof FileText, string, React.ReactNode];
+
+/**
+ * One editable row, in DetailRows' own columns (2026-11-02): the icon's space,
+ * the label column, the box -- so an editor lines up with the facts above it.
+ */
+function EditRow({ label, sub, children }: { label: string; sub?: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-3 py-1.5 border-t border-white/[0.06] first:border-t-0">
+      <span className="w-3.5 flex-shrink-0" aria-hidden="true" />
+      <span className="w-32 flex-shrink-0 text-[11.5px] text-cream/55">
+        {label}
+        {sub && <span className="block text-[10px] text-cream/40">{sub}</span>}
+      </span>
+      <div className="min-w-0 flex items-center gap-2 flex-wrap">{children}</div>
+    </div>
+  );
+}
 function DetailRows({ rows }: { rows: DetailRow[] }) {
   return (
     <dl className="mt-1">
@@ -2138,6 +2155,10 @@ function StageInputsCard({
   const effectiveDates = () => Object.fromEntries(vendors.map((v) => [v, vendorShipDate(order, v) ?? ""]));
   const [vendorDates, setVendorDates] = useState<Record<string, string>>(effectiveDates);
   const shippedNote = (v: string) => shippedOnText(order, `vendor:${v}`);
+  // A partial set of vendor dates cannot be saved -- said in words beside Save.
+  const datedCount = vendors.filter((v) => vendorDates[v]).length;
+  const partialVendorDates = perVendor && datedCount > 0 && datedCount < vendors.length
+    ? "Set a ship date for each vendor, or none." : null;
 
   // Re-sync when the row changes underneath: the cron advances rows and a
   // fulfilment can write dates while this is open.
@@ -2168,10 +2189,16 @@ function StageInputsCard({
     try {
       // A mixed group's vendor dates go as vendor dates only when it already has
       // them or one changed -- an untouched save does not turn it per-vendor.
+      // Every vendor's date, or none (then the group has no ship date).
       const vendorChanged = vendors.some((v) => vendorDates[v] !== (vendorShipDate(order, v) ?? ""));
-      const shipDates = perVendor && (order.vendor_ship_dates || vendorChanged)
+      const allDated = vendors.every((v) => vendorDates[v]);
+      // ⚠ CLEARING A PER-VENDOR GROUP CLEARS BOTH (the server refuses a group
+      // date changed on its own while vendor dates stand -- lib/shipDateEdits).
+      const shipDates = perVendor && allDated && (order.vendor_ship_dates || vendorChanged)
         ? { vendor_ship_dates: vendorDates }
-        : { production_est_finish_date: prodFinish || null };
+        : perVendor && !allDated
+          ? { production_est_finish_date: null, ...(order.vendor_ship_dates ? { vendor_ship_dates: null } : {}) }
+          : { production_est_finish_date: prodFinish || null };
       const refused = await updateOrderDetails(order.id, {
         production_start_date: prodStart || null,
         ...shipDates,
@@ -2256,43 +2283,60 @@ function StageInputsCard({
               onSaved={(stage) => { if (stage) onStageChange(stage as Stage); setEditing(false); }}
             />
           ) : (
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <input type="date" value={prodStart} onChange={(e) => setProdStart(e.target.value)}
-                title="Production starts" aria-label="Production start date" style={CARD_DATE_INPUT} />
-              <span className="text-cream/30 text-[11px]">&rarr;</span>
+            // ⚠ THE ROWS ABOVE, EDITABLE (2026-11-02, Garrett: "all jumbled up
+            // and not clearly lined up or labeled"). The same labels, in the same
+            // order and the same columns as DetailRows -- icon space, the label
+            // column, the value -- so each box sits under the fact it changes.
+            <div>
+              <EditRow label="Production starts">
+                <input type="date" value={prodStart} onChange={(e) => setProdStart(e.target.value)}
+                  aria-label="Production start date" style={CARD_DATE_INPUT} />
+              </EditRow>
               {perVendor ? vendors.map((v) => (
-                <label key={v} className="flex items-center gap-1 text-[10px] text-cream/55">
-                  {v}
+                <EditRow key={v} label={v} sub="ships from the factory">
                   {shippedNote(v)
-                    ? <span className="text-cream/70">{shippedNote(v)}</span>
+                    ? <span className="text-[11.5px] text-cream/70">{shippedNote(v)}</span>
                     : <input type="date" value={vendorDates[v] ?? ""}
                         onChange={(e) => setVendorDates((d) => ({ ...d, [v]: e.target.value }))}
-                        title={`${v} ships from the factory`} aria-label={`${v} ship from factory date`} style={CARD_DATE_INPUT} />}
-                </label>
-              )) : vendors[0] && shippedNote(vendors[0])
-                ? <span className="text-[11px] text-cream/70">{shippedNote(vendors[0])}</span>
-                : <input type="date" value={prodFinish} onChange={(e) => setProdFinish(e.target.value)}
-                    title="Ship from factory" aria-label="Ship from factory date" style={CARD_DATE_INPUT} />}
-              <input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)}
-                title="Delivery target" aria-label="Delivery target" style={CARD_DATE_INPUT} />
-              <input type="text" value={shippingMethod} onChange={(e) => setShippingMethod(e.target.value)}
-                placeholder="Shipping method" title="Shipping method" aria-label="Shipping method"
-                maxLength={100} style={CARD_DATE_INPUT} />
-              {isWarranty && (
-                <input type="text" value={trackingNum} onChange={(e) => setTrackingNum(e.target.value)}
-                  placeholder="Tracking number" title="Tracking number" aria-label="Tracking number"
-                  maxLength={100} style={CARD_DATE_INPUT} />
+                        aria-label={`${v} ship from factory date`} style={CARD_DATE_INPUT} />}
+                </EditRow>
+              )) : (
+                <EditRow label="Ships from the factory">
+                  {vendors[0] && shippedNote(vendors[0])
+                    ? <span className="text-[11.5px] text-cream/70">{shippedNote(vendors[0])}</span>
+                    : <input type="date" value={prodFinish} onChange={(e) => setProdFinish(e.target.value)}
+                        aria-label="Ship from factory date" style={CARD_DATE_INPUT} />}
+                </EditRow>
               )}
-              <button
-                onClick={saveDates}
-                disabled={saving || (perVendor && vendors.some((v) => !vendorDates[v]))}
-                title={perVendor && vendors.some((v) => !vendorDates[v]) ? "Set a ship date for each vendor" : "Save the dates on this order"}
-                className="text-[10px] uppercase tracking-wider px-3 py-1.5 rounded-full transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30 disabled:opacity-40"
-              >
-                {saving ? "\u2026" : "Save"}
-              </button>
+              <EditRow label="Delivery target">
+                <input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)}
+                  aria-label="Delivery target" style={CARD_DATE_INPUT} />
+              </EditRow>
+              <EditRow label="Shipping method">
+                <input type="text" value={shippingMethod} onChange={(e) => setShippingMethod(e.target.value)}
+                  placeholder="Shipping method" aria-label="Shipping method"
+                  maxLength={100} style={CARD_DATE_INPUT} />
+              </EditRow>
+              {isWarranty && (
+                <EditRow label="Tracking number">
+                  <input type="text" value={trackingNum} onChange={(e) => setTrackingNum(e.target.value)}
+                    placeholder="Tracking number" aria-label="Tracking number"
+                    maxLength={100} style={CARD_DATE_INPUT} />
+                </EditRow>
+              )}
+              <EditRow label="">
+                <button
+                  onClick={saveDates}
+                  disabled={saving || !!partialVendorDates}
+                  title="Save the dates on this order"
+                  className="text-[10px] uppercase tracking-wider px-3 py-1.5 rounded-full transition-all bg-terracotta/20 border border-terracotta/45 text-terracotta hover:bg-terracotta/30 disabled:opacity-40"
+                >
+                  {saving ? "\u2026" : "Save"}
+                </button>
+                {partialVendorDates && <span className="text-[11px] text-cream/45">{partialVendorDates}</span>}
+              </EditRow>
               {saveError && (
-                <p role="alert" className="w-full text-[11px]" style={{ color: "#e08585" }}>{saveError}</p>
+                <p role="alert" className="text-[11px] mt-1" style={{ color: "#e08585" }}>{saveError}</p>
               )}
             </div>
           )}

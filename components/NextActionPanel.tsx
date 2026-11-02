@@ -248,6 +248,14 @@ export function NextActionPanel({
   const [delayDate, setDelayDate] = useState("");
   const [checkSaving, setCheckSaving] = useState<string | null>(null);
   const [checkError, setCheckError] = useState<{ key: string; text: string } | null>(null);
+  // Every vendor's date, or none: a partial set cannot be saved (the server
+  // refuses it), and none at all leaves the group's ship date unset.
+  const vendorsFilled = vendors.filter((v) => vendorDates[v]).length;
+  const prodBlocked: string | null =
+    !isClaim && !prodStart ? "Set the production start date to save."
+    : isClaim && !(prodStart || prodFinish) ? "Set a date to save."
+    : perVendor && vendorsFilled > 0 && vendorsFilled < vendors.length ? "Set a date for each vendor, or none."
+    : null;
 
   async function save(patch: DateFields) {
     setSaving(true);
@@ -452,73 +460,85 @@ export function NextActionPanel({
             {saveError && openDate && (
               <p role="alert" className="text-[11px] max-w-[22rem] text-right" style={{ color: "#e08585" }}>{saveError}</p>
             )}
+            {/* ⚠ A LABEL ON EVERY BOX (2026-11-02, Garrett: one field, "and doesn't
+                label which its even for"). One labelled row per box, the boxes
+                aligned at the right; the buttons beneath, and when Save cannot
+                be used, why -- in words, not a tooltip. */}
             {openDate === "production" && (
-              <div className="flex items-center gap-1.5 flex-wrap justify-end">
-                <input type="date" value={prodStart} onChange={(e) => setProdStart(e.target.value)}
-                  title="Production starts" aria-label="Production start date" autoFocus style={DATE_INPUT} />
-                <span className="text-cream/30 text-[11px]">&rarr;</span>
+              <div className="flex flex-col items-end gap-1.5">
+                <BandField label="Production starts">
+                  <input type="date" value={prodStart} onChange={(e) => setProdStart(e.target.value)}
+                    aria-label="Production start date" autoFocus style={DATE_INPUT} />
+                </BandField>
                 {perVendor ? vendors.map((v) => (
-                  <label key={v} className="flex items-center gap-1 text-[10px] text-cream/55">
-                    {v}
+                  <BandField key={v} label={`${v} ships from the factory`}>
                     <input type="date" value={vendorDates[v] ?? ""}
                       onChange={(e) => setVendorDates((d) => ({ ...d, [v]: e.target.value }))}
-                      title={`${v} ships from the factory`} aria-label={`${v} ship from factory date`} style={DATE_INPUT} />
-                  </label>
+                      aria-label={`${v} ship from factory date`} style={DATE_INPUT} />
+                  </BandField>
                 )) : (
-                  <input type="date" value={prodFinish} onChange={(e) => setProdFinish(e.target.value)}
-                    title="Ship from factory" aria-label="Ship from factory date" style={DATE_INPUT} />
+                  <BandField label="Ships from the factory">
+                    <input type="date" value={prodFinish} onChange={(e) => setProdFinish(e.target.value)}
+                      aria-label="Ship from factory date" style={DATE_INPUT} />
+                  </BandField>
                 )}
                 {/* ⚠ BOTH DATES, THOUGH ONLY THE START ONE GATES. The start date
                     advances the row; the estimated finish is what
                     `production-complete` later advances ON, so a row saved with
                     only a start date would move to In production and then strand.
                     Asking for both here is the difference between one trip and
-                    two. */}
-                <button
-                  onClick={() => save(perVendor
-                    ? { production_start_date: prodStart || null, vendor_ship_dates: vendorDates }
-                    : { production_start_date: prodStart || null, production_est_finish_date: prodFinish || null })}
-                  disabled={saving || (isClaim ? !(prodStart || prodFinish) : !prodStart)
-                    || (perVendor && vendors.some((v) => !vendorDates[v]))}
-                  title={isClaim
-                    ? "Save the dates on this claim"
-                    : prodStart
-                      ? (datesAreTheAction ? "Save the dates and move to In production" : "Save the production dates")
-                      : "A production start date is what advances the order"}
-                  className={PILL_QUIET}
-                >
-                  {saving ? "\u2026" : "Save"}
-                </button>
-                <button onClick={() => setOpenDate(null)} disabled={saving}
-                  className={PILL + " text-cream/45 hover:text-cream/75"}>
-                  Cancel
-                </button>
+                    two. On a mixed group: every vendor's date, or none. */}
+                <div className="flex items-center gap-1.5">
+                  {prodBlocked && <span className="text-[10.5px] text-cream/45">{prodBlocked}</span>}
+                  <button
+                    onClick={() => save(perVendor && vendorsFilled === vendors.length
+                      ? { production_start_date: prodStart || null, vendor_ship_dates: vendorDates }
+                      : { production_start_date: prodStart || null, production_est_finish_date: perVendor ? null : (prodFinish || null) })}
+                    disabled={saving || !!prodBlocked}
+                    title={isClaim
+                      ? "Save the dates on this claim"
+                      : datesAreTheAction ? "Save the dates and move to In production" : "Save the production dates"}
+                    className={PILL_QUIET}
+                  >
+                    {saving ? "\u2026" : "Save"}
+                  </button>
+                  <button onClick={() => setOpenDate(null)} disabled={saving}
+                    className={PILL + " text-cream/45 hover:text-cream/75"}>
+                    Cancel
+                  </button>
+                </div>
               </div>
             )}
 
             {openDate === "delivery" && (
-              <div className="flex items-center gap-1.5">
+              <div className="flex flex-col items-end gap-1.5">
                 {isClaim && (
-                  <input type="text" value={trackingNum} onChange={(e) => setTrackingNum(e.target.value)}
-                    placeholder="Tracking number" title="Tracking number" aria-label="Tracking number"
-                    autoFocus maxLength={100} style={DATE_INPUT} />
+                  <BandField label="Tracking number">
+                    <input type="text" value={trackingNum} onChange={(e) => setTrackingNum(e.target.value)}
+                      placeholder="Tracking number" aria-label="Tracking number"
+                      autoFocus maxLength={100} style={DATE_INPUT} />
+                  </BandField>
                 )}
-                <input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)}
-                  title="Delivery date" aria-label="Delivery date" autoFocus={!isClaim} style={DATE_INPUT} />
-                <button
-                  onClick={() => save({
-                    scheduled_delivery_date: deliveryDate || null,
-                    ...(isClaim ? { tracking_number: trackingNum.trim() || null } : {}),
-                  })}
-                  disabled={saving || (isClaim ? !(deliveryDate || trackingNum.trim()) : !deliveryDate)}
-                  className={PILL_QUIET}
-                >
-                  {saving ? "\u2026" : "Save"}
-                </button>
-                <button onClick={() => setOpenDate(null)} disabled={saving}
-                  className={PILL + " text-cream/45 hover:text-cream/75"}>
-                  Cancel
-                </button>
+                <BandField label="Delivery date">
+                  <input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)}
+                    aria-label="Delivery date" autoFocus={!isClaim} style={DATE_INPUT} />
+                </BandField>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => save({
+                      scheduled_delivery_date: deliveryDate || null,
+                      ...(isClaim ? { tracking_number: trackingNum.trim() || null } : {}),
+                    })}
+                    disabled={saving || (isClaim ? !(deliveryDate || trackingNum.trim()) : !deliveryDate)}
+                    className={PILL_QUIET}
+                  >
+                    {saving ? "\u2026" : "Save"}
+                  </button>
+                  <button onClick={() => setOpenDate(null)} disabled={saving}
+                    className={PILL + " text-cream/45 hover:text-cream/75"}>
+                    Cancel
+                  </button>
+                </div>
               </div>
             )}
 
@@ -640,6 +660,16 @@ export function NextActionPanel({
         </div>
       )}
     </div>
+  );
+}
+
+/** A box in the band with its label beside it (2026-11-02): one row, label then box. */
+function BandField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="flex items-center gap-2 text-[10.5px] text-cream/55">
+      <span className="text-right">{label}</span>
+      {children}
+    </label>
   );
 }
 
