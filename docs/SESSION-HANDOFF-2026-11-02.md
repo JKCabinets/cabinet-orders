@@ -27,15 +27,20 @@ feature 9's design.
   — **can fulfil: YES**.
 - Run by hand 2026-11-02 20:01Z and 20:29Z: `rc=0`, nothing due (no order at
   In production or At cross dock with a ship date of today).
-- ⚠ **NOT YET CONFIRMED BY GARRETT:** the healthchecks.io check
-  `cabinet-fulfilment` created and green; Shopify → Settings → Notifications
-  → Shipping confirmation ON.
-- ⚠ **THE LIVE TEST IS STILL OWED.** #1067 had no dates, and is now back at
-  New (the run skips New, recording it once). It needs a cabinet order at In
-  production or At cross dock with a ship date of today, then
-  `~/cron-jobs/run-cron.sh /api/cron/cabinet-fulfilment`: only that vendor's
-  lines fulfilled in Shopify, no tracking, the shipping email received, the
-  activity line, and "Marked shipped in Shopify on …" with its date locked.
+- ✓ **CONFIRMED BY GARRETT 2026-11-02:** the healthchecks.io check
+  `cabinet-fulfilment` is green (on healthchecks.io and the OMS's dashboard);
+  Shopify's shipping confirmation is ON (its email arrived — below).
+- ✓ **THE LIVE TEST PASSED, 2026-11-02 (Garrett).** #1067 (mixed, In
+  production): J&K's ship date set to 11/02, Waypoint's to 11/10, "On
+  schedule" answered; the run by hand at 21:53 UTC fulfilled **J&K's lines
+  only** (#1067-F1, `gid://shopify/Fulfillment/7758954037548`, no tracking;
+  Shopify: Partially fulfilled, the Waypoint W930 unfulfilled; its Production
+  Start Date 2026-10-30, Est. Production Finish 2026-11-10 — the latest line).
+  A second run sent nothing. Shopify's shipping confirmation arrived listing
+  only the J&K item. The webhook logged `fulfilment_by_oms` (21:53:25 UTC).
+  An admin backward move was refused with the locked-date sentence. The card
+  reads "Marked shipped in Shopify on 11/02/2026", its date box gone.
+  `SHO-1070-CAB` was skipped `before_start` (expected; said once).
 
 **`82143fb` — the date editors labelled** (Garrett's two reports on the
 deployed phase 1): the Production & Delivery card's editor is one labelled row
@@ -144,7 +149,7 @@ ruling 2.
   file of kind `acknowledgment` in the "Acknowledgments" group.
 - The run, the "Still on schedule?" check and the locks are per vendor already.
 
-### 3.5 To settle in the design, with Garrett, before code
+### 3.5 To settle in the design, with Garrett, before code (⚠ SETTLED: §3.7)
 
 - Storage for the per-line facts: a jsonb per fact on `orders`, like
   `vendor_ship_dates` (start, delivery target), or one per-line jsonb; proof of
@@ -157,6 +162,69 @@ ruling 2.
 - What a line ahead of the others shows (its own stage marks?).
 - A single-vendor cabinet order: one section — the same as today in effect.
 - Phase 2's "Delivered" email (designed, not built): per line or per order.
+
+### 3.7 The design, agreed with Garrett 2026-11-02 ("All of that sounds good, I agree")
+
+**What was read whole for it (2026-11-02):** `lib/requirements.ts` (448),
+`lib/acknowledgments.ts` (222). **Why mixed orders stick:** the New
+requirement is ONE entry, "the manufacturer's acknowledgment", judged by
+`ackRequirementMet` (`lib/acknowledgments` l.150): Waypoint needs a green,
+current acknowledgment; HCI and J&K need a green one OR "any file" (kinds
+other than `acknowledgment`). No HCI or J&K acknowledgment can be green — the
+upload route makes only Waypoint's — so for them only a stray file in the
+Files tab passes, and the band asks for nothing of the kind. Uploading J&K's
+real acknowledgment is refused (a PDF) or read as a Waypoint sheet (red).
+
+**Production's schema** (read-only probe, 2026-11-02, PostgreSQL 17.6):
+`order_acknowledgments` — `vendor` NOT NULL, `verdict` CHECK green|red,
+`parsed_json`/`result_json` NOT NULL, `lines_fingerprint` and `attachment_id`
+nullable; RLS on, NO policy (server only); not in the realtime publication.
+`order_attachments` — `kind` CHECK general|proof_of_delivery|customer_upload|
+acknowledgment, `group_id` NOT NULL, NO vendor column; authenticated read;
+published. `order_file_groups` — ONE group per order per role
+(customer_uploads, proof_of_delivery, acknowledgments; a unique index).
+
+**The decisions:**
+- **A. Acknowledgments, one per line.** The band shows a row and a button per
+  line: "Waypoint Cabinetry: acknowledgment" (Upload acknowledgment) — as now,
+  a spreadsheet, checked, ✓ or ✗ with its reasons; "J&K Cabinetry:
+  acknowledgment" (Upload acknowledgment) — a PDF or Excel file, ✓ ON UPLOAD,
+  no check (ruling 3). **The "any file" stand-in is RETIRED:** a line is met
+  only by its own acknowledgment. (Storage: an HCI/J&K upload is an
+  `order_acknowledgments` row, `verdict` green, marked RECEIVED rather than
+  checked in `result_json`, no fingerprint; its file kind `acknowledgment` in
+  the order's Acknowledgments group.)
+- **B. Shopify's single dates:** Production Start Date = the EARLIEST line's
+  start; Est. Production Finish = the LATEST line's ship date (phase 1 already
+  holds the group's finish to the latest).
+- **C. The gates, every line at every stage:** New → Entered, every line's
+  acknowledgment; Entered → In production, every line's production start
+  date; In production → At cross dock, the existing move on the last line's
+  ship date; At cross dock → Delivered, every line's signed proof of delivery.
+  A single-vendor order shows one line — today's screen in effect.
+- **D. The SLA and the work queue:** per ORDER, timed by the slowest line; the
+  reason NAMES the line ("J&K Cabinetry: acknowledgment required").
+- **E. ONE rule for a line's vendor.** Today two: the acknowledgment gate
+  resolves vendors with the SKU resolver (`lookupVendorsForSkus`,
+  `lib/acknowledgments` l.201); phase 1 uses the line's own Shopify vendor,
+  else the group's (`lib/shipDates`' `lineVendor`). One rule: the line's own
+  Shopify vendor (stored since 2026-08-24), falling back to the resolver only
+  for lines older than that.
+- **Garrett's Production & Delivery layout** (§3.3) is part of it.
+
+**Storage (to build):** a NEW migration — per-line production start and
+delivery target on `orders`, in the shape of `vendor_ship_dates` (a mixed
+group only; the database holding the group's start to the earliest and its
+delivery target to the latest); a `vendor` column on `order_attachments`, so a
+proof of delivery (and an acknowledgment's file) names its line. Files stay in
+the order's one group per role, each tagged with its line.
+
+**The build, in parts, each proven and committed (as phase 1):** the
+migration; the one vendor rule; acknowledgments per line (the upload route
+taking the line, HCI/J&K received, the requirement and the enrichment per
+line, the band's rows and buttons); per-line dates and proof (the order route,
+the gates, the receipt upload per line, the card's layout); the SLA and the
+attention reasons naming the line; the docs.
 
 ### 3.6 Read whole before designing (none read whole since 10-29 unless noted)
 
