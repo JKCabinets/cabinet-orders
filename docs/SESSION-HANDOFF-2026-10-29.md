@@ -40,6 +40,9 @@ Then read whole every file you are about to change (§2.1).
   this file up to date. After it, `HEAD`'s subject is *"Docs: feature 9
   phase 1 as built (2026-11-02)"* and **`HEAD~4`** = `0fcc615` (the 10-29 docs
   review). The phase 1 deploy chain checks that pair.
+- ⚠ **DEPLOYED 2026-11-02** at `2105aa0`, then `82143fb` (the date editors
+  labelled). The box's state now, and what comes next (feature 10, cabinet
+  lines): **`docs/SESSION-HANDOFF-2026-11-02.md`**.
 
 **The commits since `4f20fc1e`, oldest first** — 1–17 deployed and checked
 live by Garrett; 18 is this file's own (docs only):
@@ -499,6 +502,9 @@ weekend date, and a check answered "Delayed". Then live on a test order:
 ### 4.9 Phase 1 as built (2026-10-29 → 11-02) — committed, live from its deploy
 
 The record of the build; §4.1–4.8 stand with the corrections marked in them.
+⚠ **DEPLOYED 2026-11-02** (`2105aa0`; then `82143fb`, the date editors
+labelled and a mixed group's vendor dates all or none). The live test, and
+what follows, are in `docs/SESSION-HANDOFF-2026-11-02.md`.
 
 **Garrett's rulings (2026-10-29), verbatim in substance:**
 1. Due when the ship date is today or earlier (ARIZONA's day), only for ship
