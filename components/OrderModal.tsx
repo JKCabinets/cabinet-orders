@@ -1571,14 +1571,15 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                     // .xlsx picker for a Waypoint order, any file for HCI and
                     // J&K. The pickers are the panels' own, so there is one
                     // upload path rather than two.
-                    ack_or_attachment: ackStatus.hasWaypoint
-                      ? { label: "Upload acknowledgment",
-                          onClick: () => ackPanelRef.current?.openFilePicker() }
-                      : { label: "Attach a file",
-                          // The card directly below this band (2026-10-27).
-                          // ⚠ THE PICKER, IN THIS CLICK (2026-10-28, Garrett): no question --
-                          // the file goes in "Acknowledgments"; the card is feedback only.
-                          onClick: () => attachCardRef.current?.pick() },
+                    // ⚠ A REMEDY PER CABINET LINE (2026-11-02, feature 10): each
+                    // opens the acknowledgment panel's picker for that line --
+                    // Waypoint's spreadsheet, checked; HCI's and J&K's PDF or
+                    // Excel, received. "Attach a file" no longer stands in.
+                    ...Object.fromEntries((enrichFor(liveOrder)?.ackLines ? Object.keys(enrichFor(liveOrder)!.ackLines!) : ackStatus.vendors)
+                      .map((v) => [`ack_or_attachment:${v}`, {
+                        label: "Upload acknowledgment",
+                        onClick: () => ackPanelRef.current?.openFilePicker(v),
+                      }])),
                     proof_of_delivery: {
                       label: "Upload receipt",
                       onClick: () => receiptCardRef.current?.pick(),

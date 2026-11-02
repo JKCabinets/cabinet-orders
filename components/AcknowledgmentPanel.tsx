@@ -10,8 +10,16 @@ import { attachmentsChanged } from "@/lib/attachments";
 import { buildDiscrepancyMessage } from "./OrderEntryActions";
 
 export interface AcknowledgmentPanelHandle {
-  openFilePicker: () => void;
+  /** Open the picker for a cabinet line (2026-11-02, feature 10); none = Waypoint, as before. */
+  openFilePicker: (vendor?: string) => void;
 }
+
+/** Waypoint's is a spreadsheet the OMS checks; HCI's and J&K's a PDF or Excel file it receives. */
+const isWaypoint = (v: string) => /^(waypoint|select)( cabinetry)?$/i.test(v.trim());
+const acceptFor = (v: string) => (isWaypoint(v) ? ".xlsx" : ".pdf,.xlsx,.xls");
+/** An HCI or J&K acknowledgment: received on upload, not checked (Garrett, ruling 3). */
+const isReceived = (ack: { result?: unknown } | null) =>
+  !!ack && (ack.result as { received?: boolean } | undefined)?.received === true;
 
 interface AcknowledgmentPanelProps {
   orderId: string;
@@ -104,29 +112,39 @@ export const AcknowledgmentPanel = forwardRef<AcknowledgmentPanelHandle, Acknowl
     const fileInputRef = useRef<HTMLInputElement>(null);
     const pendingVendorRef = useRef<string | null>(null);
 
+    // ⚠ THE PICKER IS FOR A LINE (2026-11-02, feature 10): it takes that line's
+    // files, and the upload names it -- the route checks Waypoint's and receives
+    // HCI's and J&K's. Set in the click, so the dialog opens on the same gesture.
+    function pickFor(vendor: string) {
+      pendingVendorRef.current = vendor;
+      if (fileInputRef.current) fileInputRef.current.accept = acceptFor(vendor);
+      fileInputRef.current?.click();
+    }
     useImperativeHandle(ref, () => ({
-      openFilePicker: () => { pendingVendorRef.current = null; fileInputRef.current?.click(); },
+      openFilePicker: (vendor?: string) => pickFor(vendor ?? "Waypoint Cabinetry"),
     }));
 
     function triggerUpload(vendor: string) {
-      pendingVendorRef.current = vendor;
-      fileInputRef.current?.click();
+      pickFor(vendor);
     }
 
     async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
       const file = e.target.files?.[0];
       if (fileInputRef.current) fileInputRef.current.value = "";
       if (!file) return;
-      if (!/\.xlsx$/i.test(file.name)) {
-        showToast("Only .xlsx acknowledgment files are accepted", { kind: "error" });
+      const vendor = pendingVendorRef.current ?? "Waypoint Cabinetry";
+      if (isWaypoint(vendor) ? !/\.xlsx$/i.test(file.name) : !/\.(pdf|xlsx|xls)$/i.test(file.name)) {
+        showToast(isWaypoint(vendor)
+          ? "Waypoint's acknowledgment is its .xlsx spreadsheet"
+          : `${vendor}'s acknowledgment must be a PDF or an Excel file`, { kind: "error" });
         return;
       }
-      const vendor = pendingVendorRef.current ?? "Waypoint Cabinetry";
 
       setUploadingVendor(vendor);
       try {
         const formData = new FormData();
         formData.append("file", file);
+        formData.append("vendor", vendor);
         const res = await fetch("/api/orders/" + encodeURIComponent(orderId) + "/acknowledgment", {
           method: "POST",
           body: formData,
@@ -141,8 +159,9 @@ export const AcknowledgmentPanel = forwardRef<AcknowledgmentPanelHandle, Acknowl
         invalidateEnrichment(); // and the next-action checklist, which reads the batch endpoint
         attachmentsChanged(orderId); // and Files: the acknowledgment is kept there (2026-10-28)
         showToast(
-          verdict === "green" ? "Acknowledgment matched" : "Acknowledgment has discrepancies — see details",
-          { kind: verdict === "green" ? "success" : "warn" }
+          data?.received ? `${vendor}'s acknowledgment received`
+            : verdict === "green" ? "Acknowledgment matched" : "Acknowledgment has discrepancies — see details",
+          { kind: data?.received || verdict === "green" ? "success" : "warn" }
         );
       } catch {
         showToast("Upload failed", { kind: "error" });
@@ -162,7 +181,9 @@ export const AcknowledgmentPanel = forwardRef<AcknowledgmentPanelHandle, Acknowl
 
     if (!eligible) return null;
 
-    const ackVendors = status.vendors.filter((v) => /waypoint/i.test(v));
+    // ⚠ EVERY CABINET LINE (2026-11-02, feature 10): this listed Waypoint only, so
+    // HCI and J&K had no row and no way to give theirs.
+    const ackVendors = status.vendors;
     if (!status.loading && ackVendors.length === 0) return null;
 
     return (
@@ -201,6 +222,8 @@ export const AcknowledgmentPanel = forwardRef<AcknowledgmentPanelHandle, Acknowl
                         <p className="text-[10px] text-cream/40">
                           {!ack
                             ? "No acknowledgment submitted yet"
+                            : isReceived(ack)
+                            ? "Received"
                             : ack.stale
                             ? "Matched, but the order has changed since — resubmit"
                             : ack.verdict === "green"
@@ -277,7 +300,7 @@ export const AcknowledgmentPanel = forwardRef<AcknowledgmentPanelHandle, Acknowl
           </div>
         )}
 
-        <input ref={fileInputRef} type="file" accept=".xlsx" className="hidden" onChange={handleFile} />
+        <input ref={fileInputRef} type="file" accept=".xlsx" className="hidden" onChange={handleFile} aria-label="Acknowledgment file" />
       </div>
     );
   }

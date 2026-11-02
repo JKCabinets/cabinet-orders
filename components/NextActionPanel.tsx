@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Calendar, Check, Send, Upload, Zap } from "lucide-react";
+import { AlertTriangle, Calendar, Check, Send, Upload, X, Zap } from "lucide-react";
 import { nextStageFor, type Order, type PaymentFields, type SkuItem } from "@/lib/data";
 import { requirementsFor, dateControlsFor, type RequirementEnrichment, type RequirementState } from "@/lib/requirements";
 import { productionAutoAdvance, productionAutoAdvanceSkip } from "@/lib/autoAdvance";
@@ -268,6 +268,8 @@ export function NextActionPanel({
   }
 
   const requirements = requirementsFor(order);
+  // Each cabinet line's acknowledgment (2026-11-02, feature 10), from the enrichment.
+  const ackLineRows = Object.entries(enrichment?.ackLines ?? {}).map(([vendor, state]) => ({ vendor, state }));
   const next = nextStageFor(order);
 
   const rows = requirements.map((r) => ({
@@ -425,7 +427,35 @@ export function NextActionPanel({
 
           {rows.length > 0 && (
             <ul className="mt-3 space-y-1.5 min-w-0">
-              {rows.map(({ req, state }) => (
+              {rows.map(({ req, state }) => (req.id === "ack_or_attachment" && ackLineRows.length > 0)
+                // ⚠ A ROW PER CABINET LINE (2026-11-02, feature 10; Garrett: "Waypoint
+                // Ack (Upload Ack) … J&K Ack (Upload Ack) … (Move to Entered)").
+                ? ackLineRows.map(({ vendor, state: ls }) => {
+                    const remedy = remedies[`ack_or_attachment:${vendor}`];
+                    return (
+                      <li key={`ack:${vendor}`} data-ack-line={vendor} data-state={ls} className="flex items-start gap-2 text-[12px] leading-snug">
+                        <span className="w-3.5 h-3.5 rounded-full flex-shrink-0 mt-[2px] flex items-center justify-center"
+                          style={ls === "met" ? { background: "rgba(160,204,122,0.20)", border: "0.5px solid #a0cc7a" }
+                            : ls === "failed" ? { background: "rgba(232,144,144,0.18)", border: "0.5px solid #e89090" }
+                            : ls === "stale" ? { background: "rgba(232,181,106,0.18)", border: "0.5px solid #e8b56a" }
+                            : { border: "0.5px solid rgba(232,227,218,0.30)" }}>
+                          {ls === "met" && <Check className="w-2 h-2" style={{ color: "#a0cc7a" }} />}
+                          {ls === "failed" && <X className="w-2 h-2" style={{ color: "#e89090" }} />}
+                          {ls === "stale" && <AlertTriangle className="w-2 h-2" style={{ color: "#e8b56a" }} />}
+                        </span>
+                        <span className="min-w-0" style={{ color: ls === "met" ? "#a0cc7a" : "rgba(240,236,228,0.92)" }}>
+                          {vendor}: acknowledgment
+                          {ls !== "met" && <span className={"block " + NOTE}>{ackLineNote(vendor, ls)}</span>}
+                        </span>
+                        {ls !== "met" && remedy && !readOnly && (
+                          <button onClick={remedy.onClick} className={PILL_QUIET + " ml-auto flex-shrink-0"}>
+                            <Upload className="w-3 h-3" /> {remedy.label}
+                          </button>
+                        )}
+                      </li>
+                    );
+                  })
+                : (
                 <li key={req.id} className="flex items-start gap-2 text-[12px] leading-snug">
                   <span
                     className="w-3.5 h-3.5 rounded-full flex-shrink-0 mt-[2px] flex items-center justify-center"
@@ -661,6 +691,14 @@ export function NextActionPanel({
       )}
     </div>
   );
+}
+
+/** What a cabinet line's acknowledgment needs, said for its state (2026-11-02, feature 10). */
+function ackLineNote(vendor: string, state: string): string {
+  const waypoint = /^(waypoint|select)( cabinetry)?$/i.test(vendor.trim());
+  if (state === "failed") return "It did not match the order. See the acknowledgment panel, then upload it again";
+  if (state === "stale") return "The order changed since it was acknowledged. Upload it again";
+  return waypoint ? "Upload its acknowledgment spreadsheet; it must match the order" : "Upload theirs, a PDF or Excel file";
 }
 
 /** A box in the band with its label beside it (2026-11-02): one row, label then box. */
