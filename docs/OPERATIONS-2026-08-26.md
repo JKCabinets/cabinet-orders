@@ -2,6 +2,12 @@
 
 **As of 2026-09-15 · supersedes OPERATIONS-2026-08-18.md**
 
+⚠ **AMENDED 2026-11-02 (feature 9 phase 1, live from its deploy).** §2: the
+promise is kept by the cabinet fulfilment run. §6: a seventh check,
+`cabinet-fulfilment`, and its health row. §7: the run at 15:00 daily; the cron
+scripts are in the repo (`scripts/cron/`, item 65). §8: the run needs Shopify's
+fulfilment write scope.
+
 ⚠ **AMENDED 2026-10-29.** §2: how the unkept promise will be kept, and the
 notifications decided — superseding the August plan. §8: Graph is not the
 channel; Shopify's shipping confirmation corrected (it read "TURNED OFF");
@@ -259,7 +265,9 @@ receipt that backs it.
 `docs/SESSION-HANDOFF-2026-10-29.md` §4):** Shopify's own shipping
 confirmation ("Order #1065 shipped" / "Your cabinets have shipped"), sent
 when the OMS marks the cabinet lines fulfilled on their ship date. Until
-that phase ships, the promise stays unkept.
+that phase ships, the promise stays unkept. ⚠ **BUILT 2026-11-02** (commits
+`4bc1dd4`, `c513ddd`, `3fde2c3`): kept from the phase 1 deploy, by the daily
+cabinet-fulfilment run (§7).
 
 ## Notifications — decided 2026-10-29 (supersedes the August plan)
 
@@ -577,7 +585,10 @@ someone hunting for a restriction that does not exist. ⚠ SUPERSEDED 2026-10-21
 Teams alerting is live again — see "Alerts reach Teams and email" above.
 
 **Six checks**, one per cron job (`registry-token` since 2026-09-16,
-`helpscout-sync` since 2026-10-05). The account held thirteen until 2026-10-20,
+`helpscout-sync` since 2026-10-05). ⚠ **SEVEN from the phase 1 deploy:**
+`cabinet-fulfilment` (2026-11-02), daily `0 15 * * *` UTC; its ping URL in
+`~/cron-jobs/healthchecks.map` keyed `/api/cron/cabinet-fulfilment`; its own
+health row, "Shopify fulfilment". The account held thirteen until 2026-10-20,
 when Garrett deleted the seven strays — each with a 365-day period, so they
 reported "up" forever whatever happened. Six remain, all real.
 
@@ -595,6 +606,7 @@ Shopify ingest, Catalog sync, Scheduled jobs, Claims to Help Scout, and
 | **`jk-webhook-health`** | **Shopify ingestion** — added 2026-08-20; skips cancelled orders since 2026-10-13 |
 | **`helpscout-sync`** | **Website claims reaching Help Scout**, every 15 minutes; fails when a claim is unsent after four attempts; since 2026-10-07 also sends a claim's progress notes, and fails when one is unsent after four attempts — added 2026-10-05 |
 | **`registry-token`** | **The GHCR registry token** — Mondays 15:00 UTC, `check-registry-token.sh`; fails 14 days before it expires |
+| **`cabinet-fulfilment`** | **Cabinet lines marked shipped in Shopify** (feature 9 phase 1, from its deploy) — daily 15:00 UTC; fails when Shopify refuses or cannot be read, a line cannot be found, a skip cannot be recorded, or the run runs out of time |
 
 ## The ingestion check reconciles; it does not heartbeat
 
@@ -647,7 +659,13 @@ the reason — previously `curl -f` discarded it and logged only `error: 500`.
 | **hourly at :20** | | **`webhook-health`** | **Reconciles Shopify's orders against the OMS, both ways** — since 2026-10-19 also every held purchase against Shopify |
 | every 15 min | | `helpscout-sync` | Website claims, and each claim's progress notes, to Help Scout (§6) |
 | 15:00 Mondays | 8:00am | `check-registry-token.sh` | The registry token: alarms 14 days before it expires (§6). A script, not a route |
-| *planned:* 15:00 daily | 8:00am | *the cabinet fulfilment run* | Feature 9 phase 1, **NOT YET BUILT**: marks each vendor's cabinet lines fulfilled on their ship date, so Shopify emails the customer |
+| 15:00 daily | 8:00am | `cabinet-fulfilment` | Feature 9 phase 1 (built 2026-11-02, from its deploy): marks each vendor's cabinet lines fulfilled in Shopify on their ship date, and each backordered line on its own, so Shopify emails the customer. After production-complete. |
+
+⚠ **The cron scripts are in the repo** (item 65, 2026-11-02): `scripts/cron/`
+holds `run-cron.sh`, `check-registry-token.sh` and the crontab as they stand.
+The copies cron RUNS are still on the box (`~/cron-jobs/`, `crontab -l`); every
+deploy chain diffs them against the repo. `healthchecks.map` is never
+committed.
 
 **`teams-digest` posts** since 2026-10-21 ("JK Cabinets — Morning briefing":
 totals, each type, an "Open the SLA page" button); until then
@@ -739,6 +757,12 @@ endpoint is the only reliable view.
   tracking on cabinets; samples get it when their label is bought. Feature 9
   relies on it — the OMS will mark cabinet lines fulfilled. **Verify it is ON
   (Settings → Notifications) before phase 1 goes live.**
+- ⚠ **The run needs Shopify's fulfilment WRITE scope** (2026-11-02):
+  `fulfillmentCreate` requires `write_merchant_managed_fulfillment_orders` (or
+  `write_assigned_…` / `write_third_party_…`). The #1067 read proved the READ
+  scope only. Check the app's Admin API scopes before phase 1 goes live. The
+  run sends `notifyCustomer: true` (Shopify's default is false) and never an
+  empty line list (that fulfils a whole fulfilment order).
 - Shopify still sends the **order confirmation** — tied to checkout, keep it.
 - Point the store's customer-facing email at Help Scout so replies land there
   — ✓ DONE per the website team (2026-10-29): the sender is `info@`, Help
