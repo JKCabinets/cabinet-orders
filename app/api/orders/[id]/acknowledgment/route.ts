@@ -10,6 +10,8 @@ import { displayOrderNumber } from "@/lib/data";
 import { fileGroupForRole, removeStoredFiles } from "@/lib/fileGroups";
 import { ATTACHMENT_BUCKET } from "@/lib/orderFiles";
 import { ensureSkuMaps } from "@/lib/skuMappings";
+import { isWaypointVendor } from "@/lib/vendorFamily";
+import { lookupVendorsForSkus } from "@/lib/vendorLookup";
 import * as XLSX from "xlsx";
 
 /**
@@ -61,6 +63,113 @@ function logAckReject(
   }));
 }
 
+/** An HCI or J&K acknowledgment's file: a PDF or an Excel file (Garrett, ruling 3). */
+const RECEIVED_TYPES: Record<string, string> = {
+  ".pdf": "application/pdf",
+  ".xlsx": XLSX_TYPE,
+  ".xls": "application/vnd.ms-excel",
+};
+
+/**
+ * ⚠ AN HCI OR J&K ACKNOWLEDGMENT IS RECEIVED, NOT CHECKED (2026-11-02, feature
+ * 10, Garrett's ruling 3): "upload of ack pdf or excel is all that's required
+ * … the pdf ack from the OMS will be given and that's the actual order … an ack
+ * back from the manufacturer just as confirmation it's ordered." So: the same
+ * archived and claim checks as Waypoint's, the line must be on the order, the
+ * file is kept (its line named) and an acknowledgment is recorded GREEN, marked
+ * received -- no parse, no fingerprint (there is nothing to judge it against,
+ * so it never reads stale). Kept before recorded: no row without its file.
+ */
+async function receiveAck(
+  overrides: ClaimOverrideLog,
+  session: { user: { id: string; name?: string | null; username: string } },
+  id: string,
+  file: File,
+  vendor: string,
+): Promise<NextResponse> {
+  const ext = Object.keys(RECEIVED_TYPES).find((e) => file.name.toLowerCase().endsWith(e));
+  if (!ext) {
+    logAckReject(id, "not_pdf_or_excel", file, { vendor });
+    return NextResponse.json({ error: `${vendor}'s acknowledgment must be a PDF or an Excel file (.pdf, .xlsx, .xls)` }, { status: 400 });
+  }
+  if (file.size > MAX_BYTES) {
+    logAckReject(id, "too_large", file, { max_bytes: MAX_BYTES, vendor });
+    return NextResponse.json({ error: "File too large (max 5 MB)" }, { status: 413 });
+  }
+  const bytes = Buffer.from(await file.arrayBuffer());
+
+  const { data: order, error: orderErr } = await supabase
+    .from("orders")
+    .select("id, name, vendor, sku_items, archived, project_id")
+    .eq("id", id)
+    .single();
+  if (orderErr || !order) return NextResponse.json({ error: "Order not found" }, { status: 404 });
+
+  const purchase = await purchaseOf(order);
+  if (purchase instanceof NextResponse) return purchase;
+  const archivedState = archivedVia(order, purchase);
+  if (archivedState) return archivedReadOnly(order, archivedState);
+  const claimGate = await requireOrderClaim(id, session as never, overrides, "Acknowledgment submitted");
+  if (claimGate instanceof NextResponse) return claimGate;
+
+  // The line must be on the order -- by the one rule for a line's vendor.
+  const skuItems: SkuItem[] = Array.isArray(order.sku_items) ? order.sku_items : [];
+  const { uniqueVendors } = await lookupVendorsForSkus(skuItems, order.vendor);
+  if (!uniqueVendors.includes(vendor)) {
+    logAckReject(id, "vendor_not_on_order", file, { vendor });
+    return NextResponse.json(
+      { error: "vendor_not_on_order", message: `${vendor} has no lines on this order.` },
+      { status: 422 },
+    );
+  }
+
+  const who = session.user.name ?? session.user.username;
+  const ackGroup = await fileGroupForRole(order.id, "acknowledgments");
+  if (ackGroup === null) {
+    logAckReject(id, "group_unavailable", file, { vendor });
+    return NextResponse.json(
+      { error: "Could not find or make this order's \u201cAcknowledgments\u201d group, so nothing was recorded. Please retry." },
+      { status: 500 },
+    );
+  }
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").replace(/^\.+/, "_").slice(0, 200) || `acknowledgment${ext}`;
+  const filePath = `${order.id}/${Date.now()}-${safeName}`;
+  const { error: storeErr } = await supabase.storage
+    .from(ATTACHMENT_BUCKET).upload(filePath, bytes, { contentType: RECEIVED_TYPES[ext], upsert: false });
+  if (storeErr) {
+    logAckReject(id, "file_store_failed", file, { reason: storeErr.message, vendor });
+    return NextResponse.json({ error: "Could not keep the acknowledgment file, so nothing was recorded. Please retry." }, { status: 500 });
+  }
+  const { data: kept, error: keptErr } = await supabase.from("order_attachments").insert({
+    order_id: order.id, file_name: cleanInput(safeName), file_path: filePath, file_size: file.size,
+    file_type: RECEIVED_TYPES[ext], uploaded_by: cleanInput(who), kind: "acknowledgment", group_id: ackGroup, vendor,
+  }).select("id").single();
+  if (keptErr || !kept) {
+    await supabase.storage.from(ATTACHMENT_BUCKET).remove([filePath]);
+    logAckReject(id, "file_row_failed", file, { reason: keptErr?.message ?? "no row", vendor });
+    return NextResponse.json({ error: "Could not keep the acknowledgment file, so nothing was recorded. Please retry." }, { status: 500 });
+  }
+  const { error: insErr } = await supabase.from("order_acknowledgments").insert({
+    order_id: order.id,
+    vendor,
+    verdict: "green",
+    po: null,
+    file_name: file.name,
+    parsed_json: { received: true },
+    result_json: { received: true },
+    uploaded_by: session.user.id,
+    attachment_id: kept.id,
+    lines_fingerprint: null,
+  });
+  if (insErr) {
+    await supabase.from("order_attachments").delete().eq("id", kept.id);
+    await supabase.storage.from(ATTACHMENT_BUCKET).remove([filePath]);
+    logAckReject(id, "insert_failed", file, { reason: insErr.message, vendor });
+    return NextResponse.json({ error: "Kept the file, but could not record the acknowledgment. Please retry." }, { status: 500 });
+  }
+  return NextResponse.json({ received: true, vendor, kept_file_id: kept.id });
+}
+
 // ⚠ WRAPPED so an admin's override of a claim reaches the trail only if the
 // acknowledgment is saved. See ClaimOverrideLog in lib/auth.
 export const POST = withClaimOverrideLog(async function POST(
@@ -90,6 +199,11 @@ export const POST = withClaimOverrideLog(async function POST(
     logAckReject(id, "no_file");
     return NextResponse.json({ error: "No file provided (field 'file')" }, { status: 400 });
   }
+  // ⚠ THE LINE IT IS FOR (2026-11-02, feature 10). Absent: Waypoint, as before.
+  // HCI and J&K are received, not checked -- receiveAck.
+  const asked = form.get("vendor");
+  const lineVendor = typeof asked === "string" && asked.trim() ? cleanInput(asked).trim() : VENDOR;
+  if (!isWaypointVendor(lineVendor)) return receiveAck(overrides, session, id, file, lineVendor);
   if (!file.name.toLowerCase().endsWith(".xlsx")) {
     logAckReject(id, "not_xlsx", file);
     return NextResponse.json({ error: "File must be a .xlsx" }, { status: 400 });
@@ -256,6 +370,7 @@ export const POST = withClaimOverrideLog(async function POST(
   const { data: kept, error: keptErr } = await supabase.from("order_attachments").insert({
     order_id: order.id, file_name: cleanInput(safeName), file_path: filePath, file_size: file.size,
     file_type: XLSX_TYPE, uploaded_by: cleanInput(who), kind: "acknowledgment", group_id: ackGroup,
+    vendor: VENDOR, // the line it is for (2026-11-02, feature 10)
   }).select("id").single();
   if (keptErr || !kept) {
     await supabase.storage.from(ATTACHMENT_BUCKET).remove([filePath]);

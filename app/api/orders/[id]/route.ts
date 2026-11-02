@@ -9,7 +9,7 @@ import { purchaseOf, archivedVia, archivedReadOnly } from "@/lib/archived";
 import { trackingTargetStage, typeRecordsTracking, type OrderCategory } from "@/lib/categories";
 import { pushClaimNotes } from "@/lib/claimHelpScout";
 import { removeOrderFiles } from "@/lib/orderFiles";
-import { orderAckRequirementMet } from "@/lib/acknowledgments";
+import { orderAckLines } from "@/lib/acknowledgments";
 import { requirementsFor, typeEverRequires } from "@/lib/requirements";
 import { mergeStaffLineEdits } from "@/lib/lineFields";
 import { shipDateEdit } from "@/lib/shipDateEdits";
@@ -393,25 +393,22 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
 
   let ackOverrideReason: string | null = null;
   if (body.stage === "Entered" && ackRequired) {
-    const { data: attachments } = await supabase
-      .from("order_attachments")
-      .select("id")
-      .eq("order_id", id)
-      // ⚠ An acknowledgment kept as a file is not "an attachment" (2026-10-28):
-      // a failed one would pass this gate by being kept.
-      .neq("kind", "acknowledgment")
-      .limit(1);
-    // ⚠ VENDOR BY VENDOR (2026-10-28, item 57): Waypoint needs its green
-    // acknowledgment -- a file no longer stands in for it; HCI and J&K a green
-    // one or any file. See ackRequirementMet.
-    if (!(await orderAckRequirementMet(id, (attachments ?? []).length > 0))) {
+    // ⚠ EVERY CABINET LINE ITS OWN ACKNOWLEDGMENT (2026-11-02, feature 10):
+    // Waypoint's checked and matching, HCI's and J&K's received; "any file" no
+    // longer stands in. See ackRequirementMet. The refusal names the lines.
+    const ack = await orderAckLines(id);
+    if (!ack?.met) {
       const reason =
         typeof body.override_ack === "string"
           ? cleanInput(body.override_ack).trim().slice(0, 300)
           : "";
       if (!reason) {
+        const waiting = (ack?.vendors ?? []).filter((v) => ack!.states[v] !== "met")
+          .map((v) => `${v} (${ack!.states[v] === "failed" ? "its acknowledgment did not match" : ack!.states[v] === "stale" ? "the order changed since its acknowledgment" : "no acknowledgment yet"})`);
         return NextResponse.json(
-          { error: "Before Entered: a matching acknowledgment for Waypoint lines, and for HCI or J&K lines an acknowledgment or any file." },
+          { error: waiting.length
+              ? `Before Entered, every cabinet line needs its acknowledgment: ${waiting.join("; ")}.`
+              : "Before Entered, every cabinet line needs its acknowledgment, and this order's lines could not be named." },
           { status: 400 },
         );
       }

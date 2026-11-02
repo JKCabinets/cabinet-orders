@@ -3,7 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { requireAuth, rateLimitOr429 } from "@/lib/auth";
 import { prefetchVendorMaps, resolveVendors, type ResolvableItem } from "@/lib/vendorLookup";
 import {
-  summariseAcks, allVendorsGreen, ackRequirementMet, ACK_SELECT, type AckRow, type AckOrderSnapshot,
+  summariseAcks, allVendorsGreen, ackRequirementMet, ackLineStates, ACK_SELECT, type AckRow, type AckOrderSnapshot,
 } from "@/lib/acknowledgments";
 import type { RequirementEnrichment } from "@/lib/requirements";
 import type { SkuItem } from "@/lib/skuDecoder";
@@ -151,9 +151,11 @@ export async function POST(req: NextRequest) {
     data[id] = {
       ackGreen: allVendorsGreen(uniqueVendors, ackByVendor),
       hasAttachment: anyAttachment.has(id),
-      // The Entered requirement itself, vendor by vendor (2026-10-28): the same
-      // function the PATCH route's gate asks.
-      ackRequirementMet: ackRequirementMet(uniqueVendors, ackByVendor, anyAttachment.has(id)),
+      // The Entered requirement itself, every cabinet line its own
+      // acknowledgment (2026-11-02, feature 10): the same function the PATCH
+      // route's gate asks -- and each line's state, for the band's rows.
+      ackRequirementMet: ackRequirementMet(uniqueVendors, ackByVendor),
+      ackLines: ackLineStates(uniqueVendors, ackByVendor),
       hasProofOfDelivery: proofOfDelivery.has(id),
     };
   }

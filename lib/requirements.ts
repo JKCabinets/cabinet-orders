@@ -67,6 +67,11 @@ export interface RequirementEnrichment {
   ackRequirementMet?: boolean;
   /** An attachment with kind = 'proof_of_delivery'. */
   hasProofOfDelivery?: boolean;
+  /**
+   * Each cabinet line's acknowledgment, by vendor (2026-11-02, feature 10):
+   * "met" | "failed" | "stale" | "missing" (lib/acknowledgments' AckLineState).
+   */
+  ackLines?: Record<string, "met" | "failed" | "stale" | "missing">;
 }
 
 export type RequirementState = "met" | "unmet" | "unknown";
@@ -146,15 +151,16 @@ export const REQUIREMENTS: Record<OrderType, Record<string, Requirement[]>> = {
     // would start flagging every unacknowledged order at 24h, which is a
     // behaviour change and not this patch's to make.
     "New": [
+      // ⚠ EVERY CABINET LINE ITS OWN ACKNOWLEDGMENT (2026-11-02, feature 10):
+      // the "any file" stand-in is retired. The id is kept (attention reasons
+      // and the band key on it); the band shows one row per line from
+      // `ackLines`.
       enrichReq(
         "ack_or_attachment",
-        "the manufacturer's acknowledgment",
-        "Waypoint: upload its acknowledgment, which must match. HCI and J&K: attach theirs, or any file for this order",
-        (e) => e.ackRequirementMet !== undefined ? e.ackRequirementMet
-          : (e.ackGreen === undefined && e.hasAttachment === undefined)
-          ? undefined
-          : Boolean(e.ackGreen) || Boolean(e.hasAttachment),
-        true, // the route refuses New -> Entered without one or the other
+        "each cabinet line's acknowledgment",
+        "Waypoint: upload its acknowledgment, which must match. HCI and J&K: upload theirs, a PDF or Excel file",
+        (e) => e.ackRequirementMet,
+        true, // the route refuses New -> Entered without every line's
       ),
     ],
     // ⚠ ADDED 2026-09-08, WITH A SERVER GATE TO MATCH. The manufacturer

@@ -1,6 +1,5 @@
 import { supabase } from "@/lib/supabase";
 import { lookupVendorsForSkus } from "@/lib/vendorLookup";
-import { isWaypointVendor } from "@/lib/vendorFamily";
 import { ackIsStale } from "@/lib/ackFingerprint";
 import type { SkuItem } from "@/lib/skuDecoder";
 import { doorStyleMap, colorMapAll } from "@/lib/skuDecoder";
@@ -136,27 +135,47 @@ export function allVendorsGreen(
 }
 
 /**
- * ⚠ "AN ACKNOWLEDGMENT OR AN ATTACHMENT", VENDOR BY VENDOR (2026-10-28,
- * Garrett, item 57): "Waypoint orders need a green acknowledgment; any file
- * counts only for HCI and J&K." Each vendor on the order is met on its own:
- *   Waypoint      a green acknowledgment, current with the order
- *   any other     a green acknowledgment, OR any file (kinds other than
- *                 `acknowledgment`) -- HCI and J&K have no parser to make one
- * An order mixing vendors needs both. One whose vendors cannot be resolved is
- * met by a file, as before. THE ONE RULE: the PATCH route's Entered gate, the
- * enrichment (and through it the Next Action checklist and the client gates)
- * all ask this.
+ * Where one cabinet line's acknowledgment stands (2026-11-02, feature 10).
+ *   met      a green acknowledgment, current with the order: Waypoint's
+ *            CHECKED against the order; HCI's and J&K's RECEIVED -- an upload
+ *            of their PDF or Excel, no check (Garrett, ruling 3)
+ *   failed   the latest is red (Waypoint's did not match)
+ *   stale    the latest was green, about lines that have since changed
+ *   missing  none
+ */
+export type AckLineState = "met" | "failed" | "stale" | "missing";
+
+export function ackLineStates(
+  vendors: string[],
+  ackByVendor: Record<string, AckSummary | null>,
+): Record<string, AckLineState> {
+  const out: Record<string, AckLineState> = {};
+  for (const v of vendors) {
+    const a = ackByVendor[v];
+    out[v] = !a ? "missing" : a.verdict === "red" ? "failed" : a.stale ? "stale" : "met";
+  }
+  return out;
+}
+
+/**
+ * ⚠ EVERY CABINET LINE ITS OWN ACKNOWLEDGMENT (2026-11-02, feature 10,
+ * Garrett's decision A). This was "an acknowledgment or an attachment", vendor
+ * by vendor (item 57): Waypoint a green one, HCI and J&K a green one OR ANY
+ * FILE -- and since nothing could make an HCI or J&K acknowledgment green,
+ * "any file" was the only way through, which nothing on the band asked for.
+ * The stand-in is RETIRED: each line is met by its own acknowledgment, and HCI's
+ * and J&K's are received on upload (ackLineStates). No vendors resolved is NOT
+ * met -- nobody has acknowledged an order nobody can name; a person may still
+ * override at the gate, with a reason. THE ONE RULE: the PATCH route's Entered
+ * gate, the enrichment (and through it the band and the client gate) ask this.
  */
 export function ackRequirementMet(
   vendors: string[],
   ackByVendor: Record<string, AckSummary | null>,
-  hasFile: boolean,
 ): boolean {
-  if (vendors.length === 0) return hasFile;
-  return vendors.every((v) => {
-    const green = ackByVendor[v]?.verdict === "green" && !ackByVendor[v]?.stale;
-    return isWaypointVendor(v) ? green : green || hasFile;
-  });
+  if (vendors.length === 0) return false;
+  const states = ackLineStates(vendors, ackByVendor);
+  return vendors.every((v) => states[v] === "met");
 }
 
 /**
@@ -214,9 +233,17 @@ export async function orderAllVendorsGreen(orderId: string): Promise<boolean> {
   return allVendorsGreen(got.vendors, got.ackByVendor);
 }
 
-/** The Entered gate's question, for one order: see ackRequirementMet. */
-export async function orderAckRequirementMet(orderId: string, hasFile: boolean): Promise<boolean> {
+/**
+ * The Entered gate's question, for one order (see ackRequirementMet), with each
+ * line's state -- so a refusal can name the lines still waiting. Null if the
+ * order is missing.
+ */
+export async function orderAckLines(orderId: string): Promise<{ met: boolean; vendors: string[]; states: Record<string, AckLineState> } | null> {
   const got = await orderVendorAcks(orderId);
-  if (!got) return false;
-  return ackRequirementMet(got.vendors, got.ackByVendor, hasFile);
+  if (!got) return null;
+  return {
+    met: ackRequirementMet(got.vendors, got.ackByVendor),
+    vendors: got.vendors,
+    states: ackLineStates(got.vendors, got.ackByVendor),
+  };
 }

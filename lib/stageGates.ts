@@ -80,13 +80,17 @@ export async function checkAttachmentGate(orderId: string): Promise<GateResult> 
       return { ok: false, reason: "network", message: "Could not verify the acknowledgment" };
     }
     const data = await res.json();
-    const e = (data.data ?? {})[orderId] as { ackRequirementMet?: boolean; ackGreen?: boolean; hasAttachment?: boolean } | undefined;
-    const met = e?.ackRequirementMet ?? (Boolean(e?.ackGreen) || Boolean(e?.hasAttachment));
-    if (!met) {
+    // ⚠ EVERY CABINET LINE ITS OWN ACKNOWLEDGMENT (2026-11-02, feature 10): no
+    // "any file" stand-in, and no fallback to one for an answer that lacks it.
+    const e = (data.data ?? {})[orderId] as { ackRequirementMet?: boolean; ackLines?: Record<string, string> } | undefined;
+    if (!e?.ackRequirementMet) {
+      const waiting = Object.entries(e?.ackLines ?? {}).filter(([, s]) => s !== "met").map(([v]) => v);
       return {
         ok: false,
         reason: "no-attachments",
-        message: "Before Entered: a matching acknowledgment for Waypoint lines, and for HCI or J&K lines an acknowledgment or any file.",
+        message: waiting.length
+          ? `Before Entered, every cabinet line needs its acknowledgment: ${waiting.join(", ")}.`
+          : "Before Entered, every cabinet line needs its acknowledgment.",
       };
     }
     return { ok: true };
