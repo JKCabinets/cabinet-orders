@@ -97,6 +97,35 @@ const ENRICHED_REASONS: Record<string, { kind: AttentionKind; label: string }> =
   },
 };
 
+/**
+ * ⚠ THE REASON NAMES THE LINE (2026-11-03, feature 10, Garrett's decision D:
+ * "the reason names the line -- 'J&K Cabinetry: acknowledgment required'").
+ * The SLA stays the ORDER's, timed by its slowest line; what changes is the
+ * words: which cabinet line is holding it, from the enrichment's per-line
+ * states. Null -- the order's own wording -- where no line is named (no
+ * per-line facts, or a single-vendor receipt).
+ */
+function linesWaiting(reqId: string, enrich: RequirementEnrichment | undefined): { label: string; detail: string } | null {
+  if (reqId === "ack_or_attachment" && enrich?.ackLines) {
+    const waiting = Object.entries(enrich.ackLines).filter(([, s]) => s !== "met");
+    if (waiting.length === 0) return null;
+    const why = (s: string) => (s === "failed" ? "did not match the order" : s === "stale" ? "the order changed since" : "no acknowledgment yet");
+    return {
+      label: waiting.length === 1 ? `${waiting[0][0]}: acknowledgment required` : `Acknowledgments required: ${waiting.map(([v]) => v).join(", ")}`,
+      detail: waiting.map(([v, s]) => `${v}: ${why(s)}`).join(" · "),
+    };
+  }
+  if (reqId === "proof_of_delivery" && enrich?.proofLines && Object.keys(enrich.proofLines).length > 1) {
+    const waiting = Object.entries(enrich.proofLines).filter(([, ok]) => !ok).map(([v]) => v);
+    if (waiting.length === 0) return null;
+    return {
+      label: waiting.length === 1 ? `${waiting[0]}: signed delivery receipt missing` : `Signed delivery receipts missing: ${waiting.join(", ")}`,
+      detail: "Upload each line's signed delivery receipt",
+    };
+  }
+  return null;
+}
+
 /** Is this the first stage of the row's own flow? */
 function isFirstStage(order: Order): boolean {
   const flow = STAGE_LIST_BY_TYPE[order.type as OrderType] as readonly string[] | undefined;
@@ -151,12 +180,13 @@ export function attentionFor(
     const mapped = ENRICHED_REASONS[req.id];
     if (!mapped) continue;
     if (req.state(order, enrich) !== "unmet") continue;
+    const named = linesWaiting(req.id, enrich);
     reasons.push({
       kind: mapped.kind,
       severity: "high",
-      label: mapped.label,
+      label: named?.label ?? mapped.label,
       // What to do about it. Varies by vendor where the reason does not.
-      detail: req.remedy,
+      detail: named?.detail ?? req.remedy,
     });
   }
 
