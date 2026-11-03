@@ -253,6 +253,8 @@ export async function uploadAttachment(
   groupId: number | null = null,
   /** Or the group the OMS keeps by role, found or made by the server (2026-10-28). */
   groupRole: "acknowledgments" | null = null,
+  /** The cabinet line a receipt is for (2026-11-03, feature 10); the server checks it. */
+  vendor: string | null = null,
 ): Promise<Outcome<Attachment>> {
   const form = new FormData();
   form.append("file", file);
@@ -262,6 +264,7 @@ export async function uploadAttachment(
   // the order's "Proof of delivery" by role.
   if (groupId !== null) form.append("group_id", String(groupId));
   if (groupRole !== null) form.append("group_role", groupRole);
+  if (vendor !== null) form.append("vendor", vendor);
   let res: Response;
   try {
     res = await fetch("/api/orders/attachments", { method: "POST", body: form });

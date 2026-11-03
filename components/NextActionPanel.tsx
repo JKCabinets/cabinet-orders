@@ -100,6 +100,9 @@ export type DateFields = {
   tracking_number?: string | null;
   /** A mixed cabinet group's ship date per vendor (2026-11-02, feature 9). */
   vendor_ship_dates?: Record<string, string> | null;
+  /** …and each line's production start and delivery target (2026-11-02, feature 10). */
+  vendor_start_dates?: Record<string, string> | null;
+  vendor_delivery_targets?: Record<string, string> | null;
   /** "Still on schedule?" answered "On schedule" (the server stamps who and when). */
   ship_check?: { vendor: string; date: string } | { line_key: string; date: string };
   /** A backordered line's "Delayed: new date": the lines with its ready date moved. */
@@ -270,6 +273,10 @@ export function NextActionPanel({
   const requirements = requirementsFor(order);
   // Each cabinet line's acknowledgment (2026-11-02, feature 10), from the enrichment.
   const ackLineRows = Object.entries(enrichment?.ackLines ?? {}).map(([vendor, state]) => ({ vendor, state }));
+  // Each line's signed receipt, on a MIXED order (2026-11-03, feature 10): one
+  // line keeps the single row, as before.
+  const proofLineRows = Object.keys(enrichment?.proofLines ?? {}).length > 1
+    ? Object.entries(enrichment!.proofLines!).map(([vendor, ok]) => ({ vendor, ok })) : [];
   const next = nextStageFor(order);
 
   const rows = requirements.map((r) => ({
@@ -427,7 +434,30 @@ export function NextActionPanel({
 
           {rows.length > 0 && (
             <ul className="mt-3 space-y-1.5 min-w-0">
-              {rows.map(({ req, state }) => (req.id === "ack_or_attachment" && ackLineRows.length > 0)
+              {rows.map(({ req, state }) => (req.id === "proof_of_delivery" && proofLineRows.length > 0)
+                // ⚠ A ROW PER CABINET LINE, as the acknowledgments (2026-11-03): each
+                // line delivers separately and needs its own signed receipt.
+                ? proofLineRows.map(({ vendor, ok }) => {
+                    const remedy = remedies[`proof_of_delivery:${vendor}`];
+                    return (
+                      <li key={`proof:${vendor}`} data-proof-line={vendor} data-state={ok ? "met" : "missing"} className="flex items-start gap-2 text-[12px] leading-snug">
+                        <span className="w-3.5 h-3.5 rounded-full flex-shrink-0 mt-[2px] flex items-center justify-center"
+                          style={ok ? { background: "rgba(160,204,122,0.20)", border: "0.5px solid #a0cc7a" } : { border: "0.5px solid rgba(232,227,218,0.30)" }}>
+                          {ok && <Check className="w-2 h-2" style={{ color: "#a0cc7a" }} />}
+                        </span>
+                        <span className="min-w-0" style={{ color: ok ? "#a0cc7a" : "rgba(240,236,228,0.92)" }}>
+                          {vendor}: signed proof of delivery
+                          {!ok && <span className={"block " + NOTE}>Upload its signed delivery receipt</span>}
+                        </span>
+                        {!ok && remedy && !readOnly && (
+                          <button onClick={remedy.onClick} className={PILL_QUIET + " ml-auto flex-shrink-0"}>
+                            <Upload className="w-3 h-3" /> {remedy.label}
+                          </button>
+                        )}
+                      </li>
+                    );
+                  })
+                : (req.id === "ack_or_attachment" && ackLineRows.length > 0)
                 // ⚠ A ROW PER CABINET LINE (2026-11-02, feature 10; Garrett: "Waypoint
                 // Ack (Upload Ack) … J&K Ack (Upload Ack) … (Move to Entered)").
                 ? ackLineRows.map(({ vendor, state: ls }) => {
@@ -480,7 +510,8 @@ export function NextActionPanel({
         {/* ⚠ LEVEL WITH THE LAST LINE'S UPLOAD (2026-11-03, Garrett: "line up with the
             bottom upload button"). The row centres its columns, which put Move to
             Entered beside the MIDDLE line; with a row per line it sits at the bottom. */}
-        <div className={"flex-shrink-0 ml-auto" + (ackLineRows.length > 0 && rows.some((r) => r.req.id === "ack_or_attachment") ? " self-end" : "")}>
+        <div className={"flex-shrink-0 ml-auto" + ((ackLineRows.length > 0 && rows.some((r) => r.req.id === "ack_or_attachment"))
+          || (proofLineRows.length > 0 && rows.some((r) => r.req.id === "proof_of_delivery")) ? " self-end" : "")}>
           {readOnly ? (
             <p className={NOTE + " flex-shrink-0 text-right max-w-[16rem]"}>{lockedNote}</p>
           ) : (

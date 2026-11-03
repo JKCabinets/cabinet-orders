@@ -111,7 +111,7 @@ interface StoreCtx {
     ids: string[],
     action: { type: "archive"; archived: boolean } | { type: "delete" }
   ) => Promise<{ succeeded: number; failed: number; results: { id: string; ok: boolean; error?: string }[] } | null>;
-  updateOrderDetails: (id: string, details: { door_style?: string; color?: string; sku_items?: SkuItem[]; vendor_ship_dates?: Record<string, string> | null; ship_check?: { vendor: string; date: string } | { line_key: string; date: string }; production_start_date?: string | null; production_est_finish_date?: string | null; scheduled_delivery_date?: string | null; tracking_number?: string | null; delivery_method?: string }) => Promise<string | null>;
+  updateOrderDetails: (id: string, details: { door_style?: string; color?: string; sku_items?: SkuItem[]; vendor_ship_dates?: Record<string, string> | null; vendor_start_dates?: Record<string, string> | null; vendor_delivery_targets?: Record<string, string> | null; ship_check?: { vendor: string; date: string } | { line_key: string; date: string }; production_start_date?: string | null; production_est_finish_date?: string | null; scheduled_delivery_date?: string | null; tracking_number?: string | null; delivery_method?: string }) => Promise<string | null>;
   /** Name, contact, location -- custom jobs and claims. NOT optimistic: resolves to null when saved, or the server's sentence. */
   updateCustomerDetails: (id: string, details: { name?: string; customer_email?: string; customer_phone?: string; ship_to?: string }) => Promise<string | null>;
   /**
@@ -836,7 +836,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const unarchiveOrder = useCallback(
     (id: string) => setOrderArchived(id, false), [setOrderArchived]);
 
-  const updateOrderDetails = useCallback(async (id: string, details: { door_style?: string; color?: string; sku_items?: SkuItem[]; vendor_ship_dates?: Record<string, string> | null; ship_check?: { vendor: string; date: string } | { line_key: string; date: string }; production_start_date?: string | null; production_est_finish_date?: string | null; scheduled_delivery_date?: string | null; tracking_number?: string | null; delivery_method?: string }): Promise<string | null> => {
+  const updateOrderDetails = useCallback(async (id: string, details: { door_style?: string; color?: string; sku_items?: SkuItem[]; vendor_ship_dates?: Record<string, string> | null; vendor_start_dates?: Record<string, string> | null; vendor_delivery_targets?: Record<string, string> | null; ship_check?: { vendor: string; date: string } | { line_key: string; date: string }; production_start_date?: string | null; production_est_finish_date?: string | null; scheduled_delivery_date?: string | null; tracking_number?: string | null; delivery_method?: string }): Promise<string | null> => {
     // ⚠ NOT OPTIMISTIC (2026-10-26, item 52). This painted first and discarded
     // apiCall's { __error }, so a date or a line the server refused stayed on
     // screen until a reload. Now: the server first; what it confirmed is

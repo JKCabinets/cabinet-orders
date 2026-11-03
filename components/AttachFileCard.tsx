@@ -23,8 +23,8 @@ import { Paperclip, X, Loader2, Check } from "lucide-react";
 import { uploadAttachment } from "@/lib/attachments";
 
 export interface AttachFileCardHandle {
-  /** Open the file picker -- call it straight from a click. */
-  pick: () => void;
+  /** Open the file picker -- call it straight from a click. A receipt may name its cabinet line (2026-11-03). */
+  pick: (vendor?: string) => void;
 }
 
 /** What the card attaches (2026-10-28, 5d): "Attach a file", or a signed receipt. */
@@ -36,13 +36,16 @@ export const AttachFileCard = forwardRef<AttachFileCardHandle, { orderId: string
   // ⚠ A RECEIPT IS FILED BY THE SERVER, by its kind, in "Proof of delivery";
   // an acknowledgment-or-attachment goes in "Acknowledgments" by role.
   const GROUP = purpose === "receipt" ? "Proof of delivery" : "Acknowledgments";
-  const TITLE = purpose === "receipt" ? "Upload the signed receipt" : "Attach a file";
+  // The cabinet line a receipt is for, set by pick() (2026-11-03, feature 10).
+  const [line, setLine] = useState<string | null>(null);
+  const lineRef = useRef<string | null>(null);
+  const TITLE = purpose === "receipt" ? `Upload the signed receipt${line ? `: ${line}` : ""}` : "Attach a file";
   const [phase, setPhase] = useState<"ask" | "uploading" | "done">("ask");
   const [error, setError] = useState("");
   const [doneText, setDoneText] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useImperativeHandle(ref, () => ({ pick: () => inputRef.current?.click() }), []);
+  useImperativeHandle(ref, () => ({ pick: (vendor?: string) => { lineRef.current = vendor ?? null; setLine(vendor ?? null); inputRef.current?.click(); } }), []);
 
   // After a success: a moment to read it, then slide away.
   useEffect(() => {
@@ -69,7 +72,7 @@ export const AttachFileCard = forwardRef<AttachFileCardHandle, { orderId: string
     const refused: string[] = [];
     for (const f of files) {
       const r = purpose === "receipt"
-        ? await uploadAttachment(orderId, f, "proof_of_delivery")
+        ? await uploadAttachment(orderId, f, "proof_of_delivery", null, null, lineRef.current)
         : await uploadAttachment(orderId, f, "general", null, "acknowledgments");
       if (r.ok) attached.push(f.name); else refused.push(r.message);
     }

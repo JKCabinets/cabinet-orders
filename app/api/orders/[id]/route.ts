@@ -868,7 +868,9 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
   // What was stored for the ship fields, returned for the store to apply --
   // it applies what it SENT, and the group's date here is derived.
   const stored = Object.fromEntries(
-    (["production_est_finish_date", "vendor_ship_dates", "ship_checks", "sku_items"] as const)
+    (["production_est_finish_date", "vendor_ship_dates", "ship_checks", "sku_items",
+      // (2026-11-02, feature 10) each line's start and target, and the order's they set
+      "production_start_date", "vendor_start_dates", "scheduled_delivery_date", "vendor_delivery_targets"] as const)
       .filter((k) => updates[k] !== undefined).map((k) => [k, updates[k]]),
   );
 

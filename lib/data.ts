@@ -347,6 +347,10 @@ export interface Order {
    * the group moves to At cross dock. lib/shipDates reads it; nothing else should.
    */
   vendor_ship_dates?: Record<string, string> | null;
+  /** Each line's production start on a mixed cabinet order; the order's = the EARLIEST (2026-11-02, feature 10). */
+  vendor_start_dates?: Record<string, string> | null;
+  /** Each line's delivery target on a mixed cabinet order; the order's = the LATEST (2026-11-02, feature 10). */
+  vendor_delivery_targets?: Record<string, string> | null;
   /** "Still on schedule?" answered "On schedule", per vendor (lib/shipDates). */
   ship_checks?: Record<string, ShipCheckAnswer> | null;
   /**
@@ -569,6 +573,9 @@ export function shapeOrder(raw: Record<string, unknown>): Order {
     // ⚠ THE THREE FEATURE-9 COLUMNS (2026-10-29), or they are undefined on every
     // screen however correctly the database holds them.
     vendor_ship_dates: (raw.vendor_ship_dates as Record<string, string> | null) ?? null,
+    // (2026-11-02, feature 10) Each line's start and delivery target.
+    vendor_start_dates: (raw.vendor_start_dates as Record<string, string> | null) ?? null,
+    vendor_delivery_targets: (raw.vendor_delivery_targets as Record<string, string> | null) ?? null,
     ship_checks: (raw.ship_checks as Record<string, ShipCheckAnswer> | null) ?? null,
     shipped_in_shopify: (raw.shipped_in_shopify as Record<string, string> | null) ?? null,
     scheduled_delivery_date: (raw.scheduled_delivery_date as string | null) ?? null,

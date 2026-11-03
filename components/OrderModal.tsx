@@ -26,6 +26,7 @@ import { OrderHeaderCards, ConsentMissingPill, ShopifyGonePill } from "./OrderHe
 import { ClaimCloseButton, ClaimOutcomePill } from "./ClaimClose";
 import { DamageReportPanel } from "./DamageReportPanel";
 import { AcknowledgmentPanel, type AcknowledgmentPanelHandle } from "./AcknowledgmentPanel";
+import { CabinetLinesCard } from "./CabinetLinesCard";
 import { consumeAckPicker, useAckStatus } from "@/lib/ackStatus";
 import { STAGE_ACCENT, lastEnteredAt } from "@/lib/data";
 import { typeCarriesTracking } from "@/lib/categories";
@@ -1584,6 +1585,9 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                       label: "Upload receipt",
                       onClick: () => receiptCardRef.current?.pick(),
                     },
+                    // ⚠ A RECEIPT PER CABINET LINE on a mixed order (2026-11-03, feature 10).
+                    ...Object.fromEntries(Object.keys(enrichFor(liveOrder)?.proofLines ?? {})
+                      .map((v) => [`proof_of_delivery:${v}`, { label: "Upload receipt", onClick: () => receiptCardRef.current?.pick(v) }])),
                   }}
                   overrides={{
                     // The same reason-and-activity-row path the refusal
@@ -1677,13 +1681,20 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
           ) : (
             <div className="px-6 py-4 grid grid-cols-1 md:grid-cols-2 gap-2.5">
               <OrderDetailsCard key="details-other" order={liveOrder} onSaveCustomer={updateCustomerDetails} canEditCustomer={canEditCustomer} />
-              <StageInputsCard
-                readOnly={readOnly}
-                order={liveOrder}
-                updateOrderDetails={updateOrderDetails}
-                onStageChange={onStageChange}
-                canEdit={canEdit}
-              />
+              {/* ⚠ A CABINET ORDER: A ROW PER LINE (2026-11-03, feature 10, Garrett's layout). */}
+              {/* …and only with lines to show: an order whose lines name no vendor keeps
+                  the card that writes the order's own dates, rather than saving none. */}
+              {liveOrder.type === "order" && cabinetVendorsOf(liveOrder).length > 0 ? (
+                <CabinetLinesCard readOnly={readOnly} order={liveOrder} updateOrderDetails={updateOrderDetails} canEdit={canEdit} />
+              ) : (
+                <StageInputsCard
+                  readOnly={readOnly}
+                  order={liveOrder}
+                  updateOrderDetails={updateOrderDetails}
+                  onStageChange={onStageChange}
+                  canEdit={canEdit}
+                />
+              )}
               {notesCard}{/* the other layout */}
               <FileGroupTiles orderId={liveOrder.id} onOpen={openFilesAt} />{/* the other layout */}
             </div>
