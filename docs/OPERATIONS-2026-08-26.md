@@ -446,7 +446,7 @@ Also held, not in use by these systems: `jkkitchencabinets2you.com`,
 | Credential | Lives in | Expiry | Symptom when it dies |
 |---|---|---|---|
 | **Microsoft Graph client secret** | Entra only — **not on the box**: no Graph credential in `.env.kamal` or `.kamal/secrets` (checked 2026-09-08 and 2026-10-13). App **"JK Cabinets OMS — transactional email"**, client ID `e8560b8d-6d3c-4547-8c2e-d01eb2986069` | **17 August 2028** (recorded 2026-10-21; reminder 17 July 2028) | Nothing on the box uses it, and nothing will: Graph is NOT the notification channel (2026-10-29, §8) |
-| **GHCR token** (GitHub PAT, classic) | `.env.kamal` | Expired 2026-08-18 **and again 2026-09-16**. **Checked weekly since 2026-09-16** — `check-registry-token.sh` logs the expiry date and alarms 14 days ahead (§6) | `kamal deploy` → **`denied: denied`** at docker login |
+| **GHCR token** (GitHub PAT, classic) | `.env.kamal` | Expired 2026-08-18 **and again 2026-09-16**; renewed 2026-11-03, **expires 2027-01-02 21:39:50 UTC** (the check goes red from its 2026-12-21 run; renewing: below). **Checked weekly since 2026-09-16** — `check-registry-token.sh` logs the expiry date and alarms 14 days ahead (§6) | `kamal deploy` → **`denied: denied`** at docker login |
 | **`SHOPIFY_WEBHOOK_SECRET`** | `.env.kamal` | No expiry | Webhook HMAC fails closed — **orders stop ingesting** |
 | **`SHOPIFY_WEBHOOK_SECRET_FALLBACK`** | `.env.kamal` | Empty when idle | Rotation slot — see below |
 | **`SHOPIFY_CLIENT_ID` / `_SECRET`** | `.env.kamal` | — | Shopify API calls fail; stage sync stops — and once feature 9's phase 1 ships, cabinet FULFILMENTS stop, and with them Shopify's shipping emails to customers. The app's permissions: §8 |
@@ -552,6 +552,47 @@ Names and set/empty, never values. Only `SHOPIFY_WEBHOOK_SECRET_FALLBACK` is
 empty by design (`TEAMS_WEBHOOK_URL` was too, until it was set 2026-10-21). (`QUOTE_WEBHOOK_SECRET` was listed here
 until 2026-10-01; it has been set since 2026-09-24.) This is the
 check that would have caught both of 2026-09-16's failed deploys before they ran.
+
+## Renewing the GHCR token (proven 2026-11-03)
+
+On GitHub, as **JKCabinets**: Settings → Developer settings → Personal access
+tokens → Tokens (classic) → Generate new token (classic); scope
+`write:packages` (it selects `read:packages`); the expiry chosen. Then **on the
+box**, in an ssh session:
+
+```bash
+cd ~/cabinet-orders \
+  && grep ' registry-token ' ~/cron-jobs/cron.log | tail -3 \
+  && { test "$(grep -c '^KAMAL_REGISTRY_PASSWORD=' .env.kamal)" = 1 || { echo "NOT EXACTLY ONE KAMAL_REGISTRY_PASSWORD LINE"; false; }; } \
+  && read -rsp 'New GHCR token (hidden): ' T && echo \
+  && { [[ ${#T} -eq 40 && $T == ghp_* ]] || { echo "NOT A 40-CHARACTER ghp_ TOKEN (length ${#T})"; false; }; } \
+  && printf '%s' "$T" | docker login ghcr.io -u JKCabinets --password-stdin \
+  && printf '%s' "$T" | python3 -c '
+import os, re, sys
+p, t = ".env.kamal", sys.stdin.read()
+s = open(p).read()
+pat = re.compile(r"(?m)^KAMAL_REGISTRY_PASSWORD=.*$")
+assert len(pat.findall(s)) == 1, "not exactly one KAMAL_REGISTRY_PASSWORD line"
+fd = os.open(p + ".new", os.O_WRONLY | os.O_CREAT | os.O_EXCL, os.stat(p).st_mode & 0o777)
+with os.fdopen(fd, "w") as f:
+    f.write(pat.sub(lambda m: "KAMAL_REGISTRY_PASSWORD=" + t, s))
+os.replace(p + ".new", p)
+print("REPLACED")' \
+  && { ~/cron-jobs/check-registry-token.sh; echo "check rc=$?"; tail -1 ~/cron-jobs/cron.log; } \
+  || echo "STOPPED -- nothing after the failing step ran"; unset T
+```
+
+It shows the check's recent log lines; reads the token without echoing it;
+refuses anything but a 40-character `ghp_` token (the partial paste of §5's
+third failure); has GHCR accept it with `docker login` BEFORE writing; replaces
+the one line in `.env.kamal` in place (its mode and every other line kept);
+then runs the check, which turns healthchecks.io green. Expect `Login
+Succeeded`, `REPLACED`, `check rc=0` and a log line with the new expiry — then
+record the date here, in the start-point handoff and in the system map. No
+deploy is needed; Kamal reads the file at the next one. Proven 2026-11-03 on a
+stand-in home (a good token, a partial paste, a duplicate line, a refused
+login: each failure stops with a message and leaves the file byte-identical),
+then used live.
 
 ## Reading a failed deploy
 

@@ -1061,7 +1061,10 @@ Each line points at the section that owns the detail.
     the crontab) under `scripts/cron/`, with `healthchecks.map` left out (its
     URLs are secrets in effect). A code change: pull them whole from the box,
     read them, commit.
-66. **The GHCR registry token expires 2026-11-16** (per the system map, as of
+66. ✅ RENEWED 2026-11-03 (Garrett); EXPIRES **2027-01-02 21:39:50 UTC** — the
+    weekly check goes red from its 2026-12-21 run (`SESSION-HANDOFF-2026-11-03.md`
+    §1, §6.1; the chain in OPERATIONS §5). Was:
+    **The GHCR registry token expires 2026-11-16** (per the system map, as of
     2026-09-22). `check-registry-token.sh` alarms 14 days ahead — from about
     November 2. Not renewed, every `kamal deploy` fails `denied: denied`, as on
     2026-08-18 and 2026-09-16. Garrett: a classic PAT with `write:packages`

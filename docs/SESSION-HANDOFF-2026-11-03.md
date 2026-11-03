@@ -29,11 +29,10 @@ item 5 turned out bigger, with a plan. Read §6 before §4.
 
 **The box** (`5.78.220.153`, `~/cabinet-orders`, `main`):
 
-- ⚠ **AS OF THE §6 COMMIT:** `HEAD~1` is `e936001` (the commit that added this
-  file), `HEAD~2` *"Docs: feature 10, cabinet lines, as built and deployed
-  (2026-11-03)"*, `HEAD~3` *"Feature 10, part 5: the work queue names the
-  cabinet line holding an order"*. **The next chain checks: `HEAD~1` =
-  `e936001`, tree clean.**
+- ⚠ **AS OF FEATURE 11 PART 1's COMMIT:** `HEAD~1` is `8ad39a9` (the §6 docs
+  commit), `HEAD~2` `e936001` (the commit that added this file), `HEAD~3`
+  *"Docs: feature 10, cabinet lines, as built and deployed (2026-11-03)"*.
+  **The next chain checks: `HEAD~1` = `8ad39a9`, tree clean.**
 - ⚠ **THE RUNNING IMAGE IS PART 5's COMMIT.** Docs commits are never deployed
   (nothing in the app changes), so the image check (`docker ps … | grep -qF
   "$(git rev-parse HEAD)"`) reads **MISMATCH** against a docs `HEAD` until the
@@ -60,13 +59,13 @@ Additional details carry, per line of a mixed cabinet order, "<line>
 Production" and "<line> Delivery Target" — Waypoint as "Select (Waypoint)
 Cabinetry".
 
-⚠ **THE GHCR TOKEN EXPIRES 2026-11-16 (item 66) — THE ONE DEADLINE.** The
-Monday check alarms below 14 days left (`WARN_DAYS=14`, `-lt`) — so since its
-2026-11-02 run: a red registry-token check on healthchecks.io is THIS. After the
-16th every `kamal deploy` fails `denied: denied` until it is renewed: a classic
-PAT with `write:packages` and `read:packages`, into `.env.kamal`
-(`KAMAL_REGISTRY_PASSWORD`), checked with `docker login` and
-`~/cron-jobs/check-registry-token.sh` before the next deploy (OPERATIONS §5).
+⚠ **THE GHCR TOKEN WAS RENEWED 2026-11-03 (item 66) AND EXPIRES 2027-01-02
+21:39:50 UTC** (the check's log, 2026-11-03 21:40:21Z: `rc=0 ok, expires in 59
+days`). The Monday check alarms below 14 days left (`WARN_DAYS=14`, `-lt`,
+whole days rounded down): green through its 2026-12-14 run, **red from its
+2026-12-21 run** — a red registry-token check on healthchecks.io is THIS. After
+2027-01-02 every `kamal deploy` fails `denied: denied` until it is renewed: the
+chain in OPERATIONS §5 ("Renewing the GHCR token", proven 2026-11-03).
 
 ## 2. What was built since 2026-10-29 — all deployed
 
@@ -202,9 +201,10 @@ handoffs — the record of each session's decisions; the numbered items live in
 
 - **Item 1, the GHCR token: RENEWED 2026-11-03** (Garrett). `docker login`
   succeeded, through a chain that refused anything but a 40-character `ghp_`
-  token and wrote `.env.kamal` only after GHCR accepted it. ⚠ **Its new expiry
-  is still to record** — here, in OPERATIONS §5 and in item 66. It is in the
-  check's log line: `grep ' registry-token ' ~/cron-jobs/cron.log | tail -1`.
+  token and wrote `.env.kamal` only after GHCR accepted it. Its new expiry,
+  from the check's log (2026-11-03 21:40:21Z, `rc=0`): **2027-01-02 21:39:50
+  UTC** — recorded in §1, OPERATIONS §5, item 66 and the system map by feature
+  11 part 1's commit.
 - **Item 2: CONFIRMED** (Garrett): `cabinet-fulfilment` has both alert
   integrations, and its check is green.
 - **Item 3: CLOSED.** `f10-lines-without-vendor.sql` (read-only, one row;
@@ -278,6 +278,26 @@ over seeded rows; (4) `lib/consent`, the webhook, `lib/data`'s `Project` and
 the screen, each proven against the deployed code as the control; (5) the
 docs.
 
+**Done 2026-11-03** (read-only checks, then part 1):
+- **(1)** `shopify-consent-check.js` (sha256 `597990d9…`, outputs): all five
+  webhook subscriptions deliver payloads in `2026-04`. #1071–#1074 are all
+  `source web` (the cart), each with an IPv4 in `browser_ip` and in
+  `client_details` (equal), a 111-character browser and the Refund Policy date.
+  ⚠ The Kitchen designer's invoice checkout is still UNSEEN — one test order
+  through it after the deploy (the reader takes a missing `client_details` as
+  nothing to record).
+- **(2)** `f11-projects-probe.sql` (sha256 `bf3f6cfb…`): production's
+  `projects` — 29 columns, 4 rows, RLS with its four policies, in
+  `supabase_realtime` with no column list — transcribed as
+  `prod_base_projects.sql` (sha256 `c57e97dd…`, outputs; for the harness's
+  base), on which the probe reads exactly as production did.
+- **(3) Part 1, the migration:** `2026-11-03-consent-record.sql` (sha256
+  `8b249ab8…`), proven twice on that base (all 29 columns of every row
+  unchanged, a planted change seen, `published` false under a column list).
+  **RAN IN PRODUCTION 2026-11-03**, its check row as expected (`new_columns 3`,
+  `all_text_nullable true`, `published true`); committed as part 1. Nothing
+  writes the columns until part 2.
+
 ### 6.3 Item 5 — bigger than §4 says; a plan PROPOSED, not yet decided
 
 - **REST `2024-01` is in FOUR files:** `lib/shopifyStageSync`, the order
@@ -300,8 +320,12 @@ docs.
   the list too, so the guard stays), tags by `tagsAdd`/`tagsRemove`; (2) the
   catalogue sync on GraphQL (`colorOptionOf` reads REST's shapes — read
   `lib/shopifyColor` and its callers whole first); (3) delete the backfill
-  and its button; (4) one version constant, `2026-10`, once it is known what
-  the webhooks route's version governs — item 67's comment fix with it.
+  and its button; (4) one version constant, `2026-10` — ⚠ FOUND 2026-11-03: all
+  five webhook subscriptions deliver payloads in `2026-04`, the version the
+  webhooks route registers with. Whether that request or the app's own webhook
+  setting decides it is to confirm first; either way, moving it moves the
+  payloads the webhook handler reads, so it is a step of its own, the handler
+  read against the new version's payload. Item 67's comment fix with it.
 
 ### 6.4 Still open from this session
 

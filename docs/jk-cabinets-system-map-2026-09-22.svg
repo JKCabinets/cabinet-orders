@@ -63,7 +63,7 @@
   <text x="394" y="398" class="box-sub">and pulls from</text>
   <text x="394" y="415" class="box-sub">image tag = the commit SHA — that is how a</text>
   <text x="394" y="432" class="box-sub">deploy is verified</text>
-  <text x="394" y="450" class="box-sub-em">⚠ PAT expires 2026-11-16; checked weekly,</text>
+  <text x="394" y="450" class="box-sub-em">⚠ PAT expires 2027-01-02; checked weekly,</text>
   <text x="394" y="468" class="box-sub-em">alarms 14 days out</text>
   <rect x="710" y="337.5" width="310" height="126" rx="8" fill="#fff" stroke="#d8d3c8" stroke-width="1.5"/>
   <text x="724" y="362.5" class="box-title">Upstash Redis</text>
@@ -146,7 +146,7 @@
   <text x="1120" y="1277" class="box-sub">asks GitHub whether the GHCR token</text>
   <text x="1120" y="1294" class="box-sub">still works, and when it expires</text>
   <text x="1120" y="1312" class="box-sub-em">⚠ fails 14 days before expiry</text>
-  <text x="1120" y="1330" class="box-sub-em">⚠ the token expires 2026-11-16</text>
+  <text x="1120" y="1330" class="box-sub-em">⚠ the token expires 2027-01-02</text>
   <rect x="50" y="1381.5" width="244" height="109" rx="8" fill="#fff" stroke="#d8d3c8" stroke-width="1.5"/>
   <text x="64" y="1406.5" class="box-title">15 min helpscout-sync</text>
   <text x="64" y="1424" class="box-sub">website claims, and each claim's</text>
