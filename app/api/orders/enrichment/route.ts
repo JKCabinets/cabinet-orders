@@ -7,6 +7,7 @@ import {
 } from "@/lib/acknowledgments";
 import type { RequirementEnrichment } from "@/lib/requirements";
 import type { SkuItem } from "@/lib/skuDecoder";
+import { proofLineStates, proofRequirementMet } from "@/lib/deliveryProof";
 
 /**
  * POST /api/orders/enrichment — the joined facts a row's requirements need,
@@ -114,16 +115,21 @@ export async function POST(req: NextRequest) {
   // mistake in this route is cheaper when the data was never fetched.
   const { data: attachmentRows } = await supabase
     .from("order_attachments")
-    .select("order_id, kind")
+    .select("order_id, kind, vendor")
     .in("order_id", ids);
 
   const anyAttachment = new Set<string>();
-  const proofOfDelivery = new Set<string>();
-  for (const a of (attachmentRows ?? []) as Array<{ order_id: string; kind: string }>) {
+  // Each order's receipts, with the line each names (2026-11-02, feature 10).
+  const proofsByOrder = new Map<string, { vendor: string | null }[]>();
+  for (const a of (attachmentRows ?? []) as Array<{ order_id: string; kind: string; vendor: string | null }>) {
     // ⚠ NOT AN ACKNOWLEDGMENT (2026-10-28): kept as files, a FAILED one would
     // otherwise satisfy "an acknowledgment or an attachment" by being kept.
     if (a.kind !== "acknowledgment") anyAttachment.add(a.order_id);
-    if (a.kind === "proof_of_delivery") proofOfDelivery.add(a.order_id);
+    if (a.kind === "proof_of_delivery") {
+      const list = proofsByOrder.get(a.order_id) ?? [];
+      list.push({ vendor: a.vendor ?? null });
+      proofsByOrder.set(a.order_id, list);
+    }
   }
 
   // ── Per order, using the shared rules ────────────────────────────────────
@@ -156,7 +162,10 @@ export async function POST(req: NextRequest) {
       // route's gate asks -- and each line's state, for the band's rows.
       ackRequirementMet: ackRequirementMet(uniqueVendors, ackByVendor),
       ackLines: ackLineStates(uniqueVendors, ackByVendor),
-      hasProofOfDelivery: proofOfDelivery.has(id),
+      // Every cabinet line its own receipt (2026-11-02, feature 10): the same
+      // function the PATCH route's Delivered gate asks -- and each line's.
+      hasProofOfDelivery: proofRequirementMet(uniqueVendors, proofsByOrder.get(id) ?? []),
+      proofLines: proofLineStates(uniqueVendors, proofsByOrder.get(id) ?? []),
     };
   }
 

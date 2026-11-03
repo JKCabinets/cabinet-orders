@@ -43,18 +43,26 @@ export async function checkDeliveryProofGate(
     return { ok: true };
   }
   try {
-    const res = await fetch(`/api/orders/attachments?orderId=${encodeURIComponent(order.id)}`);
+    // ⚠ ONE RULE, ASKED OF THE SERVER (2026-11-02, feature 10): every cabinet
+    // line its own receipt (lib/deliveryProof), through the enrichment -- the
+    // same answer the PATCH route's Delivered gate gives. This counted the
+    // order's receipts itself, so one J&K receipt passed a three-line order.
+    const res = await fetch("/api/orders/enrichment", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: [order.id] }),
+    });
     if (!res.ok) {
-      return { ok: false, reason: "network", message: "Could not verify attachments" };
+      return { ok: false, reason: "network", message: "Could not verify the delivery receipts" };
     }
     const data = await res.json();
-    const hasReceipt = ((data.data ?? []) as { kind?: string }[])
-      .some(a => a.kind === "proof_of_delivery");
-    if (!hasReceipt) {
+    const e = (data.data ?? {})[order.id] as { hasProofOfDelivery?: boolean; proofLines?: Record<string, boolean> } | undefined;
+    if (!e?.hasProofOfDelivery) {
+      const waiting = Object.entries(e?.proofLines ?? {}).filter(([, ok]) => !ok).map(([v]) => v);
       return {
         ok: false,
         reason: "no-delivery-proof",
-        message: "Attach the signed delivery receipt before marking this order Delivered",
+        message: waiting.length > 1 || (waiting.length === 1 && Object.keys(e?.proofLines ?? {}).length > 1)
+          ? `Attach the signed delivery receipt for ${waiting.join(", ")}.`
+          : "Attach the signed delivery receipt.",
       };
     }
     return { ok: true };

@@ -72,6 +72,8 @@ export interface RequirementEnrichment {
    * "met" | "failed" | "stale" | "missing" (lib/acknowledgments' AckLineState).
    */
   ackLines?: Record<string, "met" | "failed" | "stale" | "missing">;
+  /** Each cabinet line's signed receipt, by vendor (2026-11-02, feature 10; lib/deliveryProof). */
+  proofLines?: Record<string, boolean>;
 }
 
 export type RequirementState = "met" | "unmet" | "unknown";

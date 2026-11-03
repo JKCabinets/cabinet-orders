@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { lookupVendorsForSkus } from "@/lib/vendorLookup";
 import { requireAuth, requireOrderClaim, withClaimOverrideLog, type ClaimOverrideLog, cleanInput, rateLimitOr429 } from "@/lib/auth";
 import { purchaseOf, archivedVia, archivedReadOnly } from "@/lib/archived";
 import { SNIFF_BYTES, sniffMagicBytes, safeContentType } from "@/lib/fileValidation";
@@ -148,7 +149,7 @@ export const POST = withClaimOverrideLog(async function POST(
   // order_attachments table.
   const { data: order, error: orderErr } = await supabase
     .from("orders")
-    .select("id, type, archived, project_id, custom_specs")
+    .select("id, type, archived, project_id, custom_specs, vendor, sku_items")
     .eq("id", orderId)
     .maybeSingle();
   // ⚠ A READ THAT FAILS IS NOT A MISSING ORDER (2026-10-20). Both answered 404
@@ -179,6 +180,21 @@ export const POST = withClaimOverrideLog(async function POST(
   // stage gate refused it from the modal while this route accepted it.
   const claimGate = await requireOrderClaim(orderId, auth.session, overrides, "Attachment added");
   if (claimGate instanceof NextResponse) return claimGate;
+
+  // ⚠ THE LINE A RECEIPT IS FOR (2026-11-02, feature 10): a mixed cabinet order
+  // needs each line's signed receipt (lib/deliveryProof). Optional, and only on a
+  // receipt; the line must be on the order, by the one vendor rule.
+  const rawVendor = formData.get("vendor");
+  const vendor = typeof rawVendor === "string" && rawVendor.trim() ? cleanInput(rawVendor).trim().slice(0, 100) : null;
+  if (vendor !== null) {
+    if (kind !== "proof_of_delivery") {
+      return NextResponse.json({ error: "vendor_only_on_a_receipt", message: "Only a signed delivery receipt names a cabinet line." }, { status: 422 });
+    }
+    const { uniqueVendors } = await lookupVendorsForSkus(Array.isArray(order.sku_items) ? order.sku_items : [], order.vendor as string | null);
+    if (!uniqueVendors.includes(vendor)) {
+      return NextResponse.json({ error: "vendor_not_on_order", message: `${vendor} has no lines on this order.` }, { status: 422 });
+    }
+  }
 
   // (The room checks that stood here went with spec_ref, 2026-10-27: a group
   // that is not on this order is refused below, by group_id.)
@@ -266,6 +282,8 @@ export const POST = withClaimOverrideLog(async function POST(
       kind,
       // Checked above against the stored specs; null is the job itself.
       group_id: groupId,
+      // The cabinet line a receipt is for, checked above (2026-11-02, feature 10).
+      vendor,
     })
     .select()
     .single();

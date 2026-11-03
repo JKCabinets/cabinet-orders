@@ -10,6 +10,8 @@ import { trackingTargetStage, typeRecordsTracking, type OrderCategory } from "@/
 import { pushClaimNotes } from "@/lib/claimHelpScout";
 import { removeOrderFiles } from "@/lib/orderFiles";
 import { orderAckLines } from "@/lib/acknowledgments";
+import { proofLineStates, proofRequirementMet } from "@/lib/deliveryProof";
+import { lookupVendorsForSkus } from "@/lib/vendorLookup";
 import { requirementsFor, typeEverRequires } from "@/lib/requirements";
 import { mergeStaffLineEdits } from "@/lib/lineFields";
 import { shipDateEdit } from "@/lib/shipDateEdits";
@@ -206,7 +208,7 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
     // ⚠ sku_items is here for a SHOPIFY group's line edit (2026-10-29): the
     // stored lines are the base, and only their staff fields change -- see
     // mergeStaffLineEdits below.
-    .select("stage, type, archived, payment_status, payment_hold_cleared_for, project_id, tracking_number, carrier, production_start_date, production_est_finish_date, delivery_date, scheduled_delivery_date, name, customer_email, customer_phone, ship_to, delivery_method, sku_items, vendor, vendor_ship_dates, ship_checks, shipped_in_shopify")
+    .select("stage, type, archived, payment_status, payment_hold_cleared_for, project_id, tracking_number, carrier, production_start_date, production_est_finish_date, delivery_date, scheduled_delivery_date, name, customer_email, customer_phone, ship_to, delivery_method, sku_items, vendor, vendor_ship_dates, ship_checks, shipped_in_shopify, vendor_start_dates, vendor_delivery_targets")
     .eq("id", id)
     .single();
   if (!currentRow) {
@@ -569,13 +571,21 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
 
   let deliveryOverrideReason: string | null = null;
   if (body.stage === "Delivered" && receiptRequired) {
+    // ⚠ EVERY CABINET LINE ITS OWN RECEIPT (2026-11-02, feature 10): one receipt
+    // for a one-line order, as before; on a mixed order each line's, naming it
+    // (lib/deliveryProof). The lines by the one vendor rule.
     const { data: receipts } = await supabase
       .from("order_attachments")
-      .select("id")
+      .select("id, vendor")
       .eq("order_id", id)
-      .eq("kind", "proof_of_delivery")
-      .limit(1);
-    if (!receipts || receipts.length === 0) {
+      .eq("kind", "proof_of_delivery");
+    const proofs = (receipts ?? []) as { vendor: string | null }[];
+    const { uniqueVendors: proofVendors } = await lookupVendorsForSkus(
+      Array.isArray(currentRow.sku_items) ? currentRow.sku_items : [], currentRow.vendor as string | null,
+    );
+    if (!proofRequirementMet(proofVendors, proofs)) {
+      const lineStates = proofLineStates(proofVendors, proofs);
+      const waiting = proofVendors.filter((v) => !lineStates[v]);
       const reason =
         typeof body.override_delivery_proof === "string"
           ? cleanInput(body.override_delivery_proof).trim().slice(0, 300)
@@ -584,7 +594,9 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
         return NextResponse.json(
           {
             error: "delivery_proof_required",
-            message: "Attach the signed delivery receipt, or override with a reason.",
+            message: waiting.length > 0 && proofVendors.length > 1
+              ? `Attach the signed delivery receipt for ${waiting.join(", ")}, or override with a reason.`
+              : "Attach the signed delivery receipt, or override with a reason.",
           },
           { status: 400 },
         );
@@ -838,7 +850,7 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
   const shipEdit = shipDateEdit(
     currentRow as unknown as Parameters<typeof shipDateEdit>[0], body, updates,
     { id: auth.session.user.id, name: auth.session.user.name ?? auth.session.user.username },
-    new Date().toISOString(), !!clearedFields && "production_est_finish_date" in clearedFields,
+    new Date().toISOString(), Object.keys(clearedFields ?? {}),
   );
   if (!shipEdit.ok) {
     return NextResponse.json({ error: shipEdit.error, message: shipEdit.message }, { status: shipEdit.status });
@@ -847,7 +859,9 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
   // ⚠ THE GROUP'S DATE, WHEN THE VENDOR DATES SET IT, IS PUT IN THE BODY: the
   // trail's and Shopify's write-back's dateChanged() read the body, and the
   // latest vendor date IS a change to "Est. Production Finish".
-  if (shipEdit.finish !== undefined) body.production_est_finish_date = shipEdit.finish;
+  // (2026-11-02, feature 10) And the start and delivery target the per-line
+  // dates set, for the same two readers.
+  for (const [k, v] of Object.entries(shipEdit.groupDates)) body[k] = v;
 
   const { error } = await supabase.from("orders").update(updates).eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

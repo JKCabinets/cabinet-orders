@@ -389,6 +389,10 @@ export function fieldsToClearOnBackwardMove(
     clear.vendor_ship_dates = null;
     clear.ship_checks = null;
   }
+  // (2026-11-02, feature 10) Each line's start and delivery target go with the
+  // order's own, at the same moves -- the database refuses them left behind.
+  if ("production_start_date" in clear) clear.vendor_start_dates = null;
+  if ("scheduled_delivery_date" in clear) clear.vendor_delivery_targets = null;
 
   // ⚠ ONE TRUTH PER ITEM.
   //
@@ -455,6 +459,8 @@ export function describeFieldsCleared(cleared: Record<string, string | null> | n
     // With the finish date, under its label: they are the same date, per vendor.
     vendor_ship_dates: "production finish",
     ship_checks: "production finish",
+    vendor_start_dates: "production start",
+    vendor_delivery_targets: "delivery date",
   };
   // Dedupe (delivery_date + scheduled_delivery_date both map to "delivery date")
   const set = new Set<string>();
