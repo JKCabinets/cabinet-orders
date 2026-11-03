@@ -15,6 +15,8 @@ import { lookupVendorsForSkus } from "@/lib/vendorLookup";
 import { requirementsFor, typeEverRequires } from "@/lib/requirements";
 import { mergeStaffLineEdits } from "@/lib/lineFields";
 import { shipDateEdit } from "@/lib/shipDateEdits";
+import { cabinetVendorsOf, vendorShipDate, type ShipGroup } from "@/lib/shipDates";
+import { isWaypointVendor } from "@/lib/vendorFamily";
 
 /** Push order updates back to Shopify */
 async function syncToShopify(
@@ -27,6 +29,12 @@ async function syncToShopify(
     delivery_window?: string;
     delivery_notes?: string;
     notes?: string;
+    /**
+     * A MIXED cabinet order's lines (2026-11-03, feature 10; Garrett: Shopify
+     * "just shows the one date not the three lines"): "<line> Production" and
+     * "<line> Delivery Target" each, removed when it has no date.
+     */
+    lines?: { name: string; production: string | null; target: string | null }[];
   }
 ) {
   const domain = process.env.SHOPIFY_STORE_DOMAIN;
@@ -76,6 +84,10 @@ async function syncToShopify(
     attrMap.set("Delivery Window", updates.delivery_window);
   if (updates.delivery_notes !== undefined)
     attrMap.set("Delivery Notes", updates.delivery_notes);
+  for (const l of updates.lines ?? []) {
+    if (l.production) attrMap.set(`${l.name} Production`, l.production); else attrMap.delete(`${l.name} Production`);
+    if (l.target) attrMap.set(`${l.name} Delivery Target`, l.target); else attrMap.delete(`${l.name} Delivery Target`);
+  }
 
   const note_attributes = Array.from(attrMap.entries()).map(([name, value]) => ({ name, value }));
 
@@ -1130,6 +1142,12 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
   }
 
   // Shopify writeback
+  // A line's own date, or the delivery target, moved -- the order's own
+  // start and finish are covered by dateChanged below (2026-11-03).
+  const lineDatesChanged =
+    body.vendor_start_dates !== undefined || body.vendor_ship_dates !== undefined
+    || body.vendor_delivery_targets !== undefined || body.scheduled_delivery_date !== undefined
+    || (!!clearedFields && Object.keys(clearedFields).some((k) => k.startsWith("vendor_")));
   const shouldSync =
     body.stage !== undefined ||
     // ⚠ A TRACKING ADVANCE IS A STAGE CHANGE. It sets updates.stage without
@@ -1151,17 +1169,34 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
     dateChanged("production_est_finish_date") ||
     dateChanged("delivery_date") ||
     body.delivery_window !== undefined ||
-    body.delivery_notes !== undefined;
+    body.delivery_notes !== undefined ||
+    // (2026-11-03, feature 10) a line's own date, or the delivery target, moved
+    lineDatesChanged;
 
   if (shouldSync) {
     const { data: order } = await supabase
       .from("orders")
-      .select("shopify_id, stage, notes, production_start_date, production_est_finish_date, delivery_date, delivery_window, delivery_notes")
+      .select("shopify_id, stage, notes, production_start_date, production_est_finish_date, delivery_date, delivery_window, delivery_notes, type, vendor, sku_items, scheduled_delivery_date, vendor_start_dates, vendor_ship_dates, vendor_delivery_targets")
       .eq("id", id)
       .single();
 
     if (order?.shopify_id) {
+      // ⚠ EACH LINE IN SHOPIFY on a mixed cabinet order (2026-11-03, feature 10):
+      // its own dates, else the order's. Waypoint as "Select (Waypoint)": a
+      // customer could see these if a template ever showed them (Garrett).
+      const lineVendors = order.type === "order" ? cabinetVendorsOf(order as unknown as ShipGroup) : [];
+      const lineEntries = lineVendors.length > 1 ? lineVendors.map((v) => {
+        const own = (m: unknown, fallback: unknown) => ((m as Record<string, string> | null)?.[v]) || (fallback as string | null) || null;
+        const start = own(order.vendor_start_dates, order.production_start_date);
+        const ship = vendorShipDate(order as unknown as ShipGroup, v);
+        return {
+          name: isWaypointVendor(v) ? "Select (Waypoint) Cabinetry" : v,
+          production: start || ship ? `${start ?? "?"} \u2192 ${ship ?? "?"}` : null,
+          target: own(order.vendor_delivery_targets, order.scheduled_delivery_date),
+        };
+      }) : undefined;
       const syncResult = await syncToShopify(order.shopify_id, {
+        ...(lineEntries && { lines: lineEntries }),
         ...((body.stage !== undefined || trackingAdvancesTo !== null || autoAdvancedTo !== null) && { stage: order.stage }),
         ...(body.notes !== undefined && { notes: order.notes }),
         ...(dateChanged("production_start_date") && { production_start_date: order.production_start_date }),
