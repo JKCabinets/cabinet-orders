@@ -34,6 +34,26 @@ function Row({ label, value, flag, note, small }: { label: string; value: React.
 }
 
 const missing = <span className="italic" style={{ color: AMBER }}>Missing</span>;
+
+/**
+ * The checkout's IP address and browser, as Shopify recorded them (2026-11-03,
+ * feature 11), on the consent row: as sent, the browser folded away -- it is
+ * long. Nothing when Shopify recorded neither.
+ */
+function CheckoutLine({ project }: { project: Project }) {
+  if (!project.checkout_ip && !project.checkout_user_agent) return null;
+  return (
+    <>
+      <span className="block mt-0.5 text-cream/45">Checkout IP {project.checkout_ip || "\u2014"}</span>
+      {project.checkout_user_agent && (
+        <details className="mt-0.5">
+          <summary className="cursor-pointer text-[10px] text-cream/45 hover:text-cream/70">Browser</summary>
+          <span className="block mt-1 text-[10px] text-cream/65 leading-relaxed break-all">{project.checkout_user_agent}</span>
+        </details>
+      )}
+    </>
+  );
+}
 const orDash = (v: unknown) => (String(v ?? "").trim() ? String(v) : "\u2014");
 const orMissing = (v: unknown) => (String(v ?? "").trim() ? String(v) : missing);
 
@@ -110,6 +130,8 @@ export function OrderHeaderCards({ order, team, ack, project }: { order: Order; 
                   <span className="block">{formatAgreed(project.terms_agreed)}{project.consent_source ? ` \u00b7 ${project.consent_source}` : ""}</span>
                   <span className="block text-cream/45">
                     Wording {project.consent_wording || "\u2014"} {"\u00b7"} Terms {project.terms_version || "\u2014"}
+                    {/* The fifth (2026-10-29): only when the order carries it. */}
+                    {project.refund_policy_updated ? <> {"\u00b7"} Refund Policy {project.refund_policy_updated}</> : null}
                   </span>
                   {project.consent_wording && CONSENT_WORDING[project.consent_wording] && (
                     <details className="mt-0.5">
@@ -117,6 +139,7 @@ export function OrderHeaderCards({ order, team, ack, project }: { order: Order; 
                       <span className="block mt-1 text-[10px] text-cream/65 leading-relaxed">{CONSENT_WORDING[project.consent_wording]}</span>
                     </details>
                   )}
+                  <CheckoutLine project={project} />
                   {/* Consent STAFF recorded (2026-10-13): who, and the conversation that is the record. */}
                   {project.consent_recorded_by && (
                     <span className="block mt-0.5 text-[10px] text-cream/55">
@@ -132,6 +155,7 @@ export function OrderHeaderCards({ order, team, ack, project }: { order: Order; 
                 <>
                   <span className="italic" style={{ color: AMBER }}>Missing: get consent before production</span>
                   {project && <span className="block"><RecordConsentButton project={project} /></span>}
+                  {project && <CheckoutLine project={project} />}
                 </>
               )
             } />

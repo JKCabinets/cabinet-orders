@@ -6,7 +6,7 @@ import { decodeHtmlEntities } from "@/lib/htmlEntities";
 import { decodeSku, buildSkuFromAvisNamesDetailed, ensureSkuMaps, skuMapsUnavailable, modificationMap, lineOptionNames } from "@/lib/skuDecoder";
 import { parseModifications } from "@/lib/modifications";
 import type { ReviewReason } from "@/lib/data";
-import { readConsent, type TermsConsent } from "@/lib/consent";
+import { readConsent, readCheckout, type TermsConsent, type CheckoutRecord } from "@/lib/consent";
 import { logWebhook } from "@/lib/webhookLog";
 import { removeShopifyPurchase } from "@/lib/shopifyRemoval";
 import { colorOptionOf } from "@/lib/shopifyColor";
@@ -388,6 +388,9 @@ function buildOrder(payload: Record<string, unknown>) {
     decodedColor: shopifyInput(decodedColor),
     // The customer's agreement to our policies (2026-10-07): lib/consent.
     consent: readConsent(payload.note_attributes),
+    // The checkout's IP and browser, as Shopify recorded them (2026-11-03,
+    // feature 11): lib/consent's readCheckout. Kept beside the consent.
+    checkout: readCheckout(payload),
   };
 }
 
@@ -402,6 +405,21 @@ function consentColumns(c: TermsConsent | null): Record<string, string | null> {
     terms_version: c.terms_version === null ? null : shopifyInput(c.terms_version),
     consent_wording: c.consent_wording === null ? null : shopifyInput(c.consent_wording),
     consent_source: c.consent_source === null ? null : shopifyInput(c.consent_source),
+    // The fifth, since 2026-10-29 (feature 11): the Refund Policy's date.
+    refund_policy_updated: c.refund_policy_updated === null ? null : shopifyInput(c.refund_policy_updated),
+  };
+}
+
+/**
+ * The project's checkout columns (2026-11-03, feature 11), or NOTHING -- and
+ * each only when Shopify sent it. ⚠ THE CONSENT'S RULE: an update without them
+ * can never clear what was recorded.
+ */
+function checkoutColumns(c: CheckoutRecord | null): Record<string, string> {
+  if (!c) return {};
+  return {
+    ...(c.checkout_ip ? { checkout_ip: shopifyInput(c.checkout_ip) } : {}),
+    ...(c.checkout_user_agent ? { checkout_user_agent: shopifyInput(c.checkout_user_agent) } : {}),
   };
 }
 
@@ -611,7 +629,7 @@ export async function POST(req: NextRequest) {
     // load leaves skuMapsUnavailable() true and every line is flagged
     // decoder_unavailable, so the order still ingests.
     try { await ensureSkuMaps(); } catch { /* degrade to decoder_unavailable */ }
-    const { customerName, customerEmail, customerPhone, shipTo, deliveryMethod, skuItems, skuAnomalies, reviewNotes, notes, today, orderNumber, consent } = buildOrder(payload);
+    const { customerName, customerEmail, customerPhone, shipTo, deliveryMethod, skuItems, skuAnomalies, reviewNotes, notes, today, orderNumber, consent, checkout } = buildOrder(payload);
     const projectId = orderNumber ? `SHO-${orderNumber}` : `SHO-${shopifyId.slice(-6)}`;
     // One timestamp for the project and every group, so the New SLA clock --
     // which measures from the order date -- is identical across them.
@@ -658,6 +676,7 @@ export async function POST(req: NextRequest) {
       payment_status: payload.financial_status ?? null,
       ...projectMoney(payload),
       ...consentColumns(consent),
+      ...checkoutColumns(checkout),
       created_at: nowIso,
       updated_at: nowIso,
     });
@@ -804,7 +823,7 @@ export async function POST(req: NextRequest) {
     if (project) {
       const today = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "America/Phoenix" });
       try { await ensureSkuMaps(); } catch { /* degrade to decoder_unavailable */ }
-      const { skuItems, skuAnomalies, reviewNotes, notes, shipTo, customerPhone, customerEmail, deliveryMethod, consent } = buildOrder(payload);
+      const { skuItems, skuAnomalies, reviewNotes, notes, shipTo, customerPhone, customerEmail, deliveryMethod, consent, checkout } = buildOrder(payload);
       const payloadLines = (payload.line_items as Array<Record<string, unknown>>) ?? [];
       const grouped = groupLinesByCategory(skuItems, payloadLines);
 
@@ -824,6 +843,8 @@ export async function POST(req: NextRequest) {
         // Added later -- say through "Additional details" -- it lands here.
         // Absent, nothing is written: recorded consent is never cleared.
         ...consentColumns(consent),
+        // The checkout's IP and browser, by the same rule (2026-11-03).
+        ...checkoutColumns(checkout),
         updated_at: new Date().toISOString(),
       }).eq("id", project.id);
       // The payment status the refund hold and the production cron read.

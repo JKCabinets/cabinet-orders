@@ -55,6 +55,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     .update({
       terms_agreed: agreed.toISOString(),
       terms_version: null,
+      // No policy date either (2026-11-03): the conversation is the record. The
+      // checkout's IP and browser are left alone -- they describe the checkout.
+      refund_policy_updated: null,
       consent_wording: CURRENT_CONSENT_WORDING,
       consent_source: "email",
       consent_evidence: evidence,

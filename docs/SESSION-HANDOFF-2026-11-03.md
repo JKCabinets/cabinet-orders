@@ -29,15 +29,15 @@ item 5 turned out bigger, with a plan. Read §6 before §4.
 
 **The box** (`5.78.220.153`, `~/cabinet-orders`, `main`):
 
-- ⚠ **AS OF FEATURE 11 PART 1's COMMIT:** `HEAD~1` is `8ad39a9` (the §6 docs
-  commit), `HEAD~2` `e936001` (the commit that added this file), `HEAD~3`
-  *"Docs: feature 10, cabinet lines, as built and deployed (2026-11-03)"*.
-  **The next chain checks: `HEAD~1` = `8ad39a9`, tree clean.**
-- ⚠ **THE RUNNING IMAGE IS PART 5's COMMIT.** Docs commits are never deployed
-  (nothing in the app changes), so the image check (`docker ps … | grep -qF
-  "$(git rev-parse HEAD)"`) reads **MISMATCH** against a docs `HEAD` until the
-  next deploy — by design, not a fault. Check against part 5's hash
-  (`git log --oneline -3`).
+- ⚠ **AS OF FEATURE 11 PART 2's COMMIT:** `HEAD` is *"Feature 11, part 2: the consent record -- the Refund Policy's date and the checkout's IP and browser, written and shown"*,
+  `HEAD~1` *"Feature 11, part 1: the consent record's three columns (migration, ran 2026-11-03); the GHCR token's new expiry"*, `HEAD~2` `8ad39a9` (the §6 docs commit), `HEAD~3`
+  `e936001` (the commit that added this file). **The next chain checks:
+  `HEAD`'s subject is part 2's, tree clean.**
+- ⚠ **THE RUNNING IMAGE IS PART 2's COMMIT** from its deploy (part 1 was docs
+  and a migration copy, never deployed), so the image check (`docker ps … |
+  grep -qF "$(git rev-parse HEAD)"`) reads DEPLOYED against it. A later
+  docs-only commit reads **MISMATCH** until the next deploy — by design, not a
+  fault (`git log --oneline -3`).
 - `git log --oneline 0fcc615..HEAD` lists every commit since the 10-29 review
   (§2).
 
@@ -297,6 +297,37 @@ docs.
   **RAN IN PRODUCTION 2026-11-03**, its check row as expected (`new_columns 3`,
   `all_text_nullable true`, `published true`); committed as part 1. Nothing
   writes the columns until part 2.
+- **(4) Part 2, the code** (its own commit, deployed): `lib/consent` reads the
+  fifth attribute and Shopify's checkout record (`readCheckout`:
+  `client_details.browser_ip`, else the order's `browser_ip`;
+  `client_details.user_agent`; capped at 100 and 2,000 characters); the
+  webhook writes `refund_policy_updated` with the consent and the checkout's
+  two on both paths (`checkoutColumns`: each only when sent, never cleared);
+  `Project` declares the three; consent by email sets no policy date and
+  leaves the checkout's record alone; the consent row shows "· Refund Policy
+  <date>" when there is one, then "Checkout IP …" with the browser in a
+  closed expander.
+  **Proven against the deployed code as the control** (the harness; base
+  `prod_base*` plus the migrations through 2026-11-03):
+  - the REAL webhook through seven deliveries: the control writes none of the
+    three; feature 11 each as designed — a refund update carrying neither
+    keeps them, a top-level IPv6 when `client_details` is null, `unknown` as
+    sent, a browser with no IP; every other row of projects, orders, activity
+    and webhook outcomes IDENTICAL between the trees. ⚠ Consent arriving later
+    without the fifth MIRRORS the order's attributes, as `terms_version`
+    always has (the control clears `terms_version` the same way); the
+    checkout's record, not carried, is kept.
+  - `lib/consent`'s readers, 14 cases (odd names, `unknown`, blank, caps, a
+    non-object, `client_details` winning over a different top-level IP).
+  - the email-consent route over a hand-planted date: cleared in feature 11,
+    kept by the control; the checkout's record untouched in both.
+  - the consent row in jsdom: shown in feature 11, absent in the control; an
+    older order's card byte-identical between the trees.
+  - typecheck: the two trees' error sets identical (two missing modules,
+    `xlsx` and `tailwindcss`); a planted error seen in each of the five files.
+- **(5) After the deploy:** a test order through the cart and one through the
+  Kitchen designer (its invoice checkout still unseen), each checked on Full
+  Order; then the as-built docs commit.
 
 ### 6.3 Item 5 — bigger than §4 says; a plan PROPOSED, not yet decided
 

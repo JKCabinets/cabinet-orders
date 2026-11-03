@@ -1,13 +1,21 @@
 /**
  * The customer's agreement to our policies, as the website records it on every
- * order (website session, 2026-10-07): four attributes in Shopify's "Additional
+ * order (website session, 2026-10-07): attributes in Shopify's "Additional
  * details" (`note_attributes`), kept on the PROJECT -- one Shopify order, one
  * agreement -- and shown on the order for chargebacks and disputes.
  *
- *   Terms agreed      2026-10-07T21:15:03.120Z  when the box was ticked, UTC
- *   Terms version     1-926                     the Terms of Service then
- *   Consent wording   v1                        which wording, CONSENT_WORDING
- *   Consent source    cart | kitchen designer   where they agreed
+ *   Terms agreed           2026-10-07T21:15:03.120Z  when the box was ticked, UTC
+ *   Terms version          1-926                     the Terms of Service then
+ *   Consent wording        v1                        which wording, CONSENT_WORDING
+ *   Consent source         cart | kitchen designer   where they agreed
+ *   Refund Policy updated  September 24, 2026        the Refund Policy's "Last
+ *                                                    updated" date; "unknown" if
+ *                                                    the website could not read it
+ *
+ * ⚠ THE FIFTH SINCE 2026-10-29 (the website team's note of that date; feature 11,
+ * 2026-11-03): orders before it do not carry it, and consent staff record by
+ * email has none. Beside them, from SHOPIFY rather than the website, the
+ * checkout's IP address and browser -- see readCheckout.
  *
  * ⚠ KEPT AS SENT, AS TEXT. For a dispute the evidence is what Shopify sent,
  * and a text column cannot reject an odd value and lose the order with it.
@@ -21,6 +29,7 @@ export interface TermsConsent {
   terms_version: string | null;
   consent_wording: string | null;
   consent_source: string | null;
+  refund_policy_updated: string | null;
 }
 
 /** The attribute names, exactly as the website writes them; matched without regard to case or spacing. */
@@ -29,6 +38,7 @@ export const CONSENT_ATTRIBUTES = {
   terms_version: "Terms version",
   consent_wording: "Consent wording",
   consent_source: "Consent source",
+  refund_policy_updated: "Refund Policy updated",
 } as const;
 
 /** What a customer agreed to, by wording version. A new wording arrives from the website team as v2. */
@@ -79,7 +89,47 @@ export function readConsent(noteAttributes: unknown): TermsConsent | null {
     terms_version: get(CONSENT_ATTRIBUTES.terms_version),
     consent_wording: get(CONSENT_ATTRIBUTES.consent_wording),
     consent_source: get(CONSENT_ATTRIBUTES.consent_source),
+    refund_policy_updated: get(CONSENT_ATTRIBUTES.refund_policy_updated),
   };
+}
+
+/**
+ * The checkout's IP address and browser, as SHOPIFY recorded them (2026-11-03,
+ * feature 11; asked by the website team, 2026-10-29). Not the website's: they
+ * are the order's `client_details`, not its "Additional details". Kept beside
+ * the consent on the PROJECT, for disputes (OPERATIONS §13).
+ *
+ *   checkout_ip          client_details.browser_ip, else the order's browser_ip
+ *                        (Shopify sends both; on every order read 2026-11-03
+ *                        they were equal)
+ *   checkout_user_agent  client_details.user_agent
+ *
+ * ⚠ AS SENT, AS TEXT, like the consent; blank counts as absent. Null when
+ * Shopify recorded neither -- an order made in the admin, say. A Kitchen
+ * designer order checks out on Shopify's invoice page: whatever Shopify records
+ * there. ⚠ CAPPED, generously (100 and 2,000 characters): a browser string is
+ * the buyer's browser's to set, and real ones run to a few hundred (111 on the
+ * four orders read).
+ */
+export interface CheckoutRecord {
+  checkout_ip: string | null;
+  checkout_user_agent: string | null;
+}
+
+export const CHECKOUT_IP_MAX = 100;
+export const CHECKOUT_USER_AGENT_MAX = 2000;
+
+export function readCheckout(payload: unknown): CheckoutRecord | null {
+  if (!payload || typeof payload !== "object") return null;
+  const p = payload as { browser_ip?: unknown; client_details?: unknown };
+  const cd = (p.client_details && typeof p.client_details === "object"
+    ? p.client_details : {}) as { browser_ip?: unknown; user_agent?: unknown };
+  const text = (v: unknown, max: number) =>
+    typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null;
+  const ip = text(cd.browser_ip, CHECKOUT_IP_MAX) ?? text(p.browser_ip, CHECKOUT_IP_MAX);
+  const ua = text(cd.user_agent, CHECKOUT_USER_AGENT_MAX);
+  if (!ip && !ua) return null;
+  return { checkout_ip: ip, checkout_user_agent: ua };
 }
 
 type ProjectLike = {

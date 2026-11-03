@@ -982,6 +982,17 @@ export interface Project {
   consent_evidence?: string | null;
   consent_recorded_by?: string | null;
   consent_recorded_at?: string | null;
+  /**
+   * The consent record completed (2026-11-03, feature 11;
+   * migrations/2026-11-03-consent-record.sql): the Refund Policy's "Last
+   * updated" date the customer agreed to -- the website's fifth attribute,
+   * since 2026-10-29 -- and the checkout's IP address and browser as SHOPIFY
+   * recorded them (lib/consent's readCheckout). Text, as sent; NULL when not
+   * sent. ⚠ Declared in the same feature as the columns (above).
+   */
+  refund_policy_updated?: string | null;
+  checkout_ip?: string | null;
+  checkout_user_agent?: string | null;
 }
 
 /**

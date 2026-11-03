@@ -1530,9 +1530,13 @@ evidence for a custom dispute from this list would find half of it missing
 and conclude the file was incomplete.
 
 Terms acceptance record — **kept on every website order since 2026-10-07**: the
-time, the Terms version and the wording version, on the order's Full Order tab
-(`projects.terms_*`), or the Help Scout conversation where staff recorded it by
-email; ⚠ the customer's IP is NOT captured · order
+time, the Terms version and the wording version — and, on orders since
+2026-10-29, the Refund Policy's "Last updated" date — on the order's Full Order
+tab (`projects.terms_*`, `refund_policy_updated`), or the Help Scout
+conversation where staff recorded it by email; **the checkout's IP address and
+browser, as Shopify recorded them** (`projects.checkout_ip`,
+`checkout_user_agent`; since 2026-11-03, feature 11 — an order ingested
+before then fills at its next update from Shopify) · order
 confirmation email and its delivery confirmation · AVS and CVV results · 3DS
 result where applicable · signed design approval · **signed proof of delivery —
 now captured by the OMS delivery gate** · communication log (the order's Help
