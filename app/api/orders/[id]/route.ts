@@ -812,11 +812,19 @@ export const PATCH = withClaimOverrideLog(async function PATCH(
   //   - Only fires when the order is currently in "Entered" (avoids
   //     re-triggering on later edits).
   let autoAdvancedTo: string | null = null;
+  // ⚠ EACH LINE'S START IS A START (2026-11-03, feature 10). This looked only at
+  // production_start_date, which lib/shipDateEdits derives from the lines'
+  // starts LATER in this request -- so a mixed order given per-line starts at
+  // Entered stayed there. An incomplete set is refused by shipDateEdits, and a
+  // refused request writes nothing, the stage included.
+  const lineStarts = body.vendor_start_dates;
+  const startGiven =
+    (body.production_start_date !== undefined && body.production_start_date !== null && body.production_start_date !== "")
+    || (!!lineStarts && typeof lineStarts === "object" && !Array.isArray(lineStarts)
+        && Object.values(lineStarts as Record<string, unknown>).some((d) => typeof d === "string" && d !== ""));
   if (
     body.stage === undefined &&
-    body.production_start_date !== undefined &&
-    body.production_start_date !== null &&
-    body.production_start_date !== "" &&
+    startGiven &&
     currentStage === "Entered"
   ) {
     updates.stage = "In production";

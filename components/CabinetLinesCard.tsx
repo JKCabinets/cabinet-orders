@@ -161,7 +161,9 @@ export function CabinetLinesCard({
           {vendors.map((v) => (
             <div key={`p:${v}`} style={GRID} className="py-1">
               <span className="text-[11.5px] text-cream/70">{v}</span>
-              <span className="flex items-center gap-1.5 flex-wrap">
+              {/* ⚠ SIDE BY SIDE, start -> end (2026-11-03, Garrett: "they are stacked"):
+                  the boxes span both date columns and never wrap. */}
+              <span className="flex items-center gap-1.5 flex-nowrap" style={{ gridColumn: "2 / 4" }}>
                 <input type="date" value={dates.start[v] ?? ""} onChange={(e) => set("start", v, e.target.value)}
                   aria-label={`${v} production start date`} style={DATE_INPUT} />
                 <span className="text-cream/30 text-[11px]">&rarr;</span>
@@ -170,7 +172,6 @@ export function CabinetLinesCard({
                   : <input type="date" value={dates.ship[v] ?? ""} onChange={(e) => set("ship", v, e.target.value)}
                       aria-label={`${v} ship from factory date`} style={DATE_INPUT} />}
               </span>
-              <span />
             </div>
           ))}
           <p className={LABEL + " mt-3"}>Delivery dates</p>

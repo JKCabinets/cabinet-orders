@@ -246,6 +246,14 @@ export function NextActionPanel({
   const perVendor = vendors.length > 1;
   const [vendorDates, setVendorDates] = useState<Record<string, string>>(
     () => Object.fromEntries(vendors.map((v) => [v, vendorShipDate(order, v) ?? ""])));
+  // Each line's production start and delivery target (2026-11-03, feature 10;
+  // Garrett: "Set production dates … gives still one option for production
+  // start that sets it for all").
+  const lineOwn = (m: Record<string, string> | null | undefined, fallback: string | null | undefined, v: string) => (m && m[v]) || fallback || "";
+  const [vendorStarts, setVendorStarts] = useState<Record<string, string>>(
+    () => Object.fromEntries(vendors.map((v) => [v, lineOwn(order.vendor_start_dates, order.production_start_date, v)])));
+  const [vendorTargets, setVendorTargets] = useState<Record<string, string>>(
+    () => Object.fromEntries(vendors.map((v) => [v, lineOwn(order.vendor_delivery_targets, order.scheduled_delivery_date, v)])));
   // "Still on schedule?" -- which check is open on "Delayed: new date", and its date.
   const [delayFor, setDelayFor] = useState<string | null>(null);
   const [delayDate, setDelayDate] = useState("");
@@ -254,8 +262,11 @@ export function NextActionPanel({
   // Every vendor's date, or none: a partial set cannot be saved (the server
   // refuses it), and none at all leaves the group's ship date unset.
   const vendorsFilled = vendors.filter((v) => vendorDates[v]).length;
+  const startsFilled = vendors.filter((v) => vendorStarts[v]).length;
+  const targetsFilled = vendors.filter((v) => vendorTargets[v]).length;
   const prodBlocked: string | null =
-    !isClaim && !prodStart ? "Set the production start date to save."
+    perVendor && startsFilled < vendors.length ? "Set each line's production start date to save."
+    : !perVendor && !isClaim && !prodStart ? "Set the production start date to save."
     : isClaim && !(prodStart || prodFinish) ? "Set a date to save."
     : perVendor && vendorsFilled > 0 && vendorsFilled < vendors.length ? "Set a date for each vendor, or none."
     : null;
@@ -530,22 +541,28 @@ export function NextActionPanel({
                 be used, why -- in words, not a tooltip. */}
             {openDate === "production" && (
               <div className="flex flex-col items-end gap-1.5">
-                <BandField label="Production starts">
-                  <input type="date" value={prodStart} onChange={(e) => setProdStart(e.target.value)}
-                    aria-label="Production start date" autoFocus style={DATE_INPUT} />
-                </BandField>
-                {perVendor ? vendors.map((v) => (
-                  <BandField key={v} label={`${v} ships from the factory`}>
+                {/* ⚠ A ROW PER LINE ON A MIXED ORDER (2026-11-03, feature 10): its start
+                    and its ship date side by side. One line: as before. */}
+                {perVendor ? vendors.map((v, i) => (
+                  <BandField key={v} label={v}>
+                    <input type="date" value={vendorStarts[v] ?? ""} autoFocus={i === 0}
+                      onChange={(e) => setVendorStarts((d) => ({ ...d, [v]: e.target.value }))}
+                      aria-label={`${v} production start date`} style={DATE_INPUT} />
+                    <span className="text-cream/30 text-[11px]">&rarr;</span>
                     <input type="date" value={vendorDates[v] ?? ""}
                       onChange={(e) => setVendorDates((d) => ({ ...d, [v]: e.target.value }))}
                       aria-label={`${v} ship from factory date`} style={DATE_INPUT} />
                   </BandField>
-                )) : (
+                )) : (<>
+                  <BandField label="Production starts">
+                    <input type="date" value={prodStart} onChange={(e) => setProdStart(e.target.value)}
+                      aria-label="Production start date" autoFocus style={DATE_INPUT} />
+                  </BandField>
                   <BandField label="Ships from the factory">
                     <input type="date" value={prodFinish} onChange={(e) => setProdFinish(e.target.value)}
                       aria-label="Ship from factory date" style={DATE_INPUT} />
                   </BandField>
-                )}
+                </>)}
                 {/* ⚠ BOTH DATES, THOUGH ONLY THE START ONE GATES. The start date
                     advances the row; the estimated finish is what
                     `production-complete` later advances ON, so a row saved with
@@ -555,9 +572,10 @@ export function NextActionPanel({
                 <div className="flex items-center gap-1.5">
                   {prodBlocked && <span className="text-[10.5px] text-cream/45">{prodBlocked}</span>}
                   <button
-                    onClick={() => save(perVendor && vendorsFilled === vendors.length
-                      ? { production_start_date: prodStart || null, vendor_ship_dates: vendorDates }
-                      : { production_start_date: prodStart || null, production_est_finish_date: perVendor ? null : (prodFinish || null) })}
+                    onClick={() => save(perVendor
+                      ? { vendor_start_dates: vendorStarts,
+                          ...(vendorsFilled === vendors.length ? { vendor_ship_dates: vendorDates } : { production_est_finish_date: null }) }
+                      : { production_start_date: prodStart || null, production_est_finish_date: prodFinish || null })}
                     disabled={saving || !!prodBlocked}
                     title={isClaim
                       ? "Save the dates on this claim"
@@ -583,17 +601,29 @@ export function NextActionPanel({
                       autoFocus maxLength={100} style={DATE_INPUT} />
                   </BandField>
                 )}
-                <BandField label="Delivery date">
-                  <input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)}
-                    aria-label="Delivery date" autoFocus={!isClaim} style={DATE_INPUT} />
-                </BandField>
+                {perVendor ? vendors.map((v, i) => (
+                  <BandField key={v} label={`${v} delivery target`}>
+                    <input type="date" value={vendorTargets[v] ?? ""} autoFocus={i === 0}
+                      onChange={(e) => setVendorTargets((d) => ({ ...d, [v]: e.target.value }))}
+                      aria-label={`${v} delivery target`} style={DATE_INPUT} />
+                  </BandField>
+                )) : (
+                  <BandField label="Delivery date">
+                    <input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)}
+                      aria-label="Delivery date" autoFocus={!isClaim} style={DATE_INPUT} />
+                  </BandField>
+                )}
                 <div className="flex items-center gap-1.5">
+                  {perVendor && targetsFilled < vendors.length && (
+                    <span className="text-[10.5px] text-cream/45">Set each line&apos;s delivery target to save.</span>
+                  )}
                   <button
-                    onClick={() => save({
+                    onClick={() => save(perVendor ? { vendor_delivery_targets: vendorTargets } : {
                       scheduled_delivery_date: deliveryDate || null,
                       ...(isClaim ? { tracking_number: trackingNum.trim() || null } : {}),
                     })}
-                    disabled={saving || (isClaim ? !(deliveryDate || trackingNum.trim()) : !deliveryDate)}
+                    disabled={saving || (perVendor ? targetsFilled < vendors.length
+                      : isClaim ? !(deliveryDate || trackingNum.trim()) : !deliveryDate)}
                     className={PILL_QUIET}
                   >
                     {saving ? "\u2026" : "Save"}
