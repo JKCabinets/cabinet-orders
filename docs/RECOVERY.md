@@ -1,6 +1,7 @@
 # Disaster Recovery Plan
 
-Last updated: 2026-05-20 · reviewed 2026-10-29
+Last updated: 2026-05-20 · reviewed 2026-10-29 · corrected 2026-11-03 (the
+cron scripts are in the repo)
 
 ⚠ **REVIEWED 2026-10-29 — AND NEVER EXERCISED.** No recovery has been run from
 this document (OPERATIONS §12: "Test the Hetzner restore once"). Corrected that
@@ -45,8 +46,11 @@ Each scenario has a section below.
   gitignored). Backup copies: laptop at `~/backups/cabinet-orders/`,
   password manager as secure note.
 - **Cron jobs:** user crontab on Hetzner, scripts in
-  `/home/garrett/cron-jobs/` — ⚠ NOT IN THE REPO: their only copy is the box
-  and its 7-day Hetzner backup (OPERATIONS §11). The schedule is OMS-STATE
+  `/home/garrett/cron-jobs/` — ⚠ IN THE REPO SINCE 2026-11-02 (item 65):
+  `scripts/cron/` holds `run-cron.sh`, `check-registry-token.sh` and the
+  `crontab`. `healthchecks.map` is NOT in the repo (its URLs are credentials
+  in effect): its only copy is the box and its 7-day Hetzner backup
+  (OPERATIONS §11). The schedule is OMS-STATE
   §6's table. (This said it "mirrors original `vercel.json`", which no longer
   exists.)
 
@@ -156,11 +160,15 @@ cutover.)
 
 ### Restore cron jobs
 
-⚠ **The cron scripts are not in this repo** (until handoff item 65 is done).
-Restore `~/cron-jobs/` — `run-cron.sh`, `check-registry-token.sh`,
-`healthchecks.map` — and the crontab from the Hetzner backup, their only copy
-(7 days); then check the schedule against OMS-STATE §6's table. This said to
-copy `run-cron.sh` "from this repo" and to see `vercel.json`; neither exists.
+⚠ **The scripts and the crontab come from the repo (since 2026-11-02, item
+65); the map does not.** Copy `scripts/cron/run-cron.sh` and
+`scripts/cron/check-registry-token.sh` into `~/cron-jobs/` (`chmod +x`), and
+install `scripts/cron/crontab` (`crontab scripts/cron/crontab`). Restore
+`~/cron-jobs/healthchecks.map` from the Hetzner backup (7 days) — or, if that
+is gone, rebuild it from healthchecks.io's checks (one line per route). Then
+check the schedule against OMS-STATE §6's table. (This once said to copy
+`run-cron.sh` "from this repo" when it was not there, and to see
+`vercel.json`, which does not exist.)
 
     grep '^CRON_SECRET=' ~/cabinet-orders/.env.kamal | cut -d '=' -f 2- > ~/.cron-secret
     chmod 600 ~/.cron-secret
@@ -253,7 +261,9 @@ After recovering from any scenario above:
 - [ ] Most recent `cron.log` entries show successful runs
 - [ ] Shopify's webhook subscriptions reach the app: signed in as an admin,
   `/api/shopify/webhooks` lists five topics (OPERATIONS §8)
-- [ ] healthchecks.io: all six checks green within a day (OPERATIONS §6)
+- [ ] healthchecks.io: all seven checks green within a day, each with both
+  integrations ("OMS Health", "OMS Health Email") attached (OPERATIONS §6;
+  seven since 2026-11-02, `cabinet-fulfilment`)
 
 ## Maintaining this doc
 

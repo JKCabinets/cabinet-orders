@@ -1,6 +1,6 @@
 # SESSION HANDOFF — 2026-10-13
 
-⚠ **SINCE 2026-10-29 START AT `docs/SESSION-HANDOFF-2026-10-29.md`** — the
+⚠ **SINCE 2026-11-03 START AT `docs/SESSION-HANDOFF-2026-11-03.md`** (10-29 → 11-02 → 11-03) — the
 state of things, the method lessons, and feature 9's complete design and
 phase 1 plan. THIS file still holds the OPEN LIST (§6) and the item-by-item
 record, items 8 and 52–67 included.
@@ -1050,7 +1050,10 @@ Each line points at the section that owns the detail.
     parser (HCI, J&K) — and it applies to Waypoint orders too: a file in the
     Files tab satisfies it whatever the acknowledgment says. Acknowledgment
     files themselves no longer count (patch_ack_files); this is the rest.
-65. **The cron scripts are not in the repo** (found 2026-10-29, reviewing
+65. ✅ DONE 2026-11-02 (feature 9 phase 1, part 1) — `scripts/cron/`:
+    `run-cron.sh`, `check-registry-token.sh` and the `crontab`;
+    `healthchecks.map` left out, as planned. Was: **The cron scripts are not in
+    the repo** (found 2026-10-29, reviewing
     RECOVERY). `run-cron.sh` and `check-registry-token.sh` live only in
     `~/cron-jobs/` on the box; their only other copy is Hetzner's 7-day backup.
     RECOVERY said to copy `run-cron.sh` "from this repo" and to read the
@@ -1067,8 +1070,10 @@ Each line points at the section that owns the detail.
 67. **`app/api/shopify/webhooks/route.ts`'s header says POST "register
     products/update"** — it registers all five topics (`TOPICS`). A comment;
     fix it with the next code change to that file.
-64. **A mixed order's acknowledgment line does not say which vendor is still
-    missing** (found 2026-10-29 from Garrett's screenshot of SHO-1067, J&K +
+64. ✅ DONE 2026-11-03 BY FEATURE 10 — every cabinet line has its own
+    acknowledgment row and state on the band, and the work queue names the
+    line (`SESSION-HANDOFF-2026-11-02.md` §3.8). Was: **A mixed order's
+    acknowledgment line does not say which vendor is still missing** (found 2026-10-29 from Garrett's screenshot of SHO-1067, J&K +
     Waypoint). Waypoint's acknowledgment MATCHED, yet "The manufacturer's
     acknowledgment" stays unticked — correctly: a mixed order needs both
     (item 57), J&K's part is outstanding, and the Waypoint acknowledgment's

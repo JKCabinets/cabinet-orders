@@ -1,5 +1,7 @@
 # JK Cabinets OMS — Session Handoff
 
+⚠ **NOT THE START POINT — start at `docs/SESSION-HANDOFF-2026-11-03.md`** (2026-11-03). This file is the record of its own session.
+
 **Written 2026-08-20 · for the next OMS session, picking up cold**
 
 This is a **pickup document**, not a reference. It covers every piece of OMS

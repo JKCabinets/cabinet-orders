@@ -1,5 +1,7 @@
 # Session handoff — 2026-09-08
 
+⚠ **NOT THE START POINT — start at `docs/SESSION-HANDOFF-2026-11-03.md`** (2026-11-03). This file is the record of its own session.
+
 Written at the end of a long single session. Supersedes nothing; adds to
 `SESSION-HANDOFF-2026-08-27.md`.
 

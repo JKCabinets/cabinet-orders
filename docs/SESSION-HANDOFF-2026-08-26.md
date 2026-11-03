@@ -1,5 +1,7 @@
 # Session handoff — 2026-08-26
 
+⚠ **NOT THE START POINT — start at `docs/SESSION-HANDOFF-2026-11-03.md`** (2026-11-03). This file is the record of its own session.
+
 ⚠ **SUPERSEDED BY `SESSION-HANDOFF-2026-08-27.md`** for the remaining-work list
 and for the method. This file stays as the record of the 2026-08-26 session:
 §1 to §3 are its own and are not repeated there.

@@ -1,5 +1,11 @@
 # SESSION HANDOFF — 2026-11-02
 
+⚠ **NOT THE START POINT SINCE 2026-11-03 — start at
+`docs/SESSION-HANDOFF-2026-11-03.md`.** This file stays the record of phase 1's
+live test (§1) and of feature 10 — Garrett's rulings (§3.2), the design
+agreed (§3.7) and feature 10 as built (§3.8). Its §4 is carried, current, in
+the 11-03 handoff's §4.
+
 **Read this whole, then `docs/SESSION-HANDOFF-2026-10-29.md` §2 (the method)
 and §4 (feature 9, with §4.9 the record of phase 1 as built).** This file
 supersedes the 10-29 handoff for what to do next; that one stays the record of
@@ -59,7 +65,9 @@ group date cleared alone). Proven in jsdom against the deployed code and on the
 real route.
 
 ⚠ **The GHCR token expires 2026-11-16** (item 66): the weekly check alarms
-from 2026-11-09; a deploy after the 16th needs it renewed first.
+below 14 days left — so from its 2026-11-02 run (corrected 2026-11-03 from the
+script: `WARN_DAYS=14`, `-lt`; this said 11-09); a deploy after the 16th needs
+it renewed first.
 
 ## 2. Method — what this session added
 
@@ -312,7 +320,8 @@ with itself) and see a planted change.
 - ~~Phase 1's live test; the healthchecks check and Shopify's shipping
   confirmation (§1).~~ Done 2026-11-02 (§1).
 - The GHCR token, 2026-11-16 (item 66) — ⚠ STILL OPEN; the weekly check alarms
-  from 2026-11-09, and no deploy works after the 16th until it is renewed.
+  below 14 days left (from its 11-02 run), and no deploy works after the 16th
+  until it is renewed.
 - UTC "today" in `lib/backorders` (×2), `getBackorderStatus`, the backorders
   page and the line editor — a line due today reads overdue after 5 p.m.
   Arizona (Garrett's call).

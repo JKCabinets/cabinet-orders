@@ -1,5 +1,7 @@
 # JK Cabinets OMS — Build Handoff
 
+⚠ **NOT THE START POINT — start at `docs/SESSION-HANDOFF-2026-11-03.md`** (2026-11-03). This file is the record of its own session.
+
 > ## \u26a0 SUPERSEDED IN PART \u2014 read `HANDOFF-2026-08-25-REWORK.md` first
 >
 > On 2026-08-25 a purchase became the unit of ownership: **archived as a whole,

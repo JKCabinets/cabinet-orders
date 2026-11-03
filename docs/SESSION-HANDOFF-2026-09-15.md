@@ -1,6 +1,6 @@
 # SESSION HANDOFF — 2026-09-15
 
-⚠ **SUCCEEDED 2026-10-13 by `docs/SESSION-HANDOFF-2026-10-13.md` — start there.**
+⚠ **SUCCEEDED 2026-10-13 by `docs/SESSION-HANDOFF-2026-10-13.md`; since 2026-11-03 START AT `docs/SESSION-HANDOFF-2026-11-03.md`.**
 This file stays as the detailed record: items 0–47, the decisions and the
 process lessons are still true wherever that file does not say otherwise. Its
 Open list CONTINUES there, re-sorted.

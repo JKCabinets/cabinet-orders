@@ -1,5 +1,7 @@
 # Known-wrong — additions for `HANDOFF-2026-08-20-BUILD.md` §10
 
+⚠ **NOT THE START POINT — start at `docs/SESSION-HANDOFF-2026-11-03.md`** (2026-11-03). This file is the record of its own session.
+
 ⚠ **REVIEWED 2026-10-29 — EVERY "STILL OPEN" BELOW IS CLOSED.** §3:
 `isStageOfferedForType` (`lib/data`) asks whether a stage is offered for a
 type, and the order route checks both questions; the sample flow is New →

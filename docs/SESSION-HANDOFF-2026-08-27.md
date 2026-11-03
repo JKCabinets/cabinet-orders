@@ -1,5 +1,7 @@
 # Session handoff — 2026-08-27
 
+⚠ **NOT THE START POINT — start at `docs/SESSION-HANDOFF-2026-11-03.md`** (2026-11-03). This file is the record of its own session.
+
 For whoever picks this up next, including a fresh assistant chat with no memory
 of it.
 

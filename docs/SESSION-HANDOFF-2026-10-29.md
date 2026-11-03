@@ -2,7 +2,10 @@
 
 Covers 2026-10-22 → 2026-10-29: item 8 (mockup parity) finished, file groups,
 acknowledgment files and rules, items 52–63, and **feature 9 (customer
-notifications) designed in full, with phase 1 ready to build**. **Start here.**
+notifications) designed in full, with phase 1 ready to build**. ⚠ **NOT THE
+START POINT SINCE 2026-11-02 — start at `docs/SESSION-HANDOFF-2026-11-03.md`.**
+This file stays the record of feature 9's design and of phase 1 as built
+(§4.9); its method (§2) still holds.
 
 ⚠ **THE OPEN LIST STAYS IN `docs/SESSION-HANDOFF-2026-10-13.md` §6.** One home,
 or a correction lands on one copy and misses the other. That file is also the

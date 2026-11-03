@@ -1,7 +1,7 @@
 # Start here — session handoff, 2026-09-08
 
 ⚠ **SUPERSEDED — DO NOT START HERE.** This was the start point on 2026-09-08;
-start at `docs/SESSION-HANDOFF-2026-10-29.md`. Its method (§1) still holds and
+start at `docs/SESSION-HANDOFF-2026-11-03.md`. Its method (§1) still holds and
 is carried in the later handoffs. Everything that looks forward is overtaken:
 the next-action panel (§3) was built — it is the Overview's band — and three
 of §6's traps are now FALSE: the acknowledgment `.xlsx` IS stored, as a file of

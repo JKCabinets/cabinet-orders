@@ -1,6 +1,6 @@
 # JK Cabinets — Operations & Systems Reference
 
-**As of 2026-09-15 · supersedes OPERATIONS-2026-08-18.md**
+**As of 2026-09-15, amended through 2026-11-03 (the dated entries below) · supersedes OPERATIONS-2026-08-18.md**
 
 ⚠ **AMENDED 2026-11-03 (feature 10, cabinet lines, deployed).** §1/§2: each
 cabinet line of an order has its own acknowledgment (HCI's and J&K's received
@@ -117,6 +117,15 @@ treated as a vendor anyone will see on an order.
 ⚠ **BUT CUSTOMERS DO SEE IT** (website team, 2026-10-29): the storefront and the
 order email call Waypoint's lines "Select Cabinetry", and feature 9's emails
 name them the same way. Not a Shopify vendor STRING — that stays true.
+
+⚠ **IN SHOPIFY'S ADDITIONAL DETAILS: "SELECT (WAYPOINT) CABINETRY"** (Garrett,
+2026-11-03: "As long as a customer can't see it, it should be Waypoint or
+Select-(Waypoint)"). A mixed cabinet order's lines each get "<line>
+Production" (start → ship date) and "<line> Delivery Target" there; staff see
+Waypoint, and a customer would see Select if a template ever showed them. The
+order's own "Production Start Date" (the earliest line's) and "Est. Production
+Finish" (the latest) stay beside them — the website may read those by name
+(OMS-STATE, "Ship from factory").
 
 ⚠ **No hardware vendor is known.** `lib/categories.ts` carries
 `HARDWARE_VENDORS = ["Top Knobs", "Blum"]`, taken from a mockup and never seen
@@ -568,7 +577,9 @@ check that would have caught both of 2026-09-16's failed deploys before they ran
 silence its own alarm. Email alerting, verified.
 
 **Alerts reach Teams and email** (2026-10-21). healthchecks.io has two
-integrations, each on all six checks: **"OMS Health"** — its own Microsoft
+integrations, each on all six checks (⚠ SEVEN since 2026-11-02:
+`cabinet-fulfilment` — that its two integrations are attached is NOT YET
+CONFIRMED; a check without them fails silently): **"OMS Health"** — its own Microsoft
 Teams integration, through a Teams workflow made from the template "Send
 webhook alerts to a channel" and never edited — and **"OMS Health Email"**, to
 garrett@jkcabinets2you.com. A Teams alert is a card naming the check and its
@@ -1247,10 +1258,10 @@ recovery story.
 `.env.kamal`, `~/.cron-secret`, `~/cron-jobs/` and the crontab — the files that
 exist nowhere else.
 
-⚠ **THE CRON SCRIPTS ARE NOT IN THE REPO** (found 2026-10-29): `run-cron.sh`
-and `check-registry-token.sh` live only in `~/cron-jobs/`, so this backup is
-their only copy, for 7 days. `docs/RECOVERY.md` said to copy them "from this
-repo". Committing them is open (handoff item 65).
+⚠ **THE CRON SCRIPTS ARE IN THE REPO SINCE 2026-11-02** (item 65, found
+2026-10-29): `scripts/cron/` holds `run-cron.sh`, `check-registry-token.sh`
+and the `crontab`. ⚠ `~/cron-jobs/healthchecks.map` is NOT (its URLs are
+credentials in effect), so this backup is its only copy, for 7 days.
 
 Two caveats: **a 7-day window is short for a silent problem** — the failure
 mode this system actually has — and **the restore has never been tested**.

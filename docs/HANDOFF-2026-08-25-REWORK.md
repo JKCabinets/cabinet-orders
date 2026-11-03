@@ -1,5 +1,7 @@
 # HANDOFF — 2026-08-25 · Projects, claims, and the work-first rework
 
+⚠ **NOT THE START POINT — start at `docs/SESSION-HANDOFF-2026-11-03.md`** (2026-11-03). This file is the record of its own session.
+
 **Read this before `HANDOFF-2026-08-20-BUILD.md`.** That document describes the
 Project Orders model as it stood on the 24th. Everything below either extends
 it or contradicts it, and where they disagree, this is current.

@@ -13,8 +13,9 @@ wrong.
 
 ## Start here
 
-1. `docs/SESSION-HANDOFF-2026-10-29.md` — where things stand, how work is done
-   safely, and what is next.
+1. `docs/SESSION-HANDOFF-2026-11-03.md` — where things stand, how work is done
+   safely, and what is next. (Each earlier handoff is the record of its own
+   session; this one points into them.)
 2. `docs/OMS-STATE-2026-08-26.md` — what the system IS: data model, flows,
    gates, monitoring.
 3. `docs/OPERATIONS-2026-08-26.md` — the business, services, credentials,
