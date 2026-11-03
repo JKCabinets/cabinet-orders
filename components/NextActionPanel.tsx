@@ -477,7 +477,10 @@ export function NextActionPanel({
           )}
         </div>
 
-        <div className="flex-shrink-0 ml-auto">
+        {/* ⚠ LEVEL WITH THE LAST LINE'S UPLOAD (2026-11-03, Garrett: "line up with the
+            bottom upload button"). The row centres its columns, which put Move to
+            Entered beside the MIDDLE line; with a row per line it sits at the bottom. */}
+        <div className={"flex-shrink-0 ml-auto" + (ackLineRows.length > 0 && rows.some((r) => r.req.id === "ack_or_attachment") ? " self-end" : "")}>
           {readOnly ? (
             <p className={NOTE + " flex-shrink-0 text-right max-w-[16rem]"}>{lockedNote}</p>
           ) : (

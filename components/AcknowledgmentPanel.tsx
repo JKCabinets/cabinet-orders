@@ -179,12 +179,21 @@ export const AcknowledgmentPanel = forwardRef<AcknowledgmentPanelHandle, Acknowl
       onAdvanceOverride?.();
     }
 
-    if (!eligible) return null;
+    // ⚠ THE PICKER IS ALWAYS HERE (2026-11-03, Garrett: "hitting the upload ack
+    // doesn't work and nothing happens"). The band's per-line Upload buttons open
+    // it through openFilePicker(); this returned NOTHING on an unclaimed order at
+    // New, so there was no input to open and every button was dead. The server
+    // takes an upload on an unclaimed order (requireOrderClaim: unclaimed -> yes),
+    // so the panel's own rows may wait for a claim -- its picker may not.
+    const picker = (
+      <input ref={fileInputRef} type="file" accept=".xlsx" className="hidden" onChange={handleFile} aria-label="Acknowledgment file" />
+    );
+    if (!eligible) return picker;
 
     // ⚠ EVERY CABINET LINE (2026-11-02, feature 10): this listed Waypoint only, so
     // HCI and J&K had no row and no way to give theirs.
     const ackVendors = status.vendors;
-    if (!status.loading && ackVendors.length === 0) return null;
+    if (!status.loading && ackVendors.length === 0) return picker;
 
     return (
       <div className="px-6 py-5 border-b border-white/10">
@@ -300,7 +309,7 @@ export const AcknowledgmentPanel = forwardRef<AcknowledgmentPanelHandle, Acknowl
           </div>
         )}
 
-        <input ref={fileInputRef} type="file" accept=".xlsx" className="hidden" onChange={handleFile} aria-label="Acknowledgment file" />
+        {picker}
       </div>
     );
   }
