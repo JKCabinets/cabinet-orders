@@ -2,6 +2,11 @@
 
 **As of 2026-09-15 · supersedes OPERATIONS-2026-08-18.md**
 
+⚠ **AMENDED 2026-11-03 (feature 10, cabinet lines, deployed).** §1/§2: each
+cabinet line of an order has its own acknowledgment (HCI's and J&K's received
+on upload), dates and signed receipt; Shopify shows each line's dates
+("Select (Waypoint) Cabinetry" for Waypoint); the work queue names the line.
+
 ⚠ **AMENDED 2026-11-02 (feature 9 phase 1, live from its deploy).** §2: the
 promise is kept by the cabinet fulfilment run. §6: a seventh check,
 `cabinet-fulfilment`, and its health row. §7: the run at 15:00 daily; the cron
@@ -213,6 +218,12 @@ attached file instead.
 ⚠ **SINCE 2026-10-28 (Garrett, item 57) A FILE NO LONGER STANDS IN FOR
 WAYPOINT'S.** Its lines need the green acknowledgment; a mixed order needs
 both; an acknowledgment's own kept file never counts as "a file".
+
+⚠ **SINCE 2026-11-03 (feature 10) NO FILE STANDS IN FOR ANY LINE'S.** Each
+cabinet line needs its own acknowledgment, uploaded with its own button on the
+band: Waypoint's spreadsheet is checked against the order; HCI's and J&K's
+(PDF or Excel) are received on upload. Each line also has its own start,
+ship and delivery dates, and its own signed receipt before Delivered.
 
 ⚠ **A green acknowledgment goes stale if the order changes afterwards.** It is
 evidence about a specific set of lines; if a customer amends the order, the
@@ -1198,7 +1209,8 @@ recovery story.
 - **EVERY ACKNOWLEDGMENT IS KEPT** (10-28): the one in use marked, the rest
   history that can be deleted; a failed one's file replaced by the next.
 - **ENTERED, VENDOR BY VENDOR** (10-28, item 57): Waypoint needs its green
-  acknowledgment; HCI and J&K a green one or any file.
+  acknowledgment; HCI and J&K a green one or any file. ⚠ Superseded 11-03
+  (feature 10): every line its own acknowledgment; no file stands in.
 - **A COLOUR SHOPIFY DROPS IS MARKED DISCONTINUED, NEVER DELETED** (10-28,
   item 60), judged by Shopify's Color option names. The two Nano finishes were
   deleted by hand, the store not being live.

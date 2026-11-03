@@ -7,6 +7,12 @@ feature 9's design.
 
 ## 1. Where things stand
 
+⚠ **FEATURE 10 IS BUILT AND DEPLOYED (2026-11-03) — §3.8.** After this docs
+commit, `HEAD~1` is part 5, *"Feature 10, part 5: the work queue names the
+cabinet line holding an order"*. **The next chain checks: `HEAD~1`'s subject
+is that, tree clean** (`git log --oneline 16c9dbd..HEAD` lists feature 10's
+commits). The paragraph below is the state before feature 10.
+
 **The box** (`5.78.220.153`, `~/cabinet-orders`, `main`) — DEPLOYED, verified
 2026-11-02 (the image tag is the commit):
 
@@ -239,11 +245,74 @@ attention reasons naming the line; the docs.
 `order_acknowledgments` and `order_attachments` — run a read-only probe
 (`hx/schema_probe.sql` is the pattern).
 
+### 3.8 Feature 10 as built (2026-11-02 → 11-03) — deployed, tested live by Garrett
+
+**The commits, oldest first** (since `16c9dbd`; hashes where seen — the chain
+prints the rest):
+1. `39b4c5d` part 1 — migration `2026-11-02-cabinet-lines.sql` (sha256
+   `ba635609…`; RAN IN PRODUCTION 2026-11-02, its check row as expected):
+   `orders.vendor_start_dates`, `orders.vendor_delivery_targets`,
+   `order_attachments.vendor`; `vendor_dates_problem` (earliest / latest).
+2. `c5f3a04` part 2 — one rule for a line's vendor (`lib/vendorLookup` layer 0).
+3. `bb9cdd3` part 3a — acknowledgments per line, the server (HCI/J&K received;
+   the "any file" stand-in retired; the gate names the lines).
+4. `9ba8619` part 3b — a row and an Upload acknowledgment per line; the
+   acknowledgment panel for every line. DEPLOYED with 1–3a.
+5. `0be09b3` — the acknowledgment picker always mounted (Garrett: "nothing
+   happens when it's pressed" — an UNCLAIMED order at New had no picker); Move
+   to Entered level with the last upload. DEPLOYED; Garrett: "Tested and
+   working" (#1071, all three lines ✓).
+6. *"Feature 10, part 4a: per-line start dates and delivery targets; every line
+   its own proof of delivery (server)"* — one rule for the three per-line dates
+   (`lib/shipDateEdits`), `lib/deliveryProof`, the receipt upload's line.
+   Committed only, deployed with 4b.
+7. `620dbba` part 4b — `CabinetLinesCard` (Garrett's layout); a receipt per
+   line. DEPLOYED.
+8. *"Per-line production and delivery editors on the band; side-by-side dates;
+   per-line starts move the order on"* — from Garrett's check of 7; ⚠ FOUND
+   PROVING IT: per-line starts at Entered did not move the order to In
+   production (live in `620dbba` through the card). DEPLOYED.
+9. *"Each cabinet line's dates in Shopify's additional details"* — "<line>
+   Production", "<line> Delivery Target", Waypoint as "Select (Waypoint)
+   Cabinetry" (Garrett). DEPLOYED; "Tested and working".
+10. *"Feature 10, part 5: the work queue names the cabinet line holding an
+   order"*. DEPLOYED; "Deployed and working" (the dashboard names the line).
+11. This docs commit.
+
+**Proven before each shipped** (the sandbox harness, the deployed code as the
+control each time), among them: the vendor rule's 8 cases (the control fails
+the 3 where a stale cache wins); the acknowledgment route end to end — a J&K
+PDF received, refusals writing nothing, a stray photo no longer letting an
+order to Entered (the control let it); the screens in jsdom; phase 1's 15
+order-route cases IDENTICAL after `lib/shipDateEdits` was generalised; the
+per-line Delivered gate (the control let a mixed order through on one line's
+receipt); Shopify's entries merged, removed when cleared, absent on a
+single-vendor order.
+
+**The harness grew** (`phase1-harness.tar.gz`): `prod_base_files.sql` and
+`prod_base_acks.sql` (transcribed from the 11-02 probe —
+`feature10-schema-probe.sql`); ⚠ a database function stood in must be its
+LATEST definition (`file_group_for_role` is redefined in
+`2026-10-28-acknowledgment-files.sql`; the 10-27 one refused
+"acknowledgments"); stubs for `xlsx` (the sandbox cannot fetch it — Waypoint's
+parsing is not exercised there) and `./Toast`; `build.mjs`'s `HX_ALIAS` and
+`HX_EXPOSE` (a test-only export, the source untouched). ⚠ A test's OWN inserts
+must check their errors (a missing table read as "no acknowledgments"); an
+"unchanged rows" proof must snapshot BEFORE the run (one compared the after
+with itself) and see a planted change.
+
 ## 4. Open beyond feature 10
 
-- Phase 1's live test; the healthchecks check and Shopify's shipping
-  confirmation (§1).
-- The GHCR token, 2026-11-16 (item 66).
+- ⚠ **`f10-lines-without-vendor.sql` NOT YET RUN** (read-only): how many lines
+  in production have no vendor of their own — the only lines where the vendor
+  rule falls back. If any, fill them from the product cache.
+- Optional tidy: a one-line-waiting reason repeats the line's name in its
+  detail ("Waypoint Cabinetry: acknowledgment required" / "Waypoint Cabinetry:
+  no acknowledgment yet").
+- ~~Phase 1's live test; the healthchecks check and Shopify's shipping
+  confirmation (§1).~~ Done 2026-11-02 (§1).
+- The GHCR token, 2026-11-16 (item 66) — ⚠ STILL OPEN; the weekly check alarms
+  from 2026-11-09, and no deploy works after the 16th until it is renewed.
 - UTC "today" in `lib/backorders` (×2), `getBackorderStatus`, the backorders
   page and the line editor — a line due today reads overdue after 5 p.m.
   Arizona (Garrett's call).
