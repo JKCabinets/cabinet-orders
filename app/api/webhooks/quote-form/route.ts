@@ -9,6 +9,7 @@ import {
 import { stripImageMetadata } from "@/lib/stripExif";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { fileGroupForRole } from "@/lib/fileGroups";
+import { TIMED_OUT, afterAnswer, requestBudget, uploadWithRetry } from "@/lib/publicForms";
 
 /**
  * Origins allowed to call this endpoint from a browser.
@@ -105,13 +106,38 @@ function isAllowedLegacyUrl(url: string): boolean {
   return LEGACY_URL_HOST_ALLOWLIST.includes(parsed.hostname.toLowerCase());
 }
 
+const TRY_AGAIN = { error: "try_again", message: "This is taking longer than it should. Please try again in a moment." };
+
+/**
+ * The whole handler, under a catch that still answers with CORS (2026-11-04,
+ * feature 12; SESSION-HANDOFF-2026-11-03.md §7.3, lib/publicForms): the answer
+ * comes once the order is SAVED, inside one budget well under the gateway's
+ * 30 s, and the files follow it. New answers, which the website's form already
+ * handles (their note of 2026-11-04): 503 try_again -- the save ran too long,
+ * and the form retries once with the same submission_id; and the 201 says
+ * `attachments_received`, since what is saved is only known after it.
+ */
 export async function POST(req: NextRequest) {
+  try {
+    return await handleQuote(req);
+  } catch (e) {
+    console.error(`[quote-form] unexpected: ${(e as Error)?.message ?? String(e)}`);
+    return NextResponse.json({ error: "server_error", message: "We could not record your request. Please try again, or call us." },
+      { status: 500, headers: corsFor(req) });
+  }
+}
+
+async function handleQuote(req: NextRequest): Promise<NextResponse> {
   // Per-request, because the allowed origin is echoed back.
   const CORS = corsFor(req);
+  // ⚠ ONE BUDGET FOR EVERYTHING BEFORE THE ANSWER (feature 12).
+  const budget = requestBudget(20_000);
 
   // ── Rate limit by IP (this is a public, unauthenticated endpoint) ─────────
-  const allowed = await checkRateLimit(req, 10, 60_000, "quote-form");
-  if (!allowed) {
+  // Capped (feature 12): an Upstash that does not answer in time lets the
+  // request through; Turnstile, below, is the control.
+  const allowed = await budget.within(checkRateLimit(req, 10, 60_000, "quote-form"), 4_000);
+  if (allowed === false) {
     return NextResponse.json(
       { error: "Too many requests" },
       { status: 429, headers: { ...CORS, "Retry-After": "60" } }
@@ -246,13 +272,16 @@ export async function POST(req: NextRequest) {
   // cannot prove itself never touches storage or the database.
   // (2026-10-01) The check itself is lib/turnstile now, shared with the claims
   // endpoint: the same answers, word for word, and the same log lines.
-  const turnstile = await verifyTurnstile({
+  const turnstile = await budget.within(verifyTurnstile({
     secret: process.env.TURNSTILE_SECRET_KEY,
     secretName: "TURNSTILE_SECRET_KEY",
     token: body["cf-turnstile-response"],
     req,
     label: "quote-form",
-  });
+  }), 9_000);
+  if (turnstile === TIMED_OUT) {
+    return NextResponse.json({ error: "turnstile_unavailable", message: "Verification is unavailable. Please try again shortly." }, { status: 503, headers: CORS });
+  }
   if (!turnstile.ok) {
     return NextResponse.json(turnstile.body, { status: turnstile.status, headers: CORS });
   }
@@ -402,21 +431,25 @@ export async function POST(req: NextRequest) {
   // was written must not open a second job. The partial unique index makes that
   // hold even if two retries arrive together.
   const submissionId = cleanInput(body.submission_id ?? "").slice(0, 100) || null;
-  if (submissionId) {
-    const { data: already } = await supabase
-      .from("orders")
-      .select("id")
-      .eq("submission_id", submissionId)
-      .maybeSingle();
-    if (already?.id) {
-      return NextResponse.json(
-        { ok: true, order_id: already.id, duplicate: true },
-        { status: 201, headers: CORS },
-      );
-    }
+  // Capped (feature 12); a lookup that runs out of time is not an answer, and
+  // the unique index still decides at the insert.
+  const existingOrder = async (): Promise<string | null> => {
+    if (!submissionId) return null;
+    const found = await budget.within(
+      supabase.from("orders").select("id").eq("submission_id", submissionId).maybeSingle(), 5_000);
+    return found === TIMED_OUT ? null : ((found.data as { id?: string } | null)?.id ?? null);
+  };
+  const already = await existingOrder();
+  if (already) {
+    return NextResponse.json(
+      { ok: true, order_id: already, duplicate: true },
+      { status: 201, headers: CORS },
+    );
   }
 
-  const { error } = await supabase.from("orders").insert({
+  // ⚠ THE FILES FOLLOW THE ANSWER (feature 12), started the moment the order
+  // lands -- even if that is after this request has stopped waiting for it.
+  const saving = Promise.resolve(supabase.from("orders").insert({
     id: orderId,
     // A quote request IS a custom order at stage New -- the same thing a
     // staff member creates by hand on /custom, arriving through a different
@@ -449,12 +482,55 @@ export async function POST(req: NextRequest) {
     customer_phone: phone,
     customer_email: email,
     delivery_method: "",
-  });
+  }));
 
+  const filesToSave = incomingFiles.map((file) => ({ file, mime: sniffedTypes.get(file) ?? "application/octet-stream" }));
+  saving.then(({ error }) => {
+    if (!error) afterAnswer(`quote-form ${orderId}`, () => settleQuote(orderId, today, filesToSave, legacyAttachmentUrl));
+  }, () => {});
+
+  const result = await budget.within(saving, 8_000);
+  if (result === TIMED_OUT) return NextResponse.json(TRY_AGAIN, { status: 503, headers: CORS });
+  const { error } = result as { error: { code?: string; message: string } | null };
   if (error) {
+    // ⚠ A RACE (feature 12). The unique index on submission_id lets one save;
+    // the others answer as the duplicate they are. A 23505 with NO such order
+    // is the id itself -- QUO-<millisecond> -- shared with someone else's
+    // submission: retried, it gets a new one.
+    if (error.code === "23505") {
+      const winner = await existingOrder();
+      return winner
+        ? NextResponse.json({ ok: true, order_id: winner, duplicate: true }, { status: 201, headers: CORS })
+        : NextResponse.json(TRY_AGAIN, { status: 503, headers: CORS });
+    }
     return NextResponse.json({ error: error.message }, { status: 500, headers: CORS });
   }
 
+  return NextResponse.json(
+    {
+      ok: true,
+      order_id: orderId,
+      // What arrived; what is SAVED is known only after the answer (feature 12),
+      // and the order's trail says if a file could not be.
+      attachments_received: incomingFiles.length,
+    },
+    { status: 201, headers: CORS },
+  );
+}
+
+/**
+ * After the answer (feature 12): the trail's first line, the files -- all at
+ * once, each upload retried -- and the legacy URL. A file that cannot be saved
+ * after every attempt is named on the order's trail, as before; staff ask the
+ * customer for it. The group is found once, after the uploads, and only if a
+ * file was saved, as before.
+ */
+async function settleQuote(
+  orderId: string,
+  today: string,
+  files: { file: File; mime: string }[],
+  legacyAttachmentUrl: string,
+): Promise<void> {
   await supabase.from("order_activity").insert({
     order_id: orderId,
     text: "Quote request received from website form",
@@ -462,37 +538,29 @@ export async function POST(req: NextRequest) {
   });
 
   // === Save uploaded files ===
-  const uploadedFiles: { name: string; path: string }[] = [];
-  let customerGroup: number | null | undefined;
-  for (const file of incomingFiles) {
+  const uploads = await Promise.all(files.map(async ({ file, mime }) => {
     // ⚠ GENERATED, NOT THE SENDER'S NAME. The original is kept as the label in
     // file_name, where it is data. In the path it would be an instruction, and
     // this endpoint is anonymous.
-    const sniffed = sniffedTypes.get(file) ?? "application/octet-stream";
     // Exact since 2026-10-05: PUBLIC_UPLOAD_TYPES is JPEG, PNG and PDF, so the
     // last branch is a PDF. (While GIF, WEBP and HEIC were accepted, they were
     // stored under a .pdf name too.)
-    const ext = sniffed === "image/jpeg" ? "jpg" : sniffed === "image/png" ? "png" : "pdf";
+    const ext = mime === "image/jpeg" ? "jpg" : mime === "image/png" ? "png" : "pdf";
     const filePath = `${orderId}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
     // ⚠ METADATA OUT BEFORE IT IS STORED. A phone photo of a kitchen carries the
     // GPS of the house it is in. See lib/stripExif.
-    const arrayBuffer = stripImageMetadata(await file.arrayBuffer(), sniffed);
+    const bytes = stripImageMetadata(await file.arrayBuffer(), mime);
+    // The sniffed type, never file.type. Validated before the answer.
+    const { error, attempts } = await uploadWithRetry(STORAGE_BUCKET, filePath, bytes, mime, { attempts: 3 });
+    return { file, mime, filePath, error, attempts };
+  }));
 
-    // The sniffed type, never file.type. Validated above, so it is always
-    // present here.
-    const storedType = sniffedTypes.get(file) ?? "application/octet-stream";
-
-    const { error: uploadError } = await supabase.storage
-      .from(STORAGE_BUCKET)
-      .upload(filePath, arrayBuffer, {
-        contentType: storedType,
-        upsert: false,
-      });
-
+  let customerGroup: number | null | undefined;
+  for (const { file, mime, filePath, error: uploadError, attempts } of uploads) {
     if (uploadError) {
       await supabase.from("order_activity").insert({
         order_id: orderId,
-        text: `⚠️ Failed to save attachment "${cleanInput(file.name)}": ${cleanInput(uploadError.message)}`,
+        text: `⚠️ Failed to save attachment "${cleanInput(file.name)}": ${cleanInput(uploadError)}${attempts > 1 ? ` (after ${attempts} attempts)` : ""}`,
         time: today,
       });
       continue;
@@ -509,7 +577,7 @@ export async function POST(req: NextRequest) {
       file_name: cleanInput(file.name),
       file_path: filePath,
       file_size: file.size,
-      file_type: storedType,
+      file_type: mime,
       uploaded_by: "Customer (form submission)",
       // ⚠ THE CUSTOMER PUT THIS HERE, NOT THE TEAM (2026-09-28). The Files tab
       // splits on this value, and it was not set at all before -- so a photo
@@ -527,14 +595,11 @@ export async function POST(req: NextRequest) {
         text: `⚠️ File "${cleanInput(file.name)}" could not be saved: ${cleanInput(dbError.message)}`,
         time: today,
       });
-      continue;
     }
-
-    uploadedFiles.push({ name: file.name, path: filePath });
   }
 
   // === Legacy URL-only path (allow-listed hosts only) ===
-  if (legacyAttachmentUrl && incomingFiles.length === 0) {
+  if (legacyAttachmentUrl && files.length === 0) {
     const fileName = legacyAttachmentUrl.split("/").pop()?.split("?")[0] || "Customer Attachment";
     customerGroup ??= await fileGroupForRole(orderId, "customer_uploads");
     if (customerGroup !== null) await supabase.from("order_attachments").insert({
@@ -548,13 +613,4 @@ export async function POST(req: NextRequest) {
       kind: "customer_upload",
     });
   }
-
-  return NextResponse.json(
-    {
-      ok: true,
-      order_id: orderId,
-      attachments_saved: uploadedFiles.length,
-    },
-    { status: 201, headers: CORS },
-  );
 }

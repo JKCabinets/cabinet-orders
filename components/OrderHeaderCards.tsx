@@ -48,7 +48,7 @@ function CheckoutLine({ project }: { project: Project }) {
       {project.checkout_user_agent && (
         <details className="mt-0.5">
           <summary className="cursor-pointer text-[10px] text-cream/45 hover:text-cream/70">Browser</summary>
-          <span className="block mt-1 text-[10px] text-cream/65 leading-relaxed break-all">{project.checkout_user_agent}</span>
+          <span className="block mt-1 text-[10px] text-cream/65 leading-relaxed break-words">{project.checkout_user_agent}</span>
         </details>
       )}
     </>

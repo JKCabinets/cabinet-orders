@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { checkRateLimit, cleanInput } from "@/lib/auth";
-import { CLAIM_MAX_REQUEST_BYTES, CLAIM_TYPES, checkClaimPhotos, normaliseOrderNumber, storeClaimPhotos } from "@/lib/claimIntake";
+import { CLAIM_MAX_REQUEST_BYTES, CLAIM_TYPES, checkClaimPhotos, normaliseOrderNumber, sanitizeFileName, storeClaimPhotos, type CheckedPhoto } from "@/lib/claimIntake";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { pushClaims } from "@/lib/claimHelpScout";
+import { TIMED_OUT, afterAnswer, requestBudget } from "@/lib/publicForms";
 
 /**
  * POST /api/public/claims — the warranty claim form on /pages/warranty-claims.
@@ -26,6 +27,18 @@ import { pushClaims } from "@/lib/claimHelpScout";
  *   429                     wait and retry
  *   503 turnstile_unavailable  the page retries once with a fresh token
  * Anything else -- a 422, 413, 415, 500 -- shows the customer the email route.
+ *
+ * ⚠ FEATURE 12 (2026-11-04; SESSION-HANDOFF-2026-11-03.md §7.3, lib/publicForms).
+ * The answer comes once the claim is SAVED, inside one time budget well under
+ * the gateway's 30 s; the photos and the Help Scout send follow it. Two
+ * answers are new, both of which the website's page already handles (their
+ * note of 2026-11-04):
+ *   201 {"ref", "duplicate": true}  a submission_id already saved: the SAME claim,
+ *                                   answered with its reference, nothing saved again
+ *   503 try_again                   the save itself ran too long; the page retries
+ *                                   once, with the same submission_id -- safe
+ * And every answer carries CORS: anything unexpected is caught, logged and
+ * answered 500 save_failed, never Next's bare error.
  *
  * ⚠ THIS WRITES. Everything below is shaped by that. The lookup could fail
  * closed on any doubt because a refused read costs a customer nothing. A
@@ -81,10 +94,44 @@ function field(form: FormData, key: string, max = MAX_FIELD_LEN): string {
   return typeof v === "string" ? cleanInput(v.slice(0, max)) : "";
 }
 
+const SAVE_FAILED = { error: "save_failed", message: "We could not record your claim. Please call us so this is not delayed." };
+const TRY_AGAIN = { error: "try_again", message: "This is taking longer than it should. Please try again in a moment." };
+
+/** The whole handler, under a catch that still answers with CORS (feature 12). */
 export async function POST(req: NextRequest) {
+  try {
+    return await handleClaim(req);
+  } catch (e) {
+    console.error(`[claims] unexpected: ${(e as Error)?.message ?? String(e)}`);
+    return NextResponse.json(SAVE_FAILED, { status: 500, headers: corsFor(req) });
+  }
+}
+
+/**
+ * After the answer (feature 12): the photos, every attempt; then the hold on
+ * Help Scout released and the claim sent on. Saved HOLDING its own lease, the
+ * claim cannot be sent by the retry job before its photos are settled; if the
+ * server restarts first, the lease expires in ten minutes and the retry job
+ * sends it, the note naming the photos that never arrived.
+ */
+async function settleClaim(id: string, ref: string, photos: CheckedPhoto[]): Promise<void> {
+  if (photos.length > 0) {
+    const { failed } = await storeClaimPhotos(id, photos, { attempts: 3 });
+    if (failed.length > 0) console.error(`[claims] ${ref}: ${failed.length} photo(s) not stored after every attempt`);
+  }
+  const { error } = await supabase.from("claim_submissions")
+    .update({ helpscout_leased_at: null }).eq("id", id).eq("helpscout_state", "pending");
+  if (error) console.error(`[claims] ${ref}: the Help Scout hold not released (${error.message}); the retry job sends it within 25 minutes`);
+  await pushClaims({ id });
+}
+
+async function handleClaim(req: NextRequest): Promise<NextResponse> {
   // Per request, because the allowed origin is echoed back -- and on EVERY
   // answer below, or the page cannot read it.
   const CORS = corsFor(req);
+  // ⚠ ONE BUDGET FOR EVERYTHING BEFORE THE ANSWER (feature 12): each step is
+  // capped, and the sum stays well under the gateway's 30 s.
+  const budget = requestBudget(20_000);
   const answer = (body: unknown, status: number, extra?: Record<string, string>) =>
     NextResponse.json(body, { status, headers: { ...CORS, ...extra } });
 
@@ -99,7 +146,9 @@ export async function POST(req: NextRequest) {
    * all. Spam is recoverable; a missed 48-hour deadline is not. Turnstile, now
    * in front, is what stops a script.
    */
-  if (!await checkRateLimit(req, 10, 60_000, "claims:post")) {
+  // Capped too: an Upstash that does not answer in time lets the claim through,
+  // the way its failure already does (above).
+  if (await budget.within(checkRateLimit(req, 10, 60_000, "claims:post"), 4_000) === false) {
     return answer({ error: "rate_limited", message: "Too many submissions. Please wait a minute and try again." }, 429, { "Retry-After": "60" });
   }
 
@@ -129,14 +178,17 @@ export async function POST(req: NextRequest) {
   // submission that cannot prove itself never touches storage or the database.
   // The claims widget's OWN secret, its action ("claim", set by the page) and
   // the storefront's hostnames -- a token solved anywhere else is refused.
-  const turnstile = await verifyTurnstile({
+  const turnstile = await budget.within(verifyTurnstile({
     secret: process.env.TURNSTILE_CLAIMS_SECRET_KEY,
     secretName: "TURNSTILE_CLAIMS_SECRET_KEY",
     token: form.get("cf-turnstile-response"),
     req,
     label: "claims",
     expect: { action: "claim", hostnames: STOREFRONT_HOSTS },
-  });
+  }), 9_000);
+  // Its own fetch is capped at 8 s; past the budget it is "unavailable", which
+  // the page retries with a fresh token.
+  if (turnstile === TIMED_OUT) return answer({ error: "turnstile_unavailable", message: "Verification is unavailable. Please try again shortly." }, 503);
   if (!turnstile.ok) return answer(turnstile.body, turnstile.status);
 
   /**
@@ -205,13 +257,33 @@ export async function POST(req: NextRequest) {
     return answer({ error: checked.key, message: checked.message, ...(checked.file ? { file: checked.file } : {}) }, checked.status);
   }
 
+  // ── A repeat is the same claim (feature 12) ──────────────────────────────
+  //
+  // The form's own id for ONE submission, the same on every resubmit until one
+  // succeeds. Already saved: answered with its reference, nothing saved again.
+  // The unique index decides a race (below); this is the quick answer.
+  const submissionId = field(form, "submission_id", 100) || null;
+  const existingRef = async (): Promise<string | null> => {
+    if (!submissionId) return null;
+    const found = await budget.within(
+      supabase.from("claim_submissions").select("ref").eq("submission_id", submissionId).maybeSingle(), 5_000);
+    return found === TIMED_OUT ? null : ((found.data as { ref?: string } | null)?.ref ?? null);
+  };
+  const prior = await existingRef();
+  if (prior) return answer({ ref: prior, duplicate: true }, 201);
+
   // ── The row first, then the photos ───────────────────────────────────────
   //
   // ⚠ ORDER MATTERS. If the row is written first and an upload then fails, the
   // claim still exists and a human can ask for the photos again. The other way
   // round leaves orphaned images in a bucket with nothing pointing at them and
   // no record that anybody claimed anything.
-  const { data: row, error: insertError } = await supabase
+  //
+  // ⚠ THE PHOTOS NOW FOLLOW THE ANSWER (feature 12), started the moment the row
+  // lands -- even if that is after this request has stopped waiting for it, so
+  // a save the page retries still gets its photos. The claim is saved holding
+  // its own Help Scout lease (settleClaim), with the names of the photos sent.
+  const saving = Promise.resolve(supabase
     .from("claim_submissions")
     .insert({
       order_number_raw: orderNumberRaw,
@@ -225,29 +297,35 @@ export async function POST(req: NextRequest) {
       policy_version:   policyVersion || null,
       screening,
       screening_value: screening === "honeypot" ? honeypotValue || null : null,
+      submission_id:   submissionId,
+      photos_sent:     checked.photos.map((p) => sanitizeFileName(p.file.name)),
+      // Held from the retry job until settleClaim has stored the photos.
+      helpscout_leased_at: new Date().toISOString(),
       // received_at, status and ref take their database defaults. received_at
       // in particular is now(), set by Postgres, not by anything the client sent.
     })
     .select("id, ref")
-    .single();
-
-  if (insertError || !row) {
-    return answer({ error: "save_failed", message: "We could not record your claim. Please call us so this is not delayed." }, 500);
-  }
-
-  // Scrubbed of location and stored, in lib/claimIntake.
-  //
+    .single());
+  // Scrubbed of location and stored, in lib/claimIntake -- after the answer.
   // ⚠ A FAILED PHOTO NEVER FAILS THE CLAIM. The claim is the thing with a
-  // deadline. A missing photo is a phone call; a rejected submission is a
-  // lost right to claim. So what failed is not even reported here.
-  await storeClaimPhotos(row.id, checked.photos);
+  // deadline. A missing photo is a phone call; a rejected submission is a lost
+  // right to claim. ⚠ ON TO HELP SCOUT, WITHOUT HOLDING THE CUSTOMER
+  // (2026-10-05): the send follows the photos, after the answer.
+  saving.then(({ data }) => {
+    const saved = data as { id: string; ref: string } | null;
+    if (saved) afterAnswer(`claims ${saved.ref}`, () => settleClaim(saved.id, saved.ref, checked.photos));
+  }, () => {});
 
-  // ⚠ ON TO HELP SCOUT, WITHOUT HOLDING THE CUSTOMER (2026-10-05). Not awaited:
-  // the customer's answer must never wait on Help Scout, or fail because of it.
-  // This box runs one long-lived Node server, so the send finishes after the
-  // response is gone; whatever it does not finish -- a deploy restarting the
-  // container mid-send -- the retry job sends within 15 minutes.
-  pushClaims({ id: row.id }).catch((e) => console.error(`[helpscout] ${row.ref}: ${(e as Error).message}`));
+  const result = await budget.within(saving, 8_000);
+  if (result === TIMED_OUT) return answer(TRY_AGAIN, 503);
+  const { data: row, error: insertError } = result as { data: { id: string; ref: string } | null; error: { code?: string; message: string } | null };
+  // ⚠ A RACE IS A REPEAT TOO: twenty at once, one row -- the unique index lets
+  // one save, and the others answer with its reference.
+  if (insertError?.code === "23505" && submissionId) {
+    const winner = await existingRef();
+    return winner ? answer({ ref: winner, duplicate: true }, 201) : answer(TRY_AGAIN, 503);
+  }
+  if (insertError || !row) return answer(SAVE_FAILED, 500);
 
   /**
    * ⚠ THE REFERENCE IS THE SUBMISSION'S, NOT A CLAIM NUMBER. No warranty row

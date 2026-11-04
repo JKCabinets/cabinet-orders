@@ -511,6 +511,17 @@ every other value; the SITE keys are public and live in the storefront's Liquid.
 The claims check also requires the token's action, `claim`, and a storefront
 hostname.
 
+**Both answer within seconds, and never save twice** (2026-11-04, feature 12;
+`lib/publicForms`). The answer comes once the submission is SAVED, inside one
+20 s budget — under kamal-proxy's 30 s, which otherwise answers 504 with no
+CORS — and the files follow it, each upload retried three times. A file still
+not stored is named on the quote's trail or in the claim's Help Scout note, and
+support asks the customer. A `submission_id` already saved — or twenty at once
+— is answered 201 `duplicate: true` with the reference already issued; a save
+that runs long answers 503 `try_again`, which both forms retry once with the
+same id. ⚠ A restart mid-upload (a deploy) loses that upload — accepted
+(Garrett, 2026-11-04).
+
 ⚠ **`QUOTE_WEBHOOK_SECRET` is NOT a control.** Its value sits in JavaScript on a
 public page, so it authenticates nobody — it is a speed bump that stops casual
 posting, and it is kept for that. It was also EMPTY in production until
@@ -1284,7 +1295,10 @@ recovery story.
 - **`kamal-proxy` v0.9.2** terminates TLS, automatic certificates, health check
   `/api/health` every 5s. `--buffer-requests --buffer-responses` — ⚠ the whole
   request is buffered before the app sees it, which matters for the planned
-  60 MB claims uploads.
+  60 MB claims uploads. ⚠ **It gives up on a request after 30 s** (its default;
+  `config/deploy.yml` sets no `response_timeout`) and answers **504** with no
+  CORS — what the website's forms saw on 2026-11-04 while Supabase Storage was
+  slow. The public forms answer within 20 s since feature 12.
 - **Container logs rotate at 10 MB** and are **not shipped anywhere**. That is
   where `[ack-reject]` lands; a container replacement loses them. ✅ **Webhook
   outcomes are no longer only here** — since 2026-09-15 every `logWebhook`

@@ -2,6 +2,7 @@ import { supabase } from "@/lib/supabase";
 import { cleanInput } from "@/lib/auth";
 import { SNIFF_BYTES, sniffMagicBytes } from "@/lib/fileValidation";
 import { stripImageMetadata } from "@/lib/stripExif";
+import { uploadWithRetry } from "@/lib/publicForms";
 
 /**
  * How a claim's photos and order number are taken in -- ONE copy, for the
@@ -105,29 +106,34 @@ export async function checkClaimPhotos(files: File[]): Promise<PhotoCheck> {
  * failed photo never fails a customer's claim -- a missing photo is a phone
  * call); the staff route reports them, because staff can simply try again.
  */
-export async function storeClaimPhotos(submissionId: string, photos: CheckedPhoto[]): Promise<{ paths: string[]; failed: string[] }> {
-  const paths: string[] = [];
-  const failed: string[] = [];
-  for (const { file, mime } of photos) {
-    const safeName = sanitizeFileName(file.name);
-    const path = `${submissionId}/${Date.now()}-${safeName}`;
+/**
+ * ⚠ ALL AT ONCE, EACH PATH ITS OWN (2026-11-04, feature 12). Six slow uploads
+ * one after another could outlast the claim's ten-minute hold on Help Scout;
+ * together they take as long as the slowest. Each path carries the photo's
+ * place in the claim -- `<claim>/<time>-<n>-<name>` -- since two photos named
+ * image.jpg in one millisecond would otherwise be one path. `attempts` (1, the
+ * staff route; the public route asks for 3) retries each upload, capped below
+ * Supabase's own gateway: lib/publicForms.
+ */
+export async function storeClaimPhotos(
+  submissionId: string,
+  photos: CheckedPhoto[],
+  opts: { attempts?: number } = {},
+): Promise<{ paths: string[]; failed: string[] }> {
+  const stamp = Date.now();
+  const results = await Promise.all(photos.map(async ({ file, mime }, i) => {
+    const path = `${submissionId}/${stamp}-${i + 1}-${sanitizeFileName(file.name)}`;
     // ⚠ METADATA OUT BEFORE IT IS STORED (2026-10-01). These are photographs
     // taken in customers' homes and carry where they were taken. Until this
     // line, claim photos were stored exactly as they arrived. The Orientation
     // survives, so a portrait photo still shows upright.
     const bytes = stripImageMetadata(await file.arrayBuffer(), mime);
-
-    const { error: uploadError } = await supabase.storage
-      .from(BUCKET)
-      .upload(path, bytes, {
-        // The sniffed type, never file.type. Validated above, so it is present.
-        contentType: mime,
-        upsert: false,
-      });
-
-    if (uploadError) failed.push(cleanInput(file.name));
-    else paths.push(path);
-  }
+    // The sniffed type, never file.type. Validated above, so it is present.
+    const { error } = await uploadWithRetry(BUCKET, path, bytes, mime, { attempts: opts.attempts ?? 1 });
+    return { path, name: cleanInput(file.name), stored: error === null };
+  }));
+  const paths = results.filter((r) => r.stored).map((r) => r.path);
+  const failed = results.filter((r) => !r.stored).map((r) => r.name);
 
   if (paths.length > 0) {
     const { error: recordError } = await supabase

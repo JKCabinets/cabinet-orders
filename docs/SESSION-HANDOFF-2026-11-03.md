@@ -29,14 +29,13 @@ item 5 turned out bigger, with a plan. Read §6 before §4.
 
 **The box** (`5.78.220.153`, `~/cabinet-orders`, `main`):
 
-- ⚠ **AS OF THE §7.4 COMMIT (the claims-table incident, 2026-11-04):** `HEAD~1`
-  is `d5962aa` (the 2026-11-04 docs commit), `HEAD~2` `8f1522d` (feature 11 part
-  2, deployed), `HEAD~3` `6674d44` (feature 11 part 1). **The next chain checks:
-  `HEAD~1` = `d5962aa`, tree clean.**
-- ⚠ **THE RUNNING IMAGE IS `8f1522d`** (feature 11 part 2). Against this docs
-  `HEAD` the image check (`docker ps … | grep -qF "$(git rev-parse HEAD)"`)
-  reads **MISMATCH** until the next deploy — by design, not a fault. Check it
-  against `8f1522d` (`git log --oneline -3`).
+- ⚠ **AS OF FEATURE 12's COMMIT (2026-11-04):** `HEAD` is *"Feature 12: the public forms answer within seconds and never save twice"*, `HEAD~1`
+  *"Docs: the claims-table incident, its repair and its rules (2026-11-04); the feature 12 migration as it ran"*, `HEAD~2` `d5962aa`. **The next chain checks: `HEAD`'s subject is
+  feature 12's, tree clean.**
+- ⚠ **THE RUNNING IMAGE IS FEATURE 12's COMMIT** from its deploy, so the image
+  check (`docker ps … | grep -qF "$(git rev-parse HEAD)"`) reads DEPLOYED
+  against it; a later docs-only commit reads **MISMATCH** until the next deploy
+  — by design, not a fault (`git log --oneline -3`).
 - `git log --oneline 0fcc615..HEAD` lists every commit since the 10-29 review
   (§2).
 
@@ -523,3 +522,67 @@ removes.
 2026-11-04 (its check `2 · 1 · 2 · 5 · 5`), was lost with the table, and was
 re-applied verbatim by the repair. **Next:** feature 12's code (§7.3), its
 build steps (3) and (4).
+
+### 7.5 Feature 12, as built (2026-11-04)
+
+**The code** (its own commit, deployed):
+- **`lib/publicForms`** (new): `requestBudget` — every step before the answer
+  capped, inside one 20 s budget (kamal-proxy gives up at 30 s); `uploadWithRetry`
+  — three attempts, each capped at 45 s (below Supabase's own 60 s gateway),
+  pauses of 3 s and 10 s, "already exists" counted as stored; `afterAnswer`.
+- **The claims route:** a catch-all (500 `save_failed`, with CORS); the rate
+  limit capped at 4 s (through on a time-out, as on its failure); Turnstile
+  capped (503 `turnstile_unavailable`); `submission_id` — a repeat answered 201
+  `{ref, duplicate: true}`, a race (23505) the same, a save over 8 s 503
+  `try_again`. The claim saved HOLDING its own Help Scout lease, with
+  `photos_sent`; after the answer, started when the row lands (even after the
+  request stopped waiting): the photos, all at once, three attempts each; the
+  lease released; `pushClaims`.
+- **The quote route:** the same budget, catch-all (500 `server_error`), caps and
+  503s; a race (23505) a duplicate when an order has the `submission_id`, else
+  503 (a `QUO-<millisecond>` id shared with another submission); the 201 says
+  `attachments_received`. After the answer (`settleQuote`): the trail's first
+  line, the files all at once, three attempts each ("… (after 3 attempts)" on
+  the trail), the group found once after them, the legacy URL.
+- **`lib/claimIntake.storeClaimPhotos`:** all at once; paths
+  `<claim>/<time>-<n>-<name>`; `attempts` an option (1 for the staff route,
+  whose behaviour is unchanged).
+- **`lib/claimHelpScout`:** `photosNeverArrived`; the internal note names them —
+  *"⚠ 1 photo the customer sent never arrived: door.jpg. Ask the customer to
+  send it again, and tell them it was lost on our side."*
+- **The consent row's browser string** wraps at spaces (`break-words`).
+
+**Proven against the deployed code as the control** (the harness: a
+production-shaped base with the transcribed claims table, the lease and the
+migration; Storage, Help Scout and siteverify stood in):
+- **claims, Storage slow** (3 s an upload, 2 photos): the control answered in
+  6.0 s, feature 12 in 0.0 s; both photos stored, then sent to Help Scout with
+  both attached. The retry job, run mid-upload, sent nothing — and with the hold
+  planted out of the save, it sent the claim mid-upload with 0 photos.
+- **claims, Storage failing:** three attempts, and the note names the photo; the
+  control made one attempt, and its note said nothing.
+- **claims, twenty at once with one `submission_id`:** the control saved 20
+  claims with 20 references; feature 12 one claim, one reference, 19 answers
+  marked duplicate.
+- **claims, the save slow (12 s):** feature 12 answered 503 at 8.0 s; the page's
+  retry was the same claim; its photo stored and sent all the same. The
+  control: 12 s, and the retry a second claim.
+- **claims, something thrown:** feature 12 answered 500 with CORS; the control
+  did not answer.
+- **quote, the same five:** 6.1 s → 0.0 s; "(after 3 attempts)" on the trail;
+  twenty at once — the control 2 × 201 and 18 × 500 (the `QUO-` id and the
+  `submission_id` index both), feature 12 20 × 201 and one order; the save slow
+  → 503 at 8.0 s, the retry the same order, its file saved; thrown → 500 with
+  CORS.
+- **`storeClaimPhotos`** (shared with the staff route): the same outcomes in both
+  trees — same-named photos, a refused photo, a refused record (its files
+  removed). **`photosNeverArrived`:** five cases, among them a name that begins
+  with a number.
+- **The consent row:** identical in both trees but for the wrap class.
+  **Typecheck:** the trees' error sets identical; a planted error seen in each of
+  the six files.
+- ⚠ The harness's Supabase stand-in answered a set-returning function with its
+  first value, not its rows: fixed. Both trees had failed alike, which is how
+  the test's fault was told from the code's.
+
+**After the deploy:** the website team tests both forms, once told it is live.

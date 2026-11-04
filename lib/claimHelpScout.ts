@@ -54,6 +54,8 @@ export interface ClaimToSend {
   claimant_phone: string | null;
   message: string | null;
   photo_paths: string[] | null;
+  /** The names of the photos the form sent (2026-11-04, feature 12); [] before. */
+  photos_sent?: string[] | null;
   screening: string | null;
   screening_value: string | null;
   /** website | email (2026-10-06). An emailed claim adopts its conversation. */
@@ -101,9 +103,39 @@ export function claimThreadHtml(c: ClaimToSend): string {
   return `<p>${esc(message).replace(/\r?\n/g, "<br>")}</p>\n<p>${lines.map(esc).join("<br>")}</p>`;
 }
 
+/**
+ * The photos the form sent that were never stored (2026-11-04, feature 12):
+ * `photos_sent` less the names in `photo_paths`, counting duplicates -- two
+ * photos named image.jpg are two. Only a claim saved from 2026-11-04 has
+ * photos_sent, and its stored paths are `<claim>/<time>-<n>-<name>`: exactly
+ * two numbers are taken off, so a name that itself begins with one survives
+ * (2024-kitchen.jpg). Empty for older claims and for those staff entered.
+ */
+export function photosNeverArrived(c: Pick<ClaimToSend, "photos_sent" | "photo_paths">): string[] {
+  const stored = new Map<string, number>();
+  for (const path of c.photo_paths ?? []) {
+    const name = String(path).split("/").pop()?.replace(/^\d+-\d+-/, "") ?? "";
+    stored.set(name, (stored.get(name) ?? 0) + 1);
+  }
+  const missing: string[] = [];
+  for (const name of c.photos_sent ?? []) {
+    const n = stored.get(name) ?? 0;
+    if (n > 0) stored.set(name, n - 1);
+    else missing.push(name);
+  }
+  return missing;
+}
+
 /** An internal note: the team sees it, the customer never does. */
 export function claimNoteHtml(c: ClaimToSend): string {
   const parts = [`From the OMS: claim report ${esc(c.ref)}. Triage it at https://www.ordersjkcabinets2you.com/warranty.`];
+  // ⚠ PHOTOS THAT NEVER ARRIVED (feature 12). Stored after the answer, a photo
+  // can be lost -- Storage failing every attempt, or a restart mid-upload. Then
+  // support asks the customer (Garrett, 2026-11-04).
+  const missing = photosNeverArrived(c);
+  if (missing.length > 0) {
+    parts.push(`⚠ ${missing.length === 1 ? "1 photo" : `${missing.length} photos`} the customer sent never arrived: ${missing.map(esc).join(", ")}. Ask the customer to send ${missing.length === 1 ? "it" : "them"} again, and tell them ${missing.length === 1 ? "it was" : "they were"} lost on our side.`);
+  }
   if (c.source === "email") {
     parts.push(`Entered from this email by ${esc(c.entered_by ?? "a team member")}. Its report date is when this email arrived, as entered.`);
   }
