@@ -29,15 +29,13 @@ item 5 turned out bigger, with a plan. Read §6 before §4.
 
 **The box** (`5.78.220.153`, `~/cabinet-orders`, `main`):
 
-- ⚠ **AS OF FEATURE 11 PART 2's COMMIT:** `HEAD` is *"Feature 11, part 2: the consent record -- the Refund Policy's date and the checkout's IP and browser, written and shown"*,
-  `HEAD~1` *"Feature 11, part 1: the consent record's three columns (migration, ran 2026-11-03); the GHCR token's new expiry"*, `HEAD~2` `8ad39a9` (the §6 docs commit), `HEAD~3`
-  `e936001` (the commit that added this file). **The next chain checks:
-  `HEAD`'s subject is part 2's, tree clean.**
-- ⚠ **THE RUNNING IMAGE IS PART 2's COMMIT** from its deploy (part 1 was docs
-  and a migration copy, never deployed), so the image check (`docker ps … |
-  grep -qF "$(git rev-parse HEAD)"`) reads DEPLOYED against it. A later
-  docs-only commit reads **MISMATCH** until the next deploy — by design, not a
-  fault (`git log --oneline -3`).
+- ⚠ **AS OF THE 2026-11-04 DOCS COMMIT (§7):** `HEAD~1` is `8f1522d`, feature
+  11 part 2 (deployed 2026-11-03), `HEAD~2` feature 11 part 1, `HEAD~3`
+  `8ad39a9`. **The next chain checks: `HEAD~1` = `8f1522d`, tree clean.**
+- ⚠ **THE RUNNING IMAGE IS `8f1522d`** (feature 11 part 2). Against this docs
+  `HEAD` the image check (`docker ps … | grep -qF "$(git rev-parse HEAD)"`)
+  reads **MISMATCH** until the next deploy — by design, not a fault. Check it
+  against `8f1522d` (`git log --oneline -3`).
 - `git log --oneline 0fcc615..HEAD` lists every commit since the 10-29 review
   (§2).
 
@@ -328,6 +326,13 @@ docs.
 - **(5) After the deploy:** a test order through the cart and one through the
   Kitchen designer (its invoice checkout still unseen), each checked on Full
   Order; then the as-built docs commit.
+  ✅ **LIVE-TESTED 2026-11-04** (Garrett): SHO-1075 (cart) and SHO-1076 (Kitchen
+  designer) each show the Refund Policy date, the checkout IP and the browser
+  on Full Order — Shopify records `client_details` on the invoice checkout too.
+  The update path is proven in the harness only (#1071–#1074 were deleted in
+  cleanup); the next Shopify update to SHO-1075 or SHO-1076 runs it live. Seen
+  on screen: the browser string breaks mid-word (`break-all`) — `break-words`
+  rides with feature 12 (§7.3).
 
 ### 6.3 Item 5 — bigger than §4 says; a plan PROPOSED, not yet decided
 
@@ -366,5 +371,96 @@ docs.
   48-hour sentence, and sent only at the last line it could reach a customer
   after their first line's 48 hours had passed; a line of a mixed order then
   needs approved wording.
-- **`phase1-harness.tar.gz` was not uploaded this session** — every code
-  change needs it.
+- ~~**`phase1-harness.tar.gz` was not uploaded this session**~~ — uploaded later
+  the same session, and used for feature 11 part 2. Its `prod_base.sql`
+  `projects` matched production's 2026-11-03 probe exactly.
+
+## 7. 2026-11-04 — the Turnstile check, the forms' slow uploads, feature 12
+
+### 7.1 Turnstile (the website team's note, 2026-11-03)
+
+Cloudflare's dashboard said siteverify was not called for the quote and claims
+widgets. **Checked, nothing changed.** Both endpoints call siteverify on every
+submission before anything is stored, each with its own secret (the quote form
+`TURNSTILE_SECRET_KEY`; the claims form `TURNSTILE_CLAIMS_SECRET_KEY`, and also
+the action `claim` and the storefront's hostnames), refuse anything short of
+success with 403 `turnstile_failed`, and refuse everything (503) when a secret
+is missing (`lib/turnstile`). In production (`turnstile-config-check.js`, sha256
+`98339317…`, read-only): both secrets set, different, a production key's shape,
+and known to Cloudflare (a junk token answered `invalid-input-response`).
+Stored submissions (`turnstile-submissions.sql`): no quote in 30 days, the last
+claim 2026-10-14 — the website team's third possibility, nothing submitted
+while the dashboard looked. Their test on 2026-11-04 passed Turnstile on both.
+
+### 7.2 The forms' slow uploads (the website team's note, 2026-11-04)
+
+Their first submission on each form answered 504 after ~30 s; the retry
+succeeded. **Found** with read-only checks (`submission-timing.sh`,
+`network-timing-check.js`, `db-statement-timing.sql`, `attachment-failures.sql`,
+`submissions-last-2-days.sql`) and `upload-timing-check.sh` (which WROTE scratch
+files to `claim-photos/_network-test/` and deleted each):
+- **The 504 is kamal-proxy's**, at its default 30 s response timeout
+  (`config/deploy.yml` sets none). Nothing sleeps.
+- **The slow step is the file upload to Supabase Storage.** Each row was saved
+  ~2 s in; a 100 KB upload then took 24 s, or hung — the quote's ended in
+  "Gateway Timeout" from Supabase's own gateway, 61 s in. The upload test:
+  0.4–12.5 s at random, from the container AND from the host; MTU 1500
+  throughout; DNS, connections, small requests (136–672 ms) and Postgres's
+  statements (milliseconds) all fine. Supabase posted **"Storage issues in
+  us-east-1"** — 5XX errors, degraded performance — at 18:43 UTC (11:43 AM
+  Arizona) the same day.
+- **What it cost:** the first attempts' files were lost (QUO-1793816226246, 0
+  files; CR-1016, 0 photos, yet a Help Scout conversation), and CR-1017, the
+  retry, was a second claim. ⚠ The quote form did NOT save twice: its retry was
+  answered as the same submission by `submission_id`
+  (`orders_submission_id_unique`, 2026-09-24).
+- **Cleaned up by Garrett, 2026-11-04:** QUO-1793816226246 deleted in the OMS;
+  CR-1016 and CR-1017 by `delete-test-claims-2026-11-04.sql` (guarded — it
+  deletes only if exactly those two match); their Help Scout conversations
+  deleted. The storage sweep removes what was left in Storage after a day.
+
+### 7.3 Feature 12 — the public forms answer within seconds, and never save twice (AGREED)
+
+**Garrett, 2026-11-04:** *"I support all fixes and the trade off is fine for the
+first point. If images are lost, especially for warranty items the support team
+can reach out directly though helpscout to gather images and inform that they
+were dropped. This isnt a big deal and would be very rare to begin with. The
+main thing is that the form come through and isn't duplicated by a person
+clicking the submit button 20 times because its taking to long."*
+
+1. **Answer once the submission is saved; store the files after the answer.**
+   Both forms: the row (about 2 s), the answer with its reference, then the
+   files on the long-lived server, each upload retried (three attempts, each
+   capped below Supabase's own 60 s, a pause between). A file still not
+   stored: the quote's trail says so (as now); a claim's Help Scout
+   conversation names the photos that never arrived. ⚠ A restart mid-upload (a
+   deploy) loses those files — ACCEPTED: support asks the customer.
+   - **A claim and Help Scout:** the claim is saved ALREADY LEASED to the route
+     (`helpscout_leased_at` now; `claim_helpscout_lease` skips a lease under 10
+     minutes), so the retry job cannot send it before its photos; the photos
+     stored, the lease released, then sent. After a restart the lease expires
+     and the retry job sends it.
+   - **The photos a claim was sent** are recorded when it is saved (a new
+     column), so whichever sender reaches Help Scout can name the ones that
+     never arrived.
+2. **Every answer comes from the app, with CORS, before the gateway's 30 s:** a
+   time limit on each step before the answer (the rate limit, siteverify — 8 s
+   already — the save); a save that runs too long answers "try again", and the
+   retry is the same submission (3). A catch-all answers anything unexpected,
+   with CORS.
+3. **Never saved twice:** the claims form's `submission_id` (the website team is
+   adding it; the quote form has it) — a column and a partial unique index (the
+   migration), a repeat answered 201 with the reference already issued
+   (`duplicate: true`). Twenty at once: one row, twenty answers with one
+   reference — the unique index decides the race, the losers read the winner's
+   reference. The quote route answers its own race (23505 at the insert) the
+   same way, not with a 500.
+4. **With it:** the consent row's browser string wraps at spaces (§6.2).
+
+**The build:** (1) `f12-forms-probe.sql` — production's `claim_submissions`
+and the quote's unique index (sha256 `2f5e93ad…`; the repo's
+`claim_helpscout_lease` body md5 is `e8fc6d77…`, to compare); (2) the
+migration, proven over the transcribed base; (3) the two routes,
+`lib/claimIntake` and `lib/claimHelpScout`, proven against the deployed code:
+a Storage stand-in that stalls, and twenty simultaneous submissions with one
+`submission_id`; (4) the docs, OPERATIONS's kamal-proxy note among them.
