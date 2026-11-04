@@ -1,6 +1,9 @@
 # Start here — session handoff, 2026-11-03
 
-⚠ **THE START POINT.** Supersedes `SESSION-HANDOFF-2026-11-02.md` and
+⚠ **SUPERSEDED AS THE START POINT by `SESSION-HANDOFF-2026-11-04.md`** (2026-11-04).
+This file stays the RECORD of the 2026-11-03/04 session — §6 and §7 above all.
+
+⚠ **THE START POINT** (until 2026-11-04). Supersedes `SESSION-HANDOFF-2026-11-02.md` and
 `SESSION-HANDOFF-2026-10-29.md` as where a session starts; both stay the
 RECORDS of what they cover, and this file points into them rather than copying
 them. Everything since the 10-29 docs review is built, deployed and tested live
@@ -412,6 +415,48 @@ attributes, a line's date and the tags JK Order, New, HCI Order, vip):
 - typecheck: the trees' error sets identical; a planted error seen in each of
   the three files.
 **Next:** part 2, the catalogue sync on GraphQL.
+
+**Part 2, the design — AGREED, to build next session.** Garrett, 2026-11-04:
+*"That sounds good. I mainly want to make sure that the oms is UpToDate without
+manual intervention. Should pull its truth from shopify and update based on
+what actually live."* and *"I think once a day at a quite hour is best."* The
+principle: **Shopify's own answer is the truth; an event is only the signal to
+read it.**
+- **Found first** (`catalogue-read-timing.js`, read-only, sha256 `7472f9eb…`):
+  REST 2024-01 (the Sync now) read 131 products and **2,537** variants in 5.2 s,
+  one product capped at exactly 100; GraphQL read the same 131 products and
+  **2,622** variants in 3.8 s (14 pages of 200, 42 points a page of ~1,800, 100
+  a second restored, no throttling), the largest product **175** — **85
+  variants today's sync never sees**. The table's current rows (2,537) mirror
+  REST's view. Its 442 removed rows all have no product id: older rows, marked
+  by full syncs, not by the webhook.
+- **(a) The full sync over GraphQL:** `productVariants`, 200 a page by cursor,
+  read whole before anything is written, as now; a throttled answer waits and
+  retries (capped), and the page cap stays. The same row per variant (id;
+  title, with the variant's name when the product has more than one; SKU;
+  vendor; price; stock; product id; removed cleared; colour). `colorOptionOf`
+  is handed the REST shape built from GraphQL's options, so it stays unchanged
+  and shared with the webhook. Then item 59's marking and item 60's judging,
+  as now. Synchronous (about 4 s); the admin page unchanged.
+- **(b) The product webhook reads that product's variants from Shopify over
+  GraphQL** — all of them, paged — instead of the payload, which is REST-shaped
+  and likely stops at 100: otherwise each update to the 175-variant product
+  would mark (a)'s corrected variants removed again. A failed read marks
+  nothing removed and answers 500, so Shopify resends.
+- **(c) The full sync daily at 10:00 UTC (3 AM Arizona)** — after the Avis sync
+  (07:30) and production-complete (08:00), before cabinet-fulfilment (15:00),
+  whose vendor lookups read the catalogue; clear of webhook-health's :20. A
+  cron route under `CRON_SECRET` like the others, its `scripts/cron/` script
+  and crontab line, and a healthchecks check with both integrations (Garrett
+  creates it; its ping URL goes into `~/cron-jobs/healthchecks.map`, on the box
+  only).
+- ⚠ **The first sync corrects the table:** up to 85 variants back from removed
+  or new, and a colour item 60 marked discontinued only because its variants
+  were hidden may come back current. The admin page's removed count falls.
+- **Proof:** the sync route in both trees against a stand-in catalogue holding
+  a product of more than 100 variants — the deployed code marks the hidden
+  ones removed, part 2 keeps them current, every other row identical; the
+  webhook's product path the same way; the cron route's auth and its ping.
 
 ### 6.4 Still open from this session
 
