@@ -29,9 +29,10 @@ item 5 turned out bigger, with a plan. Read §6 before §4.
 
 **The box** (`5.78.220.153`, `~/cabinet-orders`, `main`):
 
-- ⚠ **AS OF THE 2026-11-04 DOCS COMMIT (§7):** `HEAD~1` is `8f1522d`, feature
-  11 part 2 (deployed 2026-11-03), `HEAD~2` feature 11 part 1, `HEAD~3`
-  `8ad39a9`. **The next chain checks: `HEAD~1` = `8f1522d`, tree clean.**
+- ⚠ **AS OF THE §7.4 COMMIT (the claims-table incident, 2026-11-04):** `HEAD~1`
+  is `d5962aa` (the 2026-11-04 docs commit), `HEAD~2` `8f1522d` (feature 11 part
+  2, deployed), `HEAD~3` `6674d44` (feature 11 part 1). **The next chain checks:
+  `HEAD~1` = `d5962aa`, tree clean.**
 - ⚠ **THE RUNNING IMAGE IS `8f1522d`** (feature 11 part 2). Against this docs
   `HEAD` the image check (`docker ps … | grep -qF "$(git rev-parse HEAD)"`)
   reads **MISMATCH** until the next deploy — by design, not a fault. Check it
@@ -464,3 +465,61 @@ migration, proven over the transcribed base; (3) the two routes,
 `lib/claimIntake` and `lib/claimHelpScout`, proven against the deployed code:
 a Storage stand-in that stalls, and twenty simultaneous submissions with one
 `submission_id`; (4) the docs, OPERATIONS's kamal-proxy note among them.
+
+### 7.4 ⚠ The claims table, dropped and repaired (2026-11-04) — an incident
+
+**What happened.** `prod_base_claims.sql` — a HARNESS file: production's
+`claim_submissions` transcribed for the sandbox's test database, its first
+statement `drop table if exists public.claim_submissions cascade` — was handed
+over beside the feature 12 migration, under the same hash file, and run in
+production's SQL editor after the migration. It replaced the table with an
+empty copy: the five claims' rows, the migration's two columns and, by
+CASCADE, `claim_helpscout_lease` (its result is the table's row type) were
+gone, and numbering would have restarted at CR-1001. Nothing else: the other
+nine claim functions name the table only in their bodies. **The fault was the
+handover, not the run:** the file should never have left the sandbox.
+Garrett: *"Nothing needs restoring site isn't live yet, all claims and orders
+are tests"* — so no rows were restored.
+
+**Found** by `claims-table-check.sql` (read-only, sha256 `0861647e…`): 0 rows,
+34 columns, no lease function, numbering unused.
+
+**Repaired** by `claims-table-repair-2026-11-04.sql` (sha256 `bec31b69…`), one
+transaction: numbering after CR-1017, the highest reference issued (the next
+is CR-1018); the lease function as 2026-10-05 wrote it, with its grants; the
+table's eight comments, verbatim from their migrations; feature 12's columns,
+checks and index, verbatim. **Proven:** the claims table built by its own
+migrations in production's order (its columns identical to the probe), the
+incident reproduced on it, the repair run twice — the table's 72-line
+description identical to the original's, and a planted change seen. **In
+production:** its check `36 · 2 · 1 · service_role · 10 · CR-1018 · 9`, then
+`claims-table-check.sql`: 0 rows, 36 columns, both checks, the lease function,
+numbering at 1017, 2 photos in Storage — test photos, which the storage sweep
+removes.
+
+**The rules it leaves:**
+- ⚠ **A HARNESS FILE NEVER LEAVES THE SANDBOX LOOSE.** It travels only inside the
+  harness archive, which is uploaded at a session's start and never opened
+  outside the sandbox — never as a download of its own, never beside a
+  deliverable, never under a deliverable's hash file. Only what Garrett is to
+  run is handed over, each step with its full commands, the hash check
+  included; anything shown that is not for him to run says so.
+- ⚠ **Every harness database file refuses to run outside the sandbox:** its first
+  statement raises unless `hx.sandbox` is `on`, which only `hx/fresh.sh` sets on
+  the databases it makes. Proven: on a database that is not the sandbox's —
+  run plainly, or as ONE multi-statement query, as Supabase's SQL editor sends
+  it — it stops there and the table stays as it was (3 rows, 1 column); with
+  the setting, the same file replaces it.
+- **A function's fingerprint normalises line endings.** Production's
+  `claim_helpscout_lease` differed from the repo's only by CRLF (pasted from
+  the PC): fingerprint `md5(replace(prosrc, E'\r', ''))`.
+- **Same-day migrations ran in production in the other order** (the screening
+  value before Help Scout on 10-05; claiming before emailed claims on 10-06):
+  production's column order is the probe's, not the file names'. A base built
+  from the migrations follows production's order.
+
+**The migration file** `2026-11-04-claim-submission-id.sql` (sha256
+`38627940…`) joins `migrations/` with this commit: it ran in production on
+2026-11-04 (its check `2 · 1 · 2 · 5 · 5`), was lost with the table, and was
+re-applied verbatim by the repair. **Next:** feature 12's code (§7.3), its
+build steps (3) and (4).
