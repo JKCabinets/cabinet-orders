@@ -29,13 +29,13 @@ item 5 turned out bigger, with a plan. Read §6 before §4.
 
 **The box** (`5.78.220.153`, `~/cabinet-orders`, `main`):
 
-- ⚠ **AS OF FEATURE 12's COMMIT (2026-11-04):** `HEAD` is *"Feature 12: the public forms answer within seconds and never save twice"*, `HEAD~1`
-  *"Docs: the claims-table incident, its repair and its rules (2026-11-04); the feature 12 migration as it ran"*, `HEAD~2` `d5962aa`. **The next chain checks: `HEAD`'s subject is
-  feature 12's, tree clean.**
-- ⚠ **THE RUNNING IMAGE IS FEATURE 12's COMMIT** from its deploy, so the image
-  check (`docker ps … | grep -qF "$(git rev-parse HEAD)"`) reads DEPLOYED
-  against it; a later docs-only commit reads **MISMATCH** until the next deploy
-  — by design, not a fault (`git log --oneline -3`).
+- ⚠ **AS OF THE ITEM 5 DESIGN COMMIT (§6.3, 2026-11-04):** `HEAD~1` is
+  `245032a`, feature 12 (deployed). **The next chain checks: `HEAD~1` =
+  `245032a`, tree clean.**
+- ⚠ **THE RUNNING IMAGE IS `245032a`** (feature 12). Against this docs `HEAD`
+  the image check (`docker ps … | grep -qF "$(git rev-parse HEAD)"`) reads
+  **MISMATCH** until the next deploy — by design, not a fault. Check it against
+  `245032a` (`git log --oneline -3`).
 - `git log --oneline 0fcc615..HEAD` lists every commit since the 10-29 review
   (§2).
 
@@ -334,7 +334,7 @@ docs.
   on screen: the browser string breaks mid-word (`break-all`) — `break-words`
   rides with feature 12 (§7.3).
 
-### 6.3 Item 5 — bigger than §4 says; a plan PROPOSED, not yet decided
+### 6.3 Item 5 — bigger than §4 says; the plan AGREED (2026-11-04)
 
 - **REST `2024-01` is in FOUR files:** `lib/shopifyStageSync`, the order
   route's `syncToShopify`, **`app/api/shopify/sync`** (the catalogue sync,
@@ -362,6 +362,36 @@ docs.
   setting decides it is to confirm first; either way, moving it moves the
   payloads the webhook handler reads, so it is a step of its own, the handler
   read against the new version's payload. Item 67's comment fix with it.
+
+**AGREED — Garrett, 2026-11-04:** *"Lets do item 5"*, then, to the four parts in
+that order with the backfill and its button deleted in part 3: *"Yes, looks
+good, lets proceed."* Each part is its own commit and deploy, part 1 first —
+it removes the hazard that can erase an order's Additional details.
+
+**Part 1, the design: one guarded write for both order writers.**
+- **`lib/shopifyOrderWrite.ts`** (new): `writeOrderToShopify(shopifyId, { set,
+  remove, note?, stage? })`, over GraphQL (`shopifyGraphql`, `lib/shopify`'s
+  version), `{ ok }` or `{ ok: false, error }`:
+  1. **read** the order's `customAttributes` and `tags`. ⚠ **If the read fails,
+     NOTHING is written** — not the attributes, not the note, not the tags —
+     and the error says so;
+  2. the attributes **merged**: the list read, `set`'s keys set, `remove`'s
+     removed; written with `orderUpdate`, with `note` when given. (`orderUpdate`
+     replaces the whole list too, so the read stays.) Its `userErrors` refuse;
+  3. **the stage tag**, when `stage` is given: `tagsRemove` the other stage
+     names found in the tags read (case-insensitively, as `mergeTags` does),
+     then `tagsAdd` "JK Order" and the stage. No other tag is touched.
+- **`syncStageToShopify`** (`lib/shopifyStageSync`; production-complete calls it)
+  and **the order route's `syncToShopify`** keep their signatures and their
+  results; their insides become one call. What each sets is unchanged: the
+  stage writer "Production Stage"; the order route the stage, the three dates,
+  the delivery window and notes, each line's two entries (removed when empty),
+  the note. REST `2024-01` leaves both. `mergeTags` goes when nothing calls it.
+- **Proof:** both writers in both trees against a Shopify stand-in (REST for the
+  deployed code, GraphQL for part 1): the normal write, the same attributes and
+  tags in both; ⚠ **a failed read — the deployed code erases the consent
+  attributes, part 1 keeps them**; another tag untouched; a line's entry
+  removed; a refused `orderUpdate` reported.
 
 ### 6.4 Still open from this session
 
