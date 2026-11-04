@@ -424,7 +424,8 @@ principle: **Shopify's own answer is the truth; an event is only the signal to
 read it.**
 - **Found first** (`catalogue-read-timing.js`, read-only, sha256 `7472f9eb…`):
   REST 2024-01 (the Sync now) read 131 products and **2,537** variants in 5.2 s,
-  one product capped at exactly 100; GraphQL read the same 131 products and
+  one product capped at exactly 100 (⚠ CORRECTED: three are at 100 — "Part
+  2, settled before the build" below); GraphQL read the same 131 products and
   **2,622** variants in 3.8 s (14 pages of 200, 42 points a page of ~1,800, 100
   a second restored, no throttling), the largest product **175** — **85
   variants today's sync never sees**. The table's current rows (2,537) mirror
@@ -457,6 +458,126 @@ read it.**
   a product of more than 100 variants — the deployed code marks the hidden
   ones removed, part 2 keeps them current, every other row identical; the
   webhook's product path the same way; the cron route's auth and its ping.
+
+**Part 2, settled before the build (2026-11-04, the next session)** — read
+whole, checked, probed and ruled on before any code; committed as *"Docs: item
+5 part 2 settled before the build (2026-11-04)"*.
+- **Read whole first:** the sync route, the webhook route (all 1,148 lines), the
+  webhooks route, `lib/shopify`, `lib/shopifyColor`, `lib/cronAuth`, both Avis
+  sync routes and `lib/runAvisSync`, `scripts/cron/crontab` and `run-cron.sh`,
+  `app/admin/shopify`, both 2026-10-28 catalogue migrations, `proxy.ts`, both
+  health routes, `lib/webhookLog` and the `webhook_events` migration. Found:
+  - **No migration.** Every column the rows write exists, neither function
+    changes, and `webhook_events.outcome` has no CHECK (production's, by the
+    probe below), so the three new outcomes need nothing.
+  - **The cron route is `/api/cron/sync-shopify-catalog`.** `proxy.ts` already
+    passes `/api/cron/*`, and the route guards itself with `verifyCronAuth`.
+    `run-cron.sh` takes any endpoint, so (c)'s "script" is the existing one:
+    the job is a crontab line and a `healthchecks.map` entry (on the box only).
+    About 4 s fits kamal-proxy's 30 s and `run-cron.sh`'s 60 s.
+  - ⚠ **A second place (c) did not name:** the dashboard's health panel
+    (`app/api/health-summary`) groups checks BY NAME; an unlisted check reads
+    "Other checks · Not yet grouped".
+  - **One row, two copies:** the sync route and the webhook each build the same
+    `shopify_products` row.
+  - **Only `PRODUCTS_UPDATE` is subscribed:** a product deleted in Shopify is
+    marked removed only by a full sync, which (c) makes daily.
+  - Left unchanged, as agreed: the admin page shows nothing when a sync fails
+    (`if (data.ok)`, an empty `catch`).
+- **Shopify's webhook policy, checked 2026-11-04** (shopify.dev, "Troubleshoot
+  webhooks" and the changelog "Updates to webhook retry mechanism"): a delivery
+  not answered with a 2xx within **five seconds** fails; a failed one is retried
+  **8 times over 4 hours**, backing off; if failures persist the subscription is
+  **removed** (the page gives no exact threshold). Ours are shop-specific
+  (`webhookSubscriptionCreate`), so a removed one stays removed until the
+  webhooks route's POST creates it again. A retry carries the ORIGINAL payload,
+  which reading Shopify's own answer (b) makes harmless.
+- **Production's `shopify_products`, probed** (`item5p2-catalogue-probe.sql`,
+  read-only, one row, sha256 `59d3fb15…`; outputs): 12 columns — ⚠ `vendor` is
+  `NOT NULL DEFAULT ''`, which no repo file says, and `title` and `sku` are `NOT
+  NULL` (GraphQL's `sku` can be null: it is written `""`, as REST's code does);
+  the primary key and the product index only; RLS with `no_direct_access`
+  (`false`), so only `service_role` reaches it; no triggers; not published. Both
+  functions are the repo's (`shopify_mark_removed` `9eb904e9…`,
+  `sku_judge_discontinued` `9cd990c1…`, line endings normalised), with the
+  repo's grants. `webhook_events`: its primary key only. Rows: 2,979 = 2,537
+  current + 442 removed; every id numeric and equal to its `variant_id`; every
+  current row has a `product_id`. Transcribed as the harness's
+  `prod_base_catalogue.sql`, on which the probe reads identically in all nine
+  schema sections (a planted difference seen).
+- ⚠ **What the counts corrected:**
+  - **Three products are at exactly 100 current variants**, not one ("Found
+    first" above said one). 2,622 − 2,537 = 85, and a 175-variant product alone
+    hides 75: at least two are capped. The design stands — GraphQL reads them
+    all — and a read-only check before the deploy reads the three in Shopify.
+  - **No full sync has run since item 60's deploy.** 1,117 current rows have no
+    `options_at`, which every write since item 60 sets; the 1,420 that have it
+    came from product webhooks (not a multiple of 100, so not a sync cut short).
+    `sku_judge_discontinued` judges HCI only once EVERY current HCI row has its
+    options, and no colour is discontinued today — so **part 2's first run is
+    likely item 60's first HCI judgement**: some HCI colours may be marked
+    discontinued for the first time, on the whole catalogue, not only restored
+    as the note above expects.
+  - ⚠ **Until part 2 is deployed, "Sync SKUs" stays unpressed.** A REST sync
+    would make that first judgement on the capped view, and could discontinue a
+    colour whose only variants REST hides — reversible, but greyed out on the
+    Mappings page and in the specs panel until a later sync restored it.
+  - Four current variants have no SKU, and "JK Cabinets 2 You" has four current
+    variants — probably the samples; the pre-deploy check settles it, with the
+    1,117's vendors.
+- **Garrett's rulings, 2026-11-04, in his words:**
+  - **A product Shopify says does not exist** — proposed in the session and
+    ruled by Garrett, a decision in its own right rather than one read off the
+    principle: *"yes, with a log line. A product Shopify says doesn't exist is
+    Shopify's answer, so marking its variants removed and answering 200 follows
+    the principle. It's also safe to be wrong about, because marking removed is
+    reversible: the rows stay for past orders, and if the product reappears,
+    the next daily sync clears it. I'd log it to `webhook_events` as its own
+    outcome, so a disappearance is visible rather than silent."* Outcome
+    `product_gone`. A small behaviour change: today's webhook has no such path.
+  - **A product answered with no variants:** *"right to distrust it, but answer
+    200, not 500. A 500 asks Shopify to resend, which only helps a failure that
+    passes: a timeout, a 5xx, a throttled read. A well-formed answer with no
+    variants would come back the same on every resend."* and *"So: mark nothing,
+    log it as its own outcome, answer 200, and let the daily sync settle it from
+    the full catalogue."* Outcome `product_no_variants`. ⚠ **The rule it sets: a
+    500 only for a failure that can pass** — persistent failures can remove the
+    subscription.
+  - **A failed read** (a time-out, a 5xx, a throttled answer, an error): nothing
+    written, a 500, and — proposed and agreed (*"Yes"*) — its own outcome,
+    `product_read_failed`, so a run of them shows before Shopify removes the
+    subscription.
+  - **The build:** *"agreed, all three. One module behind both the button and
+    the cron, one row builder instead of two, and numeric ids. The numeric ids
+    are the catch that matters most: with `gid://` ids, the first run would mark
+    the entire catalogue removed."*
+  - **The five seconds:** *"The roughly five-second limit covers the whole
+    handler, not just the read. The upsert and the two database calls follow
+    it. So cap the read well inside the limit, around three seconds, and treat
+    a read that runs out of time as a failed read: a 500, which is right there
+    because it's transient."*
+  - **Paging:** *"Page past 250 variants within that cap. Shopify allows a
+    product up to 2,048, and the largest here is already 175."* ⚠ Found writing
+    this record: a product too large to read inside the cap would fail on every
+    resend, which is not transient; `product_read_failed` shows it, and the
+    daily sync still reads that product whole.
+  - **The proof:** *"rows written by the deployed sync are matched exactly by
+    part 2's, and nothing is marked removed except the variants REST was
+    hiding."*
+  - **The health panel** — proposed and agreed (*"Yes"*): the new check joins
+    the "Catalog sync" row, its detail "Waypoint options and Shopify products",
+    and is named exactly `sync-shopify-catalog`.
+- **The build, in order:** (1) ✅ the probe, above; (2) the code — one module
+  (`lib/shopifyCatalogue`: the read, the row, the run); the sync route's POST
+  and the cron route each one call to it; the webhook's product path reading
+  the product from Shopify; health-summary's row; the crontab line — proven
+  against the deployed code as the control (the proof above, with Garrett's
+  three: the deployed sync's rows matched exactly and only the hidden variants
+  kept current; the three outcomes; a read past its cap a 500, a product past
+  250 paged); (3) read-only checks before the deploy (the three products in
+  Shopify; the 1,117 and the four by vendor); (4) the deploy, then the check
+  created (both integrations) with its `healthchecks.map` line, the crontab
+  installed, and the first run read.
 
 ### 6.4 Still open from this session
 

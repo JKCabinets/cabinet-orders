@@ -19,6 +19,13 @@ built this session is deployed and tested live: feature 11, feature 12 and item
 
 ## 1. Where things stand
 
+⚠ **AS OF ITEM 5 PART 2's DESIGN COMMIT (2026-11-04, the next session):**
+`HEAD` is *"Docs: item 5 part 2 settled before the build (2026-11-04)"*,
+`HEAD~1` `d04a568` (this file's own commit), `HEAD~2` `3dd7d6e`. **The next
+chain checks: `HEAD`'s subject is that one, tree clean.** The running image
+is still `3dd7d6e` (MISMATCH, by design). The paragraph below was true at
+this file's commit.
+
 **The box** (`5.78.220.153`, `~/cabinet-orders`, `main`): after this docs
 commit `HEAD~1` is `3dd7d6e`, item 5 part 1 (deployed). **The next chain
 checks: `HEAD~1` = `3dd7d6e`, tree clean.** ⚠ **The running image is
@@ -102,6 +109,9 @@ pinned patch script; a migration probed, transcribed and proven first.
    the catalogue sync over GraphQL; the product webhook reading Shopify's own
    answer; the sync daily at 10:00 UTC, 3 AM Arizona, with its own
    healthchecks check (Garrett creates it, both integrations).
+   ⚠ **SETTLED FURTHER 2026-11-04** — what reading it whole found, Shopify's
+   webhook policy, production's table probed, and Garrett's rulings: 11-03
+   §6.3, "Part 2, settled before the build". Read it before the code.
 2. **Item 5 parts 3 and 4:** delete the payment-status backfill and its button;
    then one API version constant, the webhooks route's payload version its own
    step (11-03 §6.3). Item 67's comment fixes ride with part 4.
