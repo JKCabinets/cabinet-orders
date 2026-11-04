@@ -1,4 +1,4 @@
-import { getShopifyToken } from "@/lib/shopify";
+import { writeOrderToShopify } from "@/lib/shopifyOrderWrite";
 
 /**
  * shopifyStageSync.ts — push an OMS stage onto the matching Shopify order.
@@ -12,99 +12,28 @@ import { getShopifyToken } from "@/lib/shopify";
  * ⚠ IT WRITES THE STAGE, NOT A FULFILMENT. Marking cabinet lines shipped in
  * Shopify, which is what sends the customer's shipping email, is the daily
  * cabinet-fulfilment run's (lib/shopifyFulfil, 2026-11-02).
- * ⚠ REST 2024-01, a retired version: Shopify answers it with its oldest
- * supported one. Found 2026-10-29; an open item, not changed here.
+ * ⚠ OVER GraphQL SINCE 2026-11-04 (item 5 part 1): lib/shopifyOrderWrite, shared
+ * with the order route. It was REST 2024-01, a retired version.
  *
- * Writes the "Production Stage" note attribute and merges the stage into the
- * order's tags. Both are merges, never replacements — see mergeTags.
+ * Writes the "Production Stage" attribute and merges the stage into the
+ * order's tags. Both are merges, never replacements.
  *
  * Returns whether Shopify actually accepted the write, so callers can record
  * the truth rather than assuming success.
  */
 
 /**
- * The OMS stage names. Any of these already on the order is the PREVIOUS
- * stage tag and gets replaced, so stages do not pile up over an order's life.
- */
-const STAGE_TAGS = ["New", "Entered", "In production", "At cross dock", "Delivered"];
-
-/**
- * Merge our tags into whatever the order already carries.
+ * Writes "Production Stage" and moves the stage tag -- through
+ * writeOrderToShopify (2026-11-04, item 5 part 1), which reads the order first
+ * and writes NOTHING if it cannot. The REST 2024-01 read-and-PUT that erased an
+ * order's Additional details on a failed read is gone, and mergeTags with it:
+ * its rule lives on in the writer's tag step.
  *
- * Shopify's PUT replaces the entire tag list, so anything omitted here is
- * destroyed — including the vendor tags the team relies on. Keep every tag we
- * do not own, drop the stale stage tag, and add the current one.
+ * Answers whether Shopify accepted the write; a refusal is logged.
  */
-export function mergeTags(existing: string, stage: string): string {
-  const stageNames = new Set(STAGE_TAGS.map(s => s.toLowerCase()));
-  const seen = new Set<string>();
-  const kept: string[] = [];
-  for (const raw of (existing ?? "").split(",")) {
-    const t = raw.trim();
-    if (!t) continue;
-    const l = t.toLowerCase();
-    if (stageNames.has(l)) continue;   // previous stage — replaced below
-    if (l === "jk order") continue;    // re-added below, in a fixed position
-    if (seen.has(l)) continue;         // de-duplicate
-    seen.add(l);
-    kept.push(t);
-  }
-  return ["JK Order", stage, ...kept].join(", ");
-}
-
 export async function syncStageToShopify(shopifyId: string, stage: string): Promise<boolean> {
-  const domain = process.env.SHOPIFY_STORE_DOMAIN;
-  if (!domain || !shopifyId) return false;
-
-  // Defense against SSRF via misconfigured env / order corruption
-  if (!/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/i.test(domain)) return false;
-  if (!/^\d+$/.test(shopifyId)) return false;
-
-  let token: string;
-  try { token = await getShopifyToken(); } catch { return false; }
-
-  let currentAttributes: { name: string; value: string }[] = [];
-  // null means we could NOT read the tags. In that case we leave them alone
-  // rather than risk replacing a list we never saw.
-  let currentTags: string | null = null;
-  try {
-    const getRes = await fetch(
-      `https://${domain}/admin/api/2024-01/orders/${shopifyId}.json?fields=note_attributes,tags`,
-      { headers: { "X-Shopify-Access-Token": token } }
-    );
-    if (getRes.ok) {
-      const j = await getRes.json();
-      currentAttributes = j.order?.note_attributes ?? [];
-      currentTags = typeof j.order?.tags === "string" ? j.order.tags : "";
-    }
-  } catch {}
-
-  const attrMap = new Map(currentAttributes.map((a: { name: string; value: string }) => [a.name, a.value]));
-  attrMap.set("Production Stage", stage);
-
-  const orderPayload: Record<string, unknown> = {
-    id: shopifyId,
-    note_attributes: Array.from(attrMap.entries()).map(([name, value]) => ({ name, value })),
-  };
-  // Only touch tags when we actually read them.
-  if (currentTags !== null) {
-    orderPayload.tags = mergeTags(currentTags, stage);
-  }
-
-  try {
-    const res = await fetch(
-      `https://${domain}/admin/api/2024-01/orders/${shopifyId}.json`,
-      {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Shopify-Access-Token": token,
-        },
-        body: JSON.stringify({ order: orderPayload }),
-      }
-    );
-    return res.ok;
-  } catch {
-    return false;
-  }
+  if (!shopifyId) return false;
+  const r = await writeOrderToShopify(shopifyId, { set: { "Production Stage": stage }, stage });
+  if (!r.ok) console.error(`[shopify] stage "${stage}" not written to order ${shopifyId}: ${r.error}`);
+  return r.ok;
 }

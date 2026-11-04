@@ -29,13 +29,13 @@ item 5 turned out bigger, with a plan. Read §6 before §4.
 
 **The box** (`5.78.220.153`, `~/cabinet-orders`, `main`):
 
-- ⚠ **AS OF THE ITEM 5 DESIGN COMMIT (§6.3, 2026-11-04):** `HEAD~1` is
-  `245032a`, feature 12 (deployed). **The next chain checks: `HEAD~1` =
-  `245032a`, tree clean.**
-- ⚠ **THE RUNNING IMAGE IS `245032a`** (feature 12). Against this docs `HEAD`
-  the image check (`docker ps … | grep -qF "$(git rev-parse HEAD)"`) reads
-  **MISMATCH** until the next deploy — by design, not a fault. Check it against
-  `245032a` (`git log --oneline -3`).
+- ⚠ **AS OF ITEM 5 PART 1's COMMIT (2026-11-04):** `HEAD` is *"Item 5, part 1: both order writers through one guarded GraphQL write -- nothing written if the order cannot be read"*,
+  `HEAD~1` *"Docs: item 5's plan agreed (2026-11-04); part 1's design"*, `HEAD~2`
+  `245032a` (feature 12). **The next chain checks: `HEAD`'s subject is part
+  1's, tree clean.**
+- ⚠ **THE RUNNING IMAGE IS PART 1's COMMIT** from its deploy, so the image check
+  (`docker ps … | grep -qF "$(git rev-parse HEAD)"`) reads DEPLOYED against it;
+  a later docs-only commit reads **MISMATCH** until the next deploy — by design.
 - `git log --oneline 0fcc615..HEAD` lists every commit since the 10-29 review
   (§2).
 
@@ -392,6 +392,26 @@ it removes the hazard that can erase an order's Additional details.
   tags in both; ⚠ **a failed read — the deployed code erases the consent
   attributes, part 1 keeps them**; another tag untouched; a line's entry
   removed; a refused `orderUpdate` reported.
+
+**Part 1, as built and proven (2026-11-04)** — its own commit, deployed:
+`lib/shopifyOrderWrite.ts` (new) as designed above; `syncStageToShopify` and the
+order route's `syncToShopify` each one call to it, their signatures and answers
+unchanged (the stage writer logs a refusal); `mergeTags`, `getShopifyToken`'s
+use in the route and both REST `2024-01` calls gone. **Proven against the
+deployed code** (both writers in both trees, a Shopify stand-in speaking REST to
+the control and GraphQL to part 1, on an order carrying the five consent
+attributes, a line's date and the tags JK Order, New, HCI Order, vip):
+- **the normal writes** — the stage writer, and the order page's (dates, a
+  line's entries removed and another's set, the note) — leave the SAME order in
+  both trees; tags in odd case (`jk order`, `in production`) end the same too;
+- ⚠ **a failed read:** the deployed code ERASED the consent (0 of 5 left) and
+  answered success (`true`, `{ok: true}`); part 1 KEPT it, wrote nothing, and
+  answered `false` / "Could not read the order in Shopify, so nothing was
+  written";
+- **a refused `orderUpdate`** is reported: "Shopify refused the update: …";
+- typecheck: the trees' error sets identical; a planted error seen in each of
+  the three files.
+**Next:** part 2, the catalogue sync on GraphQL.
 
 ### 6.4 Still open from this session
 

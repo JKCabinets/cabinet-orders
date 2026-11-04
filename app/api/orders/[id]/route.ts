@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, requireOrderClaim, withClaimOverrideLog, type ClaimOverrideLog, cleanInput, rateLimitOr429 } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
-import { getShopifyToken } from "@/lib/shopify";
-import { mergeTags } from "@/lib/shopifyStageSync";
+import { writeOrderToShopify } from "@/lib/shopifyOrderWrite";
 import { ALLOWED_STAGES, isStageAllowedForType, isBackwardsMove, verifyAdminPin, fieldsToClearOnBackwardMove, describeFieldsCleared } from "@/lib/stageGuards";
 import { isPaymentHoldStatus, paymentHoldLabel, paymentRecordOf, parseMoney, isStageOfferedForType, activityDate, shapeStageEvents, type OrderType, type Stage } from "@/lib/data";
 import { purchaseOf, archivedVia, archivedReadOnly } from "@/lib/archived";
@@ -37,89 +36,30 @@ async function syncToShopify(
     lines?: { name: string; production: string | null; target: string | null }[];
   }
 ) {
-  const domain = process.env.SHOPIFY_STORE_DOMAIN;
-  if (!domain || !shopifyId) return { ok: false, error: "Missing env vars" };
-
-  // Defense against SSRF via misconfigured env: only allow myshopify.com domains
-  if (!/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/i.test(domain)) {
-    return { ok: false, error: "Invalid Shopify domain" };
-  }
-  // Defense against shopify_id injection — must be a numeric ID
-  if (!/^\d+$/.test(shopifyId)) {
-    return { ok: false, error: "Invalid Shopify order id" };
-  }
-
-  let token: string;
-  try { token = await getShopifyToken(); }
-  catch (e) { return { ok: false, error: `Token error: ${e}` }; }
-
-  // Fetch current note_attributes from Shopify so we don't overwrite unrelated ones
-  let currentAttributes: { name: string; value: string }[] = [];
-  // null means we could NOT read the tags, in which case we leave them
-  // alone rather than replacing a list we never saw.
-  let currentTags: string | null = null;
-  try {
-    const getRes = await fetch(
-      `https://${domain}/admin/api/2024-01/orders/${shopifyId}.json?fields=note_attributes,tags,note`,
-      { headers: { "X-Shopify-Access-Token": token } }
-    );
-    if (getRes.ok) {
-      const getJson = await getRes.json();
-      currentAttributes = getJson.order?.note_attributes ?? [];
-      currentTags = typeof getJson.order?.tags === "string" ? getJson.order.tags : "";
-    }
-  } catch {}
-
-  const attrMap = new Map(currentAttributes.map((a: { name: string; value: string }) => [a.name, a.value]));
-
-  if (updates.stage !== undefined)
-    attrMap.set("Production Stage", updates.stage);
-  if (updates.production_start_date !== undefined)
-    attrMap.set("Production Start Date", updates.production_start_date ?? "");
-  if (updates.production_est_finish_date !== undefined)
-    attrMap.set("Est. Production Finish", updates.production_est_finish_date ?? "");
-  if (updates.delivery_date !== undefined)
-    attrMap.set("Delivery Date", updates.delivery_date ?? "");
-  if (updates.delivery_window !== undefined)
-    attrMap.set("Delivery Window", updates.delivery_window);
-  if (updates.delivery_notes !== undefined)
-    attrMap.set("Delivery Notes", updates.delivery_notes);
+  // ⚠ THROUGH writeOrderToShopify (2026-11-04, item 5 part 1): the order read
+  // first over GraphQL, and NOTHING written if that read fails. This read over
+  // REST 2024-01 and PUT the whole attribute list back -- after a failed read,
+  // an empty list plus this save's entries, which erased the order's other
+  // Additional details, the customer's consent among them. What is set and
+  // removed below is unchanged; the tags still merge, never replace.
+  const set: Record<string, string> = {};
+  const remove: string[] = [];
+  if (updates.stage !== undefined) set["Production Stage"] = updates.stage;
+  if (updates.production_start_date !== undefined) set["Production Start Date"] = updates.production_start_date ?? "";
+  if (updates.production_est_finish_date !== undefined) set["Est. Production Finish"] = updates.production_est_finish_date ?? "";
+  if (updates.delivery_date !== undefined) set["Delivery Date"] = updates.delivery_date ?? "";
+  if (updates.delivery_window !== undefined) set["Delivery Window"] = updates.delivery_window;
+  if (updates.delivery_notes !== undefined) set["Delivery Notes"] = updates.delivery_notes;
   for (const l of updates.lines ?? []) {
-    if (l.production) attrMap.set(`${l.name} Production`, l.production); else attrMap.delete(`${l.name} Production`);
-    if (l.target) attrMap.set(`${l.name} Delivery Target`, l.target); else attrMap.delete(`${l.name} Delivery Target`);
+    if (l.production) set[`${l.name} Production`] = l.production; else remove.push(`${l.name} Production`);
+    if (l.target) set[`${l.name} Delivery Target`] = l.target; else remove.push(`${l.name} Delivery Target`);
   }
-
-  const note_attributes = Array.from(attrMap.entries()).map(([name, value]) => ({ name, value }));
-
-  const orderPayload: Record<string, unknown> = { id: shopifyId, note_attributes };
-
-  if (updates.notes !== undefined) {
-    orderPayload.note = updates.notes;
-  }
-
-  // Merge, never replace. A bare assignment here discarded the vendor
-  // tags (HCI Order, Waypoint) on every stage change.
-  if (updates.stage !== undefined && currentTags !== null) {
-    orderPayload.tags = mergeTags(currentTags, String(updates.stage));
-  }
-
-  const res = await fetch(
-    `https://${domain}/admin/api/2024-01/orders/${shopifyId}.json`,
-    {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Shopify-Access-Token": token,
-      },
-      body: JSON.stringify({ order: orderPayload }),
-    }
-  );
-
-  if (!res.ok) {
-    const text = await res.text();
-    return { ok: false, error: `Shopify ${res.status}: ${text}` };
-  }
-  return { ok: true };
+  if (!shopifyId) return { ok: false, error: "Missing Shopify order id" };
+  return writeOrderToShopify(shopifyId, {
+    set, remove,
+    ...(updates.notes !== undefined ? { note: updates.notes } : {}),
+    ...(updates.stage !== undefined ? { stage: String(updates.stage) } : {}),
+  });
 }
 
 export async function GET(
