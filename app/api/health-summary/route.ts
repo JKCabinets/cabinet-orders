@@ -31,8 +31,9 @@ import { requireAuth, rateLimitOr429 } from "@/lib/auth";
  *
  * The account carried eleven until 2026-10-20, when Garrett deleted the seven
  * STRAYS -- leftovers from an earlier setup, each with a 365-day period so they
- * reported "up" forever whatever happened (OPERATIONS §12). Six remain, and
- * every one is in a group below.
+ * reported "up" forever whatever happened (OPERATIONS §12). Six remained;
+ * cabinet-fulfilment (2026-11-02) and sync-shopify-catalog (2026-11-04) make
+ * eight, and every one is in a group below.
  *
  * The first version of this panel grouped all eleven. The dashboard then read
  * "Catalog sync · Healthy · 5 checks" when FOUR OF THOSE FIVE could not
@@ -48,10 +49,12 @@ const HEALTH_GROUPS: { key: string; label: string; detail: string; checks: strin
     checks: ["jk-webhook-health"],
   },
   {
+    // 2026-11-04 (item 5 part 2, Garrett): the daily Shopify catalogue sync
+    // joins the Avis one -- both keep a catalogue the OMS decodes and looks up by.
     key: "catalog",
     label: "Catalog sync",
-    detail: "Waypoint option catalogue",
-    checks: ["sync-avis-catalog"],
+    detail: "Waypoint options and Shopify products",
+    checks: ["sync-avis-catalog", "sync-shopify-catalog"],
   },
   {
     key: "jobs",

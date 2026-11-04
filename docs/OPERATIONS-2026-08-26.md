@@ -1,6 +1,12 @@
 # JK Cabinets — Operations & Systems Reference
 
-**As of 2026-09-15, amended through 2026-11-03 (the dated entries below) · supersedes OPERATIONS-2026-08-18.md**
+**As of 2026-09-15, amended through 2026-11-04 (the dated entries below) · supersedes OPERATIONS-2026-08-18.md**
+
+⚠ **AMENDED 2026-11-04 (item 5 part 2, the catalogue from Shopify's own answer).**
+§6: an eighth check, `sync-shopify-catalog`, in the "Catalog sync" row; three
+stale lines corrected. §7: the full catalogue sync, daily at 10:00 UTC. §8: the
+product webhook reads the product from Shopify; Shopify's delivery rules. §10:
+the decision.
 
 ⚠ **AMENDED 2026-11-03 (feature 10, cabinet lines, deployed).** §1/§2: each
 cabinet line of an order has its own acknowledgment (HCI's and J&K's received
@@ -629,9 +635,10 @@ then used live.
 silence its own alarm. Email alerting, verified.
 
 **Alerts reach Teams and email** (2026-10-21). healthchecks.io has two
-integrations, each on all six checks (⚠ SEVEN since 2026-11-02:
-`cabinet-fulfilment` — that its two integrations are attached is NOT YET
-CONFIRMED; a check without them fails silently): **"OMS Health"** — its own Microsoft
+integrations, each on every check — EIGHT from item 5 part 2's deploy:
+`cabinet-fulfilment` since 2026-11-02 (its two integrations CONFIRMED by Garrett
+2026-11-03 — this said "NOT YET CONFIRMED"), `sync-shopify-catalog` since
+2026-11-04; a check without them fails silently: **"OMS Health"** — its own Microsoft
 Teams integration, through a Teams workflow made from the template "Send
 webhook alerts to a channel" and never edited — and **"OMS Health Email"**, to
 garrett@jkcabinets2you.com. A Teams alert is a card naming the check and its
@@ -664,10 +671,15 @@ Teams alerting is live again — see "Alerts reach Teams and email" above.
 `~/cron-jobs/healthchecks.map` keyed `/api/cron/cabinet-fulfilment`; its own
 health row, "Shopify fulfilment". The account held thirteen until 2026-10-20,
 when Garrett deleted the seven strays — each with a 365-day period, so they
-reported "up" forever whatever happened. Six remain, all real.
+reported "up" forever whatever happened. Six remained, all real. ⚠ **EIGHT from
+item 5 part 2's deploy:** `sync-shopify-catalog` (2026-11-04), daily `0 10 * * *`
+UTC; its ping URL keyed `/api/cron/sync-shopify-catalog`; in the "Catalog sync"
+row beside the Avis check (Garrett).
 
 The in-app health panel groups every check into a named row (2026-10-20):
-Shopify ingest, Catalog sync, Scheduled jobs, Claims to Help Scout, and
+Shopify ingest, Catalog sync (the Avis and, since 2026-11-04, the Shopify
+catalogue syncs), Scheduled jobs, Shopify fulfilment (since 2026-11-02 — this
+list lacked it), Claims to Help Scout, and
 **Deploys** (`registry-token`). The list that ignored the seven strays by name
 (`IGNORED_CHECKS`) went with them; a genuinely NEW check, ungrouped, lands in
 "Other checks", as it should.
@@ -675,6 +687,7 @@ Shopify ingest, Catalog sync, Scheduled jobs, Claims to Help Scout, and
 | Check | Watches |
 |---|---|
 | `sync-avis-catalog` | Nightly Avis reconciliation |
+| **`sync-shopify-catalog`** | **The Shopify catalogue** (item 5 part 2, from its deploy) — daily 10:00 UTC; fails when Shopify refuses, is not read whole within 15 s, or answers an id that is not numeric, or the table cannot be written — nothing is written unless the whole catalogue was read |
 | `production-complete` | In production → At cross dock |
 | `teams-digest` | Posts the morning briefing card to Teams — enabled 2026-10-21 |
 | **`jk-webhook-health`** | **Shopify ingestion** — added 2026-08-20; skips cancelled orders since 2026-10-13 |
@@ -729,6 +742,7 @@ the reason — previously `curl -f` discarded it and logged only `error: 500`.
 |---|---|---|---|
 | 07:30 daily | 12:30am | `sync-avis-catalog` | Reconciles the option catalogue. Never writes a SKU code, never deletes, refuses an empty catalogue. |
 | 08:00 daily | 1:00am | `production-complete` | In production → At cross dock once the ship-from-factory date passes. Sole owner of that transition. |
+| 10:00 daily | 3:00am | `sync-shopify-catalog` | Item 5 part 2 (2026-11-04, from its deploy): every variant Shopify has, read whole over GraphQL before anything is written; the rest marked removed, the colours judged — what the admin page's "Sync SKUs" runs. Catches a product deleted in Shopify: no deletion webhook is subscribed. Before cabinet-fulfilment, whose vendor lookups read the catalogue. |
 | 14:00 weekdays | 7:00am | `teams-digest` | Posts the morning briefing card to Teams — see below |
 | **hourly at :20** | | **`webhook-health`** | **Reconciles Shopify's orders against the OMS, both ways** — since 2026-10-19 also every held purchase against Shopify |
 | every 15 min | | `helpscout-sync` | Website claims, and each claim's progress notes, to Help Scout (§6) |
@@ -822,6 +836,17 @@ managed independently and both can deliver the same event.
 The OMS now owns all five subscriptions, created through
 `POST /api/shopify/webhooks` and visible at `GET /api/shopify/webhooks`. That
 endpoint is the only reliable view.
+
+⚠ **A delivery has five seconds** (Shopify's documentation, checked 2026-11-04):
+one not answered with a 2xx in time fails; a failed one is retried 8 times over
+4 hours, each retry carrying the ORIGINAL payload; a subscription whose failures
+persist is removed — ours are shop-specific, so it stays removed until `POST
+/api/shopify/webhooks` creates it again. So the handler answers 500 only for a
+failure that can pass. **`products/update` reads the product from Shopify**
+(item 5 part 2), not its payload, within 3 s: a failed read writes nothing and
+logs `product_read_failed` (500); a product Shopify says does not exist has its
+variants marked removed, `product_gone` (200); one with no variants marks
+nothing, `product_no_variants` (200) — all three in `webhook_events`.
 
 - ⚠ **The shipping confirmation — CORRECTED 2026-10-29.** This said
   "Fulfilment notification: TURNED OFF. The OMS will own everything after the
@@ -1282,6 +1307,13 @@ recovery story.
   "still on schedule?" check the business day before; three staff-confirmed
   Help Scout emails — ship date changed, delivery date changed, delivered.
   "In production" and "delivery confirmed" were dropped as over-informing.
+- **THE CATALOGUE IS SHOPIFY'S OWN ANSWER** (11-04, item 5 part 2; Garrett:
+  "Should pull its truth from shopify and update based on what actually
+  live"): the full sync over GraphQL, daily at 3 a.m. Arizona; the product
+  webhook reads the product — an event is only the signal to read it. REST had
+  hidden 85 variants past each product's hundredth. A product Shopify says is
+  gone has its variants marked removed (reversible); a 500 only for a failure
+  that can pass, since persistent failures remove the subscription.
 
 ---
 

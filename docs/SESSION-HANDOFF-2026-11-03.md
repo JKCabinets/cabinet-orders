@@ -474,7 +474,8 @@ whole, checked, probed and ruled on before any code; committed as *"Docs: item
     passes `/api/cron/*`, and the route guards itself with `verifyCronAuth`.
     `run-cron.sh` takes any endpoint, so (c)'s "script" is the existing one:
     the job is a crontab line and a `healthchecks.map` entry (on the box only).
-    About 4 s fits kamal-proxy's 30 s and `run-cron.sh`'s 60 s.
+    About 4 s fits kamal-proxy's 30 s and `run-cron.sh`'s 60 s. (⚠ 7.7 s measured
+    in production, a token per call: "Part 2, as built" below.)
   - ⚠ **A second place (c) did not name:** the dashboard's health panel
     (`app/api/health-summary`) groups checks BY NAME; an unlisted check reads
     "Other checks · Not yet grouped".
@@ -508,7 +509,8 @@ whole, checked, probed and ruled on before any code; committed as *"Docs: item
 - ⚠ **What the counts corrected:**
   - **Three products are at exactly 100 current variants**, not one ("Found
     first" above said one). 2,622 − 2,537 = 85, and a 175-variant product alone
-    hides 75: at least two are capped. The design stands — GraphQL reads them
+    hides 75: at least two are capped (⚠ three, settled: 175, 105, 105 — below).
+    The design stands — GraphQL reads them
     all — and a read-only check before the deploy reads the three in Shopify.
   - **No full sync has run since item 60's deploy.** 1,117 current rows have no
     `options_at`, which every write since item 60 sets; the 1,420 that have it
@@ -517,13 +519,16 @@ whole, checked, probed and ruled on before any code; committed as *"Docs: item
     options, and no colour is discontinued today — so **part 2's first run is
     likely item 60's first HCI judgement**: some HCI colours may be marked
     discontinued for the first time, on the whole catalogue, not only restored
-    as the note above expects.
-  - ⚠ **Until part 2 is deployed, "Sync SKUs" stays unpressed.** A REST sync
+    as the note above expects. (⚠ Settled: no HCI colour lives only past 100,
+    so none — "Part 2, as built" below.)
+  - ⚠ **Until part 2 is deployed, "Sync SKUs" stays unpressed.** (⚠ LIFTED: no
+    HCI colour is hidden, so a REST sync discontinues nothing — below.) A REST sync
     would make that first judgement on the capped view, and could discontinue a
     colour whose only variants REST hides — reversible, but greyed out on the
     Mappings page and in the specs panel until a later sync restored it.
   - Four current variants have no SKU, and "JK Cabinets 2 You" has four current
-    variants — probably the samples; the pre-deploy check settles it, with the
+    variants — probably the samples (⚠ settled: the four colour-sample
+    products); the pre-deploy check settles it, with the
     1,117's vendors.
 - **Garrett's rulings, 2026-11-04, in his words:**
   - **A product Shopify says does not exist** — proposed in the session and
@@ -578,6 +583,80 @@ whole, checked, probed and ruled on before any code; committed as *"Docs: item
   Shopify; the 1,117 and the four by vendor); (4) the deploy, then the check
   created (both integrations) with its `healthchecks.map` line, the crontab
   installed, and the first run read.
+
+**Part 2, as built and proven (2026-11-04)** — its own commit, *"Item 5, part 2:
+the catalogue from Shopify's own answer -- the full sync over GraphQL, daily; the
+product webhook reads Shopify"*, with these docs; its deploy steps: 11-04 §4.
+- **The code:** `lib/shopifyCatalogue.ts` (new) — `readCatalogue`
+  (`productVariants`, 200 a page, whole within 15 s, a throttle waited out 2 s at
+  a time, five times; any id not numeric refuses the read), `readProduct` (one
+  product, paged past 250, within 3 s; each read is raced against its whole
+  budget, since `lib/shopify` fetches a token before every call),
+  `catalogueRows` (the one row: `""` for a missing SKU, the vendor trimmed, the
+  Color option read by `lib/shopifyColor` from the REST shape built from
+  GraphQL's names), `runCatalogueSync` (read whole, write 500 a call, mark the
+  rest removed, judge; the admin page's answer). The sync route's POST and the
+  new `/api/cron/sync-shopify-catalog` each one call to it; the webhook's product
+  path reads Shopify, with the three outcomes as ruled; health-summary's
+  "Catalog sync" row names `sync-shopify-catalog` (its stale count corrected);
+  the crontab's eighth line. `run-cron.sh` unchanged.
+- **Measured, then adjusted** (the pre-deploy checks below): the full read took
+  **7.7 s** in production, a token fetched for every call, where the timing check
+  ("About 4 s" above) had one token. So the read's budget is 15 s, not the 20
+  first built, and the writes go 500 a call, not REST's 100 — six calls for
+  2,622 rows, not 27 — so read and writes fit kamal-proxy's 30 s even at the
+  0.7 s a call Supabase answered on 11-04.
+- **Proven against the deployed code as the control** (the harness: production's
+  `shopify_products` transcribed from the probe; ONE catalogue served as REST,
+  100 a product, to the control and as GraphQL to part 2, shaped like
+  production's and hiding 85):
+  - **the first full sync**, on a production-shaped table (REST's view, 200 rows
+    without options, old removed rows, a variant since deleted): all 308 rows
+    the control wrote are IDENTICAL in every field in part 2's; part 2's 85 more
+    are exactly the hidden ones, all current; both marked the one deleted
+    variant removed. ⚠ Item 60's first HCI judgement: the control discontinued 4
+    colours, 3 only because REST hid their variants; part 2 the 1 truly gone;
+  - **the planted `gid://` row id**: all 305 numeric rows marked removed — the
+    comparison caught it;
+  - a second run changed nothing; a failed page (1 or 2), a read past 15 s, a
+    constant throttle, a `gid://` id from Shopify, a non-admin: nothing written;
+    throttled twice: waited, then identical; a catalogue with a 300-variant
+    product: read whole;
+  - **the webhook, ten cases:** the 175-variant product kept whole (the control
+    marked 75 removed); a product past 250 paged (300; the control wrote 100);
+    gone, on a stale retry — its variants marked removed, `product_gone` (the
+    control rewrote the stale payload); no variants — nothing marked,
+    `product_no_variants` (the control marked them all removed); a failed,
+    throttled or slow read — 500, `product_read_failed`, nothing else written,
+    the slow one at 3.01 s; a price change, a removed variant, a bad id — as the
+    control;
+  - **the cron route:** no header, a wrong one, an unset secret — 401; the same
+    sync and answer as the admin page; a Shopify failure — 502. `run-cron.sh`
+    pings the check, and `/fail` on a 502;
+  - **the health panel:** the control shows the new check under "Other checks";
+    part 2 counts it in "Catalog sync";
+  - **typecheck:** the two trees' error sets identical; a planted error seen in
+    each of the five files.
+- **Found proving it:** the harness's Supabase stand-in sent a `text[]` argument
+  as JSON — both trees failed alike, the test's fault; it now follows the
+  function's signature, as PostgREST does. `pg_dump` writes a random `\restrict`
+  key each time, so a data snapshot keeps rows and sequences only.
+- **The pre-deploy checks, run 2026-11-04** (read-only, outputs:
+  `item5p2-predeploy-check.sql`, sha256 `b2aadc38…`; `item5p2-shopify-check.js`,
+  sha256 `3cd19bdf…`, which sends part 2's own two queries): 131 products,
+  **2,622** variants, 14 pages in 7.7 s, every id numeric, every field answered
+  under production's scopes. REST hides **85**: HCI's "Wall Cabinet - 2 Doors"
+  (**175**) and two J&K wall cabinets (**105** each) — the table's three at 100,
+  its counts reconciling (HCI 867 + 75, J&K 1,243 + 10). The 1,117 without
+  options: HCI 387, Waypoint 415, J&K 315. The four without a SKU: the four
+  colour-sample products. Shopify's five HCI colours and seven J&K codes are
+  exactly the mappings', and **no HCI colour lives only past 100**. The webhook's
+  read of the 175: 442 ms, its token included. At most 42 points a page; 1,958
+  of 2,000 left.
+- **The first run, predicted:** `synced 2622, products 131, removed 0,
+  discontinued 0, restored 0`; the 85 new rows, or revived if among the 442 old
+  removed ones (which carry no product id); then 2,622 current, none without
+  options.
 
 ### 6.4 Still open from this session
 

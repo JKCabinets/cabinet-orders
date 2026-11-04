@@ -19,12 +19,13 @@ built this session is deployed and tested live: feature 11, feature 12 and item
 
 ## 1. Where things stand
 
-⚠ **AS OF ITEM 5 PART 2's DESIGN COMMIT (2026-11-04, the next session):**
-`HEAD` is *"Docs: item 5 part 2 settled before the build (2026-11-04)"*,
-`HEAD~1` `d04a568` (this file's own commit), `HEAD~2` `3dd7d6e`. **The next
-chain checks: `HEAD`'s subject is that one, tree clean.** The running image
-is still `3dd7d6e` (MISMATCH, by design). The paragraph below was true at
-this file's commit.
+⚠ **AS OF ITEM 5 PART 2's COMMIT (2026-11-04, the next session):** `HEAD` is
+*"Item 5, part 2: the catalogue from Shopify's own answer -- the full sync over
+GraphQL, daily; the product webhook reads Shopify"*, `HEAD~1` *"Docs: item 5
+part 2 settled before the build (2026-11-04)"*, `HEAD~2` `d04a568` (this file's
+own commit). **The next chain checks: `HEAD`'s subject is part 2's, tree
+clean.** The running image is part 2's commit from its deploy (the image check
+reads DEPLOYED). The paragraph below was true at this file's commit.
 
 **The box** (`5.78.220.153`, `~/cabinet-orders`, `main`): after this docs
 commit `HEAD~1` is `3dd7d6e`, item 5 part 1 (deployed). **The next chain
@@ -47,7 +48,8 @@ Monday check turns red from its 2026-12-21 run. The renewal chain is in
 OPERATIONS §5.
 
 **Cron** — the seven jobs of `scripts/cron/crontab`, unchanged. Item 5 part 2
-adds an eighth (§4).
+adds an eighth (§4) — ⚠ in the repo's crontab from part 2's commit,
+`sync-shopify-catalog` at 10:00 UTC; installed on the box by its deploy steps.
 
 **Shopify** — the order writers write over GraphQL `2026-04` (item 5 part 1),
 and the webhooks deliver `2026-04`. REST `2024-01` is left in the catalogue
@@ -112,6 +114,13 @@ pinned patch script; a migration probed, transcribed and proven first.
    ⚠ **SETTLED FURTHER 2026-11-04** — what reading it whole found, Shopify's
    webhook policy, production's table probed, and Garrett's rulings: 11-03
    §6.3, "Part 2, settled before the build". Read it before the code.
+   ⚠ **BUILT AND PROVEN 2026-11-04** (11-03 §6.3, "Part 2, as built and
+   proven"), committed with its docs. **Its deploy steps:** the deploy; the
+   healthchecks check `sync-shopify-catalog` (`0 10 * * *` UTC, both
+   integrations) and its `healthchecks.map` line; the crontab installed; the
+   first run through `run-cron.sh`, timed — predicted `synced 2622, removed 0,
+   discontinued 0`; the probe again (2,622 current, none without options).
+   Then its record.
 2. **Item 5 parts 3 and 4:** delete the payment-status backfill and its button;
    then one API version constant, the webhooks route's payload version its own
    step (11-03 §6.3). Item 67's comment fixes ride with part 4.

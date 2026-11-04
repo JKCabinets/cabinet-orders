@@ -9,7 +9,7 @@ import type { ReviewReason } from "@/lib/data";
 import { readConsent, readCheckout, type TermsConsent, type CheckoutRecord } from "@/lib/consent";
 import { logWebhook } from "@/lib/webhookLog";
 import { removeShopifyPurchase } from "@/lib/shopifyRemoval";
-import { colorOptionOf } from "@/lib/shopifyColor";
+import { readProduct, catalogueRows } from "@/lib/shopifyCatalogue";
 import { keepStaffLineFields, lineItemIdOf } from "@/lib/lineFields";
 // isSampleVendor and lookupVendorsForSkus are no longer imported here.
 // Classification moved into lib/categories (one implementation, shared with
@@ -545,46 +545,64 @@ export async function POST(req: NextRequest) {
   catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
 
   // ─── Product updated ────────────────────────────────────────────
-  // Keep shopify_products current automatically. Without this, the table only
-  // refreshes on a manual sync, which is what let a stale/edited vendor drift
-  // (the B24 collision). Upserts one row per variant, matching the sync route's
-  // row shape exactly (onConflict: "id"), so auto- and manual-synced rows are
-  // identical. Handled here, before the order-id guard, since a product payload
-  // is not an order.
+  // Keep shopify_products current automatically, between the daily full Syncs.
+  //
+  // ⚠ SHOPIFY'S OWN ANSWER, NOT THE PAYLOAD (2026-11-04, item 5 part 2). The
+  // delivery is only the signal: this product's variants are READ from Shopify
+  // over GraphQL, all of them, paged past 250 (lib/shopifyCatalogue's
+  // readProduct). The payload is REST-shaped and likely stops at 100 variants,
+  // and a retried delivery carries the payload from when the event fired. Then
+  // the SAME row as the full Sync (catalogueRows, the one builder), this
+  // product's variants Shopify no longer lists marked removed (item 59) -- the
+  // website team's pricing app removes finishes across products -- and the
+  // colours judged (item 60).
+  //
+  // ⚠ FIVE SECONDS FOR ALL OF IT (Shopify's limit), so the read has three. A 500
+  // ONLY for a failure that can pass: Shopify retries a failed delivery 8 times
+  // over 4 hours and removes a subscription whose failures persist (Garrett,
+  // 2026-11-04 -- SESSION-HANDOFF-2026-11-03.md §6.3, "Part 2, settled before
+  // the build"):
+  //   - the read fails or runs out of time: nothing written, product_read_failed, 500;
+  //   - Shopify says the product does not exist: its variants marked removed --
+  //     reversible: the rows stay for past orders, and the daily Sync restores
+  //     one that comes back -- product_gone, 200;
+  //   - a product answered with no variants: nothing marked, product_no_variants,
+  //     200 -- a resend would answer the same; the daily Sync settles it.
+  // Handled here, before the order-id guard, since a product payload is not an order.
   if (topic === "products/update") {
     const productId = String(payload.id ?? "");
     if (!/^\d+$/.test(productId)) {
       return NextResponse.json({ error: "Invalid product id" }, { status: 400 });
     }
-    const variants = (payload.variants as Array<Record<string, unknown>>) ?? [];
-    const vendorName = String(payload.vendor ?? "").trim();
-    const title = String(payload.title ?? "");
-    const rows = variants.map(variant => ({
-      id: String(variant.id),
-      title: `${title}${variants.length > 1 ? ` - ${String(variant.title ?? "")}` : ""}`,
-      sku: String(variant.sku ?? ""),
-      vendor: vendorName,
-      variant_id: String(variant.id),
-      price: parseFloat(String(variant.price ?? "0")),
-      inventory_quantity: Number(variant.inventory_quantity ?? 0),
-      synced_at: new Date().toISOString(),
-      product_id: productId,
-      removed_at: null,
-      color_option: colorOptionOf(payload, variant),
-      options_at: new Date().toISOString(),
-    }));
-    if (rows.length > 0) {
-      const { error } = await supabase
-        .from("shopify_products")
-        .upsert(rows, { onConflict: "id" });
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    const read = await readProduct(productId);
+    if (!read.ok) {
+      logWebhook("product_read_failed", { topic, product_id: productId, reason: read.error });
+      return NextResponse.json({ error: read.error }, { status: 500 });
     }
+    if (read.product === null) {
+      const { data: gone, error: goneErr } = await supabase.rpc("shopify_mark_removed", {
+        p_seen: [], p_product_id: productId,
+      });
+      if (goneErr) return NextResponse.json({ error: goneErr.message }, { status: 500 });
+      logWebhook("product_gone", { topic, product_id: productId, removed: Number(gone ?? 0) });
+      const { error: judgeErr } = await supabase.rpc("sku_judge_discontinued");
+      if (judgeErr) console.error(`[webhook] products/update ${productId}: colours not judged: ${judgeErr.message}`);
+      return NextResponse.json({ received: true, gone: true, removed: Number(gone ?? 0) });
+    }
+    if (read.product.variants.length === 0) {
+      logWebhook("product_no_variants", { topic, product_id: productId });
+      return NextResponse.json({ received: true, skipped: "no_variants" });
+    }
+    const rows = catalogueRows(read.product, new Date().toISOString());
+    const { error } = await supabase
+      .from("shopify_products")
+      .upsert(rows, { onConflict: "id" });
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     // ⚠ THIS PRODUCT's variants it no longer lists are marked removed (item
-    // 59) -- the website team's pricing app removes finishes across products.
-    // Only rows that know this product are touched; the next full Sync fills
+    // 59). Only rows that know this product are touched; the full Sync fills
     // product_id for older ones.
     const { data: marked, error: markErr } = await supabase.rpc("shopify_mark_removed", {
-      p_seen: rows.map((r) => r.id), p_product_id: productId,
+      p_seen: rows.map((r) => String(r.id)), p_product_id: productId,
     });
     if (markErr) return NextResponse.json({ error: markErr.message }, { status: 500 });
     // The colours (item 60). Not fatal: the product is saved, and a failed

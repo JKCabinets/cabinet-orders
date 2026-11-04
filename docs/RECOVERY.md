@@ -261,9 +261,10 @@ After recovering from any scenario above:
 - [ ] Most recent `cron.log` entries show successful runs
 - [ ] Shopify's webhook subscriptions reach the app: signed in as an admin,
   `/api/shopify/webhooks` lists five topics (OPERATIONS §8)
-- [ ] healthchecks.io: all seven checks green within a day, each with both
+- [ ] healthchecks.io: all eight checks green within a day, each with both
   integrations ("OMS Health", "OMS Health Email") attached (OPERATIONS §6;
-  seven since 2026-11-02, `cabinet-fulfilment`)
+  seven since 2026-11-02, `cabinet-fulfilment`; eight since 2026-11-04,
+  `sync-shopify-catalog`)
 
 ## Maintaining this doc
 

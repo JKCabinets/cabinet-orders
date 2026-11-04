@@ -57,3 +57,9 @@
 # line on its own -- Shopify then emails the customer (feature 9 phase 1,
 # 2026-10-29). After production-complete, which moves the group at 8:00 UTC.
 0 15 * * * /home/garrett/cron-jobs/run-cron.sh /api/cron/cabinet-fulfilment
+
+# Shopify catalogue sync: 10:00 AM UTC (3:00 AM Arizona) daily. Every variant
+# Shopify has, read whole over GraphQL; the rest marked removed, the colours
+# judged (item 5 part 2, 2026-11-04). After the Avis sync and production-complete,
+# before cabinet-fulfilment, whose vendor lookups read the catalogue.
+0 10 * * * /home/garrett/cron-jobs/run-cron.sh /api/cron/sync-shopify-catalog

@@ -1,13 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin, parseBoundedInt } from "@/lib/auth";
-import { colorOptionOf } from "@/lib/shopifyColor";
 import { supabase } from "@/lib/supabase";
-import { getShopifyToken, isValidShopifyDomain } from "@/lib/shopify";
+import { runCatalogueSync } from "@/lib/shopifyCatalogue";
 
-// Cap the number of Shopify pages we will follow in a single sync, both to
-// avoid runaway runs and to ensure a malicious / corrupted Link header can't
-// chain us into an unbounded loop.
-const MAX_PAGES = 200;
+// (2026-11-04, item 5 part 2) The Sync's page cap, its REST read and its rows
+// moved to lib/shopifyCatalogue -- GraphQL by cursor, so no Link header to guard.
 
 // Cap the total rows returned by the GET endpoint and the slice the caller can
 // request. The previous code did unbounded `range()` pagination driven entirely
@@ -27,113 +24,12 @@ export async function POST(req: NextRequest) {
   const auth = await requireAdmin();
   if (auth instanceof NextResponse) return auth;
 
-  const domain = process.env.SHOPIFY_STORE_DOMAIN;
-  if (!isValidShopifyDomain(domain)) {
-    return NextResponse.json({ error: "Invalid SHOPIFY_STORE_DOMAIN" }, { status: 500 });
-  }
-
-  const clientId = process.env.SHOPIFY_CLIENT_ID;
-  const clientSecret = process.env.SHOPIFY_CLIENT_SECRET;
-  const adminToken = process.env.SHOPIFY_ADMIN_API_TOKEN;
-
-  if (!adminToken && (!clientId || !clientSecret)) {
-    return NextResponse.json({ error: "Missing Shopify credentials" }, { status: 500 });
-  }
-
-  try {
-    const token = await getShopifyToken();
-
-    let allProducts: Record<string, unknown>[] = [];
-    let url: string = `https://${domain}/admin/api/2024-01/products.json?limit=250&fields=id,title,vendor,variants,options`;
-    let pagesFetched = 0;
-
-    while (url) {
-      if (pagesFetched++ >= MAX_PAGES) {
-        return NextResponse.json(
-          { error: `Pagination cap reached (${MAX_PAGES} pages)` },
-          { status: 502 }
-        );
-      }
-
-      // Defense in depth — even though we set the URL above, ensure we never
-      // follow a Link header to a non-myshopify host (could otherwise be used
-      // to bounce our admin API token to attacker-controlled hosts if the
-      // Shopify response was tampered with in transit).
-      try {
-        const parsed = new URL(url);
-        if (parsed.protocol !== "https:" || !isValidShopifyDomain(parsed.hostname)) {
-          return NextResponse.json(
-            { error: "Refusing to follow non-Shopify URL during sync" },
-            { status: 502 }
-          );
-        }
-      } catch {
-        return NextResponse.json({ error: "Invalid pagination URL" }, { status: 502 });
-      }
-
-      const res = await fetch(url, {
-        headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" },
-      });
-      const text = await res.text();
-      if (!res.ok) return NextResponse.json({ error: `Shopify API error: ${res.status}`, body: text }, { status: 502 });
-      const data = JSON.parse(text);
-      allProducts = [...allProducts, ...(data.products ?? [])];
-      const linkHeader = res.headers.get("Link") ?? "";
-      const nextMatch = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
-      url = nextMatch ? nextMatch[1] : "";
-    }
-
-    const rows: Record<string, unknown>[] = [];
-    for (const product of allProducts) {
-      const variants = (product.variants as Record<string, unknown>[]) ?? [];
-      const vendorName = String(product.vendor ?? "").trim();
-      for (const variant of variants) {
-        rows.push({
-          id: String(variant.id),
-          title: `${product.title}${variants.length > 1 ? ` - ${variant.title}` : ""}`,
-          sku: String(variant.sku ?? ""),
-          vendor: vendorName,
-          variant_id: String(variant.id),
-          price: parseFloat(String(variant.price ?? "0")),
-          inventory_quantity: Number(variant.inventory_quantity ?? 0),
-          synced_at: new Date().toISOString(),
-          // Its product, and current: a variant Shopify returns again is no longer removed.
-          product_id: String(product.id ?? ""),
-          removed_at: null,
-          // Its Color option, and that its options were read (item 60).
-          color_option: colorOptionOf(product, variant),
-          options_at: new Date().toISOString(),
-        });
-      }
-    }
-
-    const batchSize = 100;
-    for (let i = 0; i < rows.length; i += batchSize) {
-      const batch = rows.slice(i, i + batchSize);
-      const { error } = await supabase.from("shopify_products").upsert(batch, { onConflict: "id" });
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    // ⚠ THE REST IS MARKED REMOVED (item 59). Every page above returned before
-    // anything was written if it failed, so reaching here means the WHOLE
-    // catalogue. Never when Shopify returned nothing: an empty answer is far
-    // likelier a fault than an empty store, and would mark everything.
-    let removed = 0;
-    if (rows.length > 0) {
-      const { data: marked, error: markErr } = await supabase.rpc("shopify_mark_removed", { p_seen: rows.map((r) => String(r.id)) });
-      if (markErr) return NextResponse.json({ error: markErr.message }, { status: 500 });
-      removed = Number(marked ?? 0);
-    }
-    // ⚠ THEN THE COLOURS (item 60): a mapping no current variant uses is
-    // discontinued, one used again is current. See sku_judge_discontinued().
-    const { data: judged, error: judgeErr } = await supabase.rpc("sku_judge_discontinued");
-    if (judgeErr) return NextResponse.json({ error: `the products were saved, but the colours were not judged: ${judgeErr.message}` }, { status: 500 });
-    const j = (judged ?? {}) as { marked?: number; restored?: number };
-    return NextResponse.json({ ok: true, synced: rows.length, products: allProducts.length, removed,
-      discontinued: Number(j.marked ?? 0), restored: Number(j.restored ?? 0) });
-  } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
-  }
+  // ⚠ THE SYNC IS lib/shopifyCatalogue's runCatalogueSync (2026-11-04, item 5
+  // part 2) -- the same code the daily cron runs, over GraphQL, every variant of
+  // every product. Its answer is the one this page has always read.
+  const result = await runCatalogueSync();
+  if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
+  return NextResponse.json(result);
 }
 
 export async function GET(req: NextRequest) {
