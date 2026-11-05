@@ -691,6 +691,43 @@ live (2026-11-05)"*.
   it: that product must stay at 175 current (REST's payload would have cut it
   to 100).
 
+**Part 3, the design — AGREED (2026-11-05):** delete the payment-status
+backfill and its button. Committed as *"Docs: item 5 part 3 designed
+(2026-11-05)"*, before the build.
+- **Read whole first:** `app/api/admin/backfill-payment-status` (192 lines),
+  `app/admin/shopify/page.tsx` (its one caller), the admin home page's card,
+  every reader of `payment_status`, and the webhook's project inserts. The route
+  fills `projects.payment_status` for Shopify projects that have none, from REST
+  2024-01's `financial_status` (`unknown` where Shopify has no order). It is the
+  app's **last REST call**: every other `2024-01` in the code is a comment. No
+  system doc names it.
+- **Why it mattered:** a NULL payment status reads as not refunded, not held —
+  the Payment pill, payment holds, production-complete, revenue.
+- **Production, probed 2026-11-05** (`item5p3-payment-status-probe.sql`,
+  read-only, sha256 `1961e1fa…`; outputs): no Shopify project without a payment
+  status — no Shopify project at all — and no Shopify order without a project,
+  as the 18:20 `webhook-health` run found nothing missing. The webhook writes
+  `source: "Shopify"` and the payment status on every project it creates (both
+  insert paths) and on every update, so the tool can never have work again.
+- **The design** (Garrett, 2026-11-05: *"All sounds good"*):
+  1. the precondition — met by the probe;
+  2. delete the route file, by a pinned deletion (the file exactly the deployed
+     one, or nothing is written);
+  3. the Shopify admin page: the button, its function, its two state variables
+     and its result banner removed; the sync's own messages stop waiting on that
+     banner; a one-line note where the function was; the empty state's "Click
+     Sync now" → "Click Sync SKUs", the button's name;
+  4. the admin home page's card: "Sync products from Shopify, import orders,
+     backfill payment statuses." → "Shopify's product list — synced daily, or on
+     demand." (import orders went 2026-09-16);
+  5. found, left out: the home page's warning of orders "with no total recorded
+     — backfill via Shopify sync" names the wrong tool (the Shopify sync is
+     products); what it should say needs its own look;
+  6. proven against the deployed code: typecheck, a planted error per changed
+     file, the Shopify page rendered in both trees, searches for any caller and
+     any REST call left, the patch on box-shaped trees;
+  7. docs: this record, and the start point's §4 and §0.
+
 ### 6.4 Still open from this session
 
 - **Item 4, Garrett's ruling:** the "Delivered" email per line or per order —

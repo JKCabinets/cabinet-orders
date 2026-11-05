@@ -13,18 +13,19 @@ built this session is deployed and tested live: feature 11, feature 12 and item
    cd ~/cabinet-orders && git archive --format=tar.gz -o ~/repo29.tar.gz HEAD && cd ~ && sha256sum repo29.tar.gz > repo29_tar_gz.sha256
    ```
 2. **Upload** `repo29.tar.gz`, `repo29_tar_gz.sha256`, this file, and the
-   harness archive `harness-2026-11-04.tar.gz` with its
-   `harness-2026-11-04.tar.gz.sha256`. Check both hashes.
+   harness archive `harness-2026-11-05.tar.gz` with its
+   `harness-2026-11-05.tar.gz.sha256` (⚠ since item 5 part 2; this said
+   `-11-04`). Check both hashes.
 3. **Read this file whole**, then the method (§3), before any change.
 
 ## 1. Where things stand
 
-⚠ **AS OF ITEM 5 PART 2's LIVE RECORD (2026-11-05):** `HEAD` is *"Docs: item 5
-part 2 live (2026-11-05)"*, `HEAD~1` `4ccd94d` (part 2, deployed), `HEAD~2` the
-design commit, `HEAD~3` `d04a568` (this file's own commit). **The next chain
-checks: `HEAD`'s subject is that one, tree clean.** ⚠ The running image is
-`4ccd94d`; against this docs `HEAD` the image check reads MISMATCH until the
-next deploy, by design. The paragraph below was true at this file's commit.
+⚠ **AS OF ITEM 5 PART 3's DESIGN COMMIT (2026-11-05):** `HEAD` is *"Docs: item 5
+part 3 designed (2026-11-05)"*, `HEAD~1` `2a7a20c` (part 2's live record),
+`HEAD~2` `4ccd94d` (part 2, deployed). **The next chain checks: `HEAD`'s subject
+is that one, tree clean.** ⚠ The running image is `4ccd94d`; against this docs
+`HEAD` the image check reads MISMATCH until the next deploy, by design. The
+paragraph below was true at this file's commit.
 
 **The box** (`5.78.220.153`, `~/cabinet-orders`, `main`): after this docs
 commit `HEAD~1` is `3dd7d6e`, item 5 part 1 (deployed). **The next chain
@@ -124,7 +125,8 @@ pinned patch script; a migration probed, transcribed and proven first.
    be seen. **Next: item 5 part 3 (item 2 below).**
 2. **Item 5 parts 3 and 4:** delete the payment-status backfill and its button;
    then one API version constant, the webhooks route's payload version its own
-   step (11-03 §6.3). Item 67's comment fixes ride with part 4.
+   step (11-03 §6.3). Item 67's comment fixes ride with part 4. ⚠ **Part 3
+   DESIGNED AND AGREED 2026-11-05** (11-03 §6.3, "Part 3, the design").
 3. **Item 4, Garrett's ruling:** the "Delivered" and "Delivery date changed"
    emails, per line or per order (11-03 §6.4).
 4. **The storage sweep** (admin): two test photos and whatever the 504 attempts
