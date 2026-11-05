@@ -755,6 +755,66 @@ call"*, with these docs.
 - **After it, the app makes no REST call to Shopify:** everything is GraphQL
   `2026-04` (`lib/shopify`). Part 4 makes that one constant.
 
+**Part 3, LIVE (2026-11-05):** `3914bc0`, deployed.
+- ⚠ **The first chain stopped at `npx tsc`**, nothing committed:
+  `.next/types/validator.ts`, the route types Next.js generated on the box
+  earlier, still named the deleted route. The sandbox tree had no `.next`, so
+  its typecheck could not see it. Reproduced exactly (`validator.ts(435,39)`);
+  `npx next typegen` regenerates the list from the current routes (83, the
+  backfill's gone, part 2's cron route kept) and changes no tracked file. A
+  resume chain — both patches `ALREADY APPLIED`, `git status` exactly the five
+  files — regenerated the types and completed. **Every chain since runs `npx
+  next typegen` before `npx tsc --noEmit`** (11-04 §3).
+- Kamal's leftover build clone (`/tmp/kamal-clones/`) failed to update
+  ("unresolved deltas"); Kamal deleted it and cloned afresh, the image tag
+  confirming the build used `3914bc0`; `git fsck` on the repo: clean.
+- The running app's admin routes: `audit backfill-decode debug-avis-catalog
+  health mappings orders revenue storage-sweep sync-avis-catalog unlock` — no
+  `backfill-payment-status`. Both pages seen by Garrett as designed.
+
+**Part 4, the design — AGREED (2026-11-05):** one API version, one strict call.
+Committed as *"Docs: item 5 part 4 designed (2026-11-05)"*, before the build.
+- **Read whole first:** `lib/shopify`, the webhooks route, webhook-health,
+  `lib/vendorLookup`, the enrichment route; item 67 (10-13 l.1073, 11-03 §4).
+  **13 GraphQL operations** in the app: 8 through `lib/shopify`'s strict call
+  (the order writer's four, fulfilment's two, the catalogue's two), 5 through
+  a call of their own — the webhooks route's two and webhook-health's three —
+  each with its own `"2026-04"`.
+- **Found:**
+  - **Item 7 is real, and the webhooks route has it too.** webhook-health's
+    order sample reads a 200 carrying `errors` as "no orders" and goes GREEN;
+    the webhooks route's list reads it as `count: 0`, and its POST would then
+    try to create all five subscriptions again.
+  - **The payload version is the app's, not the code's.** Shopify's reference
+    (2026-10): a subscription's `apiVersion` is "inherited from the app that
+    created the webhook subscription"; "The Webhooks API version configured in
+    your app determines the API version for webhook events. You can't specify
+    it per subscription." Moving the code's constant moves no payload.
+  - **`endpoint` and `callbackUrl` are deprecated** (`uri` replaces them); in
+    2026-10 they still exist.
+- **The design** (Garrett, 2026-11-05: *"That all looks good, lets proceed"*):
+  1. **one call, one constant:** the webhooks route and webhook-health use
+     `lib/shopify`'s strict call — a refused answer fails instead of reading as
+     empty: webhook-health's sample goes red, the webhooks route answers 502,
+     the informational list reads "unavailable", the reverse check (already
+     refusing) unchanged; each call gains the 15 s limit;
+  2. **the webhooks route on `uri`,** its list showing each subscription's
+     `apiVersion` — the payload version, before and after 4c;
+  3. **item 67's three comments** (the webhooks route's header,
+     `lib/vendorLookup`'s "four-layer chain", the enrichment route's header);
+  4. **the constant to `2026-10` only if a read-only check proves it first:**
+     in the container, 2026-10's schema by introspection; every one of the 13
+     operations validated against it WITHOUT executing, as the code sends them
+     (captured by running the real code against a recording stand-in); also
+     against 2026-04; a planted bad field must be named. Anything absent or
+     deprecated in 2026-10 keeps the constant at 2026-04, brought to Garrett;
+  - **4c, its own step later:** the app's webhook version, in Shopify's
+    settings, moved by Garrett — the handler read first against Shopify's
+    payload changes for its five topics; the list (2) shows it took.
+- **Proof:** webhook-health and the webhooks route in both trees against a
+  stand-in that can answer a refusal; typecheck, a planted error per changed
+  file; the patch on box-shaped trees; the chain, with `next typegen`.
+
 ### 6.4 Still open from this session
 
 - **Item 4, Garrett's ruling:** the "Delivered" email per line or per order —
