@@ -638,7 +638,8 @@ silence its own alarm. Email alerting, verified.
 integrations, each on every check — EIGHT from item 5 part 2's deploy:
 `cabinet-fulfilment` since 2026-11-02 (its two integrations CONFIRMED by Garrett
 2026-11-03 — this said "NOT YET CONFIRMED"), `sync-shopify-catalog` since
-2026-11-04; a check without them fails silently: **"OMS Health"** — its own Microsoft
+2026-11-04 (created 2026-11-05; that its two integrations are attached is NOT YET
+CONFIRMED); a check without them fails silently: **"OMS Health"** — its own Microsoft
 Teams integration, through a Teams workflow made from the template "Send
 webhook alerts to a channel" and never edited — and **"OMS Health Email"**, to
 garrett@jkcabinets2you.com. A Teams alert is a card naming the check and its

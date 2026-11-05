@@ -658,6 +658,39 @@ product webhook reads Shopify"*, with these docs; its deploy steps: 11-04 §4.
   removed ones (which carry no product id); then 2,622 current, none without
   options.
 
+**Part 2, LIVE (2026-11-05)** — the record, committed as *"Docs: item 5 part 2
+live (2026-11-05)"*.
+- **Deployed:** `4ccd94d`, its container up from about 00:00 UTC on 11-05; every
+  cron run to 11:30 that day ran on it, `rc=0`.
+- ⚠ **An IP block, not part 2's:** Hetzner blocked the server's IP from about
+  **11:45 to 17:55 UTC** on 11-05; the cause was on Garrett's end, and he
+  resolved it. The box stayed up (169 days). Cron's calls to its own address
+  still reached the app, but the app's calls out hung (kamal-proxy's 504;
+  `webhook-health`'s own 500) and no ping left the box, so four checks went
+  down. (Read first from which checks were red, the start looked like 08:00;
+  `cron.log` put it at 11:45 — the green ones had simply not been due.) After
+  it: the 18:00 runs `rc=0`; `webhook-health` at 18:20 `rc=0`, no recent order
+  missing; all five webhook subscriptions; the 15:00 `cabinet-fulfilment` run
+  made by hand at 19:00 (nothing due); that day's Teams card not sent.
+- **The setup:** the check `sync-shopify-catalog` created by Garrett (⚠ its two
+  integrations NOT YET CONFIRMED); its `healthchecks.map` line (eight keys, mode
+  600); the crontab installed from the repo (eight jobs; the old one kept as
+  `~/crontab.before-item5p2`).
+- **The first run**, 19:03:54 UTC through `run-cron.sh`, **exactly as
+  predicted**: `{"ok":true,"synced":2622,"products":131,"removed":0,
+  "discontinued":0,"restored":0}`, 10.3 s, pinged.
+- **The probe after** (`item5p2-catalogue-probe.sql`): 3,064 rows = 2,979 + the
+  85, all new (none revived from the 442); 2,622 current, none without options;
+  the three products 175, 105, 105; every vendor's count Shopify's (HCI 942, J&K
+  1,253, Waypoint 423, the samples 4); every id numeric; no colour discontinued
+  — HCI judged for the first time, all five colours current. 2,195 current rows
+  carry a Color option (not predicted; the judgement, which reads them,
+  matched). The schema and both functions unchanged.
+- **Still to see live:** (b), the product webhook reading Shopify — no product
+  update observed since the deploy. The next to the 175-variant product shows
+  it: that product must stay at 175 current (REST's payload would have cut it
+  to 100).
+
 ### 6.4 Still open from this session
 
 - **Item 4, Garrett's ruling:** the "Delivered" email per line or per order —

@@ -19,13 +19,12 @@ built this session is deployed and tested live: feature 11, feature 12 and item
 
 ## 1. Where things stand
 
-⚠ **AS OF ITEM 5 PART 2's COMMIT (2026-11-04, the next session):** `HEAD` is
-*"Item 5, part 2: the catalogue from Shopify's own answer -- the full sync over
-GraphQL, daily; the product webhook reads Shopify"*, `HEAD~1` *"Docs: item 5
-part 2 settled before the build (2026-11-04)"*, `HEAD~2` `d04a568` (this file's
-own commit). **The next chain checks: `HEAD`'s subject is part 2's, tree
-clean.** The running image is part 2's commit from its deploy (the image check
-reads DEPLOYED). The paragraph below was true at this file's commit.
+⚠ **AS OF ITEM 5 PART 2's LIVE RECORD (2026-11-05):** `HEAD` is *"Docs: item 5
+part 2 live (2026-11-05)"*, `HEAD~1` `4ccd94d` (part 2, deployed), `HEAD~2` the
+design commit, `HEAD~3` `d04a568` (this file's own commit). **The next chain
+checks: `HEAD`'s subject is that one, tree clean.** ⚠ The running image is
+`4ccd94d`; against this docs `HEAD` the image check reads MISMATCH until the
+next deploy, by design. The paragraph below was true at this file's commit.
 
 **The box** (`5.78.220.153`, `~/cabinet-orders`, `main`): after this docs
 commit `HEAD~1` is `3dd7d6e`, item 5 part 1 (deployed). **The next chain
@@ -49,7 +48,7 @@ OPERATIONS §5.
 
 **Cron** — the seven jobs of `scripts/cron/crontab`, unchanged. Item 5 part 2
 adds an eighth (§4) — ⚠ in the repo's crontab from part 2's commit,
-`sync-shopify-catalog` at 10:00 UTC; installed on the box by its deploy steps.
+`sync-shopify-catalog` at 10:00 UTC; installed on the box 2026-11-05 (eight jobs).
 
 **Shopify** — the order writers write over GraphQL `2026-04` (item 5 part 1),
 and the webhooks deliver `2026-04`. REST `2024-01` is left in the catalogue
@@ -120,7 +119,9 @@ pinned patch script; a migration probed, transcribed and proven first.
    integrations) and its `healthchecks.map` line; the crontab installed; the
    first run through `run-cron.sh`, timed — predicted `synced 2622, removed 0,
    discontinued 0`; the probe again (2,622 current, none without options).
-   Then its record.
+   Then its record. ⚠ **LIVE 2026-11-05** (11-03 §6.3, "Part 2, LIVE"): the first
+   run exactly as predicted; the product webhook's first live update still to
+   be seen. **Next: item 5 part 3 (item 2 below).**
 2. **Item 5 parts 3 and 4:** delete the payment-status backfill and its button;
    then one API version constant, the webhooks route's payload version its own
    step (11-03 §6.3). Item 67's comment fixes ride with part 4.
