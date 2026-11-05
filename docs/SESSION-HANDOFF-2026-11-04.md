@@ -20,12 +20,12 @@ built this session is deployed and tested live: feature 11, feature 12 and item
 
 ## 1. Where things stand
 
-⚠ **AS OF ITEM 5 PART 3's DESIGN COMMIT (2026-11-05):** `HEAD` is *"Docs: item 5
-part 3 designed (2026-11-05)"*, `HEAD~1` `2a7a20c` (part 2's live record),
-`HEAD~2` `4ccd94d` (part 2, deployed). **The next chain checks: `HEAD`'s subject
-is that one, tree clean.** ⚠ The running image is `4ccd94d`; against this docs
-`HEAD` the image check reads MISMATCH until the next deploy, by design. The
-paragraph below was true at this file's commit.
+⚠ **AS OF ITEM 5 PART 3's COMMIT (2026-11-05):** `HEAD` is *"Item 5, part 3: the
+payment-status backfill and its button deleted -- the app's last REST call"*,
+`HEAD~1` `841fe89` (its design record). **The next chain checks: `HEAD`'s
+subject is part 3's, tree clean.** The running image is part 3's commit from its
+deploy (the image check reads DEPLOYED). The paragraph below was true at this
+file's commit.
 
 **The box** (`5.78.220.153`, `~/cabinet-orders`, `main`): after this docs
 commit `HEAD~1` is `3dd7d6e`, item 5 part 1 (deployed). **The next chain
@@ -53,7 +53,9 @@ adds an eighth (§4) — ⚠ in the repo's crontab from part 2's commit,
 
 **Shopify** — the order writers write over GraphQL `2026-04` (item 5 part 1),
 and the webhooks deliver `2026-04`. REST `2024-01` is left in the catalogue
-sync (part 2) and the payment-status backfill (part 3).
+sync (part 2) and the payment-status backfill (part 3). ⚠ **NO LONGER: none is
+left** — the catalogue sync went to GraphQL with part 2, the backfill was
+deleted with part 3.
 
 **The website team** has confirmed: Turnstile passes on both forms; both
 forms now answer in about two seconds; a 201 with `duplicate: true` is success
@@ -126,7 +128,8 @@ pinned patch script; a migration probed, transcribed and proven first.
 2. **Item 5 parts 3 and 4:** delete the payment-status backfill and its button;
    then one API version constant, the webhooks route's payload version its own
    step (11-03 §6.3). Item 67's comment fixes ride with part 4. ⚠ **Part 3
-   DESIGNED AND AGREED 2026-11-05** (11-03 §6.3, "Part 3, the design").
+   DESIGNED AND AGREED 2026-11-05** (11-03 §6.3, "Part 3, the design"); BUILT AND
+   PROVEN the same day ("Part 3, as built and proven"), committed with its docs.
 3. **Item 4, Garrett's ruling:** the "Delivered" and "Delivery date changed"
    emails, per line or per order (11-03 §6.4).
 4. **The storage sweep** (admin): two test photos and whatever the 504 attempts

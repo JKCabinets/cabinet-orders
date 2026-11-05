@@ -728,6 +728,33 @@ backfill and its button. Committed as *"Docs: item 5 part 3 designed
      any REST call left, the patch on box-shaped trees;
   7. docs: this record, and the start point's §4 and §0.
 
+**Part 3, as built and proven (2026-11-05)** — its own commit, *"Item 5, part
+3: the payment-status backfill and its button deleted -- the app's last REST
+call"*, with these docs.
+- **The code:** `app/api/admin/backfill-payment-status/route.ts` deleted, its
+  folder with it. `app/admin/shopify/page.tsx`: the button, `backfillPayments`,
+  its two state variables and its result banner removed, each leaving a note;
+  the sync's two messages no longer wait on that banner; the empty state says
+  "Click Sync SKUs". `app/admin/page.tsx`: the card reads "Shopify's product
+  list — synced daily, or on demand."
+- **Proven against the deployed code as the control:**
+  - **the page, mounted** (jsdom, its effects run, its buttons clicked): the
+    control shows "Backfill payments" and "Sync SKUs", says "Click Sync now",
+    and after a sync shows "2622 variants from 131 products" — which a click on
+    "Backfill payments" REPLACES with "Nothing to backfill."; part 3 shows "Sync
+    SKUs" alone, says "Click Sync SKUs", shows the same sync message, and makes
+    the same requests less the backfill's;
+  - **searches:** nothing in the code names the route but its removal note; no
+    REST URL (`/admin/api/2024-01/`) is left anywhere in the code — every other
+    `2024-01` is a comment;
+  - **typecheck:** the two trees' error sets identical; a planted error seen in
+    each changed file;
+  - **the patch:** the patch engine learned pinned DELETION (deleted only if it
+    is exactly the deployed file; already gone counts as applied; anything else
+    a MISS, nothing written), proven with the rest on box-shaped trees.
+- **After it, the app makes no REST call to Shopify:** everything is GraphQL
+  `2026-04` (`lib/shopify`). Part 4 makes that one constant.
+
 ### 6.4 Still open from this session
 
 - **Item 4, Garrett's ruling:** the "Delivered" email per line or per order —
