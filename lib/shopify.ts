@@ -34,8 +34,21 @@ export async function getShopifyToken(): Promise<string> {
   return JSON.parse(text).access_token;
 }
 
-/** The Admin API version the OMS's GraphQL calls use (as webhook-health). */
-export const SHOPIFY_API_VERSION = "2026-04";
+/**
+ * ⚠ THE ONE ADMIN API VERSION (2026-11-05, item 5 part 4): every Shopify call
+ * the OMS makes goes through shopifyGraphql below -- the webhooks route and
+ * webhook-health had a call and a "2026-04" of their own until then.
+ *
+ * It does NOT decide the webhooks' PAYLOAD version: a subscription's apiVersion
+ * is "inherited from the app that created the webhook subscription", and "you
+ * can't specify it per subscription" (Shopify). That is the app's own setting
+ * in Shopify; GET /api/shopify/webhooks shows it for each subscription.
+ *
+ * 2026-10 since part 4 (it was 2026-04): every one of the 13 operations the app
+ * sends was validated against 2026-10's schema, read from Shopify, before the
+ * move -- valid, nothing deprecated (item5p4-schema-check.js, 2026-11-05).
+ */
+export const SHOPIFY_API_VERSION = "2026-10";
 
 /**
  * ⚠ ONE STRICT GraphQL CALL (2026-10-29, feature 9 phase 1). It answers

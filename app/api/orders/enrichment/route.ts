@@ -28,7 +28,7 @@ import { proofLineStates, proofRequirementMet } from "@/lib/deliveryProof";
  *     order_acknowledgments   every ack for every id, newest first
  *     order_attachments       ids and kinds only
  *
- * ⚠ AND NOT ONE RULE IS REIMPLEMENTED HERE. The four-layer vendor chain is
+ * ⚠ AND NOT ONE RULE IS REIMPLEMENTED HERE. The five-layer vendor chain is
  * `resolveVendors`; the green-and-not-stale verdict is `allVendorsGreen`. Both
  * are the same functions the per-order path and the server gate call. A second
  * copy of either would mean the queue and the gate disagreeing about whether

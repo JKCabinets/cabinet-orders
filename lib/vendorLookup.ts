@@ -148,8 +148,9 @@ export async function prefetchVendorMaps(
 }
 
 /**
- * The four-layer chain. NO I/O — the same rules, resolved against prefetched
- * maps.
+ * The five-layer chain, 0 to 4 (four until feature 10 added layer 0, the
+ * line's own vendor, 2026-11-02). NO I/O — the same rules, resolved against
+ * prefetched maps.
  *
  * ⚠ THE LAYER ORDER IS THE POINT AND MUST NOT BE REARRANGED. variant_id is
  * globally unique and collision-proof; two vendors can share a base SKU like

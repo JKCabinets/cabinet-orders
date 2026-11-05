@@ -20,11 +20,12 @@ built this session is deployed and tested live: feature 11, feature 12 and item
 
 ## 1. Where things stand
 
-⚠ **AS OF ITEM 5 PART 4's DESIGN COMMIT (2026-11-05):** `HEAD` is *"Docs: item 5
-part 4 designed (2026-11-05)"*, `HEAD~1` `3914bc0` (part 3, deployed). **The next
-chain checks: `HEAD`'s subject is that one, tree clean.** ⚠ The running image is
-`3914bc0`; against this docs `HEAD` the image check reads MISMATCH until the next
-deploy, by design. The paragraph below was true at this file's commit.
+⚠ **AS OF ITEM 5 PART 4's COMMIT (2026-11-05):** `HEAD` is *"Item 5, part 4: one
+Admin API version (2026-10), one strict call -- webhook-health and the webhooks
+route through lib/shopify"*, `HEAD~1` its design record. **The next chain
+checks: `HEAD`'s subject is part 4's, tree clean.** The running image is part
+4's commit from its deploy (the image check reads DEPLOYED). The paragraph
+below was true at this file's commit.
 
 **The box** (`5.78.220.153`, `~/cabinet-orders`, `main`): after this docs
 commit `HEAD~1` is `3dd7d6e`, item 5 part 1 (deployed). **The next chain
@@ -54,7 +55,9 @@ adds an eighth (§4) — ⚠ in the repo's crontab from part 2's commit,
 and the webhooks deliver `2026-04`. REST `2024-01` is left in the catalogue
 sync (part 2) and the payment-status backfill (part 3). ⚠ **NO LONGER: none is
 left** — the catalogue sync went to GraphQL with part 2, the backfill was
-deleted with part 3.
+deleted with part 3. ⚠ **And since part 4 every call is GraphQL `2026-10`** (one
+constant, `lib/shopify`); the webhooks still deliver `2026-04`, the app's own
+setting in Shopify (4c, 11-03 §6.3).
 
 **The website team** has confirmed: Turnstile passes on both forms; both
 forms now answer in about two seconds; a 201 with `duplicate: true` is success
@@ -135,13 +138,15 @@ pinned patch script; a migration probed, transcribed and proven first.
    DESIGNED AND AGREED 2026-11-05** (11-03 §6.3, "Part 3, the design"); BUILT AND
    PROVEN the same day ("Part 3, as built and proven"), committed with its docs;
    LIVE ("Part 3, LIVE"). ⚠ **Part 4 DESIGNED AND AGREED 2026-11-05** (11-03
-   §6.3, "Part 4, the design"); item 7 below rides with it.
+   §6.3, "Part 4, the design"); item 7 below rides with it. BUILT AND PROVEN the
+   same day ("Part 4, as built and proven"); 4c, the app's webhook version, is
+   its own step and still open.
 3. **Item 4, Garrett's ruling:** the "Delivered" and "Delivery date changed"
    emails, per line or per order (11-03 §6.4).
 4. **The storage sweep** (admin): two test photos and whatever the 504 attempts
    left in Storage are named by no record; safe to sweep.
-5. From the 11-03 list (§4 there), still open: 7 (webhook-health's `graphql()`
-   and a 200 carrying `errors`), 8 (UTC "today"), 9, 10, and 11 (RECOVERY has
+5. From the 11-03 list (§4 there), still open (7, webhook-health's unchecked
+   `graphql()`, done with part 4): 8 (UTC "today"), 9, 10, and 11 (RECOVERY has
    never been exercised).
 
 ## 5. Where each fact lives

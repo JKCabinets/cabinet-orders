@@ -1,6 +1,10 @@
 # JK Cabinets — Operations & Systems Reference
 
-**As of 2026-09-15, amended through 2026-11-04 (the dated entries below) · supersedes OPERATIONS-2026-08-18.md**
+**As of 2026-09-15, amended through 2026-11-05 (the dated entries below) · supersedes OPERATIONS-2026-08-18.md**
+
+⚠ **AMENDED 2026-11-05 (item 5 part 4, one API version).** §6: a refused Shopify
+answer turns `jk-webhook-health` red. §8: where the webhooks' payload version
+is set — the app's own setting, not the code.
 
 ⚠ **AMENDED 2026-11-04 (item 5 part 2, the catalogue from Shopify's own answer).**
 §6: an eighth check, `sync-shopify-catalog`, in the "Catalog sync" row; three
@@ -691,7 +695,7 @@ list lacked it), Claims to Help Scout, and
 | **`sync-shopify-catalog`** | **The Shopify catalogue** (item 5 part 2, from its deploy) — daily 10:00 UTC; fails when Shopify refuses, is not read whole within 15 s, or answers an id that is not numeric, or the table cannot be written — nothing is written unless the whole catalogue was read |
 | `production-complete` | In production → At cross dock |
 | `teams-digest` | Posts the morning briefing card to Teams — enabled 2026-10-21 |
-| **`jk-webhook-health`** | **Shopify ingestion** — added 2026-08-20; skips cancelled orders since 2026-10-13 |
+| **`jk-webhook-health`** | **Shopify ingestion** — added 2026-08-20; skips cancelled orders since 2026-10-13; a refused Shopify answer is red since 2026-11-05 (item 5 part 4 — it read as "no orders", green) |
 | **`helpscout-sync`** | **Website claims reaching Help Scout**, every 15 minutes; fails when a claim is unsent after four attempts; since 2026-10-07 also sends a claim's progress notes, and fails when one is unsent after four attempts — added 2026-10-05 |
 | **`registry-token`** | **The GHCR registry token** — Mondays 15:00 UTC, `check-registry-token.sh`; fails 14 days before it expires |
 | **`cabinet-fulfilment`** | **Cabinet lines marked shipped in Shopify** (feature 9 phase 1, from its deploy) — daily 15:00 UTC; fails when Shopify refuses or cannot be read, a line cannot be found, a skip cannot be recorded, or the run runs out of time |
@@ -848,6 +852,14 @@ failure that can pass. **`products/update` reads the product from Shopify**
 logs `product_read_failed` (500); a product Shopify says does not exist has its
 variants marked removed, `product_gone` (200); one with no variants marks
 nothing, `product_no_variants` (200) — all three in `webhook_events`.
+
+⚠ **The payloads' API version is the APP's setting, not the code's** (Shopify:
+a subscription's version is "inherited from the app"; "you can't specify it
+per subscription"). The OMS's own calls use `lib/shopify`'s one version —
+`2026-10` since item 5 part 4 — while the webhooks deliver in the version set
+for the app in Shopify: `2026-04` as of 2026-11-05. `GET /api/shopify/webhooks`
+lists each subscription's `apiVersion`. Moving it is a step of its own: the
+handler is read against that version's payloads first.
 
 - ⚠ **The shipping confirmation — CORRECTED 2026-10-29.** This said
   "Fulfilment notification: TURNED OFF. The OMS will own everything after the

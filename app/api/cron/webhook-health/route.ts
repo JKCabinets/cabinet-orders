@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyCronAuth } from "@/lib/cronAuth";
 import { supabase } from "@/lib/supabase";
-import { getShopifyToken, isValidShopifyDomain } from "@/lib/shopify";
+import { getShopifyToken, isValidShopifyDomain, shopifyGraphql } from "@/lib/shopify";
 import { removeShopifyPurchase } from "@/lib/shopifyRemoval";
 
 /**
@@ -65,9 +65,12 @@ import { removeShopifyPurchase } from "@/lib/shopifyRemoval";
  *   webhook does (Garrett, 2026-10-19), red only on the run that marks it -- a
  *   webhook was missed -- and skipped from then on, so it neither alarms every
  *   hour nor counts toward that one (SHO-1059 did both until then).
+ *
+ * ⚠ EVERY QUERY THROUGH lib/shopify's STRICT CALL (2026-11-05, item 5 part 4;
+ *   11-03 §4 item 7): its version, its 15 s limit, and a refused answer -- HTTP
+ *   200 carrying `errors` -- FAILS. This route had its own call, which read a
+ *   refused order sample as "no orders in Shopify" and went GREEN.
  */
-
-const API_VERSION = "2026-04";
 
 /** How many recent Shopify orders to reconcile. */
 const SAMPLE_SIZE = 10;
@@ -98,26 +101,24 @@ interface ShopifyOrder {
   cancelledAt: string | null;
 }
 
-async function graphql(domain: string, token: string, query: string): Promise<unknown> {
-  const res = await fetch(`https://${domain}/admin/api/${API_VERSION}/graphql.json`, {
-    method: "POST",
-    headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" },
-    body: JSON.stringify({ query }),
-  });
-  const text = await res.text();
-  if (!res.ok) throw new Error(`Shopify GraphQL ${res.status}: ${text.slice(0, 200)}`);
-  return JSON.parse(text);
-}
+const RECENT_ORDERS = `query RecentOrders($first: Int!) {
+  orders(first: $first, sortKey: CREATED_AT, reverse: true) {
+    edges { node { id name createdAt cancelledAt } }
+  }
+}`;
+const ORDERS_BY_ID = `query OrdersById($ids: [ID!]!) {
+  nodes(ids: $ids) { ... on Order { id name cancelledAt } }
+}`;
+const SUBSCRIPTION_TOPICS = `query SubscriptionTopics {
+  webhookSubscriptions(first: 100) { edges { node { topic } } }
+}`;
 
-async function recentShopifyOrders(domain: string, token: string): Promise<ShopifyOrder[]> {
-  const q = `query {
-    orders(first: ${SAMPLE_SIZE}, sortKey: CREATED_AT, reverse: true) {
-      edges { node { id name createdAt cancelledAt } }
-    }
-  }`;
-  const body = await graphql(domain, token, q);
+async function recentShopifyOrders(): Promise<ShopifyOrder[]> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const edges = (body as any)?.data?.orders?.edges ?? [];
+  const data = await shopifyGraphql<any>(RECENT_ORDERS, { first: SAMPLE_SIZE });
+  if (!Array.isArray(data?.orders?.edges)) throw new Error("Shopify answered no orders list");
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const edges: any[] = data.orders.edges;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return edges.map((e: any) => {
     const gid = String(e?.node?.id ?? "");
@@ -152,7 +153,7 @@ async function heldPurchases(): Promise<{ id: string; shopify_id: string }[]> {
  * nothing.
  */
 async function goneFromShopify(
-  domain: string, token: string, held: { id: string; shopify_id: string }[], cutoff: number,
+  held: { id: string; shopify_id: string }[], cutoff: number,
 ): Promise<{ gone: GoneFromShopify[]; recentCancels: number; unusableIds: number }> {
   const gone: GoneFromShopify[] = [];
   let recentCancels = 0;
@@ -160,13 +161,10 @@ async function goneFromShopify(
   for (let i = 0; i < usable.length; i += NODES_BATCH) {
     const batch = usable.slice(i, i + NODES_BATCH);
     const asked = batch.map(p => `gid://shopify/Order/${p.shopify_id}`);
-    const q = `query {
-      nodes(ids: [${asked.map(id => JSON.stringify(id)).join(", ")}]) { ... on Order { id name cancelledAt } }
-    }`;
+    // A refused answer (`errors`) throws in the strict call: nothing is removed.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const body = (await graphql(domain, token, q)) as any;
-    if (body?.errors) throw new Error(`Shopify answered with errors: ${JSON.stringify(body.errors).slice(0, 200)}`);
-    const nodes = body?.data?.nodes;
+    const data = await shopifyGraphql<any>(ORDERS_BY_ID, { ids: asked });
+    const nodes = data?.nodes;
     if (!Array.isArray(nodes) || nodes.length !== batch.length) {
       throw new Error(`Shopify answered ${Array.isArray(nodes) ? nodes.length : "no list"} for ${batch.length} ids asked`);
     }
@@ -184,13 +182,12 @@ async function goneFromShopify(
   return { gone, recentCancels, unusableIds: held.length - usable.length };
 }
 
-async function subscriptionTopics(domain: string, token: string): Promise<string[]> {
-  const q = `query {
-    webhookSubscriptions(first: 100) { edges { node { topic } } }
-  }`;
-  const body = await graphql(domain, token, q);
+async function subscriptionTopics(): Promise<string[]> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const edges = (body as any)?.data?.webhookSubscriptions?.edges ?? [];
+  const data = await shopifyGraphql<any>(SUBSCRIPTION_TOPICS);
+  if (!Array.isArray(data?.webhookSubscriptions?.edges)) throw new Error("Shopify answered no subscription list");
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const edges: any[] = data.webhookSubscriptions.edges;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return edges.map((e: any) => String(e?.node?.topic ?? "")).sort();
 }
@@ -211,9 +208,9 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  let token: string;
   try {
-    token = await getShopifyToken();
+    // Asked once up front for the clearer failure; each query fetches its own.
+    await getShopifyToken();
   } catch (err) {
     // Not being able to ASK is not the same as everything being fine.
     return NextResponse.json(
@@ -227,7 +224,7 @@ export async function GET(req: NextRequest) {
   // list no longer decides the outcome -- on 2026-08-20 the app owned five
   // failing subscriptions while a sixth, invisible one did all the work.
   try {
-    detail.app_owned_topics = await subscriptionTopics(domain, token);
+    detail.app_owned_topics = await subscriptionTopics();
   } catch (err) {
     detail.app_owned_topics = `unavailable: ${String(err)}`;
   }
@@ -235,7 +232,7 @@ export async function GET(req: NextRequest) {
   // ── The actual check ─────────────────────────────────────────────────
   let orders: ShopifyOrder[];
   try {
-    orders = await recentShopifyOrders(domain, token);
+    orders = await recentShopifyOrders();
   } catch (err) {
     return NextResponse.json(
       { ok: false, problems: [`Could not read recent orders from Shopify: ${String(err)}`], ...detail },
@@ -319,7 +316,7 @@ export async function GET(req: NextRequest) {
   try {
     const held = await heldPurchases();
     detail.oms_purchases_checked = held.length;
-    const { gone, recentCancels, unusableIds } = await goneFromShopify(domain, token, held, cutoff);
+    const { gone, recentCancels, unusableIds } = await goneFromShopify(held, cutoff);
     detail.recent_cancels_left_to_the_webhook = recentCancels;
     if (unusableIds > 0) detail.unusable_shopify_ids = unusableIds;
     detail.gone_from_shopify = gone.map(g => ({ project: g.projectId, how: g.how, ...(g.name ? { name: g.name } : {}) }));

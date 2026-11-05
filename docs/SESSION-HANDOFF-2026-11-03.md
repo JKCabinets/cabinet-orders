@@ -815,6 +815,41 @@ Committed as *"Docs: item 5 part 4 designed (2026-11-05)"*, before the build.
   stand-in that can answer a refusal; typecheck, a planted error per changed
   file; the patch on box-shaped trees; the chain, with `next typegen`.
 
+**Part 4, as built and proven (2026-11-05)** — its own commit, *"Item 5, part 4:
+one Admin API version (2026-10), one strict call -- webhook-health and the
+webhooks route through lib/shopify"*, with these docs. 4c is still to come.
+- ⚠ **An earlier attempt, discarded.** A response that never reached Garrett had
+  already edited the five files and built a check in the sandbox — found when
+  the control tree no longer matched the box (`lib/shopify.ts` differed from the
+  snapshot's). All of it was reset to the deployed code and rebuilt in view. It
+  misled once: item 67's two comments read as "already fixed" from the altered
+  tree; they were not. (Its graphql-js 16.9.0 was kept for the harness.)
+- **The code:** `lib/shopify`'s constant is `2026-10`, documented as the one
+  version and as not the payloads'. The webhooks route and webhook-health go
+  through `shopifyGraphql`, every operation named and every value a variable;
+  the webhooks route reads and writes `uri` and lists each subscription's
+  `apiVersion`; webhook-health's order sample and subscription list also refuse
+  an answer with no list, and its up-front token step stays for the clearer
+  failure. Item 67's three comments.
+- **The schema check, run in production 2026-11-05** (`item5p4-schema-check.js`,
+  sha256 `229da906…`; read-only, introspection only): the 13 operations,
+  captured from the code as it sends them — **valid on 2026-04 (3,278 types) and
+  on 2026-10 (3,716), nothing deprecated, the planted bad query caught on both:
+  SAFE.** The texts after the constant moved: identical to the ones it checked.
+- **Proven against the deployed code:**
+  - **webhook-health:** a refused order sample — the deployed code 200, ok, "no
+    orders in Shopify to reconcile" (GREEN); part 4 500, with Shopify's refusal.
+    A refused subscription list: `[]` against "unavailable". The normal run, a
+    refused reverse check, a missing order: the same verdicts;
+  - **the webhooks route:** a refused list — GET 200 `count 0` against 502;
+    POST five creates attempted against none, 502. One subscription missing:
+    both create it, part 4 by variables with `uri`. GET shows `apiVersion`;
+  - every call on `2026-10` after the move; the typecheck identical; a planted
+    error seen in each of the five files.
+- **4c, still open:** the webhooks deliver `2026-04` — the app's own setting in
+  Shopify. Before it moves, the handler is read against Shopify's payload
+  changes for its five topics; after, GET shows each subscription's version.
+
 ### 6.4 Still open from this session
 
 - **Item 4, Garrett's ruling:** the "Delivered" email per line or per order —

@@ -6,19 +6,26 @@
  * here for both listing and creating, to match how everything else was set up —
  * one management surface, no REST/GraphQL split.
  *
- * GET  — list current webhookSubscriptions (topic + callbackUrl).
- * POST — register products/update at the SAME callbackUrl the order webhooks
- *        use, so it reaches our handler and verifies with the same HMAC secret.
- *        Idempotent: skips if an equivalent subscription already exists.
+ * GET  — list current webhookSubscriptions: topic, delivery address, and the
+ *        API version Shopify serializes each one's payloads in.
+ * POST — register EVERY topic in TOPICS (all five) at ONE callback URL, so each
+ *        reaches our handler and verifies with the same HMAC secret. (It said
+ *        "register products/update" until 2026-11-05 -- item 67.) Idempotent:
+ *        skips a topic already subscribed at that URL.
  *
- * Uses the app's own getShopifyToken() (OAuth client-credentials), same as the
- * product sync route. Same SSRF guard on the domain.
+ * ⚠ THROUGH lib/shopify's STRICT CALL (2026-11-05, item 5 part 4): its version,
+ * and a refused answer -- HTTP 200 carrying `errors` -- fails instead of
+ * reading as an empty list. Before, a refused list read as `count: 0`, and POST
+ * then tried to create all five again. The address is `uri`; `callbackUrl` and
+ * `endpoint` are deprecated (Shopify, 2026-10).
+ *
+ * ⚠ THE PAYLOAD VERSION IS NOT SET HERE: a subscription's apiVersion is
+ * "inherited from the app that created the webhook subscription" -- the app's
+ * Webhooks API version, in its settings in Shopify. GET shows it.
  */
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
-import { getShopifyToken, isValidShopifyDomain } from "@/lib/shopify";
-
-const API_VERSION = "2026-04";
+import { isValidShopifyDomain, shopifyGraphql } from "@/lib/shopify";
 
 /**
  * Every topic the handler in app/api/shopify/webhook/route.ts accepts.
@@ -66,38 +73,36 @@ function resolveCallbackUrl(subs: SubNode[]): string {
 interface SubNode {
   id: string;
   topic: string;
+  /** Where Shopify delivers: the subscription's `uri`. */
   callbackUrl: string | null;
+  /** The API version Shopify serializes this subscription's payloads in. */
+  apiVersion: string | null;
 }
 
-async function graphql(domain: string, token: string, query: string): Promise<Record<string, unknown>> {
-  const res = await fetch(`https://${domain}/admin/api/${API_VERSION}/graphql.json`, {
-    method: "POST",
-    headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" },
-    body: JSON.stringify({ query }),
-  });
-  const text = await res.text();
-  if (!res.ok) throw new Error(`Shopify GraphQL error: ${res.status} ${text}`);
-  return JSON.parse(text) as Record<string, unknown>;
-}
+const LIST = `query WebhookSubscriptions {
+  webhookSubscriptions(first: 100) { nodes { id topic uri apiVersion { handle } } }
+}`;
 
-async function listSubscriptions(domain: string, token: string): Promise<SubNode[]> {
-  const q = `query {
-    webhookSubscriptions(first: 100) {
-      edges { node {
-        id
-        topic
-        endpoint { __typename ... on WebhookHttpEndpoint { callbackUrl } }
-      } }
-    }
-  }`;
-  const body = await graphql(domain, token, q);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const edges = (body as any)?.data?.webhookSubscriptions?.edges ?? [];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return edges.map((e: any) => ({
-    id: String(e?.node?.id ?? ""),
-    topic: String(e?.node?.topic ?? ""),
-    callbackUrl: e?.node?.endpoint?.callbackUrl ?? null,
+const CREATE = `mutation WebhookSubscriptionCreate($topic: WebhookSubscriptionTopic!, $sub: WebhookSubscriptionInput!) {
+  webhookSubscriptionCreate(topic: $topic, webhookSubscription: $sub) {
+    webhookSubscription { id topic uri }
+    userErrors { field message }
+  }
+}`;
+
+type ListAnswer = { webhookSubscriptions?: { nodes?: { id?: unknown; topic?: unknown; uri?: unknown; apiVersion?: { handle?: unknown } | null }[] } | null };
+type CreateAnswer = { webhookSubscriptionCreate?: { webhookSubscription?: { id?: unknown } | null; userErrors?: { message?: string }[] } | null };
+
+/** Every subscription the app owns. THROWS on a refused or shapeless answer. */
+async function listSubscriptions(): Promise<SubNode[]> {
+  const data = await shopifyGraphql<ListAnswer>(LIST);
+  const nodes = data.webhookSubscriptions?.nodes;
+  if (!Array.isArray(nodes)) throw new Error("Shopify answered no subscription list");
+  return nodes.map((n) => ({
+    id: String(n?.id ?? ""),
+    topic: String(n?.topic ?? ""),
+    callbackUrl: typeof n?.uri === "string" ? n.uri : null,
+    apiVersion: typeof n?.apiVersion?.handle === "string" ? n.apiVersion.handle : null,
   }));
 }
 
@@ -110,8 +115,7 @@ export async function GET() {
     return NextResponse.json({ error: "Invalid SHOPIFY_STORE_DOMAIN" }, { status: 500 });
   }
   try {
-    const token = await getShopifyToken();
-    const subs = (await listSubscriptions(domain, token))
+    const subs = (await listSubscriptions())
       .sort((a, b) => a.topic.localeCompare(b.topic));
     return NextResponse.json({ count: subs.length, subscriptions: subs });
   } catch (err) {
@@ -135,12 +139,10 @@ export async function POST() {
     return NextResponse.json({ error: "Invalid SHOPIFY_STORE_DOMAIN" }, { status: 500 });
   }
 
-  let token: string;
   let subs: SubNode[];
   let callbackUrl: string;
   try {
-    token = await getShopifyToken();
-    subs = await listSubscriptions(domain, token);
+    subs = await listSubscriptions();
     callbackUrl = resolveCallbackUrl(subs);
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 502 });
@@ -157,22 +159,10 @@ export async function POST() {
       continue;
     }
     try {
-      // `topic` is a GraphQL enum so it is unquoted, and comes only from the
-      // TOPICS constant above. callbackUrl is a string and is JSON-encoded.
-      const mutation = `mutation {
-        webhookSubscriptionCreate(
-          topic: ${topic},
-          webhookSubscription: { callbackUrl: ${JSON.stringify(callbackUrl)}, format: JSON }
-        ) {
-          webhookSubscription { id topic endpoint { __typename ... on WebhookHttpEndpoint { callbackUrl } } }
-          userErrors { field message }
-        }
-      }`;
-      const body = await graphql(domain, token, mutation);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const result = (body as any)?.data?.webhookSubscriptionCreate;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const errs: any[] = result?.userErrors ?? [];
+      // Variables, not text: `topic` is the enum from TOPICS, the address is `uri`.
+      const data = await shopifyGraphql<CreateAnswer>(CREATE, { topic, sub: { uri: callbackUrl, format: "JSON" } });
+      const result = data.webhookSubscriptionCreate;
+      const errs = result?.userErrors ?? [];
       if (errs.length > 0) {
         failed.push({ topic, error: errs.map(e => e?.message ?? String(e)).join("; ") });
         continue;
