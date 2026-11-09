@@ -19,10 +19,11 @@ into it rather than copying it, and records the rest.
 
 ## 1. Where things stand
 
-**The box** (`5.78.220.153`, `~/cabinet-orders`, `main`): after this docs
-commit `HEAD~1` is `5c8ea73`, item 5 part 4 (deployed). **The next chain
-checks: `HEAD`'s subject is *"Docs: session record and start point
-(2026-11-06)"*, tree clean.** ⚠ **The running image is `5c8ea73`**; against
+**The box** (`5.78.220.153`, `~/cabinet-orders`, `main`): `HEAD` is *"Docs:
+the website team's answers (2026-11-09)"*, `HEAD~1` the session record,
+`HEAD~2` `5c8ea73`, item 5 part 4 (deployed). **The next chain checks:
+`HEAD`'s subject is that one, tree clean.** ⚠ **The running image is
+`5c8ea73`**; against
 this docs `HEAD` the image check reads MISMATCH until the next deploy, by
 design. This session's commits — `git log --oneline d04a568..HEAD` — each a
 design record, then its part and its docs: part 2 (`4ccd94d`, its live record
@@ -37,7 +38,8 @@ discontinued (11-03 §6.3, "Part 2, LIVE").
 `lib/shopify`'s one strict call and one constant; **no REST is left**. The five
 webhook subscriptions deliver in **`2026-10`** — the app's own setting in
 Shopify, moved 2026-11-05 (4c); `GET /api/shopify/webhooks` lists each one's
-`apiVersion`.
+`apiVersion`. The first order on those payloads, #1078 (2026-11-09, 21:28
+UTC), was taken in cleanly: its project and its cabinet group.
 
 **Cron** — eight jobs (`scripts/cron/crontab`, installed 2026-11-05):
 `sync-shopify-catalog`, 10:00 UTC daily, joined them. ⚠ **The deploy chain runs
@@ -117,9 +119,9 @@ migration probed, transcribed and proven first.
 
 1. ⚠ **The `sync-shopify-catalog` check's two integrations** ("OMS Health",
    "OMS Health Email"): NOT YET CONFIRMED (OPERATIONS §6).
-2. **Where the app's webhook version is set** — the Dev Dashboard's app
-   version, or a custom app's Configuration in the Shopify admin: Garrett to
-   say, so OPERATIONS §8 names the place.
+2. **Where the app's webhook version is set** — ANSWERED by the record: the
+   **Dev Dashboard**, where the app's permissions are set too (10-29 §4.6).
+   OPERATIONS §8 names it.
 3. **Item 4, Garrett's ruling:** the "Delivered" and "Delivery date changed"
    emails, per line or per order (11-03 §6.4).
 4. **The storage sweep** (admin): two test photos and whatever the 504 attempts
@@ -132,6 +134,24 @@ migration probed, transcribed and proven first.
    wrong tool; the admin Shopify page shows nothing when a sync fails (`if
    (data.ok)`, an empty `catch`); no product create or delete webhook is
    subscribed — the daily sync covers both.
+7. **The website team's answers (2026-11-09)** to the questions sent as the
+   10-29 record has them — that notifications plan stands:
+   - **Quote requests:** the website sends each only to the OMS's quote
+     endpoint and does not push it into Help Scout. They ask the **OMS** to
+     create a Help Scout conversation for each, as it does for claims, tagged
+     exactly `quote-request` (the Custom Quote Request view shows only
+     those), and to tell them when a test quote can confirm it. **An OMS
+     feature, to design.**
+   - **The shipping confirmation:** Shopify has no on/off switch — it is sent
+     whenever a fulfilment is created with the customer notified (OPERATIONS
+     §8, corrected). Garrett: tested in the last session — the email arrived
+     2026-11-02 (11-03 §1), and on a mixed order it lists only the lines that
+     ship — so their offered joint test on #1078 is optional.
+   - **Risky orders:** nothing holds them; Shopify rates each order low,
+     medium or high and shows it, but does not stop the order. Production
+     starts in the OMS, so the hold belongs there, from that rating (they
+     offered a tag if easier). Garrett: *"Okay, that sounds good"*. **An OMS
+     feature, to design** — beside the payment hold.
 
 ## 5. Where each fact lives
 

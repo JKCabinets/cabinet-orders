@@ -1,6 +1,10 @@
 # JK Cabinets — Operations & Systems Reference
 
-**As of 2026-09-15, amended through 2026-11-06 (the dated entries below) · supersedes OPERATIONS-2026-08-18.md**
+**As of 2026-09-15, amended through 2026-11-09 (the dated entries below) · supersedes OPERATIONS-2026-08-18.md**
+
+⚠ **AMENDED 2026-11-09 (the website team).** §8: Shopify has no on/off switch
+for the shipping confirmation; the app's webhook version is set in the Dev
+Dashboard.
 
 ⚠ **AMENDED 2026-11-06 (item 5, 4c).** §8: the webhooks deliver in `2026-10`.
 
@@ -859,7 +863,8 @@ nothing, `product_no_variants` (200) — all three in `webhook_events`.
 a subscription's version is "inherited from the app"; "you can't specify it
 per subscription"). The OMS's own calls use `lib/shopify`'s one version —
 `2026-10` since item 5 part 4 — while the webhooks deliver in the version set
-for the app in Shopify: `2026-10` since 2026-11-05 (4c; it was `2026-04`).
+for the app in Shopify — in the Dev Dashboard, the app's Versions → Webhooks
+API Version: `2026-10` since 2026-11-05 (4c; it was `2026-04`).
 `GET /api/shopify/webhooks`
 lists each subscription's `apiVersion`. Moving it is a step of its own: the
 handler is read against that version's payloads first.
@@ -870,8 +875,13 @@ handler is read against that version's payloads first.
   shipping confirmation when an order is marked fulfilled; its template picks
   its version by the shipment ("Your cabinets have shipped") and hides
   tracking on cabinets; samples get it when their label is bought. Feature 9
-  relies on it — the OMS will mark cabinet lines fulfilled. **Verify it is ON
-  (Settings → Notifications) before phase 1 goes live.**
+  relies on it — the OMS will mark cabinet lines fulfilled. ⚠ **CORRECTED
+  2026-11-09 (the website team): Shopify has NO on/off switch for it** — it
+  is sent whenever a fulfilment is created with the customer notified; the
+  template picks the cabinets version by the product's vendor (Waypoint, HCI,
+  J&K) and never shows tracking or the Shop app button. (This said "Verify it
+  is ON (Settings → Notifications) before phase 1 goes live.") Seen live
+  2026-11-02; on a mixed order it lists only the lines that ship (Garrett).
 - ⚠ **The run needs Shopify's fulfilment WRITE scope** (2026-11-02):
   `fulfillmentCreate` requires `write_merchant_managed_fulfillment_orders` (or
   `write_assigned_…` / `write_third_party_…`). The #1067 read proved the READ

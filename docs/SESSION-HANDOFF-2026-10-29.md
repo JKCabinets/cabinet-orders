@@ -323,7 +323,8 @@ and the stage tag, and the app had no fulfilment permission until 2026-10-29.
 10. **Before it goes live, verify in Shopify** (Settings → Notifications) that
     the **shipping confirmation** is ON. OPERATIONS §8 recorded it as
     "TURNED OFF" in August; the website team says it is sent on fulfilment.
-    Phase 1 depends on it.
+    Phase 1 depends on it. ⚠ **CORRECTED 2026-11-09:** Shopify has no such
+    switch (the website team; OPERATIONS §8).
 
 ### 4.3 Phase 2 — the three Help Scout emails
 
