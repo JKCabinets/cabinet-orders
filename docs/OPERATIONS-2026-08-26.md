@@ -1,6 +1,8 @@
 # JK Cabinets — Operations & Systems Reference
 
-**As of 2026-09-15, amended through 2026-11-05 (the dated entries below) · supersedes OPERATIONS-2026-08-18.md**
+**As of 2026-09-15, amended through 2026-11-06 (the dated entries below) · supersedes OPERATIONS-2026-08-18.md**
+
+⚠ **AMENDED 2026-11-06 (item 5, 4c).** §8: the webhooks deliver in `2026-10`.
 
 ⚠ **AMENDED 2026-11-05 (item 5 part 4, one API version).** §6: a refused Shopify
 answer turns `jk-webhook-health` red. §8: where the webhooks' payload version
@@ -857,7 +859,8 @@ nothing, `product_no_variants` (200) — all three in `webhook_events`.
 a subscription's version is "inherited from the app"; "you can't specify it
 per subscription"). The OMS's own calls use `lib/shopify`'s one version —
 `2026-10` since item 5 part 4 — while the webhooks deliver in the version set
-for the app in Shopify: `2026-04` as of 2026-11-05. `GET /api/shopify/webhooks`
+for the app in Shopify: `2026-10` since 2026-11-05 (4c; it was `2026-04`).
+`GET /api/shopify/webhooks`
 lists each subscription's `apiVersion`. Moving it is a step of its own: the
 handler is read against that version's payloads first.
 

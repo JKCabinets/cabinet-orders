@@ -1,5 +1,10 @@
 # Start here — session handoff, 2026-11-04
 
+⚠ **SUPERSEDED AS THE START POINT by `SESSION-HANDOFF-2026-11-06.md`**
+(2026-11-06). This file stays as it was kept through the 2026-11-04/06
+session; its §1 and §4 are that session's running notes, and the new start
+point carries what still holds.
+
 ⚠ **THE START POINT.** Supersedes `SESSION-HANDOFF-2026-11-03.md` as where a
 session starts; that file stays the RECORD of the 2026-11-03/04 session (§6 and
 §7 above all), and this one points into it rather than copying it. Everything

@@ -13,7 +13,7 @@ wrong.
 
 ## Start here
 
-1. `docs/SESSION-HANDOFF-2026-11-04.md` — where things stand, how work is done
+1. `docs/SESSION-HANDOFF-2026-11-06.md` — where things stand, how work is done
    safely, and what is next. (Each earlier handoff is the record of its own
    session; this one points into them.)
 2. `docs/OMS-STATE-2026-08-26.md` — what the system IS: data model, flows,
@@ -30,10 +30,10 @@ Next.js 16.4.0 (pinned exactly) · React 19 · TypeScript · Tailwind · Supabas
 `5.78.220.153`, behind kamal-proxy. **No staging: every deploy is production.**
 
 **How a change ships:** an anchored patch script, proved before it ships;
-then, on the box, apply → `npx tsc --noEmit` → commit → `git push` →
-`kamal deploy`. A migration runs in the Supabase SQL editor before the deploy
-that needs it, and a copy lives in `migrations/`. The handoffs give the whole
-method. ⚠ Never Vercel.
+then, on the box, apply → `npx next typegen` → `npx tsc --noEmit` → commit →
+`git push` → `kamal deploy`. A migration runs in the Supabase SQL editor
+before the deploy that needs it, and a copy lives in `migrations/`. The
+handoffs give the whole method. ⚠ Never Vercel.
 
 **Configuration:** the values live in `.env.kamal` on the box (gitignored);
 `.kamal/secrets` is a loader that reads them and holds none; `config/deploy.yml`

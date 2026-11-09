@@ -850,6 +850,35 @@ webhooks route through lib/shopify"*, with these docs. 4c is still to come.
   Shopify. Before it moves, the handler is read against Shopify's payload
   changes for its five topics; after, GET shows each subscription's version.
 
+**Part 4, LIVE (2026-11-05):** `5c8ea73`, deployed, by the chain as written
+(`next typegen` included). On `2026-10`, through `run-cron.sh`: webhook-health
+`rc=0` — all five topics, "no orders in Shopify to reconcile", now an answer
+and no longer possibly a refusal; the catalogue sync `synced 2622, products
+131, removed 0, discontinued 0, restored 0`. The webhooks route's GET: five
+subscriptions, each `"apiVersion":"2026-04"` — 4c's "before".
+
+**4c, done (2026-11-05/06):** the webhooks' payload version.
+- **The handler's payload reads, read whole** (about 45 fields): an order's
+  `id`, `email`, `order_number`, `name`, `note`, `note_attributes`,
+  `client_details` (or `browser_ip`), `financial_status`, `cancelled_at`, the
+  first of `shipping_lines`' `title`, `subtotal_price`, `total_tax`,
+  `total_price`, `total_shipping_price_set`; `customer`'s and
+  `billing_address`'s names and phone; `shipping_address`'s phone, two lines,
+  city, `province_code`, `zip`; each line item's `id`, `variant_id`, `sku`,
+  `name`, `vendor`, `quantity`, `properties`; each fulfillment's
+  `tracking_number`, `tracking_company` and line items' `vendor`. A product
+  update: its `id` only (part 2).
+- **Shopify's release notes:** 2026-07 has no Events & webhooks section;
+  2026-10's one Orders-webhook change ADDS `selling_plan_id` to line items. No
+  change to any field read, so no code.
+- **Garrett, 2026-11-05:** *"I agree on the design, lets proceed"*. Before:
+  five at `2026-04`. He moved the app's Webhooks API version to `2026-10` in
+  Shopify (which place: 11-06 §4 item 2). After: five at `2026-10`, the same
+  ids and address. The first delivery on it, 2026-11-06 11:55:41 UTC: 200;
+  `webhook_events` logged nothing failed. The first scheduled catalogue sync,
+  10:00 UTC that day, answered as the manual runs had.
+- **Item 5 is complete.**
+
 ### 6.4 Still open from this session
 
 - **Item 4, Garrett's ruling:** the "Delivered" email per line or per order —
