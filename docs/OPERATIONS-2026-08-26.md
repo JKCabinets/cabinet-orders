@@ -1,6 +1,10 @@
 # JK Cabinets — Operations & Systems Reference
 
-**As of 2026-09-15, amended through 2026-11-09 (the dated entries below) · supersedes OPERATIONS-2026-08-18.md**
+**As of 2026-09-15, amended through 2026-11-10 (the dated entries below) · supersedes OPERATIONS-2026-08-18.md**
+
+⚠ **AMENDED 2026-11-10.** §2 and §10: the "delivered" and "delivery date
+changed" emails go per cabinet line (Garrett). §6: the `sync-shopify-catalog`
+check's two integrations confirmed.
 
 ⚠ **AMENDED 2026-11-09 (the website team).** §8: Shopify has no on/off switch
 for the shipping confirmation; the app's webhook version is set in the Dev
@@ -318,7 +322,11 @@ order:
 - **The OMS, through Help Scout (3), each confirmed by staff:** ship date
   changed; delivery date changed; delivered (with "Report any visible
   shipping damage within 48 hours of delivery."). One conversation per
-  purchase, subject "Order #1065".
+  purchase, subject "Order #1065". ⚠ **Per cabinet line** (Garrett,
+  2026-11-10): a mixed order's lines arrive on their own days, each with its
+  own 48-hour window, so each line gets its own "delivered" and "delivery date
+  changed" email, as it already gets its own "ship date changed"; each names
+  its line (`docs/SESSION-HANDOFF-2026-10-29.md` §4.4).
 - **Dropped from the August plan:** "ship-from-factory date set" / "in
   production" (it over-informs), "estimated delivery date scheduled" (the
   delivery agent and the customer arrange it; we are not told), and the
@@ -648,8 +656,8 @@ silence its own alarm. Email alerting, verified.
 integrations, each on every check — EIGHT from item 5 part 2's deploy:
 `cabinet-fulfilment` since 2026-11-02 (its two integrations CONFIRMED by Garrett
 2026-11-03 — this said "NOT YET CONFIRMED"), `sync-shopify-catalog` since
-2026-11-04 (created 2026-11-05; that its two integrations are attached is NOT YET
-CONFIRMED); a check without them fails silently: **"OMS Health"** — its own Microsoft
+2026-11-04 (created 2026-11-05; its two integrations CONFIRMED by Garrett
+2026-11-10 — this said "NOT YET CONFIRMED"); a check without them fails silently: **"OMS Health"** — its own Microsoft
 Teams integration, through a Teams workflow made from the template "Send
 webhook alerts to a channel" and never edited — and **"OMS Health Email"**, to
 garrett@jkcabinets2you.com. A Teams alert is a card naming the check and its
@@ -1333,6 +1341,8 @@ recovery story.
   "still on schedule?" check the business day before; three staff-confirmed
   Help Scout emails — ship date changed, delivery date changed, delivered.
   "In production" and "delivery confirmed" were dropped as over-informing.
+  ⚠ 2026-11-10 (Garrett): each per cabinet line, since each line arrives on its
+  own day with its own 48-hour window.
 - **THE CATALOGUE IS SHOPIFY'S OWN ANSWER** (11-04, item 5 part 2; Garrett:
   "Should pull its truth from shopify and update based on what actually
   live"): the full sync over GraphQL, daily at 3 a.m. Arizona; the product

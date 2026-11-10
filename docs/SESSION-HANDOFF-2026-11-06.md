@@ -20,9 +20,10 @@ into it rather than copying it, and records the rest.
 ## 1. Where things stand
 
 **The box** (`5.78.220.153`, `~/cabinet-orders`, `main`): `HEAD` is *"Docs:
-the website team's answers (2026-11-09)"*, `HEAD~1` the session record,
-`HEAD~2` `5c8ea73`, item 5 part 4 (deployed). **The next chain checks:
-`HEAD`'s subject is that one, tree clean.** ⚠ **The running image is
+open items 1 to 4 (2026-11-10)"*, `HEAD~1` *"Docs: the website team's answers
+(2026-11-09)"*, `HEAD~2` the session record, `HEAD~3` `5c8ea73`, item 5 part 4
+(deployed). **The next chain checks: `HEAD`'s subject is that one, tree
+clean.** ⚠ **The running image is
 `5c8ea73`**; against
 this docs `HEAD` the image check reads MISMATCH until the next deploy, by
 design. This session's commits — `git log --oneline d04a568..HEAD` — each a
@@ -117,15 +118,25 @@ migration probed, transcribed and proven first.
 
 ## 4. Open
 
-1. ⚠ **The `sync-shopify-catalog` check's two integrations** ("OMS Health",
-   "OMS Health Email"): NOT YET CONFIRMED (OPERATIONS §6).
-2. **Where the app's webhook version is set** — ANSWERED by the record: the
+1. ✅ **The `sync-shopify-catalog` check's two integrations** ("OMS Health",
+   "OMS Health Email"): CONFIRMED by Garrett 2026-11-10 — both on, the check
+   green (OPERATIONS §6).
+2. ✅ **Where the app's webhook version is set** — ANSWERED by the record: the
    **Dev Dashboard**, where the app's permissions are set too (10-29 §4.6).
-   OPERATIONS §8 names it.
-3. **Item 4, Garrett's ruling:** the "Delivered" and "Delivery date changed"
-   emails, per line or per order (11-03 §6.4).
-4. **The storage sweep** (admin): two test photos and whatever the 504 attempts
-   of 2026-11-04 left in Storage are named by no record; safe to sweep.
+   OPERATIONS §8 names it. Closed 2026-11-10: nothing left to do.
+3. ✅ **Item 4, Garrett's ruling** — RULED 2026-11-10: the "Delivered" and
+   "Delivery date changed" emails go PER LINE, with the wording proposed;
+   recorded with feature 9's design, `SESSION-HANDOFF-2026-10-29.md` §4.4,
+   and two findings for phase 2's design in §4.3.
+4. ✅ **The storage sweep** — DONE 2026-11-10 (Garrett). The dry run listed 7
+   files, 256,143 bytes, each placed from the record before anything was
+   deleted. `claim-photos` 2: the claims form's two attempts of 2026-11-04,
+   CR-1016 and its retry CR-1017 by their times (the claims table rebuilt
+   empty since). `order-attachments` 5: QUO-1793816226246's timed-out first
+   attempt (2026-11-04, stored after the request gave up, so no row), and one
+   each under WRN-1059-1, -3, -4 and SHO-1059-CAB, left by the hand removal
+   of 2026-10-19 (10-13 item 40, corrected). Confirmed with 7: `removed: 7`;
+   the dry run after it, `count: 0`.
 5. From the 11-03 list (§4 there), still open: 8 (UTC "today": a line due today
    reads overdue after 5 p.m. Arizona), 9, 10, and 11 (RECOVERY has never been
    exercised). Item 7 was done with item 5 part 4.
@@ -133,7 +144,8 @@ migration probed, transcribed and proven first.
    of orders "with no total recorded — backfill via Shopify sync" names the
    wrong tool; the admin Shopify page shows nothing when a sync fails (`if
    (data.ok)`, an empty `catch`); no product create or delete webhook is
-   subscribed — the daily sync covers both.
+   subscribed — the daily sync covers both. And (found 2026-11-10) the system
+   map still reads "Planned (feature 9 phase 1)", live since 2026-11-02.
 7. **The website team's answers (2026-11-09)** to the questions sent as the
    10-29 record has them — that notifications plan stands:
    - **Quote requests:** the website sends each only to the OMS's quote

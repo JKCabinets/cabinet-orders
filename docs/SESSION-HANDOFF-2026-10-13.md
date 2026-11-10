@@ -1360,7 +1360,10 @@ Each line points at the section that owns the detail.
     **Garrett, 2026-10-19:** the test SHO-1059 and its four claims were removed
     by hand (files first, then a guarded SQL step; their Help Scout
     conversations noted and closed by the 10-07 trigger, their submissions
-    CR-1011 … CR-1014 unlinked and kept). And from now on such a purchase is
+    CR-1011 … CR-1014 unlinked and kept). ⚠ CORRECTED 2026-11-10: "files first"
+    left four in Storage, named by no row — one each under WRN-1059-1, -3, -4
+    and SHO-1059-CAB — removed by the storage sweep 2026-11-10
+    (`SESSION-HANDOFF-2026-11-06.md` §4 item 4). And from now on such a purchase is
     KEPT, MARKED and ARCHIVED (`patch_kept_for_claims.py`, migration
     `2026-10-19-shopify-gone.sql`): `removeShopifyPurchase` sets
     `projects.shopify_gone_at` / `_how` and archives it, once, with a trail

@@ -176,6 +176,8 @@ ruling 2.
 - What a line ahead of the others shows (its own stage marks?).
 - A single-vendor cabinet order: one section — the same as today in effect.
 - Phase 2's "Delivered" email (designed, not built): per line or per order.
+  ⚠ RULED 2026-11-10 (Garrett): per line, and "Delivery date changed" too —
+  `SESSION-HANDOFF-2026-10-29.md` §4.4.
 
 ### 3.7 The design, agreed with Garrett 2026-11-02 ("All of that sounds good, I agree")
 

@@ -349,6 +349,19 @@ and the stage tag, and the app had no fulfilment permission until 2026-10-29.
   `delivery_date` also exists); the "delivered" trigger — the Confirm
   Delivery move, with its signed receipt; and whose name a reply carries (a
   Help Scout mailbox setting: the user's name or the mailbox's).
+  ⚠ **2026-11-10, with the per-line ruling (§4.4):** the "delivered" trigger is
+  each line's signed receipt, and "delivery date changed" watches each line's
+  delivery target (which field holds it is still the build's to read). Two
+  found while reading the record for that ruling, still to settle:
+  (a) **"delivery date changed" has no first date to change from.** It goes
+  only when the customer was told the first date (above), but the "delivery
+  confirmed" email was dropped (§4.1) and the delivery target is internal
+  (10-13 item 42), so nothing the OMS sends tells a customer a delivery date:
+  as designed it never fires, unless staff record when they told one.
+  (b) **The subjects.** §4.4 gives each email its own, but each is a reply on
+  one conversation per purchase, subject "Order #1065" (OPERATIONS §2), and a
+  reply goes out under its conversation's subject, as understood here — check
+  against Help Scout's documentation when building.
 
 ### 4.4 The approved wording (Garrett, 2026-10-29 — use exactly)
 
@@ -362,6 +375,24 @@ and the stage tag, and the app had no fulfilment permission until 2026-10-29.
 > **Delivered** · Subject: *Order #1065: delivered*
 > Your order has been delivered. Report any visible shipping damage within 48
 > hours of delivery.
+
+⚠ **PER CABINET LINE — RULED 2026-11-10** (Garrett: *"Lets do your
+recommendation, per line. Wording looks good."*). "Delivered" and "Delivery
+date changed" go per cabinet line, not per order, and name the line as "Ship
+date changed" does (Waypoint as Select Cabinetry, §4.5). Why: each line
+arrives on its own day by its own route (OPERATIONS §1), so each has its own
+48-hour window; feature 10 records each line's delivery target and signed
+receipt; one email at the last line could reach the customer after the first
+line's 48 hours had passed. These two supersede the two above:
+
+> **Delivered**, when a line's signed receipt is recorded ·
+> Subject: *Order #1067: J&K Cabinetry delivered*
+> Your J&K Cabinetry has been delivered. Report any visible shipping damage
+> within 48 hours of delivery.
+
+> **Delivery date changed**, when a line's delivery target changes ·
+> Subject: *Order #1067: new delivery date*
+> Your J&K Cabinetry delivery is now scheduled for **Thursday, November 20**.
 
 > **Staff check, the business day before** (on the order):
 > **J&K Cabinetry ships from the factory on Sat Nov 1.** Still on schedule?

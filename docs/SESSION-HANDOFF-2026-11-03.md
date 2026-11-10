@@ -90,7 +90,7 @@ subject in §3.8.
 **Feature 9 phase 2 — the three Help Scout emails — is DESIGNED, NOT BUILT**
 (`SESSION-HANDOFF-2026-10-29.md` §4.3). With feature 10 one question is new:
 a "Delivered" email per line or per order (`SESSION-HANDOFF-2026-11-02.md`
-§3.5, unsettled).
+§3.5, unsettled). ⚠ RULED 2026-11-10: per line (10-29 §4.4).
 
 **How it is described now:** OMS-STATE "Cabinet lines" and "Cabinet
 fulfilment"; OPERATIONS §1–§2, §5, §7–§8.
@@ -673,7 +673,7 @@ live (2026-11-05)"*.
   missing; all five webhook subscriptions; the 15:00 `cabinet-fulfilment` run
   made by hand at 19:00 (nothing due); that day's Teams card not sent.
 - **The setup:** the check `sync-shopify-catalog` created by Garrett (⚠ its two
-  integrations NOT YET CONFIRMED); its `healthchecks.map` line (eight keys, mode
+  integrations NOT YET CONFIRMED — confirmed by Garrett 2026-11-10); its `healthchecks.map` line (eight keys, mode
   600); the crontab installed from the repo (eight jobs; the old one kept as
   `~/crontab.before-item5p2`).
 - **The first run**, 19:03:54 UTC through `run-cron.sh`, **exactly as
@@ -886,7 +886,9 @@ subscriptions, each `"apiVersion":"2026-04"` — 4c's "before".
   delivery target. Proposed: per line. The "Delivered" email carries the
   48-hour sentence, and sent only at the last line it could reach a customer
   after their first line's 48 hours had passed; a line of a mixed order then
-  needs approved wording.
+  needs approved wording. ⚠ **RULED 2026-11-10 (Garrett): per line, both,
+  with the wording proposed** — recorded in `SESSION-HANDOFF-2026-10-29.md`
+  §4.4.
 - ~~**`phase1-harness.tar.gz` was not uploaded this session**~~ — uploaded later
   the same session, and used for feature 11 part 2. Its `prod_base.sql`
   `projects` matched production's 2026-11-03 probe exactly.
@@ -934,6 +936,8 @@ files to `claim-photos/_network-test/` and deleted each):
   CR-1016 and CR-1017 by `delete-test-claims-2026-11-04.sql` (guarded — it
   deletes only if exactly those two match); their Help Scout conversations
   deleted. The storage sweep removes what was left in Storage after a day.
+  ✅ Swept 2026-11-10: the quote's one file and the two claims' photos
+  (`SESSION-HANDOFF-2026-11-06.md` §4 item 4).
 
 ### 7.3 Feature 12 — the public forms answer within seconds, and never save twice (AGREED)
 
@@ -1010,7 +1014,7 @@ description identical to the original's, and a planted change seen. **In
 production:** its check `36 · 2 · 1 · service_role · 10 · CR-1018 · 9`, then
 `claims-table-check.sql`: 0 rows, 36 columns, both checks, the lease function,
 numbering at 1017, 2 photos in Storage — test photos, which the storage sweep
-removes.
+removes. ✅ Swept 2026-11-10 (`SESSION-HANDOFF-2026-11-06.md` §4 item 4).
 
 **The rules it leaves:**
 - ⚠ **A HARNESS FILE NEVER LEAVES THE SANDBOX LOOSE.** It travels only inside the
