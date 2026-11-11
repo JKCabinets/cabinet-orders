@@ -173,10 +173,10 @@ agreed and comes first (§6.2).** The list below stands as it was written.
    verify in the route.
 8. UTC "today" in `lib/backorders` (×2), `getBackorderStatus`, the backorders
    page and the line editor — a line due today reads overdue after 5 p.m.
-   Arizona (Garrett's call).
+   Arizona (Garrett's call). ⚠ DESIGNED 2026-11-10 — `SESSION-HANDOFF-2026-11-06.md` §6.1 (seven places, not five).
 9. production-complete's activity insert unchecked; the line editor's backorder
    control offered on archived and someone-else's groups; the export route's
-   comment on `SkuItem` stale.
+   comment on `SkuItem` stale. ⚠ DESIGNED 2026-11-10 — `SESSION-HANDOFF-2026-11-06.md` §6.2 (the second part wider).
 10. Optional tidy: a one-line-waiting reason repeats the line's name in its
    detail ("Waypoint Cabinetry: acknowledgment required" / "Waypoint
    Cabinetry: no acknowledgment yet").

@@ -20,10 +20,10 @@ into it rather than copying it, and records the rest.
 ## 1. Where things stand
 
 **The box** (`5.78.220.153`, `~/cabinet-orders`, `main`): `HEAD` is *"Docs:
-open items 1 to 4 (2026-11-10)"*, `HEAD~1` *"Docs: the website team's answers
-(2026-11-09)"*, `HEAD~2` the session record, `HEAD~3` `5c8ea73`, item 5 part 4
-(deployed). **The next chain checks: `HEAD`'s subject is that one, tree
-clean.** ⚠ **The running image is
+items 8 and 9, designed (2026-11-10)"*, `HEAD~1` *"Docs: open items 1 to 4
+(2026-11-10)"*, `HEAD~2` *"Docs: the website team's answers (2026-11-09)"*,
+`HEAD~3` the session record, `HEAD~4` `5c8ea73`, item 5 part 4 (deployed).
+**The next chain checks: `HEAD`'s subject is that one, tree clean.** ⚠ **The running image is
 `5c8ea73`**; against
 this docs `HEAD` the image check reads MISMATCH until the next deploy, by
 design. This session's commits — `git log --oneline d04a568..HEAD` — each a
@@ -139,13 +139,32 @@ migration probed, transcribed and proven first.
    the dry run after it, `count: 0`.
 5. From the 11-03 list (§4 there), still open: 8 (UTC "today": a line due today
    reads overdue after 5 p.m. Arizona), 9, 10, and 11 (RECOVERY has never been
-   exercised). Item 7 was done with item 5 part 4.
+   exercised). Item 7 was done with item 5 part 4. ⚠ **8 and 9 DESIGNED
+   2026-11-10 (§6), to build together** — one commit each, one deploy.
 6. **Found this session, left for their own look:** the admin home's warning
    of orders "with no total recorded — backfill via Shopify sync" names the
    wrong tool; the admin Shopify page shows nothing when a sync fails (`if
    (data.ok)`, an empty `catch`); no product create or delete webhook is
    subscribed — the daily sync covers both. And (found 2026-11-10) the system
    map still reads "Planned (feature 9 phase 1)", live since 2026-11-02.
+   **Found 2026-11-10, reading for items 8 and 9:**
+   - A member's "back on" date (`oooUntil`, stored `YYYY-MM-DD`) shows a day
+     early: `new Date(...)` reads it as UTC midnight, 5 p.m. the day before
+     in Arizona — `app/team/page.tsx`, `ProfileView`, `ProfileSummary` (not
+     yet read whole).
+   - Raw ISO dates on staff screens ("Exp 2026-11-10", "Starts …", "Sched
+     …"), where every other date reads MM/DD/YYYY (09-15 item 11): the
+     backorders page, `OrderTable`'s status labels, the line editor's
+     tooltips, the calendar.
+   - The calendar's two saves close the editor without checking the server's
+     answer (`saveDelivery` reads none; `saveProductionDates` closes on a
+     refusal too).
+   - `lib/backorders` sorts "oldest first" by `orders.date`, the yearless
+     display string the screens stopped reading 2026-10-19.
+   - The order modal's group strip reads `claimed_by` off the group, so every
+     group of a claimed Shopify purchase reads "unclaimed" there.
+   - The review-reason labels are two copies (`OrderDetails`, the export
+     route), and both lack `missing_mod_value`, which reads "Review".
 7. **The website team's answers (2026-11-09)** to the questions sent as the
    10-29 record has them — that notifications plan stands:
    - **Quote requests:** the website sends each only to the OMS's quote
@@ -171,4 +190,106 @@ migration probed, transcribed and proven first.
 `docs/OPERATIONS-2026-08-26.md` — the business, services, credentials, cron,
 checks, and why. `docs/RECOVERY.md` — when it has gone badly wrong. The
 handoffs — each session's decisions; item 5's are in
-`SESSION-HANDOFF-2026-11-03.md` §6.3. One fact, one home.
+`SESSION-HANDOFF-2026-11-03.md` §6.3, and the 2026-11-10 session's in §6
+below. One fact, one home.
+
+## 6. 2026-11-10 — this session's designs and results
+
+Items 1 to 4 of §4: done and recorded there (`8ffab24`). Items 8 and 9 of the
+11-03 list (§4 item 5): designed below, each agreed by Garrett and committed
+before any code; built together, one commit each, one deploy, item 9's patch
+pinned on item 8's (both touch `production-complete` and `OrderDetails`).
+
+### 6.1 Item 8 — Arizona's "today". DESIGN, agreed 2026-11-10
+
+Garrett: *"That looks good, and yes the calendar should be in it"*.
+
+**Read whole:** `lib/dates` (115 lines), `lib/dateUtils` (60), `lib/backorders`
+(206), `lib/data` (1,445), `app/backorders` (294 + 12),
+`components/OrderDetails` (627), `components/OrderTable` (1,329),
+`app/api/cron/production-complete` (153), the readers — the dashboard (1,040)
+and the sidebar (531) — and the calendar (703). Every place that derives a day
+from the clock was found by its output across the code, and every DATE field
+parsed or compared against the clock checked the same way: the family is
+complete.
+
+**Found — seven places take "today" as UTC's date** (`toISOString()`), which
+from 5 p.m. to midnight Arizona is already tomorrow (the record said five):
+1. `lib/backorders` `rollupBackorders` — the dashboard's "past commit" and the
+   backorders page's "Past" count a line due today as missed.
+2. `lib/data` `getBackorderStatus` — `OrderTable`'s "N backordered" at At
+   cross dock clears a day early.
+3. `BackordersClient` (line 256) — "· past" on a line due today.
+4. `OrderDetails` (line 218) — a line's pill reads "ready" the evening before.
+5. `OrderTable` (line 1100) — "Early Push" turns to "Mark Cross-dock" the
+   evening before the ship date. New to the record.
+6. `production-complete` (line 12) — a run by hand after 5 p.m. moves
+   tomorrow's orders a day early; harmless at its scheduled 08:00 UTC (1 a.m.
+   Arizona), when the two dates agree. 10-29 §2.1 noticed it; no list held it.
+7. `lib/backorders` `flattenBackorderedLines` — no caller anywhere.
+And **the calendar's "today"** (its highlight, the month it opens on) is the
+browser's own clock: right only on a computer set to Arizona.
+
+**The change:** 1–6 take phase 1's `arizonaToday()` from `lib/dates`, the rule
+the fulfilment run and `lib/shipDates` already use; the two `todayIso`
+parameters stay for tests, their comments corrected (both said "local"). 7 is
+deleted with a one-line note — dead code carrying the fault would read as live
+(09-15, "The standard"). The calendar's "today" and starting month come from
+`arizonaToday()`. `arizonaToday`'s comment ("five places found") names its
+users. No migration; no change to what any route accepts or stores.
+
+**The proof, the deployed code as the control:** the functions and the three
+screens (jsdom) at 4:30 p.m. Arizona (both agree), 5:30 p.m. and 11:59 p.m.
+(the control already "tomorrow"), midnight (both move), and New Year's Eve —
+each with the browser in Phoenix and in Tokyo; `production-complete` on
+PostgreSQL at 08:00 UTC (identical) and at 6 p.m. Arizona (the control
+advances tomorrow's order, the new code does not); the typecheck, both trees'
+error sets identical and a planted error caught in each changed file; the
+patch on box-shaped trees.
+
+### 6.2 Item 9 — three loose ends. DESIGN, agreed 2026-11-10
+
+Garrett: *"Look right, lets proceed"*.
+
+**Read whole:** `scripts/cron/run-cron.sh` (161), `FullOrderGroup` (62),
+`OrderModal` (2,706), the export route (631), `lib/skuDecoder` (192);
+`production-complete` and `OrderDetails` with item 8.
+
+**(a) `production-complete`'s trail row.** The order moves (its error checked),
+then the "Production complete — moved to At cross dock automatically" row is
+inserted with its error discarded: a failed insert leaves a moved order with no
+trail line, and the run reports full success. **The change:** the error is
+checked, logged and named in the answer (`trail_failed`: the order and the
+reason). The status stays 200 — the route's own rule for a partial failure,
+and the move happened. `run-cron.sh` writes every answer's body to `cron.log`
+(line 132), so it is seen there.
+
+**(b) Edits offered where the server refuses — wider than the record put it.**
+`OrderModal` gives Full Order's `OrderDetails` `readOnly = archived || Shopify
+group` (line 1813), and the claim (`canEdit`) never reaches it. So the
+backorder pill opened its editor on archived work and on a colleague's claim
+(on a Shopify group staff must still set backorders, which is why it ignored
+`readOnly`), and Edit, Delete and Add SKU were offered on a custom job or claim
+a colleague holds — each refused with 409. **The change:** two answers, not
+one. The lines (add, edit, remove): read-only on a Shopify group, archived
+work, or a colleague's claim. The backorder: read-only on archived work or a
+colleague's claim, where the pill shows its state (ok, back or ready, with its
+tooltip) and opens nothing — read-only is never blank (09-15). An admin's
+"Edit order" gives both, as everywhere in the modal. A new prop through
+`FullOrderGroup` to `OrderDetails`; the modal's one call site.
+
+**(c) The export route's comment.** It said `skuDecoder`'s `SkuItem` has no
+review fields, so it read them "through this narrow cast"; that type is
+`lib/data`'s full one, re-exported (`lib/skuDecoder` lines 153–158), with
+`needs_review`, `review_reason` and `modifications`. **The change:** the comment
+corrected and both casts (`ReviewFields`; the `modifications` cast, line 289)
+dropped, so the fields are read through the real type — a renamed field fails
+the typecheck instead of passing a cast. Types and comments only.
+
+**The proof:** (a) the real route on PostgreSQL with the trail insert made to
+fail — the control advances and says nothing, the new code advances alike and
+names the row; a normal run's answer identical. (b) the real modal in jsdom:
+the owner's claim (the pill opens), a colleague's (a label; no Edit, Delete or
+Add — in the control they open), an admin's "Edit order", archived work, and a
+Shopify group (backorder editable, lines not — as now). (c) the route's
+compiled output byte-identical. Typecheck and patch as item 8.

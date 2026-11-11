@@ -326,7 +326,7 @@ with itself) and see a planted change.
   until it is renewed.
 - UTC "today" in `lib/backorders` (×2), `getBackorderStatus`, the backorders
   page and the line editor — a line due today reads overdue after 5 p.m.
-  Arizona (Garrett's call).
+  Arizona (Garrett's call). ⚠ DESIGNED 2026-11-10 — `SESSION-HANDOFF-2026-11-06.md` §6.1.
 - Item 64 (Garrett's call).
 - REST `2024-01`, retired, in `lib/shopifyStageSync` and the order route's
   `syncToShopify`.
@@ -334,6 +334,6 @@ with itself) and see a planted change.
   verify in the route.
 - production-complete's activity insert unchecked; the line editor's backorder
   control offered on archived and someone-else's groups; the export route's
-  comment on `SkuItem` stale.
+  comment on `SkuItem` stale. ⚠ DESIGNED 2026-11-10 — `SESSION-HANDOFF-2026-11-06.md` §6.2.
 - `PHASE1-NOTES-2026-10-29.md` (outputs only, never committed) is superseded
   by the 10-29 handoff §4.9 and can be deleted.
