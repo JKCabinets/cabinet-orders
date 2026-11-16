@@ -1810,7 +1810,17 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
                       DISCREPANCIES ON THEM (Garrett, 2026-10-07). FullOrderGroup
                       reads the group's acknowledgment itself: a hook cannot run
                       inside this tab's inline function. */}
-                  <FullOrderGroup group={open} team={team} readOnly={readOnly || open.source === "Shopify"} />
+                  {/* ⚠ THE CLAIM REACHES THE LINES TOO (item 9, 2026-11-10).
+                      `canEdit` never did: a colleague's claim was offered Edit,
+                      Delete, Add SKU and the backorder editor, each refused by
+                      the server (409). The lines: read-only on a Shopify group,
+                      archived work, or a colleague's claim. The backorder: on
+                      archived work or a colleague's claim only -- staff set it
+                      on a Shopify group. An admin's "Edit order" lifts the
+                      claim, as everywhere in this modal. */}
+                  <FullOrderGroup group={open} team={team}
+                    readOnly={readOnly || !canEdit || open.source === "Shopify"}
+                    backorderReadOnly={readOnly || !canEdit} />
                 </div>
               );
             }

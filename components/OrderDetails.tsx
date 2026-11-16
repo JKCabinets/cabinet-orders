@@ -32,7 +32,16 @@ interface OrderDetailsProps {
   productionStartDate?: string | null;
   productionEstFinishDate?: string | null;
   scheduledDeliveryDate?: string | null;
+  /** The lines themselves: add, edit, remove. */
   readOnly?: boolean;
+  /**
+   * ⚠ THE BACKORDER, ASKED SEPARATELY (item 9, 2026-11-10). Staff set backorders
+   * on a Shopify group, whose lines are read-only -- so the pill never asked
+   * `readOnly`, and opened its editor on archived work and a colleague's claim
+   * too, where the server refuses the save (409). Read-only here, the pill still
+   * shows its state and opens nothing: read-only is never blank.
+   */
+  backorderReadOnly?: boolean;
   /**
    * The vendor acknowledgment's differences, per line (2026-10-07) -- from
    * lib/orderIssues, the copy the vendor PDF uses. Absent: nothing to show.
@@ -40,7 +49,7 @@ interface OrderDetailsProps {
   ack?: AckIssues;
 }
 
-export function OrderDetails({ orderId, skuItems, readOnly = false, ack }: OrderDetailsProps) {
+export function OrderDetails({ orderId, skuItems, readOnly = false, backorderReadOnly = false, ack }: OrderDetailsProps) {
   const { updateOrderDetails } = useStore();
 
   const [localSkuItems, setLocalSkuItems] = useState<SkuItem[]>(skuItems);
@@ -252,27 +261,43 @@ export function OrderDetails({ orderId, skuItems, readOnly = false, ack }: Order
                     <AlertTriangle className="w-2.5 h-2.5" />
                   </span>
                 )}
-                <button
-                  onClick={() => setBackorderIdx(backorderIdx === idx ? null : idx)}
-                  className="flex items-center gap-1 text-[9px] font-medium px-2 py-0.5 rounded-full transition-colors uppercase tracking-wider"
-                  style={
-                    isBackordered
-                      ? (isReady
-                          ? { background: "rgba(143,190,112,0.14)", color: "#a0cc7a", border: "0.5px solid rgba(143,190,112,0.35)" }
-                          : { background: "rgba(245,160,69,0.14)", color: "#f5b070", border: "0.5px solid rgba(245,160,69,0.40)" })
-                      : { background: "rgba(255,255,255,0.04)", color: "rgba(232,227,218,0.65)", border: "0.5px solid rgba(255,255,255,0.12)" }
+                {(() => {
+                  const pillStyle = isBackordered
+                    ? (isReady
+                        ? { background: "rgba(143,190,112,0.14)", color: "#a0cc7a", border: "0.5px solid rgba(143,190,112,0.35)" }
+                        : { background: "rgba(245,160,69,0.14)", color: "#f5b070", border: "0.5px solid rgba(245,160,69,0.40)" })
+                    : { background: "rgba(255,255,255,0.04)", color: "rgba(232,227,218,0.65)", border: "0.5px solid rgba(255,255,255,0.12)" };
+                  const pillState = isBackordered
+                    ? (isReady
+                        ? `Ready (expected ${item.expected_ready_date})`
+                        : `Backordered${item.expected_ready_date ? ` until ${item.expected_ready_date}` : ""}`)
+                    : null;
+                  const pillText = isBackordered ? (isReady ? "ready" : "back") : "ok";
+                  // Read-only: the same pill as a label, its state in words.
+                  if (backorderReadOnly) {
+                    return (
+                      <span
+                        className="flex items-center gap-1 text-[9px] font-medium px-2 py-0.5 rounded-full uppercase tracking-wider"
+                        style={pillStyle}
+                        title={pillState ?? "Not backordered"}
+                      >
+                        <AlertTriangle className="w-2.5 h-2.5" />
+                        {pillText}
+                      </span>
+                    );
                   }
-                  title={
-                    isBackordered
-                      ? (isReady
-                          ? `Ready (expected ${item.expected_ready_date})`
-                          : `Backordered${item.expected_ready_date ? ` until ${item.expected_ready_date}` : ""}`)
-                      : "Mark as backordered"
-                  }
-                >
-                  <AlertTriangle className="w-2.5 h-2.5" />
-                  {isBackordered ? (isReady ? "ready" : "back") : "ok"}
-                </button>
+                  return (
+                    <button
+                      onClick={() => setBackorderIdx(backorderIdx === idx ? null : idx)}
+                      className="flex items-center gap-1 text-[9px] font-medium px-2 py-0.5 rounded-full transition-colors uppercase tracking-wider"
+                      style={pillStyle}
+                      title={pillState ?? "Mark as backordered"}
+                    >
+                      <AlertTriangle className="w-2.5 h-2.5" />
+                      {pillText}
+                    </button>
+                  );
+                })()}
                 {!readOnly && (
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button onClick={() => setEditingItemIdx(idx)} className="p-0.5 text-cream/65 hover:text-cream transition-colors">
@@ -340,7 +365,7 @@ export function OrderDetails({ orderId, skuItems, readOnly = false, ack }: Order
               </div>
             )}
 
-            {backorderIdx === idx && (
+            {backorderIdx === idx && !backorderReadOnly && (
               <BackorderEditor
                 item={item}
                 onSave={(data) => saveBackorder(idx, data)}

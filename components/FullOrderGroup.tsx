@@ -39,7 +39,14 @@ export function GroupIssueTag({ group }: { group: Order }) {
   );
 }
 
-export function FullOrderGroup({ group, team, readOnly }: { group: Order; team: TeamMember[]; readOnly: boolean }) {
+/**
+ * Two answers (item 9, 2026-11-10): `readOnly` for the lines -- a Shopify
+ * group's, archived work's, a colleague's claim's -- and `backorderReadOnly` for
+ * the backorder pill, which staff set on a Shopify group too.
+ */
+export function FullOrderGroup({ group, team, readOnly, backorderReadOnly }: {
+  group: Order; team: TeamMember[]; readOnly: boolean; backorderReadOnly: boolean;
+}) {
   const status = useAckStatus(group.id, group.type === "order");
   const ack = status.loading ? null : ackIssues(status.ackByVendor, group);
   const { projects } = useStore();
@@ -55,6 +62,7 @@ export function FullOrderGroup({ group, team, readOnly }: { group: Order; team: 
         productionEstFinishDate={group.production_est_finish_date}
         scheduledDeliveryDate={group.scheduled_delivery_date}
         readOnly={readOnly}
+        backorderReadOnly={backorderReadOnly}
         ack={ack ?? undefined}
       />
     </div>

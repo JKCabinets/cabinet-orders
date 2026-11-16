@@ -85,6 +85,9 @@ export async function GET(req: NextRequest) {
 
   const failures: { id: string; reason: string }[] = [];
 
+  // An order that moved but whose trail line was not written (item 9).
+  const trailFailures: { id: string; reason: string }[] = [];
+
   // Reported, not silent: cron.log shows which order waited and why. The work
   // queue surfaces a held order as "Refund acknowledgment required" too.
   const skipped: { id: string; reason: ProductionAdvanceSkip }[] = [];
@@ -120,11 +123,22 @@ export async function GET(req: NextRequest) {
       continue;
     }
 
-    await supabase.from("order_activity").insert({
+    // ⚠ THE TRAIL ROW'S ERROR WAS DISCARDED (item 9, 2026-11-10): a failed
+    // insert left a moved order with no trail line, and the run reported full
+    // success. The move happened, so this stays a 200 -- this route's rule for
+    // a partial failure -- and names the order; run-cron.sh writes the answer
+    // to cron.log.
+    const { error: trailError } = await supabase.from("order_activity").insert({
       order_id: order.id,
       text: `Production complete — moved to "At cross dock" automatically`,
       time: todayLabel,
     });
+    if (trailError) {
+      trailFailures.push({ id: order.id, reason: trailError.message });
+      console.warn("[production-complete]", JSON.stringify({
+        outcome: "trail_failed", order_id: order.id, reason: trailError.message,
+      }));
+    }
 
     let shopify_synced = false;
     if (order.shopify_id) {
@@ -152,6 +166,7 @@ export async function GET(req: NextRequest) {
     advanced: results.length,
     ...(failures.length > 0 ? { failed: failures.length, failures } : {}),
     ...(skipped.length > 0 ? { skipped: skipped.length, skips: skipped } : {}),
+    ...(trailFailures.length > 0 ? { trail_failed: trailFailures.length, trail_failures: trailFailures } : {}),
     orders: results,
   });
 }
