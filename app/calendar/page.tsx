@@ -6,6 +6,7 @@ import clsx from "clsx";
 import { AppShell, PageHeader } from "@/components/AppShell";
 import { useStore } from "@/lib/store";
 import { Order, displayOrderNumber } from "@/lib/data";
+import { arizonaToday } from "@/lib/dates";
 
 /**
  * A store row, with delivery_date narrowed to a plain string.
@@ -48,10 +49,12 @@ function toDateStr(year: number, month: number, day: number) {
 }
 
 export default function CalendarPage() {
-  const today = new Date();
+  // Arizona's day, the business's, whatever the computer's own clock is set
+  // to: the highlighted cell and the month the page opens on (item 8).
+  const todayIso = arizonaToday();
   const [view, setView] = useState<CalendarView>("production");
-  const [currentMonth, setCurrentMonth] = useState(today.getMonth());
-  const [currentYear, setCurrentYear] = useState(today.getFullYear());
+  const [currentMonth, setCurrentMonth] = useState(Number(todayIso.slice(5, 7)) - 1);
+  const [currentYear, setCurrentYear] = useState(Number(todayIso.slice(0, 4)));
   const { allOrders } = useStore();
   /**
    * EVERY type, from the one store array -- not a private ?type=order
@@ -281,7 +284,7 @@ export default function CalendarPage() {
             {Array.from({ length: daysInMonth }).map((_, i) => {
               const day = i + 1;
               const dateStr = toDateStr(currentYear, currentMonth, day);
-              const isToday = day === today.getDate() && currentMonth === today.getMonth() && currentYear === today.getFullYear();
+              const isToday = dateStr === todayIso;
               const isSelected = day === selectedDay;
 
               const deliveryOrders = orders.filter(o => o.delivery_date === dateStr);

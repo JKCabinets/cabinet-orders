@@ -11,7 +11,7 @@ import { STAGE_ORDER_BY_TYPE, ORDER_STAGE_ORDER } from "@/lib/stageLogic";
 import { useStore } from "@/lib/store";
 import { useSession } from "next-auth/react";
 import { parseOrderDate } from "@/lib/dateUtils";
-import { orderDate } from "@/lib/dates";
+import { orderDate, arizonaToday } from "@/lib/dates";
 import { checkAttachmentGate, checkDeliveryProofGate } from "@/lib/stageGates";
 import { requirementsFor } from "@/lib/requirements";
 import { OrderEntryActions } from "./OrderEntryActions";
@@ -1097,7 +1097,8 @@ function UpdateStatusActions({
   // ── In production ──────────────────────────────────────────────────
   if (stage === "In production") {
     const finish = order.production_est_finish_date;
-    const today = new Date().toISOString().slice(0, 10);
+    // Arizona's day, the one production-complete moves the order on (item 8).
+    const today = arizonaToday();
     const isPastFinish = finish && finish <= today;
     function earlyPush() {
       const displayName = order.name;

@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { Plus, Trash2, Check, X, Pencil, AlertTriangle } from "lucide-react";
 import { SkuItem } from "@/lib/data";
+import { arizonaToday } from "@/lib/dates";
 import { useStore } from "@/lib/store";
 import { ackNotesFor, type AckIssues } from "@/lib/orderIssues";
 
@@ -215,7 +216,7 @@ export function OrderDetails({ orderId, skuItems, readOnly = false, ack }: Order
   function renderSkuRow(item: SkuItem, idx: number) {
     const isBackordered = !!item.backordered;
     const ackNotes = ack ? ackNotesFor(ack, item.sku) : [];
-    const todayIso = new Date().toISOString().split("T")[0];
+    const todayIso = arizonaToday(); // not UTC's, tomorrow from 5 p.m. Arizona (item 8)
     const isReady = isBackordered && item.expected_ready_date && item.expected_ready_date <= todayIso;
     const rowTint = isBackordered
       ? (isReady

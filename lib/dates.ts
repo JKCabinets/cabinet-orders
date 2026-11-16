@@ -67,6 +67,13 @@ export function activityStamp(entry: { at?: string | null; time?: string | null 
  * today read overdue, "ready" came a day early (five places found 2026-10-29).
  * Read from the clock's own parts in America/Phoenix, never from a formatted
  * string whose shape depends on the locale.
+ *
+ * Every "today" the app compares with a stored date reads this (item 8,
+ * 2026-11-10): lib/shipDates and the cabinet-fulfilment run; production-complete;
+ * lib/backorders' rollup and lib/data's getBackorderStatus (the dashboard, the
+ * sidebar, OrderTable); the backorders page; the line editor's pill;
+ * OrderTable's "Mark Cross-dock"; the calendar's highlighted day. A new one
+ * reads it too.
  */
 export function arizonaToday(now: number = Date.now()): string {
   const parts = new Intl.DateTimeFormat("en-US", {

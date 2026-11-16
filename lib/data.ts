@@ -1,3 +1,5 @@
+import { arizonaToday } from "@/lib/dates";
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type Source = "Shopify" | "Manual";
@@ -264,7 +266,9 @@ export type BackorderStatus = "none" | "pending" | "ready";
  *   - "ready"   → every backordered SKU has an expected_ready_date and they
  *                 have all passed; the order is ready to advance.
  *
- * `todayIso` is optional for testing; defaults to the local YYYY-MM-DD.
+ * `todayIso` is optional for testing; defaults to Arizona's YYYY-MM-DD
+ * (`arizonaToday`) — not UTC's, which is already tomorrow from 5 p.m.
+ * Arizona (item 8, 2026-11-10).
  */
 export function getBackorderStatus(
   skuItems: SkuItem[] | undefined,
@@ -274,7 +278,7 @@ export function getBackorderStatus(
   const backordered = items.filter(i => i.backordered);
   if (backordered.length === 0) return { status: "none", count: 0 };
 
-  const today = todayIso ?? new Date().toISOString().split("T")[0];
+  const today = todayIso ?? arizonaToday();
 
   // Pending if any backordered SKU has no date OR a future date
   const allReady = backordered.every(i =>

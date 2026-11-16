@@ -3,13 +3,17 @@ import { verifyCronAuth } from "@/lib/cronAuth";
 import { supabase } from "@/lib/supabase";
 import { syncStageToShopify } from "@/lib/shopifyStageSync";
 import { PRODUCTION_COMPLETE_TYPES, productionAutoAdvanceSkip, type ProductionAdvanceSkip } from "@/lib/autoAdvance";
+import { arizonaToday } from "@/lib/dates";
 
 export async function GET(req: NextRequest) {
   if (!verifyCronAuth(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+  // Arizona's YYYY-MM-DD, as the cabinet-fulfilment run reads the same date.
+  // At the scheduled 08:00 UTC (1 a.m. Arizona) it equals UTC's; a run by hand
+  // after 5 p.m. Arizona no longer moves tomorrow's orders a day early (item 8).
+  const today = arizonaToday();
 
   const { data: orders, error } = await supabase
     .from("orders")

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useStore } from "@/lib/store";
 import { Order, displayOrderNumber } from "@/lib/data";
+import { arizonaToday } from "@/lib/dates";
 import {
   rollupBackorders,
   summarizeBackorders,
@@ -253,7 +254,7 @@ function AffectedOrderLine({
   // expected date and notes (different orders for the same SKU may have
   // different commitments).
   const item = (order.sku_items ?? []).find(i => i.sku === sku && i.backordered);
-  const today = new Date().toISOString().split("T")[0];
+  const today = arizonaToday(); // the business's day, not UTC's (item 8)
   const overdue = !!item?.expected_ready_date && item.expected_ready_date < today;
 
   return (

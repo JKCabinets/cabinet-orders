@@ -10,7 +10,8 @@
  * the aggregate views.
  */
 
-import type { Order, SkuItem } from "@/lib/data";
+import type { Order } from "@/lib/data";
+import { arizonaToday } from "@/lib/dates";
 
 export interface BackorderedSkuRollup {
   /** The full SKU as recorded on the order line items. */
@@ -50,13 +51,15 @@ export interface BackorderSummary {
  * Build the per-SKU rollup. Only active (non-archived) orders count.
  * Same backordered SKU across multiple orders collapses to one row.
  *
- * `todayIso` is overridable for tests; defaults to today's local date.
+ * `todayIso` is overridable for tests; defaults to Arizona's date
+ * (`arizonaToday`) — the business's day, not UTC's, which is already
+ * tomorrow from 5 p.m. Arizona (item 8, 2026-11-10).
  */
 export function rollupBackorders(
   orders: Order[],
   todayIso?: string,
 ): BackorderedSkuRollup[] {
-  const today = todayIso ?? new Date().toISOString().split("T")[0];
+  const today = todayIso ?? arizonaToday();
 
   // Map: SKU → accumulator
   const acc = new Map<string, {
@@ -162,45 +165,5 @@ export function summarizeBackorders(rollups: BackorderedSkuRollup[]): BackorderS
   };
 }
 
-/**
- * Flatten to a per-order-line representation — useful for the dedicated
- * page's "all backordered lines" view where each row is one SKU on one
- * order rather than rolled-up by SKU.
- */
-export interface BackorderedLine {
-  order: Order;
-  item: SkuItem;
-  /** Computed: true if the commitment date is in the past. */
-  overdue: boolean;
-  /** Computed: true if no commitment date is set. */
-  undated: boolean;
-}
-
-export function flattenBackorderedLines(
-  orders: Order[],
-  todayIso?: string,
-): BackorderedLine[] {
-  const today = todayIso ?? new Date().toISOString().split("T")[0];
-  const lines: BackorderedLine[] = [];
-  for (const o of orders) {
-    if (o.archived) continue;
-    for (const item of o.sku_items ?? []) {
-      if (!item.backordered) continue;
-      lines.push({
-        order: o,
-        item,
-        overdue: !!item.expected_ready_date && item.expected_ready_date < today,
-        undated: !item.expected_ready_date,
-      });
-    }
-  }
-  // Most urgent first: overdue, then undated, then by soonest expected date
-  lines.sort((a, b) => {
-    if (a.overdue !== b.overdue) return a.overdue ? -1 : 1;
-    if (a.undated !== b.undated) return a.undated ? -1 : 1;
-    const da = a.item.expected_ready_date ?? "9999-99-99";
-    const db = b.item.expected_ready_date ?? "9999-99-99";
-    return da.localeCompare(db);
-  });
-  return lines;
-}
+// flattenBackorderedLines (one row per backordered line) was deleted
+// 2026-11-10: it had no caller, and it carried the UTC "today" item 8 fixed.
