@@ -318,7 +318,7 @@ with itself) and see a planted change.
   rule falls back. If any, fill them from the product cache.
 - Optional tidy: a one-line-waiting reason repeats the line's name in its
   detail ("Waypoint Cabinetry: acknowledgment required" / "Waypoint Cabinetry:
-  no acknowledgment yet").
+  no acknowledgment yet"). ⚠ DESIGNED 2026-11-17 — `SESSION-HANDOFF-2026-11-06.md` §6.6.
 - ~~Phase 1's live test; the healthchecks check and Shopify's shipping
   confirmation (§1).~~ Done 2026-11-02 (§1).
 - The GHCR token, 2026-11-16 (item 66) — ⚠ STILL OPEN; the weekly check alarms

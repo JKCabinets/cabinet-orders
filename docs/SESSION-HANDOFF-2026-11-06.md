@@ -23,12 +23,13 @@ designed, built and LIVE (§6), the catalogue sync's one red (§6.4).
 ## 1. Where things stand
 
 **The box** (`5.78.220.153`, `~/cabinet-orders`, `main`): `HEAD` is *"Docs:
-items 8 and 9 live, the catalogue sync's red (2026-11-17)"*, `HEAD~1`
-`c1401a1` *"Item 9: …"* (deployed), `HEAD~2` *"Item 8: Arizona's today
-(2026-11-16)"*, `HEAD~3` `3eab9e5` *"Docs: items 8 and 9, designed
-(2026-11-10)"*, `HEAD~4` `8ffab24` *"Docs: open items 1 to 4 (2026-11-10)"*,
-`HEAD~5` `de5e063` *"Docs: the website team's answers (2026-11-09)"*. **The
-next chain checks: `HEAD`'s subject is that one, tree clean.** ⚠ **The running
+item 10, designed (2026-11-17)"*, `HEAD~1` `7aea840` *"Docs: items 8 and 9
+live, the catalogue sync's red (2026-11-17)"*, `HEAD~2` `c1401a1` *"Item 9:
+…"* (deployed), `HEAD~3` `8af4e0f` *"Item 8: Arizona's today (2026-11-16)"*,
+`HEAD~4` `3eab9e5` *"Docs: items 8 and 9, designed (2026-11-10)"*, `HEAD~5`
+`8ffab24` *"Docs: open items 1 to 4 (2026-11-10)"*, `HEAD~6` `de5e063`
+*"Docs: the website team's answers (2026-11-09)"*. **The next chain checks:
+`HEAD`'s subject is that one, tree clean.** ⚠ **The running
 image is `c1401a1`** (deployed 2026-11-16, the container up 21:21:39 UTC);
 against this docs `HEAD` the image check reads MISMATCH until the next deploy,
 by design. The 2026-11-04/06 session's commits — `git log --oneline
@@ -177,7 +178,7 @@ migration probed, transcribed and proven first.
    reads overdue after 5 p.m. Arizona), 9, 10, and 11 (RECOVERY has never been
    exercised). Item 7 was done with item 5 part 4. ✅ **8 and 9 DONE** —
    designed 2026-11-10, built, deployed 2026-11-16 and LIVE (§6.3). Open: 10
-   and 11.
+   and 11. ⚠ **10 DESIGNED 2026-11-17 (§6.6)**, with (b) and (c).
 6. **Found this session, left for their own look:** the admin home's warning
    of orders "with no total recorded — backfill via Shopify sync" names the
    wrong tool; the admin Shopify page shows nothing when a sync fails (`if
@@ -208,6 +209,11 @@ migration probed, transcribed and proven first.
      Recorded; a design only if it recurs or Garrett wants it to retry.
    - `cron.log` holds four checks' ping ids: `run-cron.sh` logs a `/fail` ping
      it could not send with only `/fail` cut (OPERATIONS §6).
+   - The projects page calls `attentionFor(g)` with no enrichment, so its
+     "Needs attention" filter and count and each row's lead never include the
+     acknowledgment or receipt reasons the work queue and dashboard show —
+     the shape `attentionForProject`'s 2026-09-08 comment calls "identical to
+     the feature not working" (found reading for item 10).
 7. **The website team's answers (2026-11-09)** to the questions sent as the
    10-29 record has them — that notifications plan stands:
    - **Quote requests:** the website sends each only to the OMS's quote
@@ -244,7 +250,7 @@ Items 1 to 4 of §4: done and recorded there (`8ffab24`). Items 8 and 9 of the
 before any code (`3eab9e5`); built together, one commit each, one deploy, item
 9's patch pinned on item 8's (both touch `production-complete` and
 `OrderDetails`) — as built and live, §6.3. Then the catalogue sync's red
-(§6.4) and the ingestion check's 0 and 0 (§6.5).
+(§6.4), the ingestion check's 0 and 0 (§6.5), and item 10's design (§6.6).
 
 ### 6.1 Item 8 — Arizona's "today". DESIGN, agreed 2026-11-10
 
@@ -381,8 +387,8 @@ compiled output byte-identical. Typecheck and patch as item 8.
 - **Typecheck:** `next typegen`, then `tsc`: each item's error set identical to
   its control's; a planted error caught in every changed file (8, then 5).
   Both trees carry the sandbox's one `xlsx` TS2307 (§3).
-- **Deployed 2026-11-16** (Garrett): *"Item 8: Arizona's today (2026-11-16)"*,
-  then `c1401a1`, pushed, `kamal deploy`; the container up 21:21:39 UTC. The
+- **Deployed 2026-11-16** (Garrett): `8af4e0f` *"Item 8: Arizona's today
+  (2026-11-16)"*, then `c1401a1`, pushed, `kamal deploy`; the container up 21:21:39 UTC. The
   image check (2026-11-17): `DEPLOYED` at `c1401a1`. ⚠ The chain left out the
   cron diff (§3); run 2026-11-17: the crontab and `run-cron.sh` match the repo,
   the map's sync entry is well-formed.
@@ -429,3 +435,41 @@ in Shopify, its delete webhook removing the purchase before the hourly check
 looked. Garrett (2026-11-17): *"Yes, all old test orders were deleted"* — #1078
 among them. The log shows the same after each earlier clean-up (from 10-19,
 11-02 and 11-04). As designed; the first real order makes it reconcile again.
+
+### 6.6 Item 10 — one waiting line named twice. DESIGN, agreed 2026-11-17
+
+Garrett: *"Looks good and include both"* — (b) and (c) with it.
+
+**Read whole:** `lib/attention` (384 lines), `lib/requirements` (456), and the
+four readers of the reasons — the work queue (481), the projects page (694),
+the dashboard (1,040), the sidebar (531).
+
+**Found.** One function, `linesWaiting` (`lib/attention` lines 108–127). Two
+screens show a reason's label over its detail — the work queue's rows and the
+dashboard's Needs-attention panel; the projects page shows the label only; the
+sidebar counts kinds. With ONE line waiting the detail repeats the label's name:
+"Waypoint Cabinetry: acknowledgment required" over "Waypoint Cabinetry: no
+acknowledgment yet".
+
+**The change.** One line waiting: the detail drops the name and says why as a
+sentence, in the order route's own words for the same states — "No
+acknowledgment yet"; "Its acknowledgment did not match the order"; "The order
+changed since its acknowledgment". Two or more: unchanged — "Acknowledgments
+required: A, B" over "A: … · B: …", where the names say which why is whose.
+Every label unchanged (decision D: the reason names the line); no kind,
+severity, count or filter changes.
+- **(b)** The receipt, one line: "Upload each line's signed delivery receipt"
+  under a label naming one line becomes "Upload its signed delivery receipt";
+  several unchanged.
+- **(c)** The comment above `ENRICHED_REASONS` still says the New gate passes
+  "on a green acknowledgment OR any attachment" and to "attach the
+  acknowledgment for HCI and J&K" — retired by feature 10, 2026-11-02.
+  Corrected; comment only.
+
+**The proof, the deployed code as the control:** `attentionFor` in both trees
+over every case — one line in each of the three states, two lines, one
+receipt, two receipts, the unnamed fallbacks — the new differing from the
+control only in those details, every label and every other reason identical;
+the real work queue mounted in jsdom, the enrichment answered by a stand-in,
+showing the row's two lines in both trees; the typecheck with a planted error;
+the patch on box-shaped trees.

@@ -179,7 +179,7 @@ agreed and comes first (§6.2).** The list below stands as it was written.
    comment on `SkuItem` stale. ⚠ DESIGNED 2026-11-10 — `SESSION-HANDOFF-2026-11-06.md` §6.2 (the second part wider). ✅ Built and LIVE 2026-11-16 — `SESSION-HANDOFF-2026-11-06.md` §6.3.
 10. Optional tidy: a one-line-waiting reason repeats the line's name in its
    detail ("Waypoint Cabinetry: acknowledgment required" / "Waypoint
-   Cabinetry: no acknowledgment yet").
+   Cabinetry: no acknowledgment yet"). ⚠ DESIGNED 2026-11-17 — `SESSION-HANDOFF-2026-11-06.md` §6.6.
 11. RECOVERY has never been exercised (OPERATIONS §12).
 
 **Done since the 10-29 list:** item 64 (a mixed order's acknowledgment names
