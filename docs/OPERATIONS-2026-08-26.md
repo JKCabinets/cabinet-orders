@@ -1,6 +1,10 @@
 # JK Cabinets — Operations & Systems Reference
 
-**As of 2026-09-15, amended through 2026-11-10 (the dated entries below) · supersedes OPERATIONS-2026-08-18.md**
+**As of 2026-09-15, amended through 2026-11-17 (the dated entries below) · supersedes OPERATIONS-2026-08-18.md**
+
+⚠ **AMENDED 2026-11-17.** §6: the catalogue sync's first red — a slow read,
+nothing written — and what to do; the ingestion check's 0 and 0 with every
+test order deleted; `cron.log` holds four checks' ping ids.
 
 ⚠ **AMENDED 2026-11-10.** §2 and §10: the "delivered" and "delivery date
 changed" emails go per cabinet line (Garrett). §6: the `sync-shopify-catalog`
@@ -667,7 +671,11 @@ Health Webhook", edited to post FIXED text whatever it received — so an alert
 could not say which job changed, and when the digest was pointed at it by
 mistake, the digest came out as false "a job changed state" alerts. That flow
 is turned off, not deleted. Ping-URL map at
-`~/cron-jobs/healthchecks.map` (mode 600, not in git).
+`~/cron-jobs/healthchecks.map` (mode 600, not in git). ⚠ **But `cron.log` holds
+four checks' ping ids** (found 2026-11-17): a `/fail` ping that cannot be sent
+is logged with only `/fail` cut from its target (`run-cron.sh` line 157) — 33
+lines from the IP block of 2026-11-05, for `helpscout-sync`, `webhook-health`,
+`teams-digest` and `cabinet-fulfilment`. An id lets anyone ping its check green.
 
 **The registry token is watched weekly** (2026-09-16):
 `~/cron-jobs/check-registry-token.sh`, Mondays 15:00 UTC, one call to the GitHub
@@ -714,6 +722,14 @@ list lacked it), Claims to Help Scout, and
 | **`registry-token`** | **The GHCR registry token** — Mondays 15:00 UTC, `check-registry-token.sh`; fails 14 days before it expires |
 | **`cabinet-fulfilment`** | **Cabinet lines marked shipped in Shopify** (feature 9 phase 1, from its deploy) — daily 15:00 UTC; fails when Shopify refuses or cannot be read, a line cannot be found, a skip cannot be recorded, or the run runs out of time |
 
+**When `sync-shopify-catalog` goes red on a 15 s read** (first 2026-11-17,
+`SESSION-HANDOFF-2026-11-06.md` §6.4): nothing was written — the read is whole
+before any write — and the run does not try again on its own. Run it by hand on
+the box, `~/cron-jobs/run-cron.sh /api/cron/sync-shopify-catalog`: it writes
+what the daily run would, logs its answer to `cron.log` and pings the check. On
+2026-11-17 three runs took 9.0–10.1 s each, whole (the read inside that; 7.7 s
+measured 2026-11-04).
+
 ## The ingestion check reconciles; it does not heartbeat
 
 Its FIRST version asked "do the webhook subscriptions exist?" That was the
@@ -726,7 +742,9 @@ them. That catches a deleted webhook, a secret mismatch, a handler returning
 500, and a Shopify delivery outage — all of which end the same way.
 
 It stays quiet before launch because it only alarms on orders Shopify says
-exist. Orders newer than `WEBHOOK_RECONCILE_GRACE_MINUTES` (default 15) are
+exist. ⚠ Every test order was deleted 2026-11-16 (Garrett): since 22:20 UTC that
+day it answers 0 orders and 0 purchases, "no orders in Shopify to reconcile" —
+the store's state, not a fault (`SESSION-HANDOFF-2026-11-06.md` §6.5). Orders newer than `WEBHOOK_RECONCILE_GRACE_MINUTES` (default 15) are
 ignored as possibly in flight.
 
 **Verified in both directions on real incidents on 2026-08-20**: it caught a

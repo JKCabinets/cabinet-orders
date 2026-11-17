@@ -4,31 +4,37 @@
 session starts. The 2026-11-04/06 session finished **item 5** — all four parts
 and 4c, each deployed and checked live. Item 5's record is in
 `SESSION-HANDOFF-2026-11-03.md` §6.3 (its home since its plan); this file points
-into it rather than copying it, and records the rest.
+into it rather than copying it, and records the rest. ⚠ **AMENDED through
+2026-11-17** by the 2026-11-10/17 session: §4 items 1–4 done, items 8 and 9
+designed, built and LIVE (§6), the catalogue sync's one red (§6.4).
 
 ## 0. A new session, first
 
 1. **Snapshot, on the box**, after this file's commit:
    ```bash
-   cd ~/cabinet-orders && git archive --format=tar.gz -o ~/repo30.tar.gz HEAD && cd ~ && sha256sum repo30.tar.gz > repo30_tar_gz.sha256
+   cd ~/cabinet-orders && git archive --format=tar.gz -o ~/repo31.tar.gz HEAD && cd ~ && sha256sum repo31.tar.gz > repo31_tar_gz.sha256
    ```
-2. **Upload** `repo30.tar.gz`, `repo30_tar_gz.sha256`, this file, and the
-   harness archive `harness-2026-11-06.tar.gz` with its
-   `harness-2026-11-06.tar.gz.sha256`. Check both hashes.
+2. **Upload** `repo31.tar.gz`, `repo31_tar_gz.sha256`, this file, and the
+   harness archive `harness-2026-11-17.tar.gz` with its
+   `harness-2026-11-17_tar_gz.sha256`. Check both hashes — by VALUE: an upload
+   renames `x.tar.gz` to `x_tar.gz`, so `sha256sum -c` fails on the name (§3).
 3. **Read this file whole**, then the method (§3), before any change.
 
 ## 1. Where things stand
 
 **The box** (`5.78.220.153`, `~/cabinet-orders`, `main`): `HEAD` is *"Docs:
-items 8 and 9, designed (2026-11-10)"*, `HEAD~1` *"Docs: open items 1 to 4
-(2026-11-10)"*, `HEAD~2` *"Docs: the website team's answers (2026-11-09)"*,
-`HEAD~3` the session record, `HEAD~4` `5c8ea73`, item 5 part 4 (deployed).
-**The next chain checks: `HEAD`'s subject is that one, tree clean.** ⚠ **The running image is
-`5c8ea73`**; against
-this docs `HEAD` the image check reads MISMATCH until the next deploy, by
-design. This session's commits — `git log --oneline d04a568..HEAD` — each a
-design record, then its part and its docs: part 2 (`4ccd94d`, its live record
-`2a7a20c`), part 3 (design `841fe89`, `3914bc0`), part 4 (`5c8ea73`), this one.
+items 8 and 9 live, the catalogue sync's red (2026-11-17)"*, `HEAD~1`
+`c1401a1` *"Item 9: …"* (deployed), `HEAD~2` *"Item 8: Arizona's today
+(2026-11-16)"*, `HEAD~3` `3eab9e5` *"Docs: items 8 and 9, designed
+(2026-11-10)"*, `HEAD~4` `8ffab24` *"Docs: open items 1 to 4 (2026-11-10)"*,
+`HEAD~5` `de5e063` *"Docs: the website team's answers (2026-11-09)"*. **The
+next chain checks: `HEAD`'s subject is that one, tree clean.** ⚠ **The running
+image is `c1401a1`** (deployed 2026-11-16, the container up 21:21:39 UTC);
+against this docs `HEAD` the image check reads MISMATCH until the next deploy,
+by design. The 2026-11-04/06 session's commits — `git log --oneline
+d04a568..2a7a20c` and after — each a design record, then its part and its
+docs: part 2 (`4ccd94d`, its live record `2a7a20c`), part 3 (design `841fe89`,
+`3914bc0`), part 4 (`5c8ea73`), its session record.
 
 **Production's database:** no migration this session. `shopify_products` holds
 3,064 rows, 2,622 current — every variant Shopify has, the 85 REST hid
@@ -40,12 +46,16 @@ discontinued (11-03 §6.3, "Part 2, LIVE").
 webhook subscriptions deliver in **`2026-10`** — the app's own setting in
 Shopify, moved 2026-11-05 (4c); `GET /api/shopify/webhooks` lists each one's
 `apiVersion`. The first order on those payloads, #1078 (2026-11-09, 21:28
-UTC), was taken in cleanly: its project and its cabinet group.
+UTC), was taken in cleanly: its project and its cabinet group. ⚠ **Every test
+order, #1078 among them, was deleted 2026-11-16** (Garrett): Shopify answers
+no orders, and the OMS holds no Shopify purchase (§6.5).
 
 **Cron** — eight jobs (`scripts/cron/crontab`, installed 2026-11-05):
 `sync-shopify-catalog`, 10:00 UTC daily, joined them. ⚠ **The deploy chain runs
 `npx next typegen` before `npx tsc --noEmit`** (§3). **healthchecks.io:** eight
 checks, the dashboard's "Catalog sync" row holding the Avis and Shopify ones.
+`sync-shopify-catalog` went red once, 2026-11-17 — a slow read, nothing written;
+run by hand the same day, three times clean (§6.4).
 
 **The GHCR token** expires **2027-01-02 21:39:50 UTC**; the Monday check turns
 red from its 2026-12-21 run (OPERATIONS §5). **The website team:** as 11-04
@@ -116,6 +126,32 @@ migration probed, transcribed and proven first.
   mounted and clicked in jsdom; `make_patch_script.py` builds the patch,
   pinned deletion included.
 
+**The 2026-11-10/17 session's lessons:**
+- ⚠ **The sandbox can be reset between replies** (found 2026-11-16, after a
+  six-day pause): the trees, the harness's new files and PostgreSQL were gone;
+  the uploads were not. The control tree was rebuilt from repo30 and the two
+  delivered docs patches, and checked against the 18 pins the box had given
+  before any edit; the harness's new files were written again. Pack the
+  harness archive as soon as its new files are proven; after a pause, check
+  what survived before anything else.
+- ⚠ **The deploy chain diffs cron** (OPERATIONS §6): `crontab -l | diff -
+  scripts/cron/crontab` and `diff ~/cron-jobs/run-cron.sh
+  scripts/cron/run-cron.sh`. The 2026-11-16 chain left it out; run the next
+  day, clean.
+- **A long log, read whole, by shape:** every line given its shape,
+  continuation lines attached to their entry, every entry not a clean `rc=0`
+  read in full, and the count checked against the last reading's (265 to line
+  6,696 — the same, 2026-11-17).
+- **The typecheck in the sandbox:** `xlsx` downloads from `cdn.sheetjs.com`,
+  which the sandbox cannot reach. Installed from a copy of the lockfile without
+  it, both trees carry one TS2307 (the acknowledgment route) and their error
+  sets are compared; the box's chain typechecks whole.
+- **An upload renames dots:** `x.tar.gz` arrives as `x_tar.gz`, so
+  `sha256sum -c` fails on the name — compare the value.
+- **A whole page, mounted:** item 9's proof mounted the real `OrderModal` (2,706
+  lines) in jsdom with a store stand-in that names any field it was not given;
+  a test row needs every field a real row carries (`notes` was missing first).
+
 ## 4. Open
 
 1. ✅ **The `sync-shopify-catalog` check's two integrations** ("OMS Health",
@@ -139,8 +175,9 @@ migration probed, transcribed and proven first.
    the dry run after it, `count: 0`.
 5. From the 11-03 list (§4 there), still open: 8 (UTC "today": a line due today
    reads overdue after 5 p.m. Arizona), 9, 10, and 11 (RECOVERY has never been
-   exercised). Item 7 was done with item 5 part 4. ⚠ **8 and 9 DESIGNED
-   2026-11-10 (§6), to build together** — one commit each, one deploy.
+   exercised). Item 7 was done with item 5 part 4. ✅ **8 and 9 DONE** —
+   designed 2026-11-10, built, deployed 2026-11-16 and LIVE (§6.3). Open: 10
+   and 11.
 6. **Found this session, left for their own look:** the admin home's warning
    of orders "with no total recorded — backfill via Shopify sync" names the
    wrong tool; the admin Shopify page shows nothing when a sync fails (`if
@@ -165,6 +202,12 @@ migration probed, transcribed and proven first.
      group of a claimed Shopify purchase reads "unclaimed" there.
    - The review-reason labels are two copies (`OrderDetails`, the export
      route), and both lack `missing_mod_value`, which reads "Review".
+   **Found 2026-11-17:**
+   - The daily catalogue sync does not try again: one slow morning leaves the
+     catalogue a day old and the check red until someone runs it (§6.4).
+     Recorded; a design only if it recurs or Garrett wants it to retry.
+   - `cron.log` holds four checks' ping ids: `run-cron.sh` logs a `/fail` ping
+     it could not send with only `/fail` cut (OPERATIONS §6).
 7. **The website team's answers (2026-11-09)** to the questions sent as the
    10-29 record has them — that notifications plan stands:
    - **Quote requests:** the website sends each only to the OMS's quote
@@ -177,7 +220,8 @@ migration probed, transcribed and proven first.
      whenever a fulfilment is created with the customer notified (OPERATIONS
      §8, corrected). Garrett: tested in the last session — the email arrived
      2026-11-02 (11-03 §1), and on a mixed order it lists only the lines that
-     ship — so their offered joint test on #1078 is optional.
+     ship — so their offered joint test on #1078 is optional. (#1078 was
+     deleted 2026-11-16 with every test order.)
    - **Risky orders:** nothing holds them; Shopify rates each order low,
      medium or high and shows it, but does not stop the order. Production
      starts in the OMS, so the hold belongs there, from that rating (they
@@ -190,15 +234,17 @@ migration probed, transcribed and proven first.
 `docs/OPERATIONS-2026-08-26.md` — the business, services, credentials, cron,
 checks, and why. `docs/RECOVERY.md` — when it has gone badly wrong. The
 handoffs — each session's decisions; item 5's are in
-`SESSION-HANDOFF-2026-11-03.md` §6.3, and the 2026-11-10 session's in §6
+`SESSION-HANDOFF-2026-11-03.md` §6.3, and the 2026-11-10/17 session's in §6
 below. One fact, one home.
 
-## 6. 2026-11-10 — this session's designs and results
+## 6. 2026-11-10 to 11-17 — this session's designs and results
 
 Items 1 to 4 of §4: done and recorded there (`8ffab24`). Items 8 and 9 of the
 11-03 list (§4 item 5): designed below, each agreed by Garrett and committed
-before any code; built together, one commit each, one deploy, item 9's patch
-pinned on item 8's (both touch `production-complete` and `OrderDetails`).
+before any code (`3eab9e5`); built together, one commit each, one deploy, item
+9's patch pinned on item 8's (both touch `production-complete` and
+`OrderDetails`) — as built and live, §6.3. Then the catalogue sync's red
+(§6.4) and the ingestion check's 0 and 0 (§6.5).
 
 ### 6.1 Item 8 — Arizona's "today". DESIGN, agreed 2026-11-10
 
@@ -293,3 +339,93 @@ the owner's claim (the pill opens), a colleague's (a label; no Edit, Delete or
 Add — in the control they open), an admin's "Edit order", archived work, and a
 Shopify group (backorder editable, lines not — as now). (c) the route's
 compiled output byte-identical. Typecheck and patch as item 8.
+
+### 6.3 Items 8 and 9 — AS BUILT, deployed 2026-11-16, LIVE
+
+- **Built 2026-11-16 as designed** (§6.1, §6.2), after the sandbox was reset
+  (§3): the control tree rebuilt from repo30 and the two delivered docs
+  patches, checked against the 18 pins Garrett's box gave at `3eab9e5`.
+- **Item 8** — `patch_item8_arizona_today_2026-11-16.py`, sha256 `cf4edafb…`;
+  the eight files of §6.1. **Proven, ALL PASS:** five instants — 4:30 p.m.,
+  5:30 p.m. and 11:59 p.m. Arizona, midnight, New Year's Eve at 6 p.m. — the
+  functions in UTC, Phoenix and Tokyo, the three screens with the browser in
+  Phoenix and Tokyo. From 5:30 p.m. the control was on tomorrow everywhere (a
+  line due tomorrow "ready", "Awaiting delivery date" for "1 backordered",
+  "Mark Cross-dock" for "Early Push", "· past" on a line due today), and on
+  New Year's Eve in Tokyo it opened the calendar on January 2027; at 4:30 p.m.
+  it was right but for the calendar in Tokyo; at midnight both moved together.
+  `production-complete` on PostgreSQL: identical at 08:00 UTC; by hand at 6
+  p.m. Arizona the control also moved tomorrow's order.
+- **Item 9** — `patch_item9_loose_ends_2026-11-16.py`, `3baf9672…`, pinned on
+  item 8's: on a box without item 8 it refuses, nothing written. The five
+  files of §6.2. **Proven, box + item 8 the control:** (a) the trail insert
+  refused for one order by a trigger — the control moved both orders, left the
+  line missing and answered silent; the new code moved both, answered 200 with
+  `trail_failed: 1` naming the order and the reason, and logged it; a normal
+  run identical. (b) the real `OrderModal`, Full Order tab, seven cases: the
+  owner's claim — all offered, both trees; a colleague's claim, and an admin
+  before "Edit order" — the control offered Add SKU, edit, delete and an
+  opening pill, the new code a label and nothing else; an admin after "Edit
+  order" — all, both; archived work — the control's pill opened, the new
+  code's is a label; a Shopify group, the owner's claim — backorder editable,
+  lines not, both; a Shopify group, a colleague's claim — the control's pill
+  opened, the new code's is a label. (c) two `SkuItem` fields renamed in
+  copies: the control's casts passed it silently; the new code fails the
+  typecheck at all five uses.
+- **Two departures from the design's wording:** a read-only pill on a line
+  not backordered is titled "Not backordered" (the button's "Mark as
+  backordered" names an action); and (c) — dropping the cast left an alias
+  `rf` with no purpose, removed, so the compiled route differs from the
+  control by exactly that alias: the control with `const rf = item;` removed
+  and `rf` read as `item` is byte-identical to the new.
+- **Typecheck:** `next typegen`, then `tsc`: each item's error set identical to
+  its control's; a planted error caught in every changed file (8, then 5).
+  Both trees carry the sandbox's one `xlsx` TS2307 (§3).
+- **Deployed 2026-11-16** (Garrett): *"Item 8: Arizona's today (2026-11-16)"*,
+  then `c1401a1`, pushed, `kamal deploy`; the container up 21:21:39 UTC. The
+  image check (2026-11-17): `DEPLOYED` at `c1401a1`. ⚠ The chain left out the
+  cron diff (§3); run 2026-11-17: the crontab and `run-cron.sh` match the repo,
+  the map's sync entry is well-formed.
+- **LIVE** (Garrett, 2026-11-17): *"on an already claimed order a different
+  team member can click and see the full order when clicking the tab, but cant
+  interact with buttons."* The owner's pill still opening: proved in the
+  harness, not checked live.
+
+### 6.4 2026-11-17 — `sync-shopify-catalog` red once: a slow read, nothing written
+
+- **What happened.** Garrett: the check DOWN; its ping #14 was `/fail` at
+  10:00:16 UTC. `cron.log`, snapshotted whole (8,040 lines, sha256
+  `682d16cc…`): `[2026-11-17T10:00:01Z] /api/cron/sync-shopify-catalog rc=22
+  response=HTTP 502 {"ok":false,"error":"Shopify's catalogue was not read
+  within 15s"}` — the read's own budget (`lib/shopifyCatalogue`,
+  `CATALOGUE_READ_MS`), the whole read's race (no "page N"): a call to Shopify
+  still unanswered at 15 s. **Nothing was written** — the read is whole before
+  any write; the catalogue stayed as 11-16's sync left it.
+- **What it was not.** Not the deploy: the six files the route runs
+  (esbuild's inputs — the route, `lib/cronAuth`, `lib/shopify`,
+  `lib/shopifyCatalogue`, `lib/shopifyColor`, `lib/supabase`) byte-identical
+  before and after items 8 and 9, the container up since 21:21 UTC the day
+  before. Not cron or the monitor: the diffs clean. No Shopify Admin incident
+  published that day (IncidentHub).
+- **The log, read whole** (§3): lines 1–6,696 as 11-06 read them (265 not clean,
+  the same count); 6,697–8,040 every job on schedule every day, and ONE entry
+  not clean — this one. The 13 runs before it (two by hand on 11-05, then
+  daily from 11-06): each 2,622 variants, 131 products, nothing removed.
+- **Run by hand three times, a minute apart** (18:16–18:19 UTC): 9.9, 10.1 and
+  9.0 s each, the whole run (the read, six writes, two database steps); each
+  2,622 / 131 / 0; each pinged, no ping failed — a success ping returns the
+  check to UP. The read inside that, as the
+  7.7 s of 11-04: the 15 s budget keeps about twice its margin. **One slow
+  moment at Shopify, at 3 a.m. Arizona; nothing changed.**
+- **Found:** the run does not try again (§4 item 6). What to do when it goes red
+  this way: OPERATIONS §6.
+
+### 6.5 The ingestion check reads 0 and 0 — every test order deleted
+
+Since 2026-11-16 22:20 UTC `webhook-health` answers `"shopify_orders_checked":0,
+"note":"no orders in Shopify to reconcile","oms_purchases_checked":0`. Both
+counts went from 1 to 0 in the same hour and nothing went red: an order deleted
+in Shopify, its delete webhook removing the purchase before the hourly check
+looked. Garrett (2026-11-17): *"Yes, all old test orders were deleted"* — #1078
+among them. The log shows the same after each earlier clean-up (from 10-19,
+11-02 and 11-04). As designed; the first real order makes it reconcile again.

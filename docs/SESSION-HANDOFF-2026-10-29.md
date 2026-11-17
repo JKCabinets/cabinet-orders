@@ -622,7 +622,7 @@ and the line editor — a line due today reads overdue after 5 p.m. Arizona
 (Garrett's call, open); production-complete's activity insert unchecked; the
 line editor's backorder control offered on archived and someone-else's
 groups; the export route's comment on `SkuItem` is stale. ⚠ The UTC "today"
-and the three after it: DESIGNED 2026-11-10 — `SESSION-HANDOFF-2026-11-06.md` §6.
+and the three after it: DESIGNED 2026-11-10 — `SESSION-HANDOFF-2026-11-06.md` §6. ✅ Built and LIVE 2026-11-16 — `SESSION-HANDOFF-2026-11-06.md` §6.3.
 
 **Before the deploy (Garrett):** the app's Admin API scopes include
 `write_merchant_managed_fulfillment_orders` (the #1067 read proved READ only);
