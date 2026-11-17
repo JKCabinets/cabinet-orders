@@ -76,15 +76,19 @@ export type AttentionEnrichment = RequirementEnrichment;
 /**
  * Which requirements produce a queue reason, and what it says.
  *
- * ⚠ ONE REASON PER GATE, NOT ONE PER MECHANISM. The New gate passes on a green
- * acknowledgment OR any attachment, so "no acknowledgment and no attachment"
- * is the single true condition for every vendor. Splitting it by vendor would
+ * ⚠ ONE REASON PER GATE, NOT ONE PER MECHANISM. The New gate needs every
+ * cabinet line's own acknowledgment (2026-11-02, feature 10 -- the "any file"
+ * stand-in is retired), so "a line without its acknowledgment" is the single
+ * true condition, whatever the vendor. Splitting the reason by vendor would
  * put a fourth encoding of "is this Waypoint" into every filter, badge and
  * queue that reads these reasons -- after hasWaypoint, linesForAckVendor and
- * the upload route's constant.
+ * the upload route's constant. WHICH lines wait is words on the one reason
+ * (linesWaiting, below).
  *
- * The REMEDY is what varies: upload the .xlsx for Waypoint, attach the
- * acknowledgment for HCI and J&K. That is display text on one reason.
+ * The REMEDY is what varies: Waypoint's acknowledgment uploaded, and it must
+ * match; HCI's and J&K's uploaded, a PDF or Excel file (lib/requirements).
+ * That is display text on one reason. (Corrected 2026-11-17, item 10: this
+ * said the gate passed on "a green acknowledgment OR any attachment".)
  */
 const ENRICHED_REASONS: Record<string, { kind: AttentionKind; label: string }> = {
   ack_or_attachment: {
@@ -110,9 +114,13 @@ function linesWaiting(reqId: string, enrich: RequirementEnrichment | undefined):
     const waiting = Object.entries(enrich.ackLines).filter(([, s]) => s !== "met");
     if (waiting.length === 0) return null;
     const why = (s: string) => (s === "failed" ? "did not match the order" : s === "stale" ? "the order changed since" : "no acknowledgment yet");
+    // ⚠ ONE LINE: the label already names it, so the detail says only WHY, as a
+    // sentence (item 10, 2026-11-17 -- it repeated the name). Two or more: each
+    // why needs its name, to say whose it is.
+    const whyAlone = (s: string) => (s === "failed" ? "Its acknowledgment did not match the order" : s === "stale" ? "The order changed since its acknowledgment" : "No acknowledgment yet");
     return {
       label: waiting.length === 1 ? `${waiting[0][0]}: acknowledgment required` : `Acknowledgments required: ${waiting.map(([v]) => v).join(", ")}`,
-      detail: waiting.map(([v, s]) => `${v}: ${why(s)}`).join(" · "),
+      detail: waiting.length === 1 ? whyAlone(waiting[0][1]) : waiting.map(([v, s]) => `${v}: ${why(s)}`).join(" · "),
     };
   }
   if (reqId === "proof_of_delivery" && enrich?.proofLines && Object.keys(enrich.proofLines).length > 1) {
@@ -120,7 +128,8 @@ function linesWaiting(reqId: string, enrich: RequirementEnrichment | undefined):
     if (waiting.length === 0) return null;
     return {
       label: waiting.length === 1 ? `${waiting[0]}: signed delivery receipt missing` : `Signed delivery receipts missing: ${waiting.join(", ")}`,
-      detail: "Upload each line's signed delivery receipt",
+      // One line: "its", the label having named it (item 10, 2026-11-17).
+      detail: waiting.length === 1 ? "Upload its signed delivery receipt" : "Upload each line's signed delivery receipt",
     };
   }
   return null;
