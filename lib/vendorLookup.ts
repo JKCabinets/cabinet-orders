@@ -29,6 +29,7 @@
 
 import { supabase } from "@/lib/supabase";
 import { decodeSku, doorStyleMap, hciColorMap, jkColorMap, ensureSkuMaps } from "@/lib/skuDecoder";
+import { sortVendorNames } from "@/lib/vendorOrder";
 
 const UNKNOWN_VENDOR = "__UNASSIGNED__";
 
@@ -218,7 +219,9 @@ export function resolveVendors(
 
   return {
     vendorBySku,
-    uniqueVendors: Array.from(uniqueSet).sort((a, b) => a.localeCompare(b)),
+    // ⚠ THE ONE ORDER (lib/vendorOrder, 2026-11-18, item 12): these names key
+    // the band's rows, which the band draws in this order before it is told.
+    uniqueVendors: sortVendorNames(uniqueSet),
     hasUnassigned,
   };
 }

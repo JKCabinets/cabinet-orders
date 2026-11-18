@@ -8,6 +8,8 @@ import { productionAutoAdvance, productionAutoAdvanceSkip } from "@/lib/autoAdva
 import { typeCarriesTracking } from "@/lib/categories";
 import { formatMDY, weekdayMonthDay, monthDay } from "@/lib/dates";
 import { cabinetVendorsOf, vendorShipDate, dueShipChecks, type DueCheck } from "@/lib/shipDates";
+import { isWaypointVendor } from "@/lib/vendorFamily";
+import { sortVendorNames } from "@/lib/vendorOrder";
 
 /**
  * What this row needs before it can move, and the controls that do it.
@@ -108,6 +110,12 @@ export type DateFields = {
   /** A backordered line's "Delayed: new date": the lines with its ready date moved. */
   sku_items?: SkuItem[];
 };
+
+/**
+ * Where a cabinet line's acknowledgment stands on the band: the server's four
+ * states, or UNKNOWN -- drawn before the enrichment has answered (item 12).
+ */
+type LineState = NonNullable<RequirementEnrichment["ackLines"]>[string] | "unknown";
 
 /** Requirements the production-date pair satisfies, at either stage. */
 const PRODUCTION_DATE_IDS = new Set(["production_start_date", "production_dates"]);
@@ -282,12 +290,31 @@ export function NextActionPanel({
   }
 
   const requirements = requirementsFor(order);
-  // Each cabinet line's acknowledgment (2026-11-02, feature 10), from the enrichment.
-  const ackLineRows = Object.entries(enrichment?.ackLines ?? {}).map(([vendor, state]) => ({ vendor, state }));
+  /**
+   * ⚠ A ROW PER CABINET LINE FROM THE FIRST PAINT (2026-11-18, item 12). The
+   * rows came only from the enrichment, so until it landed the band drew the
+   * general row ("Each cabinet line's acknowledgment") and then swapped it for
+   * the lines. Until the answer they are drawn from the order's OWN lines --
+   * the names the server keys them by (a line's own vendor first, decision E),
+   * in the server's order (lib/vendorOrder) -- in a third state, UNKNOWN: the
+   * same row and key, an open circle, a note that says what the line needs
+   * and never whether it has it, and no upload. Once there is an answer, its
+   * names and states stand, even none. A line with no vendor of its own is
+   * drawn under the group's, and if the server names another, the server's
+   * name wins (Garrett: "the one place a jump remains").
+   */
+  const drawnLines = sortVendorNames(vendors);
+  // Each cabinet line's acknowledgment (2026-11-02, feature 10).
+  const ackLineRows: { vendor: string; state: LineState }[] = enrichment
+    ? Object.entries(enrichment.ackLines ?? {}).map(([vendor, state]) => ({ vendor, state }))
+    : drawnLines.map((vendor) => ({ vendor, state: "unknown" as const }));
   // Each line's signed receipt, on a MIXED order (2026-11-03, feature 10): one
   // line keeps the single row, as before.
-  const proofLineRows = Object.keys(enrichment?.proofLines ?? {}).length > 1
-    ? Object.entries(enrichment!.proofLines!).map(([vendor, ok]) => ({ vendor, ok })) : [];
+  const proofLineRows: { vendor: string; state: "met" | "missing" | "unknown" }[] = enrichment
+    ? (Object.keys(enrichment.proofLines ?? {}).length > 1
+        ? Object.entries(enrichment.proofLines!).map(([vendor, ok]) => ({ vendor, state: ok ? "met" as const : "missing" as const }))
+        : [])
+    : (drawnLines.length > 1 ? drawnLines.map((vendor) => ({ vendor, state: "unknown" as const })) : []);
   const next = nextStageFor(order);
 
   const rows = requirements.map((r) => ({
@@ -448,19 +475,21 @@ export function NextActionPanel({
               {rows.map(({ req, state }) => (req.id === "proof_of_delivery" && proofLineRows.length > 0)
                 // ⚠ A ROW PER CABINET LINE, as the acknowledgments (2026-11-03): each
                 // line delivers separately and needs its own signed receipt.
-                ? proofLineRows.map(({ vendor, ok }) => {
+                ? proofLineRows.map(({ vendor, state: ps }) => {
                     const remedy = remedies[`proof_of_delivery:${vendor}`];
+                    const ok = ps === "met";
                     return (
-                      <li key={`proof:${vendor}`} data-proof-line={vendor} data-state={ok ? "met" : "missing"} className="flex items-start gap-2 text-[12px] leading-snug">
+                      <li key={`proof:${vendor}`} data-proof-line={vendor} data-state={ps} className="flex items-start gap-2 text-[12px] leading-snug">
                         <span className="w-3.5 h-3.5 rounded-full flex-shrink-0 mt-[2px] flex items-center justify-center"
                           style={ok ? { background: "rgba(160,204,122,0.20)", border: "0.5px solid #a0cc7a" } : { border: "0.5px solid rgba(232,227,218,0.30)" }}>
                           {ok && <Check className="w-2 h-2" style={{ color: "#a0cc7a" }} />}
                         </span>
                         <span className="min-w-0" style={{ color: ok ? "#a0cc7a" : "rgba(240,236,228,0.92)" }}>
                           {vendor}: signed proof of delivery
-                          {!ok && <span className={"block " + NOTE}>Upload its signed delivery receipt</span>}
+                          {/* Unknown: what the line needs, not whether it has it (item 12). */}
+                          {!ok && <span className={"block " + NOTE}>{ps === "unknown" ? "Its signed delivery receipt" : "Upload its signed delivery receipt"}</span>}
                         </span>
-                        {!ok && remedy && !readOnly && (
+                        {ps === "missing" && remedy && !readOnly && (
                           <button onClick={remedy.onClick} className={PILL_QUIET + " ml-auto flex-shrink-0"}>
                             <Upload className="w-3 h-3" /> {remedy.label}
                           </button>
@@ -488,7 +517,11 @@ export function NextActionPanel({
                           {vendor}: acknowledgment
                           {ls !== "met" && <span className={"block " + NOTE}>{ackLineNote(vendor, ls)}</span>}
                         </span>
-                        {ls !== "met" && remedy && !readOnly && (
+                        {/* ⚠ NO UPLOAD BEFORE THE ANSWER (item 12): the modal may already
+                            hold this line's remedy (from the acknowledgment status), but
+                            an unknown line may have its acknowledgment -- as before, the
+                            band offers the upload once it knows. */}
+                        {ls !== "met" && ls !== "unknown" && remedy && !readOnly && (
                           <button onClick={remedy.onClick} className={PILL_QUIET + " ml-auto flex-shrink-0"}>
                             <Upload className="w-3 h-3" /> {remedy.label}
                           </button>
@@ -757,11 +790,25 @@ export function NextActionPanel({
   );
 }
 
-/** What a cabinet line's acknowledgment needs, said for its state (2026-11-02, feature 10). */
-function ackLineNote(vendor: string, state: string): string {
-  const waypoint = /^(waypoint|select)( cabinetry)?$/i.test(vendor.trim());
+/**
+ * What a cabinet line's acknowledgment needs, said for its state (2026-11-02,
+ * feature 10).
+ *
+ * ⚠ UNKNOWN SAYS WHAT THE LINE NEEDS, NEVER WHETHER IT HAS IT (2026-11-18,
+ * item 12; Garrett: "it has to read as an instruction, not a status"): the
+ * "missing" note with the upload instruction taken off, true whether or not
+ * an acknowledgment is already there.
+ *
+ * ⚠ WAYPOINT BY THE SERVER'S TEST (item 12): `isWaypointVendor`, which the
+ * acknowledgment route asks to decide whether an upload is checked against
+ * the order -- so "must match the order" is said exactly where it is checked.
+ * This was its own regex, which also took a bare "Select".
+ */
+function ackLineNote(vendor: string, state: LineState): string {
+  const waypoint = isWaypointVendor(vendor);
   if (state === "failed") return "It did not match the order. See the acknowledgment panel, then upload it again";
   if (state === "stale") return "The order changed since it was acknowledged. Upload it again";
+  if (state === "unknown") return waypoint ? "Its acknowledgment spreadsheet, which must match the order" : "A PDF or Excel file";
   return waypoint ? "Upload its acknowledgment spreadsheet; it must match the order" : "Upload theirs, a PDF or Excel file";
 }
 
