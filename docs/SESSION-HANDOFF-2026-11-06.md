@@ -5,8 +5,9 @@ session starts. The 2026-11-04/06 session finished **item 5** — all four parts
 and 4c, each deployed and checked live. Item 5's record is in
 `SESSION-HANDOFF-2026-11-03.md` §6.3 (its home since its plan); this file points
 into it rather than copying it, and records the rest. ⚠ **AMENDED through
-2026-11-17** by the 2026-11-10/17 session: §4 items 1–4 done, items 8 and 9
-designed, built and LIVE (§6), the catalogue sync's one red (§6.4).
+2026-11-18** by the 2026-11-10/18 session: §4 items 1–4 done, items 8, 9 and
+10 designed, built and LIVE, item 12 designed (§6), the catalogue sync's one
+red (§6.4).
 
 ## 0. A new session, first
 
@@ -18,21 +19,23 @@ designed, built and LIVE (§6), the catalogue sync's one red (§6.4).
    harness archive `harness-2026-11-17.tar.gz` with its
    `harness-2026-11-17_tar_gz.sha256`. Check both hashes — by VALUE: an upload
    renames `x.tar.gz` to `x_tar.gz`, so `sha256sum -c` fails on the name (§3).
+   ⚠ Item 10's three harness files are not in that archive (§6.7); the next
+   one, packed with item 12's, carries them.
 3. **Read this file whole**, then the method (§3), before any change.
 
 ## 1. Where things stand
 
 **The box** (`5.78.220.153`, `~/cabinet-orders`, `main`): `HEAD` is *"Docs:
-item 10, designed (2026-11-17)"*, `HEAD~1` `7aea840` *"Docs: items 8 and 9
-live, the catalogue sync's red (2026-11-17)"*, `HEAD~2` `c1401a1` *"Item 9:
-…"* (deployed), `HEAD~3` `8af4e0f` *"Item 8: Arizona's today (2026-11-16)"*,
-`HEAD~4` `3eab9e5` *"Docs: items 8 and 9, designed (2026-11-10)"*, `HEAD~5`
-`8ffab24` *"Docs: open items 1 to 4 (2026-11-10)"*, `HEAD~6` `de5e063`
-*"Docs: the website team's answers (2026-11-09)"*. **The next chain checks:
+item 10 live, item 12 designed (2026-11-18)"*, `HEAD~1` `5e32f74` *"Item 10:
+…"* (deployed), `HEAD~2` `1d915f5` *"Docs: item 10, designed (2026-11-17)"*,
+`HEAD~3` `7aea840` *"Docs: items 8 and 9 live, the catalogue sync's red
+(2026-11-17)"*, `HEAD~4` `c1401a1` *"Item 9: …"* (deployed), `HEAD~5`
+`8af4e0f` *"Item 8: Arizona's today (2026-11-16)"*, `HEAD~6` `3eab9e5`
+*"Docs: items 8 and 9, designed (2026-11-10)"*. **The next chain checks:
 `HEAD`'s subject is that one, tree clean.** ⚠ **The running
-image is `c1401a1`** (deployed 2026-11-16, the container up 21:21:39 UTC);
-against this docs `HEAD` the image check reads MISMATCH until the next deploy,
-by design. The 2026-11-04/06 session's commits — `git log --oneline
+image is `5e32f74`** (item 10, §6.7); against this docs `HEAD` the image
+check reads MISMATCH until the next deploy, by design. The 2026-11-04/06
+session's commits — `git log --oneline
 d04a568..2a7a20c` and after — each a design record, then its part and its
 docs: part 2 (`4ccd94d`, its live record `2a7a20c`), part 3 (design `841fe89`,
 `3914bc0`), part 4 (`5c8ea73`), its session record.
@@ -48,8 +51,11 @@ webhook subscriptions deliver in **`2026-10`** — the app's own setting in
 Shopify, moved 2026-11-05 (4c); `GET /api/shopify/webhooks` lists each one's
 `apiVersion`. The first order on those payloads, #1078 (2026-11-09, 21:28
 UTC), was taken in cleanly: its project and its cabinet group. ⚠ **Every test
-order, #1078 among them, was deleted 2026-11-16** (Garrett): Shopify answers
-no orders, and the OMS holds no Shopify purchase (§6.5).
+order, #1078 among them, was deleted 2026-11-16** (Garrett): Shopify answered
+no orders, and the OMS held no Shopify purchase (§6.5). **One test order
+since: #1079** (SHO-1079, HCI only, at New when seen) — item 10 was checked
+on it and item 12's flash seen on it (§6.7); to go with the next clean-up,
+once item 12 is checked on it.
 
 **Cron** — eight jobs (`scripts/cron/crontab`, installed 2026-11-05):
 `sync-shopify-catalog`, 10:00 UTC daily, joined them. ⚠ **The deploy chain runs
@@ -177,8 +183,20 @@ migration probed, transcribed and proven first.
 5. From the 11-03 list (§4 there), still open: 8 (UTC "today": a line due today
    reads overdue after 5 p.m. Arizona), 9, 10, and 11 (RECOVERY has never been
    exercised). Item 7 was done with item 5 part 4. ✅ **8 and 9 DONE** —
-   designed 2026-11-10, built, deployed 2026-11-16 and LIVE (§6.3). Open: 10
-   and 11. ⚠ **10 DESIGNED 2026-11-17 (§6.6)**, with (b) and (c).
+   designed 2026-11-10, built, deployed 2026-11-16 and LIVE (§6.3). ✅ **10
+   DONE** — designed 2026-11-17 (§6.6), with (b) and (c); built, deployed
+   and LIVE (§6.7). Open: 11. Numbered on from there:
+   - **12. The band's line rows, drawn at once** (Garrett: *"Option A as item
+     12"*). ⚠ **DESIGNED 2026-11-18 (§6.8).** Next, then 11.
+   - **13. The enrichment hook hides a failed request** (Garrett, designing
+     item 12). `useOrderEnrichment` returns nothing on a refused or
+     failed request — silent by design (`lib/useOrderEnrichment` lines 28–31,
+     105, 112) — so no screen can tell "waiting" from "failed", and no
+     wording fixes that: item 12's rows stay as drawn until the modal is
+     reopened. Garrett: *"the hook exposes a failed state, so the band can
+     say "couldn't check — reopen the order""*. Its own item, to design. ⚠
+     Not every missing answer is a failure: the hook asks only about cabinet
+     groups not archived (line 82), so an archived group is never asked.
 6. **Found this session, left for their own look:** the admin home's warning
    of orders "with no total recorded — backfill via Shopify sync" names the
    wrong tool; the admin Shopify page shows nothing when a sync fails (`if
@@ -214,6 +232,21 @@ migration probed, transcribed and proven first.
      acknowledgment or receipt reasons the work queue and dashboard show —
      the shape `attentionForProject`'s 2026-09-08 comment calls "identical to
      the feature not working" (found reading for item 10).
+   **Found 2026-11-18, reading for item 12:**
+   - Waypoint is tested three ways: the server's `isWaypointVendor`
+     (`lib/vendorFamily` — the acknowledgment route, which decides whether an
+     upload is checked; the fingerprint; the stage sentences); a regex in
+     `AcknowledgmentPanel` (line 18) and the band (line 762) that also
+     accepts a bare "Select"; and `ackStatus`'s `/waypoint/i`
+     (`hasWaypoint`). The names lines carry (HCI, J&K and Waypoint
+     Cabinetry) get one answer from all three; "Select Cabinetry", the
+     storefront alias no line carries, is Waypoint to the first two and not
+     to the third. The band moves to the server's test with item 12 (§6.8).
+   - Two other screens order vendors by their own copy of the rule:
+     `OrderDetails`' Full Order sections (line 123, `localeCompare` in the
+     browser's locale) and the export route's headings (line 225, on the
+     server, "Unassigned" last). Not the band's; today's names sort the same
+     in every locale tried (§6.8).
 7. **The website team's answers (2026-11-09)** to the questions sent as the
    10-29 record has them — that notifications plan stands:
    - **Quote requests:** the website sends each only to the OMS's quote
@@ -240,17 +273,18 @@ migration probed, transcribed and proven first.
 `docs/OPERATIONS-2026-08-26.md` — the business, services, credentials, cron,
 checks, and why. `docs/RECOVERY.md` — when it has gone badly wrong. The
 handoffs — each session's decisions; item 5's are in
-`SESSION-HANDOFF-2026-11-03.md` §6.3, and the 2026-11-10/17 session's in §6
+`SESSION-HANDOFF-2026-11-03.md` §6.3, and the 2026-11-10/18 session's in §6
 below. One fact, one home.
 
-## 6. 2026-11-10 to 11-17 — this session's designs and results
+## 6. 2026-11-10 to 11-18 — this session's designs and results
 
 Items 1 to 4 of §4: done and recorded there (`8ffab24`). Items 8 and 9 of the
 11-03 list (§4 item 5): designed below, each agreed by Garrett and committed
 before any code (`3eab9e5`); built together, one commit each, one deploy, item
 9's patch pinned on item 8's (both touch `production-complete` and
 `OrderDetails`) — as built and live, §6.3. Then the catalogue sync's red
-(§6.4), the ingestion check's 0 and 0 (§6.5), and item 10's design (§6.6).
+(§6.4), the ingestion check's 0 and 0 (§6.5), item 10's design (§6.6), item
+10 as built and live (§6.7), and item 12's design (§6.8).
 
 ### 6.1 Item 8 — Arizona's "today". DESIGN, agreed 2026-11-10
 
@@ -473,3 +507,142 @@ control only in those details, every label and every other reason identical;
 the real work queue mounted in jsdom, the enrichment answered by a stand-in,
 showing the row's two lines in both trees; the typecheck with a planted error;
 the patch on box-shaped trees.
+
+### 6.7 Item 10 — AS BUILT, deployed, LIVE
+
+- **Built as designed** (§6.6): `lib/attention.ts` only —
+  `patch_item10_one_line_named_once_2026-11-17.py`, sha256 `5668a75a…`.
+- **Proven, ALL PASS.** `attentionFor` in both trees over the same 12 cases:
+  every reason's kind, severity and label identical; the details differ only
+  where agreed — one line missing, failed or stale (of two), a single-line
+  order, one receipt of two; two lines waiting, two receipts, the fallbacks,
+  met and no enrichment identical. The real work queue in jsdom, the
+  enrichment from the stand-in, four cases: one line missing, failed or
+  stale — the new detail without the name — and two, identical. The patch:
+  `--check` writes nothing; it applies byte-identical to the tested tree,
+  re-runs ALREADY APPLIED, refuses a broken anchor and another base, and
+  carries no sandbox path.
+- **Deployed** (Garrett): `5e32f74`, through the chain — `next typegen`,
+  `tsc`, the cron diffs (§3) — and `kamal deploy`; the image check
+  `DEPLOYED` at `5e32f74`.
+- **LIVE** (Garrett): the dashboard and the modal on SHO-1079 (HCI only, at
+  New), in screenshots.
+- **A wording note.** §6.6 called the details "the order route's own words".
+  For a failed line the route's refusal says "its acknowledgment did not
+  match" (`app/api/orders/[id]/route.ts` line 361); the agreed detail, "Its
+  acknowledgment did not match the order", adds "the order". Built as agreed;
+  recorded so the two are not read as one string.
+- **The harness:** item 10's files — `tests/item10_unit.ts`,
+  `tests/item10_queue.tsx`, `prove_item10.py` — postdate
+  `harness-2026-11-17.tar.gz` (§0).
+- **Seen on the same order:** opening it, the band read "Each cabinet line"
+  for a split second, then the HCI row (Garrett: *"For a split second it says
+  the "Each cabinet line" then switches to the HCI"*) — item 12, §6.8.
+
+### 6.8 Item 12 — the band's line rows, drawn at once. DESIGN, agreed 2026-11-18
+
+Garrett: *"Option A as item 12"*; the receipts with it (*"Receipts: yes,
+include (b)"*); and the design agreed with his four amendments — notes that
+instruct rather than report, the server's own sort, the server's row key,
+three more proof cases: *"With those, I'd agree the design as written."*
+
+**Read whole:** `components/NextActionPanel` (786 lines),
+`lib/useOrderEnrichment` (123), `lib/vendorLookup` (239), `lib/shipDates`
+(196), `lib/vendorFamily` (19), `lib/requirements` (456),
+`lib/acknowledgments` (249), `lib/deliveryProof` (30), `lib/ackStatus` (159),
+the enrichment route (177), the vendors route (60); `OrderModal` (read whole
+for item 9) again where it mounts the band (lines 470–560, 1546–1620).
+
+**Found.**
+- **The flash.** The band draws a cabinet line's rows from the enrichment —
+  `ackLines` at New, `proofLines` on a mixed order at At cross dock — which
+  lands a moment after the modal opens. Until then it draws the requirement's
+  general row ("Each cabinet line's acknowledgment", the Waypoint-and-HCI
+  remedy under it), then swaps it for the lines; the move column moves too
+  (it sits level with the last line only once there are lines, line 524).
+- **A row is a vendor's line, not a SKU.** The server keys each row by vendor
+  name — `resolveVendors`' `uniqueVendors`, once each, sorted — one
+  acknowledgment and one receipt per vendor: two HCI SKUs make one row. The
+  order's own lines name the same vendors wherever a line carries its own
+  (decision E: `lib/shipDates`' `lineVendor` asks a line's own vendor first,
+  as `resolveVendors`' layer 0 does).
+- **The sort was the server's alone,** inline in `resolveVendors`
+  (`lib/vendorLookup` line 221), a module that imports supabase and cannot
+  reach the browser. And `localeCompare` with no locale asks the runtime's
+  default — the server's container (the Dockerfile and `deploy.yml` set no
+  `LANG`, and with none Node answers `en-US`) or each person's browser — so
+  even one function orders two ways wherever a locale does: in Danish or
+  Turkish "HCI Cabinetry" sorts before "hci cabinetry", in Czech "Ch" after
+  "H". The names in use, with the alias "Select Cabinetry", sort the same in
+  all twelve locales tried, and the same by code units.
+- **Before the answer** the band offers no upload, and the move is disabled —
+  a gating unknown (the band's header, "UNKNOWN RENDERS AS UNMET").
+
+**The change.**
+1. **The rows are drawn from the order's own lines until the answer lands.**
+   `cabinetVendorsOf(order)`, sorted by the server's rule (2), gives the
+   names. Each row is the row the answer will draw — the same key
+   (`ack:<vendor>`, `proof:<vendor>`), the same place, the same open circle —
+   in a third state, *unknown*: no upload button and the move disabled, as
+   now. Its note says what the line needs, never whether it has it (Garrett:
+   *"it has to read as an instruction, not a status"*) — the line's
+   "missing" note with the upload instruction taken off:
+   - Waypoint: "Its acknowledgment spreadsheet, which must match the order"
+   - HCI, J&K and any other: "A PDF or Excel file"
+   - a receipt, on a mixed order: "Its signed delivery receipt"
+   When the answer lands its names and states stand, even none: on the same
+   names nothing moves — the circle, the note and the button change in
+   place. One line keeps the receipt's single row, as feature 10 has it; a
+   group whose lines name no vendor keeps the general row until the answer.
+2. **One sort, in one place.** The server's sort moves, as it is, to a new
+   pure module, `lib/vendorOrder`, which `resolveVendors` and the band both
+   import — one function, not a copy. One thing is added: the locale, pinned
+   to `en-US`, the container's own default — so the server's order does not
+   change, and every browser orders as the server does. The container's
+   default is checked on the box before the build.
+3. **Waypoint by the server's test.** The notes ask `isWaypointVendor`
+   (`lib/vendorFamily`) — the test the acknowledgment route uses to decide
+   whether an upload is checked against the order — instead of the band's
+   own regex, so "must match the order" is said exactly where the server
+   checks it. They differ only on a vendor named "Select" alone, which no
+   line carries. (The other two tests: §4 item 6.)
+
+**Where a drawn row can still change** (Garrett: *"acceptable as the one
+place a jump remains. It's honest, rare, and the server's names win"*): a line
+with no vendor of its own — stored before 2026-08-24 — is drawn under the
+group's vendor; the server may name another from the product cache (variant,
+SKU shape, base SKU), and the row changes once, when the answer lands.
+
+**If the answer never comes** — a failed request (the hook is silent by
+design) or an archived group (never asked) — the rows stay as drawn: the
+names and what each needs, no claim. Telling waiting from failed is item 13
+(§4 item 5).
+
+**Not changed:** the checklist's states and the move's gate; the remedies
+the modal passes; the date fields (in line order, as now); the enrichment
+hook; every server answer — `resolveVendors` returns what it did, in the
+order it did. Files: `lib/vendorOrder` (new), `lib/vendorLookup`,
+`components/NextActionPanel`. No migration.
+
+**The proof, the deployed code as the control:** the real `OrderModal` in
+jsdom, the enrichment held by the stand-in and then released — what the band
+shows before the answer and after, both trees:
+- SHO-1079's shape (HCI only, at New);
+- Waypoint and HCI;
+- J&K beside HCI and Waypoint — the `&` and the sort;
+- two HCI lines and a Waypoint — one HCI row, the server's key;
+- a line with no vendor of its own — drawn under the group's, changed by the
+  answer;
+- a group whose lines name none — the general row;
+- each line's receipt on a mixed order at At cross dock, and one line's;
+- an answer that never comes;
+- switching from one purchase's order to another's with the first request in
+  flight — its late answer must not paint the second band (the hook drops a
+  superseded answer and keys its map by order id: shown, not assumed).
+The control: the general row, then the lines. The new code: the lines
+throughout, the same keys before and after; where the server names another
+vendor, the one change. Then `resolveVendors` in both trees over a set of
+inputs, the hard names among them ("J&K", "hci", "Select (Waypoint)"):
+identical under the container's default locale; under a Danish one the
+control's order moves and the new code's does not. The typecheck with a
+planted error in each changed file; the patch on box-shaped trees.
