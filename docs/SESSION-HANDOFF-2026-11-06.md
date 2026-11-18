@@ -5,9 +5,8 @@ session starts. The 2026-11-04/06 session finished **item 5** — all four parts
 and 4c, each deployed and checked live. Item 5's record is in
 `SESSION-HANDOFF-2026-11-03.md` §6.3 (its home since its plan); this file points
 into it rather than copying it, and records the rest. ⚠ **AMENDED through
-2026-11-18** by the 2026-11-10/18 session: §4 items 1–4 done, items 8, 9 and
-10 designed, built and LIVE, item 12 designed (§6), the catalogue sync's one
-red (§6.4).
+2026-11-18** by the 2026-11-10/18 session: §4 items 1–4 done, items 8, 9, 10
+and 12 designed, built and LIVE (§6), the catalogue sync's one red (§6.4).
 
 ## 0. A new session, first
 
@@ -16,25 +15,25 @@ red (§6.4).
    cd ~/cabinet-orders && git archive --format=tar.gz -o ~/repo31.tar.gz HEAD && cd ~ && sha256sum repo31.tar.gz > repo31_tar_gz.sha256
    ```
 2. **Upload** `repo31.tar.gz`, `repo31_tar_gz.sha256`, this file, and the
-   harness archive `harness-2026-11-17.tar.gz` with its
-   `harness-2026-11-17_tar_gz.sha256`. Check both hashes — by VALUE: an upload
-   renames `x.tar.gz` to `x_tar.gz`, so `sha256sum -c` fails on the name (§3).
-   ⚠ Item 10's three harness files are not in that archive (§6.7); the next
-   one, packed with item 12's, carries them.
+   harness archive `harness-2026-11-18.tar.gz` (sha256 `0e8a0dd3…`) with its
+   `harness-2026-11-18_tar_gz.sha256` — it carries items 10 and 12's files
+   (§6.9). Check both hashes — by VALUE: an upload renames `x.tar.gz` to
+   `x_tar.gz`, so `sha256sum -c` fails on the name (§3).
 3. **Read this file whole**, then the method (§3), before any change.
 
 ## 1. Where things stand
 
 **The box** (`5.78.220.153`, `~/cabinet-orders`, `main`): `HEAD` is *"Docs:
-item 10 live, item 12 designed (2026-11-18)"*, `HEAD~1` `5e32f74` *"Item 10:
-…"* (deployed), `HEAD~2` `1d915f5` *"Docs: item 10, designed (2026-11-17)"*,
-`HEAD~3` `7aea840` *"Docs: items 8 and 9 live, the catalogue sync's red
-(2026-11-17)"*, `HEAD~4` `c1401a1` *"Item 9: …"* (deployed), `HEAD~5`
-`8af4e0f` *"Item 8: Arizona's today (2026-11-16)"*, `HEAD~6` `3eab9e5`
-*"Docs: items 8 and 9, designed (2026-11-10)"*. **The next chain checks:
-`HEAD`'s subject is that one, tree clean.** ⚠ **The running
-image is `5e32f74`** (item 10, §6.7); against this docs `HEAD` the image
-check reads MISMATCH until the next deploy, by design. The 2026-11-04/06
+item 12 live (2026-11-18)"*, `HEAD~1` *"Item 12: the band's line rows, drawn
+at once (2026-11-18)"* (deployed), `HEAD~2` `af65791` *"Docs: item 10 live,
+item 12 designed (2026-11-18)"*, `HEAD~3` `5e32f74` *"Item 10: one waiting
+line named once (2026-11-17)"* (deployed), `HEAD~4` `1d915f5` *"Docs: item
+10, designed (2026-11-17)"*, `HEAD~5` `7aea840` *"Docs: items 8 and 9 live,
+the catalogue sync's red (2026-11-17)"*, `HEAD~6` `c1401a1` *"Item 9: …"*
+(deployed). **The next chain checks: `HEAD`'s subject is that one, tree
+clean.** ⚠ **The running image is `HEAD~1`, item 12** (§6.9; the chain that
+committed this checked it); against this docs `HEAD` the image check reads
+MISMATCH until the next deploy, by design. The 2026-11-04/06
 session's commits — `git log --oneline
 d04a568..2a7a20c` and after — each a design record, then its part and its
 docs: part 2 (`4ccd94d`, its live record `2a7a20c`), part 3 (design `841fe89`,
@@ -53,9 +52,8 @@ Shopify, moved 2026-11-05 (4c); `GET /api/shopify/webhooks` lists each one's
 UTC), was taken in cleanly: its project and its cabinet group. ⚠ **Every test
 order, #1078 among them, was deleted 2026-11-16** (Garrett): Shopify answered
 no orders, and the OMS held no Shopify purchase (§6.5). **One test order
-since: #1079** (SHO-1079, HCI only, at New when seen) — item 10 was checked
-on it and item 12's flash seen on it (§6.7); to go with the next clean-up,
-once item 12 is checked on it.
+since: #1079** (SHO-1079, HCI only, at New when seen) — items 10 and 12 were
+checked on it (§6.7, §6.9); it can go with the next clean-up.
 
 **Cron** — eight jobs (`scripts/cron/crontab`, installed 2026-11-05):
 `sync-shopify-catalog`, 10:00 UTC daily, joined them. ⚠ **The deploy chain runs
@@ -187,7 +185,8 @@ migration probed, transcribed and proven first.
    DONE** — designed 2026-11-17 (§6.6), with (b) and (c); built, deployed
    and LIVE (§6.7). Open: 11. Numbered on from there:
    - **12. The band's line rows, drawn at once** (Garrett: *"Option A as item
-     12"*). ⚠ **DESIGNED 2026-11-18 (§6.8).** Next, then 11.
+     12"*). ✅ **DONE** — designed 2026-11-18 (§6.8); built, deployed and LIVE
+     (§6.9). Next: 11.
    - **13. The enrichment hook hides a failed request** (Garrett, designing
      item 12). `useOrderEnrichment` returns nothing on a refused or
      failed request — silent by design (`lib/useOrderEnrichment` lines 28–31,
@@ -284,7 +283,8 @@ before any code (`3eab9e5`); built together, one commit each, one deploy, item
 9's patch pinned on item 8's (both touch `production-complete` and
 `OrderDetails`) — as built and live, §6.3. Then the catalogue sync's red
 (§6.4), the ingestion check's 0 and 0 (§6.5), item 10's design (§6.6), item
-10 as built and live (§6.7), and item 12's design (§6.8).
+10 as built and live (§6.7), item 12's design (§6.8), and item 12 as built and
+live (§6.9).
 
 ### 6.1 Item 8 — Arizona's "today". DESIGN, agreed 2026-11-10
 
@@ -646,3 +646,63 @@ inputs, the hard names among them ("J&K", "hci", "Select (Waypoint)"):
 identical under the container's default locale; under a Danish one the
 control's order moves and the new code's does not. The typecheck with a
 planted error in each changed file; the patch on box-shaped trees.
+
+### 6.9 Item 12 — AS BUILT, deployed, LIVE
+
+- **Before the build** (Garrett, 2026-11-18): the box's pins for the 14 files
+  item 12 touches or reads, and no `lib/vendorOrder.ts` — PINS MATCH at
+  `af65791`. The running container's locale: `en-US LANG=unset LC_ALL=unset
+  SAME ORDER` — so pinning `en-US` leaves the server's order as it was.
+- **Built as designed** (§6.8): `lib/vendorOrder` (new: `compareVendorNames`,
+  `sortVendorNames`), `lib/vendorLookup` (its inline sort replaced by
+  `sortVendorNames`), `components/NextActionPanel` (the drawn rows, the
+  unknown state's notes, `isWaypointVendor`) —
+  `patch_item12_band_lines_at_once_2026-11-18.py`, sha256 `3051c14c…`.
+- **Proven, ALL PASS** — the real `OrderModal`, the enrichment held and then
+  released, its answer computed by each tree's own `resolveVendors`,
+  `ackLineStates` and `proofLineStates`:
+  - all nine cases: after the answer the new band is identical to the
+    control's — rows, notes, buttons, the move, the action column. Before it,
+    the control drew the general row and the new code each vendor's row,
+    unknown, with the agreed notes and no upload; the move disabled, and the
+    action column's and title row's controls the same in both;
+  - where the drawn names are the server's (seven cases), every row is the
+    same DOM node before and after, changed in place, and the move column no
+    longer moves; two HCI lines are one row; J&K, HCI and Waypoint in the
+    server's order;
+  - the one change, as accepted: a line with no vendor of its own drawn under
+    the group's (HCI), the server naming Waypoint for it — HCI kept, Waypoint
+    added. A group whose lines name none: the general row in both, until the
+    answer;
+  - one line's receipt: the single row, unchanged; a mixed order's receipts:
+    each line's row from the start;
+  - an answer that never comes, and a refused one: the new rows stay as
+    drawn; the control's general row stays;
+  - switching to another purchase's order with the first request out, its
+    answer landing before or after the second's: it never painted the second
+    band, in either tree;
+  - **found while proving:** the modal holds each line's upload BEFORE the
+    answer (from the acknowledgment status, which answers first), so the
+    band's own guard is what keeps an unknown line from offering one — with it
+    removed, both lines offered "Upload acknowledgment";
+  - `resolveVendors` over nine inputs, the hard names among them: identical
+    in both trees under the container's locale; under a Danish one the
+    control's hard names moved ("HCI Cabinetry" before "hci cabinetry"; "Ø"
+    and "Å" last) and the new code's did not; the names in use moved in
+    neither.
+- **Typecheck:** `next typegen`, then `tsc`: both trees' error sets identical
+  (the sandbox's one `xlsx`, §3); a planted error caught in each of the three
+  files.
+- **The patch:** `--check` writes nothing; it applies byte-identical to the
+  tested tree, re-runs ALREADY APPLIED; a broken anchor, another base, and a
+  different `lib/vendorOrder.ts` already present each MISS with nothing
+  written; no sandbox path.
+- **Deployed** (Garrett, 2026-11-18): through the chain — the pins, `next
+  typegen`, `tsc`, the cron diffs — and `kamal deploy`. The running image
+  checked against item 12's commit again by the chain that committed this
+  record.
+- **LIVE** (Garrett, 2026-11-18): *"Deployed and tested"*, with a screenshot of
+  SHO-1079 answered: "HCI Cabinetry: acknowledgment" over "Upload theirs, a
+  PDF or Excel file", Upload acknowledgment, Move to Entered waiting.
+- **The harness:** `harness-2026-11-18.tar.gz` (sha256 `0e8a0dd3…`) carries
+  items 10 and 12's files (§0).
