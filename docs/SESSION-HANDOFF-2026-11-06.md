@@ -7,8 +7,8 @@ and 4c, each deployed and checked live. Item 5's record is in
 into it rather than copying it, and records the rest. ⚠ **AMENDED through
 2026-11-23** by the 2026-11-10/23 session: §4 items 1–4 done, items 8, 9, 10
 and 12 designed, built and LIVE, item 11 done in part, item 6's first and
-second bundles designed, built and LIVE (§6), the catalogue sync's one red
-(§6.4).
+second bundles designed, built and LIVE and its third designed (§6), the
+catalogue sync's one red (§6.4).
 
 ## 0. A new session, first
 
@@ -26,13 +26,13 @@ second bundles designed, built and LIVE (§6), the catalogue sync's one red
 ## 1. Where things stand
 
 **The box** (`5.78.220.153`, `~/cabinet-orders`, `main`): `HEAD` is *"Docs:
-item 6 bundle 2 live (2026-11-23)"*, `HEAD~1` `0a80482` *"Item 6, bundle 2:
-the quiet admin and ops failures (2026-11-23)"* (deployed), `HEAD~2`
-`3b4d058` *"Docs: item 6 bundle 2 designed (2026-11-23)"*, `HEAD~3` `b648f61`
-*"Docs: item 6 bundle 1 live (2026-11-23)"*, `HEAD~4` `bb297fc` *"Item 6,
-bundle 1: what staff screens show wrong (2026-11-23)"* (deployed), `HEAD~5`
-`1a495a7` *"Docs: item 6 bundle 1 designed (2026-11-23)"*, `HEAD~6` `c9c701b`
-*"Docs: item 11, recovery checked in part (2026-11-23)"*. **The next chain
+item 6 bundle 3 designed (2026-11-23)"*, `HEAD~1` `ec1c8da` *"Docs: item 6
+bundle 2 live (2026-11-23)"*, `HEAD~2` `0a80482` *"Item 6, bundle 2: the
+quiet admin and ops failures (2026-11-23)"* (deployed), `HEAD~3` `3b4d058`
+*"Docs: item 6 bundle 2 designed (2026-11-23)"*, `HEAD~4` `b648f61` *"Docs:
+item 6 bundle 1 live (2026-11-23)"*, `HEAD~5` `bb297fc` *"Item 6, bundle 1:
+what staff screens show wrong (2026-11-23)"* (deployed), `HEAD~6` `1a495a7`
+*"Docs: item 6 bundle 1 designed (2026-11-23)"*. **The next chain
 checks: `HEAD`'s subject is that one, tree clean.** ⚠ **The running image is
 `0a80482`, item 6's second bundle** (§6.15); against this docs `HEAD` the
 image check reads MISMATCH until the next deploy, by design.
@@ -219,7 +219,8 @@ migration probed, transcribed and proven first.
    building bundle 1) — ✅ **DONE: designed 2026-11-23 (§6.14), built,
    deployed and LIVE (§6.15).**
    Bundle 3, one rule everywhere — Waypoint's three tests, the vendor sorts,
-   the raw ISO dates. Recorded only: the sync's retry, the product webhooks,
+   the raw ISO dates, and with them two dates in "Nov 17" form and revenue's
+   month at Arizona midnight — **DESIGNED 2026-11-23 (§6.16)**. Recorded only: the sync's retry, the product webhooks,
    the system map's line (Garrett's to edit).
    **Found this session, left for their own look:** the admin home's warning
    of orders "with no total recorded — backfill via Shopify sync" names the
@@ -283,7 +284,8 @@ migration probed, transcribed and proven first.
    - Revenue's month and year begin at UTC midnight
      (`app/api/admin/revenue/route.ts` lines 35–40) — 5 p.m. Arizona — so an
      order placed the last evening of a month counts in the next, and on
-     12/31 in the next year. Bundle 3's rule.
+     12/31 in the next year. In bundle 3 (Garrett: *"Yes to at midnight"*,
+     §6.16).
    - The revenue route admits any signed-in member (`requireAuth`, line 72);
      only `/admin` reads it, and every other admin-only route requires an
      admin. `/api/admin/health` is the other `requireAuth`, but the dashboard
@@ -336,8 +338,8 @@ before any code (`3eab9e5`); built together, one commit each, one deploy, item
 10 as built and live (§6.7), item 12's design (§6.8), item 12 as built and
 live (§6.9), item 11's design, with its read-only part's facts (§6.10), and
 item 11 as done (§6.11), item 6's first bundle's design (§6.12), that
-bundle as built and live (§6.13), the second bundle's design (§6.14), and that
-bundle as built and live (§6.15).
+bundle as built and live (§6.13), the second bundle's design (§6.14), that
+bundle as built and live (§6.15), and the third bundle's design (§6.16).
 
 ### 6.1 Item 8 — Arizona's "today". DESIGN, agreed 2026-11-10
 
@@ -1206,3 +1208,71 @@ patch on box-shaped trees.
   SKU reads out of stock (§4 item 6, "for later").
 - **The harness:** `harness-2026-11-23b.tar.gz` (sha256 `836286a5…`) carries
   items 10, 12 and both bundles' files (§0).
+
+### 6.16 Item 6, bundle 3 — one rule everywhere. DESIGN, agreed 2026-11-23
+
+Garrett: *"Yes to waypoint test"*; *"Yes the one rule is fine. As long as
+waypoint doesnt enter any customer views. Customer facing vendor need to stay
+select all internal can be waypoint"*; *"Yes to dates"*; *"Yes"* (the two
+"Nov 17" dates); *"Yes to at midnight"*. One deploy, nine files.
+
+**The customer-facing rule, restated** (OPERATIONS §1 has it since
+2026-10-29, and Shopify's additional details since 2026-11-03): a customer
+sees **Select**; Waypoint is internal. Nothing in this bundle reaches a
+customer — it changes which test answers "is this Waypoint" on staff screens,
+the order of vendor names (never the names) on the Full Order tab and the
+vendor PDF (the manufacturer's), and how staff screens print dates. The one
+place the OMS writes a vendor where a customer could ever see it — Shopify's
+additional details, "Select (Waypoint) Cabinetry" — is untouched.
+
+**Read whole:** `lib/vendorFamily.ts`, `lib/ackStatus.ts`, `lib/vendorOrder.ts`,
+`lib/dates.ts`, `components/AcknowledgmentPanel.tsx` (316 lines),
+`components/OrderDetails.tsx` (644), `components/OrderTable.tsx` (1,330),
+`app/backorders/BackordersClient.tsx` (295), the export route (632); the
+calendar and projects pages as bundle 2 left them; the revenue route.
+
+1. **Waypoint: one test, the server's** (§4 item 6, "Found 2026-11-18"). The
+   acknowledgment route decides whether an upload is checked by
+   `isWaypointVendor` (`lib/vendorFamily`). The acknowledgment panel's own
+   regex (line 18) also took a bare "Select" — demanding the .xlsx and calling
+   it Waypoint's, where the server would receive any file as another vendor's;
+   `ackStatus`'s `hasWaypoint` (line 64) matched "waypoint" anywhere and missed
+   "Select Cabinetry" — it chooses the modal's "acknowledgment required"
+   wording. → Both ask `isWaypointVendor`, pure and already in the browser (the
+   band). The names lines carry (HCI, J&K, Waypoint Cabinetry): no change.
+2. **Vendor order: one rule** (§4 item 6, "Found 2026-11-18"). The Full Order
+   tab's sections (`OrderDetails` line 114, the browser's language) and the
+   vendor PDF's headings (export route line 229, the server's default) → both
+   `compareVendorNames` (`lib/vendorOrder`), "Unassigned" still last. The
+   names in use sort alike in every language tried; this keeps it so.
+3. **Raw dates → MM/DD/YYYY** (`formatMDY`): the backorders page's "Earliest
+   expected", "Latest" and "Exp …" (lines 221, 224, 282); `OrderTable`'s
+   "Starts …", "Start …", "Ship from factory …", "Sched …" (lines 782, 793,
+   794, 807) and the Early Push confirmation's "…until 2026-12-04" (line
+   1108); the backorder pill's tooltip, "Ready (expected …)" and "Backordered
+   until …" (`OrderDetails` lines 263–264); the calendar's production card,
+   "Started …" and "Est. finish …"; and (found designing) the projects page's
+   milestone date and "Est. / actual" (lines 87, 90, 93, 659).
+4. **Two dates in "Nov 17" form** — the projects page's Date column ("Nov 17,
+   2026") and the acknowledgment panel's upload day ("· Nov 18"), both in the
+   browser's zone → the Arizona day, MM/DD/YYYY (`stageDate`, the rail's).
+5. **Revenue's month and year at Arizona midnight**
+   (`app/api/admin/revenue/route.ts` lines 35–40, §4 item 6). They began at UTC
+   midnight, 5 p.m. Arizona: from 5 p.m. on Nov 30 to midnight "This month"
+   would read December — that evening's orders, November gone — and the year
+   on Dec 31 likewise. → From `arizonaToday()`, at −07:00 (Arizona keeps no
+   daylight saving). To be deployed before Nov 30.
+
+**Recorded, not in this bundle:** the admin pages' own vendor orders (SKU
+mappings and Shopify sync, a plain `.sort()`; Vendors, the browser's language —
+its first order the database's, a question of its own); the Shopify page's
+"Synced" time, in the browser's clock and its own form.
+
+**The proof, the deployed code as the control, each in both trees:** every
+name in use and the hard ones ("Select", "Select Cabinetry", "Select (Waypoint)
+Cabinetry", case and spaces) through the three tests; the real panel's file
+types and its wrong-file sentence for Waypoint, HCI and "Select"; the Full
+Order sections and the PDF's headings under the default language and Danish;
+each date on its real screen; the real revenue route on the sandbox's
+PostgreSQL at 8 p.m. Arizona on Nov 30. The typecheck with a planted error in
+each changed file; the patch on box-shaped trees.
