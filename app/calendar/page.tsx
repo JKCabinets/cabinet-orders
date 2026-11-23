@@ -33,6 +33,37 @@ function syncsToShopify(o: CalendarOrder): boolean {
   return o.type === "order" || o.type === "sample";
 }
 
+/**
+ * What the order route answered to a save, read rather than assumed.
+ *
+ * ⚠ BOTH SAVES CLOSED THE EDITOR WITHOUT ASKING (2026-11-23, item 6). The
+ * route refuses archived work and somebody else's claim, a mixed order's one
+ * pair of dates (its dates are per line: 422) and a vendor's date once
+ * shipped (409) -- and the editor closed on every one, so a refused date
+ * looked saved until the page was reloaded. A refusal is `{ error, message? }`
+ * and the sentence is `message` when the route sends one.
+ *
+ * `shopify_synced` is in the answer only when the save wrote to Shopify, and
+ * says whether that write landed. Absent means no Shopify write happened --
+ * the dates were unchanged, or the row has no Shopify order.
+ */
+type SaveAnswer =
+  | { refused: string }
+  | { refused: null; shopifySynced: boolean | undefined };
+
+async function readSave(res: Response): Promise<SaveAnswer> {
+  let body: { error?: string; message?: string; shopify_synced?: boolean } | null = null;
+  try { body = await res.json(); } catch { /* not JSON */ }
+  if (!res.ok) return { refused: body?.message || body?.error || `HTTP ${res.status}` };
+  return {
+    refused: null,
+    shopifySynced: typeof body?.shopify_synced === "boolean" ? body.shopify_synced : undefined,
+  };
+}
+
+/** A save whose request never got an answer. It may or may not have landed. */
+const NO_ANSWER = "Could not reach the server. Check the dates and try again.";
+
 type CalendarView = "production" | "delivery";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -89,6 +120,9 @@ export default function CalendarPage() {
 
   const [saving, setSaving] = useState(false);
   const [shopifyStatus, setShopifyStatus] = useState<Record<string, "syncing" | "synced" | "error">>({});
+  // The server's sentence when it refuses a save (2026-11-23, item 6): the
+  // editor stays open on it. One editor is open at a time, so one sentence.
+  const [saveError, setSaveError] = useState<string | null>(null);
   // No mount fetch: the store loads once for the whole app and keeps the
   // rows current over Realtime. `loading` was tracked here and never
   // rendered, so it goes with it.
@@ -107,10 +141,17 @@ export default function CalendarPage() {
   // sample rows were invisible here; and it swallowed its own failure with
   // `catch {}`, so a failed request rendered as "nothing scheduled".
 
+  /** Closing an editor takes its refusal with it. */
+  function closeEditor() {
+    setEditingOrder(null);
+    setSaveError(null);
+  }
+
   async function saveDelivery(orderId: string) {
     setSaving(true);
+    setSaveError(null);
     try {
-      await fetch(`/api/orders/${orderId}`, {
+      const res = await fetch(`/api/orders/${orderId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -144,18 +185,32 @@ export default function CalendarPage() {
           delivery_notes: editNotes,
         }),
       });
+      // A refusal keeps the editor open on the server's sentence (readSave).
+      const answer = await readSave(res);
+      if (answer.refused !== null) { setSaveError(answer.refused); return; }
       // The store owns the row; Realtime delivers the change. Mirroring it
       // into local state is what made this page a second source of truth.
-      setEditingOrder(null);
-    } catch {}
-    setSaving(false);
+      closeEditor();
+    } catch {
+      setSaveError(NO_ANSWER);
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function saveProductionDates(orderId: string) {
     setSaving(true);
+    setSaveError(null);
     const order = orders.find(o => o.id === orderId);
     const isShopify = order ? syncsToShopify(order) : false;
     if (isShopify) setShopifyStatus(s => ({ ...s, [orderId]: "syncing" }));
+    // No Shopify line for this order: after a refusal, or a save that wrote
+    // nothing to Shopify. It said "Shopify sync failed" for a refusal, when
+    // nothing had been saved at all.
+    const noStatus = () => setShopifyStatus(s => {
+      const { [orderId]: _dropped, ...rest } = s;
+      return rest;
+    });
     try {
       const res = await fetch(`/api/orders/${orderId}`, {
         method: "PATCH",
@@ -165,17 +220,26 @@ export default function CalendarPage() {
           production_est_finish_date: editProdFinish || null,
         }),
       });
-      if (res.ok) {
-        // Realtime carries this back through the store, same as above.
-        if (isShopify) setShopifyStatus(s => ({ ...s, [orderId]: "synced" }));
-      } else {
-        if (isShopify) setShopifyStatus(s => ({ ...s, [orderId]: "error" }));
+      const answer = await readSave(res);
+      if (answer.refused !== null) {
+        noStatus();
+        setSaveError(answer.refused);
+        return;
       }
-      setEditingOrder(null);
+      // ⚠ WHAT SHOPIFY SAID, NOT WHAT WAS HOPED. "Synced to Shopify" was shown
+      // for any save that was not refused, without asking whether a Shopify
+      // write had happened, or landed.
+      if (answer.shopifySynced === true) setShopifyStatus(s => ({ ...s, [orderId]: "synced" }));
+      else if (answer.shopifySynced === false) setShopifyStatus(s => ({ ...s, [orderId]: "error" }));
+      else noStatus();
+      // Realtime carries the row back through the store, same as above.
+      closeEditor();
     } catch {
-      if (isShopify) setShopifyStatus(s => ({ ...s, [orderId]: "error" }));
+      noStatus();
+      setSaveError(NO_ANSWER);
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   }
 
   const daysInMonth = getDaysInMonth(currentYear, currentMonth);
@@ -203,11 +267,13 @@ export default function CalendarPage() {
 
   function openEditProduction(o: CalendarOrder) {
     setEditingOrder(o.id);
+    setSaveError(null);
     setEditProdStart(o.production_start_date || "");
     setEditProdFinish(o.production_est_finish_date || "");
   }
   function openEditDelivery(o: CalendarOrder, fallbackDate?: string) {
     setEditingOrder(o.id);
+    setSaveError(null);
     setEditDeliveryDate(o.delivery_date || fallbackDate || "");
     setEditWindow(o.delivery_window || "");
     setEditNotes(o.delivery_notes || "");
@@ -386,9 +452,10 @@ export default function CalendarPage() {
                       editWindow={editWindow}
                       editNotes={editNotes}
                       saving={saving}
+                      saveError={saveError}
                       selectedDateStr={selectedDateStr}
                       onEdit={() => openEditDelivery(o, selectedDateStr)}
-                      onCancel={() => setEditingOrder(null)}
+                      onCancel={closeEditor}
                       onSave={() => saveDelivery(o.id)}
                       setEditDeliveryDate={setEditDeliveryDate}
                       setEditWindow={setEditWindow}
@@ -404,9 +471,10 @@ export default function CalendarPage() {
                       editProdStart={editProdStart}
                       editProdFinish={editProdFinish}
                       saving={saving}
+                      saveError={saveError}
                       shopifyStatus={shopifyStatus[o.id]}
                       onEdit={() => openEditProduction(o)}
-                      onCancel={() => setEditingOrder(null)}
+                      onCancel={closeEditor}
                       onSave={() => saveProductionDates(o.id)}
                       setEditProdStart={setEditProdStart}
                       setEditProdFinish={setEditProdFinish}
@@ -486,12 +554,13 @@ export default function CalendarPage() {
                       <input type="date" value={editProdFinish} onChange={e => setEditProdFinish(e.target.value)} className="w-full field-input text-xs py-1.5 px-2" />
                     </div>
                     <div className="flex gap-2 mt-1">
-                      <button onClick={() => setEditingOrder(null)} className="flex-1 py-1.5 rounded-lg border border-[rgba(255,255,255,0.10)] text-[11px] text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] transition-all">Cancel</button>
+                      <button onClick={closeEditor} className="flex-1 py-1.5 rounded-lg border border-[rgba(255,255,255,0.10)] text-[11px] text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] transition-all">Cancel</button>
                       <button onClick={() => saveProductionDates(o.id)} disabled={saving || (!editProdStart && !editProdFinish)}
                         className="flex-1 py-1.5 rounded-lg bg-[rgba(255,255,255,0.04)] border border-[rgba(86,100,72,0.55)] text-[11px] text-[#e8e3da] hover:bg-[rgba(255,255,255,0.06)] disabled:opacity-50 transition-all">
                         {saving ? "Saving..." : "Save"}
                       </button>
                     </div>
+                    <SaveRefusal sentence={saveError} />
                   </div>
                 </div>
               );
@@ -523,12 +592,13 @@ export default function CalendarPage() {
                     <textarea value={editNotes} onChange={e => setEditNotes(e.target.value)} rows={2} placeholder="Gate code, access instructions..." className="w-full field-input text-xs py-1.5 px-2 resize-none" />
                   </div>
                   <div className="flex gap-2 mt-1">
-                    <button onClick={() => setEditingOrder(null)} className="flex-1 py-1.5 rounded-lg border border-[rgba(255,255,255,0.10)] text-[11px] text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] transition-all">Cancel</button>
+                    <button onClick={closeEditor} className="flex-1 py-1.5 rounded-lg border border-[rgba(255,255,255,0.10)] text-[11px] text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] transition-all">Cancel</button>
                     <button onClick={() => saveDelivery(o.id)} disabled={saving || !editDeliveryDate}
                       className="flex-1 py-1.5 rounded-lg bg-[rgba(255,255,255,0.04)] border border-[rgba(86,100,72,0.55)] text-[11px] text-[#e8e3da] hover:bg-[rgba(255,255,255,0.06)] disabled:opacity-50 transition-all">
                       {saving ? "Saving..." : "Save"}
                     </button>
                   </div>
+                  <SaveRefusal sentence={saveError} />
                 </div>
               </div>
             );
@@ -541,8 +611,14 @@ export default function CalendarPage() {
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
+/** The server's refusal, under Save, while the editor stays open. */
+function SaveRefusal({ sentence }: { sentence: string | null }) {
+  if (!sentence) return null;
+  return <p role="alert" className="text-[10px] text-red-400 mt-1">Not saved: {sentence}</p>;
+}
+
 function ProductionOrderCard({
-  order, dateStr, editing, editProdStart, editProdFinish, saving, shopifyStatus,
+  order, dateStr, editing, editProdStart, editProdFinish, saving, saveError, shopifyStatus,
   onEdit, onCancel, onSave, setEditProdStart, setEditProdFinish,
 }: {
   order: CalendarOrder;
@@ -551,6 +627,7 @@ function ProductionOrderCard({
   editProdStart: string;
   editProdFinish: string;
   saving: boolean;
+  saveError: string | null;
   shopifyStatus?: "syncing" | "synced" | "error";
   onEdit: () => void;
   onCancel: () => void;
@@ -584,6 +661,7 @@ function ProductionOrderCard({
               {saving ? "Saving..." : "Save"}
             </button>
           </div>
+          <SaveRefusal sentence={saveError} />
         </div>
       ) : (
         <div>
@@ -613,7 +691,10 @@ function ProductionOrderCard({
                       <CheckCircle2 className="w-2.5 h-2.5" />Synced to Shopify
                     </span>
                   )}
-                  {shopifyStatus === "error" && <span className="text-[9px] text-red-400">Shopify sync failed</span>}
+                  {/* Saved in the OMS; only the Shopify write failed. It read
+                      "Shopify sync failed" for a refusal too, when nothing
+                      had been saved anywhere. */}
+                  {shopifyStatus === "error" && <span className="text-[9px] text-red-400">Saved — Shopify sync failed</span>}
                   {!shopifyStatus && <span className="text-[9px] text-[rgba(232,227,218,0.25)]">Shopify order</span>}
                 </div>
               )}
@@ -632,7 +713,7 @@ function ProductionOrderCard({
 }
 
 function DeliveryOrderCard({
-  order, editing, editDeliveryDate, editWindow, editNotes, saving, selectedDateStr,
+  order, editing, editDeliveryDate, editWindow, editNotes, saving, saveError, selectedDateStr,
   onEdit, onCancel, onSave, setEditDeliveryDate, setEditWindow, setEditNotes,
 }: {
   order: CalendarOrder;
@@ -641,6 +722,7 @@ function DeliveryOrderCard({
   editWindow: string;
   editNotes: string;
   saving: boolean;
+  saveError: string | null;
   selectedDateStr: string | null;
   onEdit: () => void;
   onCancel: () => void;
@@ -682,6 +764,7 @@ function DeliveryOrderCard({
               {saving ? "Saving..." : "Save"}
             </button>
           </div>
+          <SaveRefusal sentence={saveError} />
         </div>
       ) : (
         <div>

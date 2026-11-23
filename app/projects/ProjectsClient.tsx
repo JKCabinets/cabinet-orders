@@ -7,7 +7,8 @@ import {
   Order, Project, STAGE_ACCENT, STAGE_LIST_BY_TYPE, OrderType,
   isPaymentHoldStatus,
 } from "@/lib/data";
-import { attentionFor, type AttentionReason } from "@/lib/attention";
+import { attentionFor, attentionForProject, type AttentionReason } from "@/lib/attention";
+import { useOrderEnrichment } from "@/lib/useOrderEnrichment";
 import { PageHeader } from "@/components/AppShell";
 import { OrderModal } from "@/components/OrderModal";
 import { AvatarWithProfile } from "@/components/AvatarWithProfile";
@@ -125,11 +126,24 @@ export function ProjectsClient() {
     return map;
   }, [allOrders]);
 
+  /**
+   * The joined facts -- acknowledgments, signed receipts -- for every row, in
+   * one request: the work queue's and the dashboard's own call. Rows draw at
+   * once without them (unknown produces no reason) and gain the two joined
+   * reasons a moment later.
+   */
+  const enrich = useOrderEnrichment(allOrders);
+
   /** Everything a project row needs, computed once. */
   const enriched = useMemo(() => {
     return (Object.values(projects) as Project[]).map((p) => {
       const groups = groupsByProject.get(p.id) ?? [];
-      const reasons: AttentionReason[] = groups.flatMap((g) => attentionFor(g));
+      // ⚠ THE QUEUE'S AND THE DASHBOARD'S OWN QUESTION (2026-11-23, item 6).
+      // This was its own list -- attentionFor per group, with no enrichment
+      // and no purchase-level "Unclaimed" -- so the count, the filter and the
+      // lead missed an acknowledgment or a receipt waiting, and a purchase
+      // nobody had claimed, while the queue and the dashboard showed them.
+      const reasons: AttentionReason[] = attentionForProject(p, groups, Date.now(), enrich);
       const delivered = groups.filter(isDelivered).length;
       const refunded = isPaymentHoldStatus(p.payment_status);
       const complete = groups.length > 0 && delivered === groups.length;
@@ -137,7 +151,7 @@ export function ProjectsClient() {
       return { project: p, groups, reasons, delivered, refunded, complete, started,
                archived: !!p.archived };
     });
-  }, [projects, groupsByProject]);
+  }, [projects, groupsByProject, enrich]);
 
   // ⚠ ARCHIVED IS EXCLUDED FROM EVERY OTHER BUCKET, including All. Archiving
   // means "this purchase is finished and off the board" -- a project that kept
@@ -604,7 +618,8 @@ export function ProjectsClient() {
                           // Same owner for every order in the purchase --
                           // that is what one claim per project MEANS.
                           const owner = p.claimed_by ? team.find((m) => m.id === p.claimed_by) : undefined;
-                          const gr = attentionFor(g);
+                          // The group's own reasons, with its joined facts.
+                          const gr = attentionFor(g, enrich(g));
                           const glead = gr.find((r) => r.severity === "high") ?? gr[0];
                           const ms = nextMilestone(g);
                           return (

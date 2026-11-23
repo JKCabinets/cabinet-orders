@@ -1224,6 +1224,7 @@ export function OrderModal({ order, onClose, onStageChange, initialReason }: Ord
           selectedId={liveOrder.id}
           onSelect={setSelectedGroupId}
           team={team}
+          claimedBy={resolvedClaimedBy}
         />
 
         {/* Tabs. The group strip above belongs to the PROJECT and stays put;
@@ -2601,16 +2602,26 @@ function ClaimChip({
  * suggest one group is holding another up. They are separate work with separate
  * claims on genuinely different timelines -- that is the whole reason the
  * project splits into groups at all.
+ *
+ * ⚠ THE OWNER COMES IN RESOLVED (2026-11-23, item 6), as ClaimChip's does. Each
+ * card read `g.claimed_by`, null on every Shopify group since the claim moved
+ * up to the purchase on 2026-08-25 -- so every group of a claimed purchase
+ * read "unclaimed" under a header naming its owner. The strip shows only for
+ * two or more groups, which is always a purchase, and a purchase has one
+ * claim: the same owner on every card, as the projects page shows it.
  */
 function GroupStrip({
-  groups, selectedId, onSelect, team,
+  groups, selectedId, onSelect, team, claimedBy,
 }: {
   groups: Order[];
   selectedId: string;
   onSelect: (id: string) => void;
   team: TeamMember[];
+  /** The purchase's owner, resolved by the modal (resolvedClaimedBy). */
+  claimedBy: string | null;
 }) {
   if (groups.length < 2) return null;
+  const owner = claimedBy ? team.find((m) => m.id === claimedBy) : undefined;
 
   return (
     <div className="px-6 py-3 flex-shrink-0" style={SECTION_BORDER}>
@@ -2625,7 +2636,6 @@ function GroupStrip({
         {groups.map((g) => {
           const active = g.id === selectedId;
           const accent = STAGE_ACCENT[g.stage] ?? "#8a8a8a";
-          const owner = g.claimed_by ? team.find((m) => m.id === g.claimed_by) : undefined;
           const items = g.sku_items?.length ?? 0;
           const rule = slaRuleFor(g);
           const tier = slaTier(g);
@@ -2691,7 +2701,9 @@ function GroupStrip({
                       <span className="text-[9px] text-cream/45 truncate">{owner.name}</span>
                     </>
                   ) : (
-                    <span className="text-[9px] text-cream/30 italic truncate">unclaimed</span>
+                    // A claim by somebody not on the team list is still a
+                    // claim -- ClaimChip's rule, "Claimed" without a name.
+                    <span className="text-[9px] text-cream/30 italic truncate">{claimedBy ? "claimed" : "unclaimed"}</span>
                   )}
                 </span>
               </div>

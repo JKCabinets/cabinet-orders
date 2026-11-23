@@ -107,11 +107,22 @@ export function rollupBackorders(
 
   // Materialize rollups, sort orders within each, then sort rollups by impact
   const rollups: BackorderedSkuRollup[] = Array.from(acc.values()).map(row => {
+    // Oldest first — that's the most-waiting order.
+    //
+    // ⚠ ON created_at, NOT `date` (2026-11-23, item 6). `orders.date` is a
+    // display string with no year ("Nov 18"), and Date.parse reads it as 2001:
+    // from January, January's orders sorted before December's, and orders a
+    // year apart collided. created_at is the instant the row was made, and its
+    // Arizona day is the day `date` shows (lib/dates' orderDate). A row
+    // without one sorts last; ties go by id, so the order is the same every
+    // time.
     const sorted = [...row.orders].sort((a, b) => {
-      // Oldest first — that's the most-waiting order
-      const ta = Date.parse(a.date) || 0;
-      const tb = Date.parse(b.date) || 0;
-      return ta - tb;
+      const ta = a.created_at ? Date.parse(a.created_at) : NaN;
+      const tb = b.created_at ? Date.parse(b.created_at) : NaN;
+      const ka = Number.isNaN(ta) ? Infinity : ta;
+      const kb = Number.isNaN(tb) ? Infinity : tb;
+      if (ka !== kb) return ka < kb ? -1 : 1;
+      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
     });
     return {
       sku: row.sku,

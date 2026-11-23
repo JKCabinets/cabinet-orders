@@ -1,6 +1,7 @@
 "use client";
 
 import { TeamMember } from "@/lib/data";
+import { formatMDY } from "@/lib/dates";
 import { Phone, Mail, MessageSquare, Clock, Globe, Power } from "lucide-react";
 
 /**
@@ -48,7 +49,9 @@ export function ProfileSummary({
           {member.oooMessage && <p className="leading-snug">{member.oooMessage}</p>}
           {member.oooUntil && (
             <p className="text-[10px] text-amber-300/80 mt-1">
-              Back {new Date(member.oooUntil).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+              {/* From the date's own parts (2026-11-23, item 6): through
+                  new Date() a DATE reads a day early in Arizona. */}
+              Back {formatMDY(member.oooUntil)}
             </p>
           )}
         </div>

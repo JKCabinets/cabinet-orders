@@ -6,6 +6,7 @@ import { AppShell, PageHeader } from "@/components/AppShell";
 import { Avatar } from "@/components/Avatar";
 import { Phone, Mail, Power, Users } from "lucide-react";
 import { TeamMember } from "@/lib/data";
+import { formatMDY } from "@/lib/dates";
 
 /**
  * /team — team directory.
@@ -107,7 +108,10 @@ function TeamCard({
           {member.oooMessage && <p className="leading-snug">{member.oooMessage}</p>}
           {member.oooUntil && (
             <p className="text-[10px] text-amber-300/80 mt-0.5">
-              Back {new Date(member.oooUntil).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+              {/* ⚠ FROM THE DATE'S OWN PARTS (2026-11-23, item 6). ooo_until is
+                  a DATE; new Date("2026-11-30") is UTC midnight, 5 p.m. the
+                  29th in Arizona, so this said "Back Nov 29". */}
+              Back {formatMDY(member.oooUntil)}
             </p>
           )}
         </div>

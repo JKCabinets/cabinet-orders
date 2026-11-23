@@ -6,23 +6,14 @@ import { SkuItem } from "@/lib/data";
 import { arizonaToday } from "@/lib/dates";
 import { useStore } from "@/lib/store";
 import { ackNotesFor, type AckIssues } from "@/lib/orderIssues";
+import { reviewReasonWords } from "@/lib/reviewReasons";
 
 // Friendly labels + tooltips for per-line review reasons (Step 4a), keyed by
-// SkuItem.review_reason. Falls back gracefully for any unknown value.
-const REVIEW_REASON_LABEL: Record<string, string> = {
-  unmapped_value: "Unmapped value",
-  decoder_unavailable: "Decoder unavailable",
-  sku_mismatch: "SKU mismatch",
-  missing_sku: "Missing SKU",
-};
-const REVIEW_REASON_HELP: Record<string, string> = {
-  unmapped_value: "A door or color name has no SKU code yet. Add the code in the mappings admin, then re-decode this order.",
-  decoder_unavailable: "The SKU mapping table couldn't be read when this order arrived, so the raw SKU was kept. Re-decode once mappings are available.",
-  sku_mismatch: "A submitted _sku didn't derive from the variant's real SKU. The real SKU was used instead.",
-  missing_sku: "This Shopify line had no SKU; a placeholder was kept so the line wasn't dropped.",
-};
-function reviewReasonLabel(r?: string): string { return (r && REVIEW_REASON_LABEL[r]) || "Review"; }
-function reviewReasonHelp(r?: string): string { return (r && REVIEW_REASON_HELP[r]) || "This line needs review."; }
+// SkuItem.review_reason: lib/reviewReasons, the one map the vendor PDF reads
+// too (2026-11-23, item 6 -- this copy lacked missing_mod_value). Falls back
+// gracefully for any unknown value.
+function reviewReasonLabel(r?: string): string { return reviewReasonWords(r)?.label || "Review"; }
+function reviewReasonHelp(r?: string): string { return reviewReasonWords(r)?.help || "This line needs review."; }
 
 interface OrderDetailsProps {
   orderId: string;

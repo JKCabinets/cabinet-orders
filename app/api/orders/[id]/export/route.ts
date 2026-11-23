@@ -8,6 +8,7 @@ import { poReference, displayOrderNumber } from "@/lib/data";
 import { orderDate } from "@/lib/dates";
 import { latestAckByVendor } from "@/lib/acknowledgments";
 import { customerIssues, ackIssues, ackNotesFor, keyedByName as keyedBy } from "@/lib/orderIssues";
+import { reviewReasonWords } from "@/lib/reviewReasons";
 
 // Short alias since this file does a lot of escaping
 const h = escapeHtml;
@@ -27,12 +28,12 @@ const LOGO_SVG = `<svg class="logo" role="img" aria-label="JK Cabinets" xmlns="h
 // lib/data's full type, re-exported. Read through it, no cast, so a renamed
 // field fails the typecheck (item 9, 2026-11-10; this said that type had no
 // review fields, and read them through casts).
-const REVIEW_LABEL: Record<string, string> = {
-  unmapped_value: "Unmapped value",
-  decoder_unavailable: "Decoder unavailable",
-  sku_mismatch: "SKU mismatch",
-  missing_sku: "Missing SKU",
-};
+//
+// The words are lib/reviewReasons', the one map the screen reads too
+// (2026-11-23, item 6): this copy lacked missing_mod_value, so the PDF sent to
+// the manufacturer said "review" where it should name what is missing.
+const reviewLabel = (reason: string | null | undefined): string =>
+  reviewReasonWords(reason)?.label ?? "review";
 
 /**
  * A line's door style and colour WITH THEIR CODES, under its SKU (Garrett,
@@ -273,7 +274,7 @@ export async function GET(
       const itemRows = group.items.map(item => {
         const displaySku = item.sku ?? "—";
         const reviewTag = item.needs_review
-          ? ` <span class="review-pill">\u26a0 ${h(REVIEW_LABEL[item.review_reason ?? ""] ?? "review")}</span>`
+          ? ` <span class="review-pill">\u26a0 ${h(reviewLabel(item.review_reason))}</span>`
           : "";
         const mainRow = `
     <tr class="${item.needs_review || ackNotesFor(ack, item.sku).length > 0 ? "review-row" : ""}">
@@ -374,7 +375,7 @@ export async function GET(
   const reviewLines = filteredSkuItems.filter(i => i.needs_review);
   const reviewParts = reviewLines.length > 0
     ? [`${reviewLines.length} line${reviewLines.length > 1 ? "s" : ""}: `
-      + reviewLines.map(i => `${h(i.sku || "\u2014")} (${h(REVIEW_LABEL[i.review_reason ?? ""] ?? "review")})`).join("; ")]
+      + reviewLines.map(i => `${h(i.sku || "\u2014")} (${h(reviewLabel(i.review_reason))})`).join("; ")]
     : [];
   // The order's own issues join the lines' (2026-10-07).
   // What is wrong, in a sentence when one says it all (2026-10-07): lib/orderIssues.
