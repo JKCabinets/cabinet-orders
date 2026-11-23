@@ -6,9 +6,9 @@ and 4c, each deployed and checked live. Item 5's record is in
 `SESSION-HANDOFF-2026-11-03.md` §6.3 (its home since its plan); this file points
 into it rather than copying it, and records the rest. ⚠ **AMENDED through
 2026-11-23** by the 2026-11-10/23 session: §4 items 1–4 done, items 8, 9, 10
-and 12 designed, built and LIVE, item 11 done in part, item 6's first bundle
-designed, built and LIVE and its second designed (§6), the catalogue sync's
-one red (§6.4).
+and 12 designed, built and LIVE, item 11 done in part, item 6's first and
+second bundles designed, built and LIVE (§6), the catalogue sync's one red
+(§6.4).
 
 ## 0. A new session, first
 
@@ -17,25 +17,27 @@ one red (§6.4).
    cd ~/cabinet-orders && git archive --format=tar.gz -o ~/repo31.tar.gz HEAD && cd ~ && sha256sum repo31.tar.gz > repo31_tar_gz.sha256
    ```
 2. **Upload** `repo31.tar.gz`, `repo31_tar_gz.sha256`, this file, and the
-   harness archive `harness-2026-11-23.tar.gz` (sha256 `34ab4e13…`) with its
-   `harness-2026-11-23_tar_gz.sha256` — it carries items 10, 12 and item 6's
-   first bundle's files (§6.13). Check both hashes — by VALUE: an upload
+   harness archive `harness-2026-11-23b.tar.gz` (sha256 `836286a5…`) with its
+   `harness-2026-11-23b_tar_gz.sha256` — it carries items 10, 12 and item 6's
+   first two bundles' files (§6.13, §6.15). Check both hashes — by VALUE: an upload
    renames `x.tar.gz` to `x_tar.gz`, so `sha256sum -c` fails on the name (§3).
 3. **Read this file whole**, then the method (§3), before any change.
 
 ## 1. Where things stand
 
 **The box** (`5.78.220.153`, `~/cabinet-orders`, `main`): `HEAD` is *"Docs:
-item 6 bundle 2 designed (2026-11-23)"*, `HEAD~1` *"Docs: item 6 bundle 1
-live (2026-11-23)"*, `HEAD~2` `bb297fc` *"Item 6, bundle 1: what staff
-screens show wrong (2026-11-23)"* (deployed), `HEAD~3` `1a495a7` *"Docs: item
-6 bundle 1 designed (2026-11-23)"*, `HEAD~4` `c9c701b` *"Docs: item 11,
-recovery checked in part (2026-11-23)"*, `HEAD~5` `7f87441` *"Docs: item 11
-designed (2026-11-23)"*, `HEAD~6` `105a12c` *"Docs: item 12 live
-(2026-11-18)"*. **The next chain checks: `HEAD`'s subject is that one, tree
-clean.** ⚠ **The running image is `bb297fc`, item 6's first
-bundle** (§6.13); against this docs `HEAD` the image check reads MISMATCH
-until the next deploy, by design. The 2026-11-04/06
+item 6 bundle 2 live (2026-11-23)"*, `HEAD~1` `0a80482` *"Item 6, bundle 2:
+the quiet admin and ops failures (2026-11-23)"* (deployed), `HEAD~2`
+`3b4d058` *"Docs: item 6 bundle 2 designed (2026-11-23)"*, `HEAD~3` `b648f61`
+*"Docs: item 6 bundle 1 live (2026-11-23)"*, `HEAD~4` `bb297fc` *"Item 6,
+bundle 1: what staff screens show wrong (2026-11-23)"* (deployed), `HEAD~5`
+`1a495a7` *"Docs: item 6 bundle 1 designed (2026-11-23)"*, `HEAD~6` `c9c701b`
+*"Docs: item 11, recovery checked in part (2026-11-23)"*. **The next chain
+checks: `HEAD`'s subject is that one, tree clean.** ⚠ **The running image is
+`0a80482`, item 6's second bundle** (§6.15); against this docs `HEAD` the
+image check reads MISMATCH until the next deploy, by design.
+`~/cron-jobs/run-cron.sh` is bundle 2's (`2c3c64c7…`), installed by its chain;
+the deploy chain's cron diff checks it. The 2026-11-04/06
 session's commits — `git log --oneline
 d04a568..2a7a20c` and after — each a design record, then its part and its
 docs: part 2 (`4ccd94d`, its live record `2a7a20c`), part 3 (design `841fe89`,
@@ -214,7 +216,8 @@ migration probed, transcribed and proven first.
    designed 2026-11-23 (§6.12), built, deployed and LIVE (§6.13).** Bundle 2,
    the quiet admin and ops failures — the admin Shopify page, the admin home's
    warning, `cron.log`'s ping ids, and the calendar's delivery save (found
-   building bundle 1) — **DESIGNED 2026-11-23 (§6.14)**.
+   building bundle 1) — ✅ **DONE: designed 2026-11-23 (§6.14), built,
+   deployed and LIVE (§6.15).**
    Bundle 3, one rule everywhere — Waypoint's three tests, the vendor sorts,
    the raw ISO dates. Recorded only: the sync's retry, the product webhooks,
    the system map's line (Garrett's to edit).
@@ -288,6 +291,11 @@ migration probed, transcribed and proven first.
    - The unpriced count includes refunded purchases, which the sums leave out.
    - The Shopify page's "No vendor" choice is `""`, the same as "All
      vendors": it lists every product.
+   - (Found live, 2026-11-23.) The Shopify page reads every one of the 2,652
+     SKUs out of stock: the sync stores Shopify's `inventoryQuantity`, writing
+     0 when Shopify gives none (`lib/shopifyCatalogue` line 83), and a
+     made-to-order product is likely not stock-tracked — so "not tracked"
+     reads "out of stock". To confirm in Shopify before any design.
 7. **The website team's answers (2026-11-09)** to the questions sent as the
    10-29 record has them — that notifications plan stands:
    - **Quote requests:** the website sends each only to the OMS's quote
@@ -328,7 +336,8 @@ before any code (`3eab9e5`); built together, one commit each, one deploy, item
 10 as built and live (§6.7), item 12's design (§6.8), item 12 as built and
 live (§6.9), item 11's design, with its read-only part's facts (§6.10), and
 item 11 as done (§6.11), item 6's first bundle's design (§6.12), that
-bundle as built and live (§6.13), and the second bundle's design (§6.14).
+bundle as built and live (§6.13), the second bundle's design (§6.14), and that
+bundle as built and live (§6.15).
 
 ### 6.1 Item 8 — Arizona's "today". DESIGN, agreed 2026-11-10
 
@@ -1110,3 +1119,90 @@ failing the job and its ping; the overwrite on a copy of a log with made-up
 ids while lines are appended; the real calendar's delivery card — synced,
 failed, no write. The typecheck with a planted error in each changed file; the
 patch on box-shaped trees.
+
+### 6.15 Item 6, bundle 2 — AS BUILT, deployed, LIVE
+
+- **Before the build** (Garrett, 2026-11-23): the box's pins for the 12 files
+  the bundle touches or reads, `~/cron-jobs/run-cron.sh` the same as the
+  committed one (755, garrett), no `run-cron.sh.new`; `cron.log` 8,807 lines,
+  33 `ping_failed` lines holding an id and no other id-shaped string — PINS
+  MATCH at `3b4d058`.
+- **Built as designed** (§6.14), five files —
+  `patch_item6_bundle2_quiet_failures_2026-11-23.py`, sha256 `909dd27c…` —
+  and `redact_cron_log_ping_ids_2026-11-23.py`, sha256 `daa067ea…`, run once
+  on the box:
+  1. `app/admin/shopify/page.tsx`: a refused sync reads "Sync failed: " and
+     the route's reason ("HTTP n" when none), and the list reloads; no answer
+     reads "No answer from the server — the sync may still have run. Reload
+     in a minute to see its time."; a failed load reads "Could not load the
+     catalogue: " and its reason, with Try again, in place of the stats and
+     the list; `fetchProducts` takes the vendor chosen. One addition, said
+     with the patch: the vendors to choose from are those of the last load
+     without a vendor filter, so a pick does not shrink the choice to itself
+     (with the fix alone, it would: the choice was built from the list
+     loaded).
+  2. `app/admin/page.tsx`: "⚠ N order(s) with no total recorded — counted as
+     $0 here. Shopify's next update of the order writes it." ("of each order"
+     for more than one). `app/api/admin/revenue/route.ts`: a failed unpriced
+     count throws; the route answers 500 and the panel "Could not load
+     revenue".
+  3. `scripts/cron/run-cron.sh`: `ping_failed http=… ping=success|fail`. The
+     redaction script overwrites each old `ping_failed` line's id in place
+     with `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`; it prints counts only,
+     writes nothing unless it finds exactly `--expect` ids, says ALREADY
+     REDACTED on a second run, and reads the file back (every byte it read
+     unchanged but the ids, none left, the line count held).
+  4. `app/calendar/page.tsx`: both saves set one status per order
+     (`shopifyStarted`, `shopifyAnswered`); the delivery card shows the
+     production card's line (`ShopifyLine`, one component for both).
+- **Proven, ALL PASS** — the box (`3b4d058`, bundle 1 deployed) the control:
+  - the REAL admin Shopify page: a load refused, not JSON, unanswered — "Could
+    not load the catalogue: …" with Try again, where the control showed "No
+    products synced yet" and four zeros; a sync refused (the 15 s sentence),
+    not JSON (HTTP 504), unanswered — each said, the button free, the list
+    reloaded after a refusal; the control said nothing; a sync answered and a
+    load answered: identical; three picks in a row — each fetched and listed
+    the vendor chosen, the choice whole; the control fetched the one before;
+  - the REAL `/admin` revenue panel: the new warning, one and several; no
+    warning with none unpriced; "Could not load revenue" on a refusal; the
+    totals unchanged. The REAL revenue route on the sandbox's PostgreSQL (the
+    stand-in taught PostgREST's head count): every query answered —
+    identical, 1 unpriced this month and 2 this year; the count's query alone
+    refused — 500, where the control answered 200 with 0 unpriced;
+  - each tree's `run-cron.sh` in a stand-in home, a stand-in curl, a made-up
+    id: the control logged the id after a failed `/fail` ping; the new line
+    `ping=fail` / `ping=success`; exit codes, the pings sent and every other
+    line identical; pings that land, no line;
+  - the redaction script on a stand-in log of 8,807 lines with 33 made-up
+    ids, another process appending 300 lines as cron does: `--check` and a
+    wrong `--expect` wrote nothing; the run overwrote the 33 (3 lines
+    appended during its own run), every byte it read unchanged but the ids,
+    all 300 appended lines whole and in order, an id-shaped string in another
+    line left alone; a second run ALREADY REDACTED;
+  - the REAL calendar: a delivery save synced, its Shopify write failed, no
+    Shopify write — the delivery card and the same order's production card
+    read "Synced to Shopify", "Saved — Shopify sync failed", "Shopify order";
+    the control's delivery card had no line; bundle 1's calendar test, all
+    32 cases, identical to the deployed code.
+- **Typecheck:** `next typegen`, then `tsc`: both trees' error sets identical
+  (the sandbox's one `xlsx`, §3); a planted error caught in each of the four
+  TypeScript files; `bash -n` on both `run-cron.sh`.
+- **The patch:** `--check` writes nothing; it applies byte-identical to the
+  tested tree, re-runs ALREADY APPLIED; a broken anchor and another base each
+  MISS with nothing written; no sandbox path.
+- **Deployed** (Garrett, 2026-11-23): `0a80482`, through the chain — the pins,
+  `next typegen`, `tsc`, five files staged; `run-cron.sh` installed into
+  `~/cron-jobs` by a copy and a rename, hash-checked; the redaction run; CRON
+  MATCHES; `kamal deploy`. Checked after: tree clean, the five files and
+  `~/cron-jobs/run-cron.sh` at their pins (755, garrett), no `.new` left;
+  `cron.log` 8,810 lines, **no id-shaped string, 33 overwritten lines**; CRON
+  MATCHES; LIVE IMAGE IS `0a80482`.
+- **LIVE** (Garrett, 2026-11-23): the Shopify page, All vendors — 4 vendors,
+  2,652 SKUs; HCI Cabinetry chosen — 1 vendor, 942 SKUs, where the code
+  before listed every vendor on a first pick. `/admin`: "1 order · $0", no
+  warning — SHO-1079's total is recorded as $0.00, not missing; the eight
+  checks healthy. The failure paths and the calendar's delivery line have
+  nothing live to show them; each as proven above. Found on the way: every
+  SKU reads out of stock (§4 item 6, "for later").
+- **The harness:** `harness-2026-11-23b.tar.gz` (sha256 `836286a5…`) carries
+  items 10, 12 and both bundles' files (§0).

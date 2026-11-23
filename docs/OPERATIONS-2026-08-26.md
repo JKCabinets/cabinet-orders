@@ -2,6 +2,11 @@
 
 **As of 2026-09-15, amended through 2026-11-23 (the dated entries below) · supersedes OPERATIONS-2026-08-18.md**
 
+⚠ **AMENDED 2026-11-23, later (item 6 bundle 2).** §6: `cron.log` no longer
+holds any check's ping id — `run-cron.sh` logs a ping it could not send by its
+kind, never its address, and the 33 ids already logged were overwritten in
+place.
+
 ⚠ **AMENDED 2026-11-23 (item 11, recovery checked in part).** §11 and §12:
 both backups exist and run daily, point-in-time recovery is off, the laptop
 holds the only copy of the box's secrets off the box (refreshed; it was six
@@ -685,6 +690,13 @@ four checks' ping ids** (found 2026-11-17): a `/fail` ping that cannot be sent
 is logged with only `/fail` cut from its target (`run-cron.sh` line 157) — 33
 lines from the IP block of 2026-11-05, for `helpscout-sync`, `webhook-health`,
 `teams-digest` and `cabinet-fulfilment`. An id lets anyone ping its check green.
+✅ **RESOLVED 2026-11-23** (item 6 bundle 2, `0a80482`;
+`SESSION-HANDOFF-2026-11-06.md` §6.15): the line now reads `ping_failed
+http=… ping=success|fail` — the endpoint names the check — and the 33 ids were
+overwritten in place with `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, the same
+length, so no appended line was lost; `cron.log` holds no id-shaped string.
+The four checks were not replaced: the ids left the box only in the logs
+uploaded to two sessions (11-06, 11-17), private, in a sandbox since reset.
 
 **The registry token is watched weekly** (2026-09-16):
 `~/cron-jobs/check-registry-token.sh`, Mondays 15:00 UTC, one call to the GitHub
