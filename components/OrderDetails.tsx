@@ -3,7 +3,8 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { Plus, Trash2, Check, X, Pencil, AlertTriangle } from "lucide-react";
 import { SkuItem } from "@/lib/data";
-import { arizonaToday } from "@/lib/dates";
+import { arizonaToday, formatMDY } from "@/lib/dates";
+import { compareVendorNames } from "@/lib/vendorOrder";
 import { useStore } from "@/lib/store";
 import { ackNotesFor, type AckIssues } from "@/lib/orderIssues";
 import { reviewReasonWords } from "@/lib/reviewReasons";
@@ -111,7 +112,9 @@ export function OrderDetails({ orderId, skuItems, readOnly = false, backorderRea
     return Array.from(map.values()).sort((a, b) => {
       if (!a.vendor && b.vendor) return 1;
       if (a.vendor && !b.vendor) return -1;
-      if (a.vendor !== b.vendor) return a.vendor.localeCompare(b.vendor);
+      // The vendors by the one rule (lib/vendorOrder, 2026-11-23, item 6 bundle
+      // 3) -- the server's order, not the browser's language.
+      if (a.vendor !== b.vendor) return compareVendorNames(a.vendor, b.vendor);
       if (a.style !== b.style) return a.style.localeCompare(b.style);
       return a.color.localeCompare(b.color);
     });
@@ -260,8 +263,8 @@ export function OrderDetails({ orderId, skuItems, readOnly = false, backorderRea
                     : { background: "rgba(255,255,255,0.04)", color: "rgba(232,227,218,0.65)", border: "0.5px solid rgba(255,255,255,0.12)" };
                   const pillState = isBackordered
                     ? (isReady
-                        ? `Ready (expected ${item.expected_ready_date})`
-                        : `Backordered${item.expected_ready_date ? ` until ${item.expected_ready_date}` : ""}`)
+                        ? `Ready (expected ${formatMDY(item.expected_ready_date)})`
+                        : `Backordered${item.expected_ready_date ? ` until ${formatMDY(item.expected_ready_date)}` : ""}`)
                     : null;
                   const pillText = isBackordered ? (isReady ? "ready" : "back") : "ok";
                   // Read-only: the same pill as a label, its state in words.

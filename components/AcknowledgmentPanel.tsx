@@ -8,14 +8,24 @@ import { useAckStatus, invalidateAck } from "@/lib/ackStatus";
 import { invalidateEnrichment } from "@/lib/useOrderEnrichment";
 import { attachmentsChanged } from "@/lib/attachments";
 import { buildDiscrepancyMessage } from "./OrderEntryActions";
+import { isWaypointVendor } from "@/lib/vendorFamily";
+import { stageDate } from "@/lib/dates";
 
 export interface AcknowledgmentPanelHandle {
   /** Open the picker for a cabinet line (2026-11-02, feature 10); none = Waypoint, as before. */
   openFilePicker: (vendor?: string) => void;
 }
 
-/** Waypoint's is a spreadsheet the OMS checks; HCI's and J&K's a PDF or Excel file it receives. */
-const isWaypoint = (v: string) => /^(waypoint|select)( cabinetry)?$/i.test(v.trim());
+/**
+ * Waypoint's is a spreadsheet the OMS checks; HCI's and J&K's a PDF or Excel file it receives.
+ *
+ * ⚠ THE SERVER'S TEST (2026-11-23, item 6 bundle 3): `isWaypointVendor`, which
+ * the acknowledgment route asks to decide whether an upload is checked. This was
+ * a regex of its own that also took a bare "Select" -- demanding the .xlsx and
+ * calling it Waypoint's, where the server would receive any file as another
+ * vendor's. The names lines carry answer the same either way.
+ */
+const isWaypoint = (v: string) => isWaypointVendor(v);
 const acceptFor = (v: string) => (isWaypoint(v) ? ".xlsx" : ".pdf,.xlsx,.xls");
 /** An HCI or J&K acknowledgment: received on upload, not checked (Garrett, ruling 3). */
 const isReceived = (ack: { result?: unknown } | null) =>
@@ -238,8 +248,11 @@ export const AcknowledgmentPanel = forwardRef<AcknowledgmentPanelHandle, Acknowl
                             : ack.verdict === "green"
                             ? "Matched"
                             : `${count} discrepanc${count === 1 ? "y" : "ies"}`}
+                          {/* The Arizona day, MM/DD/YYYY, as every date (2026-11-23,
+                              item 6 bundle 3) -- it read "Nov 18", in the
+                              browser's own zone. */}
                           {ack && (
-                            <> · {new Date(ack.uploaded_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</>
+                            <> · {stageDate(ack.uploaded_at)}</>
                           )}
                         </p>
                       </div>

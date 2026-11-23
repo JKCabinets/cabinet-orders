@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { ReconcileResult } from "@/lib/reconcile";
+import { isWaypointVendor } from "@/lib/vendorFamily";
 
 export type AckSummary = {
   verdict: "green" | "red";
@@ -61,7 +62,10 @@ function computeStatus(vendors: string[], ackByVendor: Record<string, AckSummary
     loading: false,
     vendors,
     ackByVendor,
-    hasWaypoint: vendors.some((v) => /waypoint/i.test(v)),
+    // ⚠ THE SERVER'S TEST (2026-11-23, item 6 bundle 3). `/waypoint/i` took any
+    // name containing the word and missed "Select Cabinetry", which the
+    // acknowledgment route checks as Waypoint's.
+    hasWaypoint: vendors.some((v) => isWaypointVendor(v)),
     hasAck: acks.some((a) => !!a),
     // ⚠ A STALE GREEN DOES NOT COUNT. The verdict was about lines that have
     // since changed, so it cannot stand in for a confirmation of the order as

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, rateLimitOr429 } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
+import { arizonaToday } from "@/lib/dates";
 
 /**
  * Running revenue — month to date and year to date.
@@ -32,11 +33,21 @@ import { supabase } from "@/lib/supabase";
 
 const REFUNDED = ["refunded", "partially_refunded", "voided"];
 
+/**
+ * ⚠ ARIZONA'S MONTH AND YEAR (2026-11-23, item 6 bundle 3). These began at UTC
+ * midnight -- 5 p.m. in Arizona -- so from 5 p.m. on the last day of a month
+ * until midnight "This month" read the NEXT month: that evening's orders, the
+ * month just ending gone; on Dec 31 the year likewise. Now from Arizona's own
+ * date (lib/dates' arizonaToday), and its midnight: Arizona keeps no daylight
+ * saving, so that is always -07:00.
+ */
 function monthStart(now: Date): string {
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+  const [y, m] = arizonaToday(now.getTime()).split("-");
+  return new Date(`${y}-${m}-01T00:00:00-07:00`).toISOString();
 }
 function yearStart(now: Date): string {
-  return new Date(Date.UTC(now.getUTCFullYear(), 0, 1)).toISOString();
+  const [y] = arizonaToday(now.getTime()).split("-");
+  return new Date(`${y}-01-01T00:00:00-07:00`).toISOString();
 }
 
 async function sumProjects(since: string): Promise<{ total: number; count: number }> {

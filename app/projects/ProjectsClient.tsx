@@ -9,6 +9,7 @@ import {
 } from "@/lib/data";
 import { attentionFor, attentionForProject, type AttentionReason } from "@/lib/attention";
 import { useOrderEnrichment } from "@/lib/useOrderEnrichment";
+import { formatMDY, stageDate } from "@/lib/dates";
 import { PageHeader } from "@/components/AppShell";
 import { OrderModal } from "@/components/OrderModal";
 import { AvatarWithProfile } from "@/components/AvatarWithProfile";
@@ -83,14 +84,16 @@ function isUnstarted(g: Order): boolean {
  * so instead of showing a blank.
  */
 function nextMilestone(g: Order): { label: string; detail?: string } {
+  // The dates MM/DD/YYYY, as every date (2026-11-23, item 6 bundle 3): they
+  // printed the stored ISO date.
   if (isDelivered(g)) {
-    return { label: "Delivered", detail: g.delivery_date ?? undefined };
+    return { label: "Delivered", detail: g.delivery_date ? formatMDY(g.delivery_date) : undefined };
   }
   if (g.stage === "In production" && g.production_est_finish_date) {
-    return { label: "Estimated production complete", detail: g.production_est_finish_date };
+    return { label: "Estimated production complete", detail: formatMDY(g.production_est_finish_date) };
   }
   if (g.scheduled_delivery_date || g.delivery_date) {
-    return { label: "Scheduled delivery", detail: g.scheduled_delivery_date ?? g.delivery_date ?? undefined };
+    return { label: "Scheduled delivery", detail: formatMDY(g.scheduled_delivery_date ?? g.delivery_date) };
   }
   if (g.type === "hardware" && g.tracking_number) {
     return { label: "In transit", detail: g.carrier ?? undefined };
@@ -262,8 +265,9 @@ export function ProjectsClient() {
   const money = (n: number | string | null | undefined) =>
     (Number(n) || 0).toLocaleString("en-US", { style: "currency", currency: "USD" });
 
-  const dateOf = (iso: string | null | undefined) =>
-    iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—";
+  // The Arizona day, MM/DD/YYYY, as every date (2026-11-23, item 6 bundle 3) --
+  // it read "Nov 17, 2026", in the browser's own zone.
+  const dateOf = (iso: string | null | undefined) => stageDate(iso) || "—";
 
   /**
    * ⚠ WIDTHS FOLLOW WHAT EACH COLUMN HOLDS, not an even split.
@@ -656,7 +660,7 @@ export function ProjectsClient() {
                                 )}
                               </span>
                               <span className="self-center text-[11px] text-cream/55 truncate">
-                                {g.delivery_date ?? g.scheduled_delivery_date ?? g.production_est_finish_date ?? "—"}
+                                {formatMDY(g.delivery_date ?? g.scheduled_delivery_date ?? g.production_est_finish_date) || "—"}
                               </span>
                               <span className="self-center flex items-center gap-1.5 min-w-0">
                                 {gr.length === 0 ? (

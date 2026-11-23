@@ -11,7 +11,7 @@ import { STAGE_ORDER_BY_TYPE, ORDER_STAGE_ORDER } from "@/lib/stageLogic";
 import { useStore } from "@/lib/store";
 import { useSession } from "next-auth/react";
 import { parseOrderDate } from "@/lib/dateUtils";
-import { orderDate, arizonaToday } from "@/lib/dates";
+import { orderDate, arizonaToday, formatMDY } from "@/lib/dates";
 import { checkAttachmentGate, checkDeliveryProofGate } from "@/lib/stageGates";
 import { requirementsFor } from "@/lib/requirements";
 import { OrderEntryActions } from "./OrderEntryActions";
@@ -779,7 +779,9 @@ function StatusLabel({ order, stage, claimedBy }: {
 
   if (stage === "Entered") {
     if (order.production_start_date) {
-      return <span className="text-[10px] text-cream/55">Starts {order.production_start_date}</span>;
+      // MM/DD/YYYY, as every date (2026-11-23, item 6 bundle 3): these four
+      // printed the stored ISO date.
+      return <span className="text-[10px] text-cream/55">Starts {formatMDY(order.production_start_date)}</span>;
     }
     return <span className="text-[10px] text-cream/55 italic">Awaiting production dates</span>;
   }
@@ -790,8 +792,8 @@ function StatusLabel({ order, stage, claimedBy }: {
     if (start || finish) {
       return (
         <div className="flex flex-col gap-0.5 text-[10px] leading-tight">
-          {start && <span className="text-cream/65">Start <span className="text-cream/85">{start}</span></span>}
-          {finish && <span className="text-cream/65">Ship from factory <span className="text-cream/85">{finish}</span></span>}
+          {start && <span className="text-cream/65">Start <span className="text-cream/85">{formatMDY(start)}</span></span>}
+          {finish && <span className="text-cream/65">Ship from factory <span className="text-cream/85">{formatMDY(finish)}</span></span>}
         </div>
       );
     }
@@ -804,7 +806,7 @@ function StatusLabel({ order, stage, claimedBy }: {
       return <span className="text-[10px]" style={{ color: "#e89090" }}>{bo.count} backordered</span>;
     }
     if (order.scheduled_delivery_date) {
-      return <span className="text-[10px] text-cream/55">Sched {order.scheduled_delivery_date}</span>;
+      return <span className="text-[10px] text-cream/55">Sched {formatMDY(order.scheduled_delivery_date)}</span>;
     }
     // ⚠ "AWAITING" IS THE MISSING-DATA SLA WORDING, and it belongs only to a
     // flow that has such a rule. A custom job has none -- nothing was ever
@@ -1105,7 +1107,7 @@ function UpdateStatusActions({
       const msg = isPastFinish
         ? `Move "${displayName}" to At cross dock now?`
         : finish
-        ? `It isn't scheduled to ship from the factory until ${finish}.\n\nPush "${displayName}" to At cross dock anyway?`
+        ? `It isn't scheduled to ship from the factory until ${formatMDY(finish)}.\n\nPush "${displayName}" to At cross dock anyway?`
         : `No ship-from-factory date set.\n\nPush "${displayName}" to At cross dock now?`;
       if (typeof window !== "undefined" && !window.confirm(msg)) return Promise.resolve();
       return moveStage(order.id, "At cross dock");

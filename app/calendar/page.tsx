@@ -6,7 +6,7 @@ import clsx from "clsx";
 import { AppShell, PageHeader } from "@/components/AppShell";
 import { useStore } from "@/lib/store";
 import { Order, displayOrderNumber } from "@/lib/data";
-import { arizonaToday } from "@/lib/dates";
+import { arizonaToday, formatMDY } from "@/lib/dates";
 
 /**
  * A store row, with delivery_date narrowed to a plain string.
@@ -716,13 +716,13 @@ function ProductionOrderCard({
                 {isStart && (
                   <div className="flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-violet-500 shrink-0" />
-                    <span className="text-[10px] text-violet-300">Started {order.production_start_date}</span>
+                    <span className="text-[10px] text-violet-300">Started {formatMDY(order.production_start_date)}</span>
                   </div>
                 )}
                 {isFinish && (
                   <div className="flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-                    <span className="text-[10px] text-emerald-300">Est. finish {order.production_est_finish_date}</span>
+                    <span className="text-[10px] text-emerald-300">Est. finish {formatMDY(order.production_est_finish_date)}</span>
                   </div>
                 )}
               </div>

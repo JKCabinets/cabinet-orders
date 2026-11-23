@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useStore } from "@/lib/store";
 import { Order, displayOrderNumber } from "@/lib/data";
-import { arizonaToday } from "@/lib/dates";
+import { arizonaToday, formatMDY } from "@/lib/dates";
 import {
   rollupBackorders,
   summarizeBackorders,
@@ -218,10 +218,10 @@ function RollupRow({
           {(rollup.soonestExpected || rollup.latestExpected) && (
             <div className="text-[11px] text-cream/55 mb-2 flex items-baseline gap-3 flex-wrap pl-7">
               {rollup.soonestExpected && (
-                <span>Earliest expected: <span className="text-cream/85">{rollup.soonestExpected}</span></span>
+                <span>Earliest expected: <span className="text-cream/85">{formatMDY(rollup.soonestExpected)}</span></span>
               )}
               {rollup.latestExpected && rollup.latestExpected !== rollup.soonestExpected && (
-                <span>Latest: <span className="text-cream/85">{rollup.latestExpected}</span></span>
+                <span>Latest: <span className="text-cream/85">{formatMDY(rollup.latestExpected)}</span></span>
               )}
             </div>
           )}
@@ -279,7 +279,8 @@ function AffectedOrderLine({
           className="text-[10px] tabular-nums flex-shrink-0"
           style={{ color: overdue ? COLOR_OVERDUE : "#e8e3da" }}
         >
-          Exp {item.expected_ready_date}
+          {/* MM/DD/YYYY, as every date (2026-11-23, item 6 bundle 3). */}
+          Exp {formatMDY(item.expected_ready_date)}
           {overdue && " · past"}
         </span>
       ) : (

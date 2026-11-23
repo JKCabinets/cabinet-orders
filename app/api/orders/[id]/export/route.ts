@@ -9,6 +9,7 @@ import { orderDate } from "@/lib/dates";
 import { latestAckByVendor } from "@/lib/acknowledgments";
 import { customerIssues, ackIssues, ackNotesFor, keyedByName as keyedBy } from "@/lib/orderIssues";
 import { reviewReasonWords } from "@/lib/reviewReasons";
+import { compareVendorNames } from "@/lib/vendorOrder";
 
 // Short alias since this file does a lot of escaping
 const h = escapeHtml;
@@ -226,7 +227,8 @@ export async function GET(
   const orderedVendorKeys = Array.from(vendorBuckets.keys()).sort((a, b) => {
     if (a === "Unassigned") return 1;
     if (b === "Unassigned") return -1;
-    return a.localeCompare(b);
+    // The one rule (lib/vendorOrder, 2026-11-23, item 6 bundle 3).
+    return compareVendorNames(a, b);
   });
   // Only render vendor headers when there are 2+ vendors AND we're not
   // already filtering to a single vendor. Single-vendor exports already
