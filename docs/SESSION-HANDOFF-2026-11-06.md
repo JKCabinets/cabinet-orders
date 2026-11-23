@@ -5,8 +5,9 @@ session starts. The 2026-11-04/06 session finished **item 5** — all four parts
 and 4c, each deployed and checked live. Item 5's record is in
 `SESSION-HANDOFF-2026-11-03.md` §6.3 (its home since its plan); this file points
 into it rather than copying it, and records the rest. ⚠ **AMENDED through
-2026-11-18** by the 2026-11-10/18 session: §4 items 1–4 done, items 8, 9, 10
-and 12 designed, built and LIVE (§6), the catalogue sync's one red (§6.4).
+2026-11-23** by the 2026-11-10/23 session: §4 items 1–4 done, items 8, 9, 10
+and 12 designed, built and LIVE, item 11 designed (§6), the catalogue sync's
+one red (§6.4).
 
 ## 0. A new session, first
 
@@ -24,16 +25,16 @@ and 12 designed, built and LIVE (§6), the catalogue sync's one red (§6.4).
 ## 1. Where things stand
 
 **The box** (`5.78.220.153`, `~/cabinet-orders`, `main`): `HEAD` is *"Docs:
-item 12 live (2026-11-18)"*, `HEAD~1` *"Item 12: the band's line rows, drawn
-at once (2026-11-18)"* (deployed), `HEAD~2` `af65791` *"Docs: item 10 live,
-item 12 designed (2026-11-18)"*, `HEAD~3` `5e32f74` *"Item 10: one waiting
-line named once (2026-11-17)"* (deployed), `HEAD~4` `1d915f5` *"Docs: item
-10, designed (2026-11-17)"*, `HEAD~5` `7aea840` *"Docs: items 8 and 9 live,
-the catalogue sync's red (2026-11-17)"*, `HEAD~6` `c1401a1` *"Item 9: …"*
-(deployed). **The next chain checks: `HEAD`'s subject is that one, tree
-clean.** ⚠ **The running image is `HEAD~1`, item 12** (§6.9; the chain that
-committed this checked it); against this docs `HEAD` the image check reads
-MISMATCH until the next deploy, by design. The 2026-11-04/06
+item 11 designed (2026-11-23)"*, `HEAD~1` `105a12c` *"Docs: item 12 live
+(2026-11-18)"*, `HEAD~2` `75c9c55` *"Item 12: the band's line rows, drawn at
+once (2026-11-18)"* (deployed), `HEAD~3` `af65791` *"Docs: item 10 live, item
+12 designed (2026-11-18)"*, `HEAD~4` `5e32f74` *"Item 10: one waiting line
+named once (2026-11-17)"* (deployed), `HEAD~5` `1d915f5` *"Docs: item 10,
+designed (2026-11-17)"*, `HEAD~6` `7aea840` *"Docs: items 8 and 9 live, the
+catalogue sync's red (2026-11-17)"*. **The next chain checks: `HEAD`'s
+subject is that one, tree clean.** ⚠ **The running image is `75c9c55`, item
+12** (§6.9); against this docs `HEAD` the image check reads MISMATCH until the
+next deploy, by design. The 2026-11-04/06
 session's commits — `git log --oneline
 d04a568..2a7a20c` and after — each a design record, then its part and its
 docs: part 2 (`4ccd94d`, its live record `2a7a20c`), part 3 (design `841fe89`,
@@ -186,7 +187,8 @@ migration probed, transcribed and proven first.
    and LIVE (§6.7). Open: 11. Numbered on from there:
    - **12. The band's line rows, drawn at once** (Garrett: *"Option A as item
      12"*). ✅ **DONE** — designed 2026-11-18 (§6.8); built, deployed and LIVE
-     (§6.9). Next: 11.
+     (§6.9). Next: 11 — ⚠ **DESIGNED 2026-11-23 (§6.10)**, parts A, B, C and
+     E; part A done.
    - **13. The enrichment hook hides a failed request** (Garrett, designing
      item 12). `useOrderEnrichment` returns nothing on a refused or
      failed request — silent by design (`lib/useOrderEnrichment` lines 28–31,
@@ -196,6 +198,12 @@ migration probed, transcribed and proven first.
      say "couldn't check — reopen the order""*. Its own item, to design. ⚠
      Not every missing answer is a failure: the hook asks only about cabinet
      groups not archived (line 82), so an archived group is never asked.
+   - **14. The stored files have no backup** (Garrett, 2026-11-23, item 11:
+     *"Yes"*). Supabase's backups hold the database and only metadata about
+     Storage — its own Backups page says so — so every uploaded file
+     (attachments, acknowledgments' kept files, signed receipts, claim
+     photos) exists in one place. RECOVERY calls it a known gap. Its own
+     item, to design.
 6. **Found this session, left for their own look:** the admin home's warning
    of orders "with no total recorded — backfill via Shopify sync" names the
    wrong tool; the admin Shopify page shows nothing when a sync fails (`if
@@ -275,7 +283,7 @@ handoffs — each session's decisions; item 5's are in
 `SESSION-HANDOFF-2026-11-03.md` §6.3, and the 2026-11-10/18 session's in §6
 below. One fact, one home.
 
-## 6. 2026-11-10 to 11-18 — this session's designs and results
+## 6. 2026-11-10 to 11-23 — this session's designs and results
 
 Items 1 to 4 of §4: done and recorded there (`8ffab24`). Items 8 and 9 of the
 11-03 list (§4 item 5): designed below, each agreed by Garrett and committed
@@ -283,8 +291,8 @@ before any code (`3eab9e5`); built together, one commit each, one deploy, item
 9's patch pinned on item 8's (both touch `production-complete` and
 `OrderDetails`) — as built and live, §6.3. Then the catalogue sync's red
 (§6.4), the ingestion check's 0 and 0 (§6.5), item 10's design (§6.6), item
-10 as built and live (§6.7), item 12's design (§6.8), and item 12 as built and
-live (§6.9).
+10 as built and live (§6.7), item 12's design (§6.8), item 12 as built and
+live (§6.9), and item 11's design, with its read-only part's facts (§6.10).
 
 ### 6.1 Item 8 — Arizona's "today". DESIGN, agreed 2026-11-10
 
@@ -706,3 +714,107 @@ planted error in each changed file; the patch on box-shaped trees.
   PDF or Excel file", Upload acknowledgment, Move to Entered waiting.
 - **The harness:** `harness-2026-11-18.tar.gz` (sha256 `0e8a0dd3…`) carries
   items 10 and 12's files (§0).
+
+### 6.10 Item 11 — exercising RECOVERY. DESIGN, agreed 2026-11-23
+
+Garrett: *"Lets go with your recommendation"* — parts A, B, C and E; D, the
+rollback rehearsal on production, not run. Point-in-time recovery: its status
+recorded, nothing changed (*"I will go with your recomendation"*). The stored
+files' missing backup: item 14 (*"Yes"*, §4 item 5).
+
+**Read whole:** `docs/RECOVERY.md` (278 lines), `docs/OPERATIONS-2026-08-26.md`
+(1,648), `config/deploy.yml` (135), `scripts/cron/crontab`,
+`instrumentation.ts`; `scripts/cron/run-cron.sh` where it names its target
+(line 55). Hetzner's and Supabase's own documentation (2026-11-18).
+
+**Found.**
+- **A restored box is live.** It boots with the crontab, and `run-cron.sh`
+  calls production's own address (`APP_URL`, line 55) with the real cron
+  secret, then pings the real checks; Docker restarts the app and
+  kamal-proxy. With a network, a copy would run production's jobs a second
+  time — claims to Help Scout within 15 minutes; at 15:00 UTC the cabinet
+  fulfilment, which marks lines shipped in Shopify — and ping checks green
+  from the wrong machine. A restore test fences the copy before it boots.
+- **Hetzner:** a backup's menu offers "Create new Server", which leaves the
+  server alone; Cloud Firewalls are stateful, and one outbound rule makes all
+  other outbound traffic drop; the create form has a Firewalls step. Backups
+  are deleted with their server.
+- **Supabase:** "Restore to a New Project" (beta) copies the database into a
+  new project and leaves production alone — not Storage, API keys or auth
+  settings; extensions that act on their own (`pg_cron`, `pg_net`) start in
+  the copy at once. A restore over the project overwrites production: never
+  part of an exercise.
+- **Scenario 1 rebuilds** (`git checkout <SHA>`, `kamal deploy`) and leaves a
+  detached `HEAD` the deploy chain refuses; `kamal rollback <version>`
+  switches to a kept container without a build, even with GHCR down.
+
+**Part A, read-only — done (Garrett, 2026-11-23):**
+- **The box-only files, by hash:** `.env.kamal` `38bea389…` (24 keys),
+  `~/.cron-secret` `15784859…`, `~/cron-jobs/healthchecks.map` `90ccccd7…`.
+  Also `run-cron.sh` `d3c094c6…`, `check-registry-token.sh` `a6c2f3dd…`,
+  `.kamal/secrets` `b19cdce2…` and `crontab -l` `2b2e7e3a…`, all four in git
+  too.
+- ⚠ **The laptop's only `.env.kamal` copy was from 2026-05-20, and 12 of the
+  24 keys were missing from it or different.** Missing: `AVIS_API_TOKEN`,
+  `HEALTHCHECKS_API_KEY`, `HELPSCOUT_APP_ID`, `HELPSCOUT_APP_SECRET`,
+  `TURNSTILE_SECRET_KEY`, `TURNSTILE_CLAIMS_SECRET_KEY`,
+  `SHOPIFY_WEBHOOK_SECRET_FALLBACK`. Different: `KAMAL_REGISTRY_PASSWORD`,
+  `SHOPIFY_WEBHOOK_SECRET`, `TEAMS_WEBHOOK_URL`, `QUOTE_WEBHOOK_SECRET`,
+  `ADMIN_BACKWARD_PIN`. A rebuild from it would not have deployed, verified a
+  webhook, reached Help Scout, served either form, synced Avis or posted the
+  digest. **Refreshed 2026-11-23, 11:20 Arizona** (Garrett): `.env.kamal`,
+  `.cron-secret` and `healthchecks.map` in `~/backups/cabinet-orders/`, each
+  dated `20261123`, each matching the box's hash; the May copy kept beside
+  them. `~/.cron-secret` holds exactly the `CRON_SECRET` in `.env.kamal`
+  (checked 2026-11-23), so two files carry everything the box alone holds.
+- ⚠ **There is no password manager and no secure note** (Garrett,
+  2026-11-23: *"I dont have a secure not or password manager"*).
+  `RECOVERY.md`'s "password manager as secure note" (lines 46–47, 134–135,
+  231–245) was never true: the laptop is the only copy off the box besides
+  Hetzner's seven days. A second copy off the laptop: Garrett's decision,
+  open.
+- **Hetzner backups are on:** seven, daily at about 14:38 UTC, 41.5–42.8 GB;
+  the newest `2026-11-23T14:38:08Z`.
+- **Supabase:** daily PHYSICAL backups at about 06:36 UTC, 16–23 November
+  listed; Storage objects not included (the page says so). **Point-in-time
+  recovery is off** — inferred: the daily backups run, and they stop when it
+  is enabled (Supabase's documentation). Recorded only (Garrett).
+- **Extensions:** `pg_stat_statements`, `pgcrypto`, `plpgsql`,
+  `supabase_vault`, `uuid-ossp` — no `pg_cron` and no `pg_net`, so nothing in
+  the database acts on its own and no trigger can make a web request: C's
+  condition holds.
+- **The rollback window:** six containers — running `75c9c55` (item 12), then
+  `5e32f74`, `c1401a1`, `5c8ea73`, `3914bc0`, `4ccd94d` — two weeks back.
+
+**B. The Hetzner restore, to a fenced temporary server** (the server
+untouched):
+1. A Cloud Firewall: inbound TCP 22 only; outbound one rule, ICMP to
+   `192.0.2.1` (a documentation address nothing answers), so every other
+   outbound packet drops.
+2. The newest backup's "Create new Server": CPX31 (its disk at least the
+   backup's), the firewall chosen IN the form. If the form does not offer it,
+   stop and create nothing; the fallback is to convert the backup to a
+   snapshot and create from the snapshot through Add server.
+3. SSH in; the fence shown: healthchecks.io and production's health address
+   both fail.
+4. The box-only files against part A's hashes; the backup's git `HEAD` and
+   its Docker images; each step timed.
+5. The server deleted, then the firewall.
+6. Nothing got out: healthchecks.io's pings all from `5.78.220.153`;
+   production's kamal-proxy log with no request from the copy's address.
+Not proven: a rebuild from scratch — the copy cannot reach GitHub or GHCR, by
+design.
+
+**C. The Supabase restore, to a new project** (production untouched): the
+newest daily backup, the cost it shows read before confirming; timed; row
+counts of the main tables against production's — production ahead by
+whatever came after the backup; the new project deleted. While it exists, a
+second full copy of the customer data.
+
+**E. The docs, after:** `docs/RECOVERY.md` — what was exercised and when, the
+timings, what was harder than expected; Scenario 1 leads with `kamal
+rollback`; Scenario 2 fences a restored box before it boots; Scenario 3
+records point-in-time recovery off and "Restore to a New Project" as the safe
+first step; Scenario 4 rewritten to the truth — no password manager, the
+laptop's copies, and whatever second copy Garrett chooses. `OPERATIONS` §11
+and §12: the restore and point-in-time items closed or updated.
