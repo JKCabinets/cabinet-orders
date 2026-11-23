@@ -7,7 +7,7 @@ and 4c, each deployed and checked live. Item 5's record is in
 into it rather than copying it, and records the rest. ⚠ **AMENDED through
 2026-11-23** by the 2026-11-10/23 session: §4 items 1–4 done, items 8, 9, 10
 and 12 designed, built and LIVE, item 11 done in part, item 6's first bundle
-designed (§6), the catalogue sync's one red (§6.4).
+designed, built and LIVE (§6), the catalogue sync's one red (§6.4).
 
 ## 0. A new session, first
 
@@ -16,25 +16,25 @@ designed (§6), the catalogue sync's one red (§6.4).
    cd ~/cabinet-orders && git archive --format=tar.gz -o ~/repo31.tar.gz HEAD && cd ~ && sha256sum repo31.tar.gz > repo31_tar_gz.sha256
    ```
 2. **Upload** `repo31.tar.gz`, `repo31_tar_gz.sha256`, this file, and the
-   harness archive `harness-2026-11-18.tar.gz` (sha256 `0e8a0dd3…`) with its
-   `harness-2026-11-18_tar_gz.sha256` — it carries items 10 and 12's files
-   (§6.9). Check both hashes — by VALUE: an upload renames `x.tar.gz` to
-   `x_tar.gz`, so `sha256sum -c` fails on the name (§3).
+   harness archive `harness-2026-11-23.tar.gz` (sha256 `34ab4e13…`) with its
+   `harness-2026-11-23_tar_gz.sha256` — it carries items 10, 12 and item 6's
+   first bundle's files (§6.13). Check both hashes — by VALUE: an upload
+   renames `x.tar.gz` to `x_tar.gz`, so `sha256sum -c` fails on the name (§3).
 3. **Read this file whole**, then the method (§3), before any change.
 
 ## 1. Where things stand
 
 **The box** (`5.78.220.153`, `~/cabinet-orders`, `main`): `HEAD` is *"Docs:
-item 6 bundle 1 designed (2026-11-23)"*, `HEAD~1` `c9c701b` *"Docs: item
-11, recovery checked in part (2026-11-23)"*, `HEAD~2` `7f87441` *"Docs: item
-11 designed (2026-11-23)"*, `HEAD~3` `105a12c` *"Docs: item 12 live
-(2026-11-18)"*, `HEAD~4` `75c9c55` *"Item 12: the band's line rows, drawn at
-once (2026-11-18)"* (deployed), `HEAD~5` `af65791` *"Docs: item 10 live, item
-12 designed (2026-11-18)"*, `HEAD~6` `5e32f74` *"Item 10: one waiting line
-named once (2026-11-17)"* (deployed). **The next chain checks: `HEAD`'s
-subject is that one, tree clean.** ⚠ **The running image is `75c9c55`, item
-12** (§6.9); against this docs `HEAD` the image check reads MISMATCH until the
-next deploy, by design. The 2026-11-04/06
+item 6 bundle 1 live (2026-11-23)"*, `HEAD~1` `bb297fc` *"Item 6, bundle 1:
+what staff screens show wrong (2026-11-23)"* (deployed), `HEAD~2` `1a495a7`
+*"Docs: item 6 bundle 1 designed (2026-11-23)"*, `HEAD~3` `c9c701b` *"Docs:
+item 11, recovery checked in part (2026-11-23)"*, `HEAD~4` `7f87441` *"Docs:
+item 11 designed (2026-11-23)"*, `HEAD~5` `105a12c` *"Docs: item 12 live
+(2026-11-18)"*, `HEAD~6` `75c9c55` *"Item 12: the band's line rows, drawn at
+once (2026-11-18)"* (deployed). **The next chain checks: `HEAD`'s subject is
+that one, tree clean.** ⚠ **The running image is `bb297fc`, item 6's first
+bundle** (§6.13); against this docs `HEAD` the image check reads MISMATCH
+until the next deploy, by design. The 2026-11-04/06
 session's commits — `git log --oneline
 d04a568..2a7a20c` and after — each a design record, then its part and its
 docs: part 2 (`4ccd94d`, its live record `2a7a20c`), part 3 (design `841fe89`,
@@ -54,7 +54,8 @@ UTC), was taken in cleanly: its project and its cabinet group. ⚠ **Every test
 order, #1078 among them, was deleted 2026-11-16** (Garrett): Shopify answered
 no orders, and the OMS held no Shopify purchase (§6.5). **One test order
 since: #1079** (SHO-1079, HCI only, at New when seen) — items 10 and 12 were
-checked on it (§6.7, §6.9); it can go with the next clean-up.
+checked on it (§6.7, §6.9), and item 6's first bundle, when it was still the
+only purchase (2026-11-23, §6.13); it can go with the next clean-up.
 
 **Cron** — eight jobs (`scripts/cron/crontab`, installed 2026-11-05):
 `sync-shopify-catalog`, 10:00 UTC daily, joined them. ⚠ **The deploy chain runs
@@ -208,9 +209,10 @@ migration probed, transcribed and proven first.
 6. ⚠ **IN THREE BUNDLES (Garrett, 2026-11-23: "lets proceed with your
    recommendations").** Bundle 1, what staff screens show wrong — the
    backorders sort, the calendar's saves, the strip's claim, the projects
-   page's attention, the back-on date, `missing_mod_value` — **DESIGNED
-   2026-11-23 (§6.12)**. Bundle 2, the quiet admin and ops failures — the
-   admin Shopify page, the admin home's warning, `cron.log`'s ping ids.
+   page's attention, the back-on date, `missing_mod_value` — ✅ **DONE:
+   designed 2026-11-23 (§6.12), built, deployed and LIVE (§6.13).** Bundle 2,
+   the quiet admin and ops failures — the admin Shopify page, the admin home's
+   warning, `cron.log`'s ping ids.
    Bundle 3, one rule everywhere — Waypoint's three tests, the vendor sorts,
    the raw ISO dates. Recorded only: the sync's retry, the product webhooks,
    the system map's line (Garrett's to edit).
@@ -264,6 +266,13 @@ migration probed, transcribed and proven first.
      browser's locale) and the export route's headings (line 225, on the
      server, "Unassigned" last). Not the band's; today's names sort the same
      in every locale tried (§6.8).
+   **Found 2026-11-23, building bundle 1:**
+   - The calendar's delivery save writes to Shopify on every save of a group
+     that carries the Shopify order's id — it always sends the window and the
+     notes, and the route syncs on either being present — and the calendar
+     shows nothing of Shopify's answer, so a failed write there is silent.
+     Bundle 1 gave the production card its true line only, as designed; the
+     delivery card never had one. A candidate for bundle 2, Garrett's call.
 7. **The website team's answers (2026-11-09)** to the questions sent as the
    10-29 record has them — that notifications plan stands:
    - **Quote requests:** the website sends each only to the OMS's quote
@@ -303,7 +312,8 @@ before any code (`3eab9e5`); built together, one commit each, one deploy, item
 (§6.4), the ingestion check's 0 and 0 (§6.5), item 10's design (§6.6), item
 10 as built and live (§6.7), item 12's design (§6.8), item 12 as built and
 live (§6.9), item 11's design, with its read-only part's facts (§6.10), and
-item 11 as done (§6.11), and item 6's first bundle's design (§6.12).
+item 11 as done (§6.11), item 6's first bundle's design (§6.12), and that
+bundle as built and live (§6.13).
 
 ### 6.1 Item 8 — Arizona's "today". DESIGN, agreed 2026-11-10
 
@@ -931,3 +941,87 @@ real modal on a claimed two-group purchase; the real projects page against
 Arizona's clock; both labels for `missing_mod_value`. The typecheck with a
 planted error in each changed file; the patch on box-shaped trees.
 
+### 6.13 Item 6, bundle 1 — AS BUILT, deployed, LIVE
+
+- **Before the build** (Garrett, 2026-11-23): the box's pins for the 15 files
+  the bundle touches or reads, and no `lib/reviewReasons.ts` — PINS MATCH at
+  `1a495a7`.
+- **Built as designed** (§6.12), ten files —
+  `patch_item6_bundle1_staff_screens_2026-11-23.py`, sha256 `37bb8b0b…`:
+  1. `lib/backorders`: oldest first by `created_at`; a row without one last,
+     ties by id.
+  2. `app/calendar/page.tsx`: both saves read the route's answer
+     (`readSave`). A refusal keeps the editor open with "Not saved: " and the
+     server's sentence under Save — `message`, else `error`, else "HTTP n" —
+     and takes the production card's Shopify line away; a request with no
+     answer says "Could not reach the server. Check the dates and try again."
+     A save closes the editor, and the production card reads "Synced to
+     Shopify" only on `shopify_synced: true`, "Saved — Shopify sync failed" on
+     `false`, and "Shopify order", as before any save, when no Shopify write
+     happened. Cancel and reopening clear the sentence. What is sent:
+     unchanged.
+  3. `OrderModal`'s `GroupStrip` takes `claimedBy` (`resolvedClaimedBy`): the
+     purchase's owner on every card. One addition, said with the patch: a
+     holder no longer on the team list reads "claimed", as the header's chip
+     says "Claimed" — the strip read "unclaimed".
+  4. `ProjectsClient`: `useOrderEnrichment(allOrders)`; each row's reasons
+     `attentionForProject(p, groups, Date.now(), enrich)`; each group's line
+     `attentionFor(g, enrich(g))`.
+  5. The team page, `ProfileView`, `ProfileSummary`: "Back" and `formatMDY`.
+  6. `lib/reviewReasons` (new): `REVIEW_REASONS`, a `Record<ReviewReason,
+     { label, help }>` with `missing_mod_value`, and `reviewReasonWords`
+     (undefined for a value it does not know). `OrderDetails` and the export
+     route read it and keep "Review" / "review" for an unknown value.
+- **Proven, 165 checks, ALL PASS** — the box (`1a495a7`) the control:
+  - the sort: the control put January before December, and its order
+    depended on the input's; the new code oldest first by `created_at` either
+    way, ties by id; the rollup's numbers and the summary identical;
+  - the REAL calendar page, all four editors (the day's production and
+    delivery cards, "Set dates →", "Schedule →"), the route's answer stood in.
+    A 422 and a 409 with their sentences, a bare code, a body that is not
+    JSON, no answer: the new editor stays open on each with its sentence; the
+    control closed (with no answer, stayed open, silent) and on the
+    production card read "Shopify sync failed". Synced, the Shopify write
+    failed, no Shopify write: the new card reads "Synced to Shopify", "Saved —
+    Shopify sync failed", "Shopify order"; the control read "Synced to
+    Shopify" for all three. What each sends: identical;
+  - the REAL modal on a two-group purchase: the owner (a colleague; the
+    viewer) on both cards, with the avatar; "unclaimed" when nobody holds it;
+    "claimed" for a holder not on the list. The control: "unclaimed" on every
+    card. The header's chip unchanged;
+  - the REAL projects page beside `attentionForProject` on the same rows and
+    enrichment: identical once the enrichment answered (a missing
+    acknowledgment, an unclaimed purchase, a missing receipt — 3 needing
+    attention); as first drawn, the row-only reasons alone; the control 0. One
+    enrichment request;
+  - "Back …" for 2026-11-30 in all four renderings (the team page,
+    `ProfileView`, `ProfileSummary` card and full), under Phoenix, UTC and
+    Tokyo: "Back 11/30/2026" in each; in Phoenix the control read "Back Nov
+    29" and "Back November 29";
+  - `missing_mod_value`: the REAL `OrderDetails` names it, with its help and
+    in the summary strip; the REAL export route's GET, on the sandbox's
+    PostgreSQL, names it on the line and in the banner; an unknown value keeps
+    "Review" / "review"; the whole PDF, the new label read back as "review",
+    byte-identical to the control's.
+- **Typecheck:** `next typegen`, then `tsc`: both trees' error sets identical
+  (the sandbox's one `xlsx`, §3); a planted error caught in each of the ten
+  files; with `missing_mod_value`'s words removed, `tsc` refuses
+  `REVIEW_REASONS` (TS2741).
+- **The patch:** `--check` writes nothing; it applies byte-identical to the
+  tested tree, re-runs ALREADY APPLIED; a broken anchor and another base each
+  MISS with nothing written; no sandbox path.
+- **Deployed** (Garrett, 2026-11-23): `bb297fc`, through the chain — the
+  pins, `next typegen`, `tsc`, ten files staged — then the cron diffs (CRON
+  MATCHES) and `kamal deploy`. Checked after: tree clean, the ten files at
+  their pins, LIVE IMAGE IS `bb297fc`.
+- **LIVE** (Garrett, 2026-11-23): the projects page, SHO-1079 its one
+  purchase — "3 needs attention", led by "HCI Cabinetry: acknowled…": the
+  purchase's Unclaimed, the line's acknowledgment and Past SLA, which is
+  `attentionForProject`'s answer for it; the code before asked for neither
+  the acknowledgment nor the purchase's Unclaimed. Its group's line: "HCI
+  Cabinetry: acknowledgment re…". The other five have nothing live to show
+  them yet — no purchase with two groups (the strip), no backordered line, no
+  member out of office, no `missing_mod_value` line — and the calendar's saves
+  were not exercised live; each as proven above.
+- **The harness:** `harness-2026-11-23.tar.gz` (sha256 `34ab4e13…`) carries
+  items 10, 12 and this bundle's files (§0).
