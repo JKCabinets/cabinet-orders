@@ -1,6 +1,12 @@
 # JK Cabinets — Operations & Systems Reference
 
-**As of 2026-09-15, amended through 2026-11-17 (the dated entries below) · supersedes OPERATIONS-2026-08-18.md**
+**As of 2026-09-15, amended through 2026-11-23 (the dated entries below) · supersedes OPERATIONS-2026-08-18.md**
+
+⚠ **AMENDED 2026-11-23 (item 11, recovery checked in part).** §11 and §12:
+both backups exist and run daily, point-in-time recovery is off, the laptop
+holds the only copy of the box's secrets off the box (refreshed; it was six
+months stale), there is no password manager, and a restore is still untested.
+§5: re-copy `.env.kamal` to the laptop after renewing the GHCR token.
 
 ⚠ **AMENDED 2026-11-17.** §6: the catalogue sync's first red — a slow read,
 nothing written — and what to do; the ingestion check's 0 and 0 with every
@@ -627,7 +633,10 @@ third failure); has GHCR accept it with `docker login` BEFORE writing; replaces
 the one line in `.env.kamal` in place (its mode and every other line kept);
 then runs the check, which turns healthchecks.io green. Expect `Login
 Succeeded`, `REPLACED`, `check rc=0` and a log line with the new expiry — then
-record the date here, in the start-point handoff and in the system map. No
+record the date here, in the start-point handoff and in the system map, and
+re-copy `.env.kamal` to the laptop (`RECOVERY.md`, "Keeping the copies off the
+box current"; since 2026-11-23 — the laptop's copy is the only one off the
+box). No
 deploy is needed; Kamal reads the file at the next one. Proven 2026-11-03 on a
 stand-in home (a good token, a partial paste, a duplicate line, a refused
 login: each failure stops with a message and leaves the file byte-identical),
@@ -1402,13 +1411,28 @@ exist nowhere else.
 ⚠ **THE CRON SCRIPTS ARE IN THE REPO SINCE 2026-11-02** (item 65, found
 2026-10-29): `scripts/cron/` holds `run-cron.sh`, `check-registry-token.sh`
 and the `crontab`. ⚠ `~/cron-jobs/healthchecks.map` is NOT (its URLs are
-credentials in effect), so this backup is its only copy, for 7 days.
+credentials in effect). Since 2026-11-23 the laptop holds a copy of it,
+`.env.kamal` and `.cron-secret` (this said "this backup is its only copy").
 
 Two caveats: **a 7-day window is short for a silent problem** — the failure
 mode this system actually has — and **the restore has never been tested**.
 
-⚠ **Supabase PITR status and retention are still unknown.** The Hetzner backup
-covers the box, not the database, and the database is where the orders are.
+**Checked 2026-11-23 (item 11; `RECOVERY.md`, `SESSION-HANDOFF-2026-11-06.md`
+§6.10–6.11):**
+- **Hetzner:** backups on, seven, daily at about 14:38 UTC. ⚠ They are
+  deleted with their server (Hetzner's documentation).
+- **Supabase:** seven days of daily physical backups at about 06:36 UTC;
+  **point-in-time recovery is OFF** (inferred: the daily backups run, and they
+  stop when it is on). Recorded only (Garrett). The Storage files are in
+  neither backup — item 14. (This said "Supabase PITR status and retention
+  are still unknown".)
+- **The secrets off the box:** the laptop's only `.env.kamal` copy was from
+  2026-05-20, 12 of its 24 keys missing or different — refreshed 2026-11-23,
+  with `.cron-secret` and `healthchecks.map`, each checked by hash. **There is
+  no password manager** (Garrett), so the laptop is the only copy off the box
+  besides Hetzner's seven days.
+- **Not run:** a test restore of either backup — each needs a temporary paid
+  copy; declined for now (Garrett, 2026-11-23).
 
 ---
 
@@ -1521,8 +1545,12 @@ covers the box, not the database, and the database is where the orders are.
   Shopify, Supabase, Hetzner, GitHub, Microsoft 365, Help Scout, GoDaddy. No
   second holder of any credential, no break-glass procedure. **The largest
   single operational risk**, and a people problem rather than a technical one.
-- **Supabase PITR status and retention.**
+- ✅ **Supabase PITR status and retention** — answered 2026-11-23: off;
+  seven days of daily physical backups (§11).
 - **Test the Hetzner restore once.** An untested backup is a hypothesis.
+  ⚠ Still open: declined for now 2026-11-23 — a test needs a temporary server
+  at a small hourly charge. A restored box is LIVE when it boots; the fenced
+  way to do it is in `RECOVERY.md`, Scenario 2.
 - ✅ **What `jk-sku-builder` is** — answered 2026-10-28 (§3): the SKU builder,
   retiring; the OMS never called it.
 
@@ -1531,7 +1559,10 @@ separate gaps.** A single credential holder · files that exist only on the box
 (`~/cron-jobs/healthchecks.map`, `.env.kamal`, `~/.cron-secret`, the crontab) ·
 a 7-day backup window against a failure mode that is silent · a restore that has
 never been tested · unknown Supabase PITR. There is no redundancy at any link,
-so the first one to fail takes the rest with it.
+so the first one to fail takes the rest with it. ⚠ **2026-11-23:** the box's
+files now have a current laptop copy (the crontab is in git), and PITR is
+known to be off; there is still no password manager, no second holder, and
+no tested restore.
 
 ## Important
 

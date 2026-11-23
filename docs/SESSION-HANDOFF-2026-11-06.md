@@ -6,8 +6,8 @@ and 4c, each deployed and checked live. Item 5's record is in
 `SESSION-HANDOFF-2026-11-03.md` §6.3 (its home since its plan); this file points
 into it rather than copying it, and records the rest. ⚠ **AMENDED through
 2026-11-23** by the 2026-11-10/23 session: §4 items 1–4 done, items 8, 9, 10
-and 12 designed, built and LIVE, item 11 designed (§6), the catalogue sync's
-one red (§6.4).
+and 12 designed, built and LIVE, item 11 done in part (§6), the catalogue
+sync's one red (§6.4).
 
 ## 0. A new session, first
 
@@ -25,13 +25,13 @@ one red (§6.4).
 ## 1. Where things stand
 
 **The box** (`5.78.220.153`, `~/cabinet-orders`, `main`): `HEAD` is *"Docs:
-item 11 designed (2026-11-23)"*, `HEAD~1` `105a12c` *"Docs: item 12 live
-(2026-11-18)"*, `HEAD~2` `75c9c55` *"Item 12: the band's line rows, drawn at
-once (2026-11-18)"* (deployed), `HEAD~3` `af65791` *"Docs: item 10 live, item
-12 designed (2026-11-18)"*, `HEAD~4` `5e32f74` *"Item 10: one waiting line
-named once (2026-11-17)"* (deployed), `HEAD~5` `1d915f5` *"Docs: item 10,
-designed (2026-11-17)"*, `HEAD~6` `7aea840` *"Docs: items 8 and 9 live, the
-catalogue sync's red (2026-11-17)"*. **The next chain checks: `HEAD`'s
+item 11, recovery checked in part (2026-11-23)"*, `HEAD~1` `7f87441` *"Docs:
+item 11 designed (2026-11-23)"*, `HEAD~2` `105a12c` *"Docs: item 12 live
+(2026-11-18)"*, `HEAD~3` `75c9c55` *"Item 12: the band's line rows, drawn at
+once (2026-11-18)"* (deployed), `HEAD~4` `af65791` *"Docs: item 10 live, item
+12 designed (2026-11-18)"*, `HEAD~5` `5e32f74` *"Item 10: one waiting line
+named once (2026-11-17)"* (deployed), `HEAD~6` `1d915f5` *"Docs: item 10,
+designed (2026-11-17)"*. **The next chain checks: `HEAD`'s
 subject is that one, tree clean.** ⚠ **The running image is `75c9c55`, item
 12** (§6.9); against this docs `HEAD` the image check reads MISMATCH until the
 next deploy, by design. The 2026-11-04/06
@@ -187,8 +187,9 @@ migration probed, transcribed and proven first.
    and LIVE (§6.7). Open: 11. Numbered on from there:
    - **12. The band's line rows, drawn at once** (Garrett: *"Option A as item
      12"*). ✅ **DONE** — designed 2026-11-18 (§6.8); built, deployed and LIVE
-     (§6.9). Next: 11 — ⚠ **DESIGNED 2026-11-23 (§6.10)**, parts A, B, C and
-     E; part A done.
+     (§6.9). ✅ **11 DONE IN PART** — designed 2026-11-23 (§6.10); A and E
+     done, B and C (the test restores) declined for now, D not run (§6.11).
+     Next, as planned: item 6's findings, then item 7; 13 and 14 open.
    - **13. The enrichment hook hides a failed request** (Garrett, designing
      item 12). `useOrderEnrichment` returns nothing on a refused or
      failed request — silent by design (`lib/useOrderEnrichment` lines 28–31,
@@ -292,7 +293,8 @@ before any code (`3eab9e5`); built together, one commit each, one deploy, item
 `OrderDetails`) — as built and live, §6.3. Then the catalogue sync's red
 (§6.4), the ingestion check's 0 and 0 (§6.5), item 10's design (§6.6), item
 10 as built and live (§6.7), item 12's design (§6.8), item 12 as built and
-live (§6.9), and item 11's design, with its read-only part's facts (§6.10).
+live (§6.9), item 11's design, with its read-only part's facts (§6.10), and
+item 11 as done (§6.11).
 
 ### 6.1 Item 8 — Arizona's "today". DESIGN, agreed 2026-11-10
 
@@ -818,3 +820,34 @@ records point-in-time recovery off and "Restore to a New Project" as the safe
 first step; Scenario 4 rewritten to the truth — no password manager, the
 laptop's copies, and whatever second copy Garrett chooses. `OPERATIONS` §11
 and §12: the restore and point-in-time items closed or updated.
+
+### 6.11 Item 11 — DONE IN PART, 2026-11-23
+
+- **A, the read-only part: done** (§6.10). Its finding that mattered: the
+  laptop's six-month-old `.env.kamal` copy, refreshed the same morning with
+  `.cron-secret` and `healthchecks.map`, each checked against the box's
+  hash; and no password manager. A second copy off the laptop: none for now
+  (Garrett: *"Lets do 3 for now, and maybe later we can add a password
+  manager"*).
+- **B, the Hetzner test restore: not run** (Garrett: *"I don't want to create
+  a new server just to test"* — it needs a temporary server at a small hourly
+  charge). Found on the way: the Create Firewall form showed the production
+  server under Apply to; caught on the form. Applied to production, the fence
+  would have closed the site and cut it off from Supabase and Shopify —
+  `RECOVERY.md` Scenario 2 now says Apply to must be empty.
+- **C, the Supabase test restore: not run**, with B — it too makes a
+  temporary paid copy (a project).
+- **D: not run**, as agreed.
+- **E: done** — `docs/RECOVERY.md`: "checked in part, a restore still never
+  run"; where things live (PITR off, the Storage files in no backup — item
+  14, the laptop as the only copy off the box); a new section, "Keeping the
+  copies off the box current", with the refresh command (tested on a
+  stand-in box: three OKs, and a missing file stops it); Scenario 1 leads with
+  `kamal rollback`; Scenario 2 warns a restored box is live and gives the
+  fenced way; Scenario 3 restores to a new project first, and records PITR
+  off; Scenario 4 rewritten without the password manager. `OPERATIONS`: the
+  2026-11-23 amendment; §5's GHCR renewal ends by re-copying `.env.kamal` to
+  the laptop; §11 and §12 updated.
+- **Still open from it:** a tested restore (OPERATIONS §12); a second copy off
+  the laptop (a password manager, later perhaps); item 14.
+

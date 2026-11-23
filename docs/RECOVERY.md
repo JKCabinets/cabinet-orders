@@ -1,12 +1,22 @@
 # Disaster Recovery Plan
 
 Last updated: 2026-05-20 · reviewed 2026-10-29 · corrected 2026-11-03 (the
-cron scripts are in the repo)
+cron scripts are in the repo) · checked in part and corrected 2026-11-23 (item
+11)
 
-⚠ **REVIEWED 2026-10-29 — AND NEVER EXERCISED.** No recovery has been run from
-this document (OPERATIONS §12: "Test the Hetzner restore once"). Corrected that
-day: the domain replaces the old sslip.io addresses; the cron scripts and their
-schedule are NOT in the repo; Supabase's point-in-time recovery is unconfirmed.
+⚠ **CHECKED IN PART 2026-11-23 — A RESTORE STILL NEVER RUN** (item 11,
+`SESSION-HANDOFF-2026-11-06.md` §6.10–6.11). Checked: the files that exist
+only on the box and their copies; Hetzner's and Supabase's backups exist and
+run daily; nothing in the database acts on its own; Kamal's kept containers.
+Found and corrected: the laptop's `.env.kamal` copy was six months old, 12 of
+its 24 keys missing or different — refreshed; the password manager this
+document relied on never existed; a box restored from a backup comes up LIVE
+(Scenario 2); Scenario 1 has a faster path. **Not run:** a test restore of
+either backup — each needs a temporary paid copy (a server, a project), and
+Garrett declined both for now (2026-11-23: *"I don't want to create a new
+server just to test"*). (It said "REVIEWED 2026-10-29 — AND NEVER
+EXERCISED"; corrected that day: the domain replaced the sslip.io addresses,
+and the cron scripts and point-in-time recovery were recorded as gaps.)
 
 This document is the playbook for recovering the cabinet-orders app
 when something has gone seriously wrong. Read top to bottom.
@@ -21,7 +31,8 @@ Recovery scenarios, in rough order of likelihood:
 3. **Database corruption or accidental data loss on Supabase** — need to
    restore the database to a previous state.
 4. **Loss of laptop and all local backups** — extreme worst case. Need to
-   rebuild from password manager + GitHub + Hetzner + Supabase only.
+   rebuild from GitHub + Hetzner + Supabase only. ⚠ There is no password
+   manager (2026-11-23); this said "from password manager + GitHub + …".
 
 Each scenario has a section below.
 
@@ -34,31 +45,72 @@ Each scenario has a section below.
   OR). IPv4: `5.78.220.153`. Login: `ssh garrett@5.78.220.153`.
 - **HTTPS proxy:** kamal-proxy container on the same server, ports 80/443.
 - **Database:** Supabase project (see Supabase dashboard for the project
-  ref). Pro tier with daily backups. ⚠ Whether point-in-time recovery (PITR)
-  is enabled, and its retention, is UNCONFIRMED (OPERATIONS §12) — check
-  before relying on Scenario 3's PITR steps.
-- **Attachments:** Supabase Storage, bucket `order-attachments`. NOT
-  separately backed up (known gap).
+  ref). Pro tier: seven days of daily PHYSICAL backups, taken about 06:36 UTC
+  (checked 2026-11-23). **Point-in-time recovery (PITR) is OFF** — inferred
+  2026-11-23: the daily backups run, and Supabase stops them when PITR is on.
+  (This said PITR was "UNCONFIRMED".)
+- **Attachments:** Supabase Storage — `order-attachments`, `claim-photos`,
+  `team-avatars`. In NO backup: Supabase's backups hold only metadata about
+  them (its Backups page says so). Known gap — item 14, to design
+  (2026-11-23).
 - **DNS:** ordersjkcabinets2you.com — A record points to Hetzner IP.
 - **Deploy tooling:** Kamal 2.x running ON the server at
   `/home/garrett/cabinet-orders/`. Run `kamal deploy` from there.
 - **Secrets file:** `/home/garrett/cabinet-orders/.env.kamal` (mode 600,
-  gitignored). Backup copies: laptop at `~/backups/cabinet-orders/`,
-  password manager as secure note.
+  gitignored). Backup copy: the laptop, `~/backups/cabinet-orders/` — ⚠ **THE
+  ONLY COPY OFF THE BOX** besides Hetzner's seven days of backups. There is
+  no password manager (Garrett, 2026-11-23); this said "password manager as
+  secure note", which never existed. A second copy off the laptop: declined
+  for now (Garrett, 2026-11-23: *"Lets do 3 for now, and maybe later we can
+  add a password manager"*). `~/.cron-secret` is the `CRON_SECRET` line of
+  `.env.kamal` (checked 2026-11-23). Keep the copy current: below.
 - **Cron jobs:** user crontab on Hetzner, scripts in
   `/home/garrett/cron-jobs/` — ⚠ IN THE REPO SINCE 2026-11-02 (item 65):
   `scripts/cron/` holds `run-cron.sh`, `check-registry-token.sh` and the
   `crontab`. `healthchecks.map` is NOT in the repo (its URLs are credentials
-  in effect): its only copy is the box and its 7-day Hetzner backup
-  (OPERATIONS §11). The schedule is OMS-STATE
+  in effect): it is on the box, in its 7-day Hetzner backup, and since
+  2026-11-23 on the laptop beside `.env.kamal`. The schedule is OMS-STATE
   §6's table. (This said it "mirrors original `vercel.json`", which no longer
   exists.)
+
+## Keeping the copies off the box current
+
+The laptop holds a dated copy of each file that exists only on the box:
+`.env.kamal`, `.cron-secret` and `healthchecks.map`. **Re-copy them after any
+change to `.env.kamal` or the map** — the next is the GHCR token, due before
+2027-01-02 (OPERATIONS §5). On 2026-11-23 the only copy was from 2026-05-20,
+and 12 of the 24 keys in it were missing or different: a rebuild from it would
+not have deployed, verified a Shopify webhook, reached Help Scout, served
+either website form, synced Avis or posted the digest.
+
+From the laptop (Git Bash), each copy checked against the box's own hash:
+
+    D=~/backups/cabinet-orders && S=$(date +%Y%m%d) \
+    && for f in cabinet-orders/.env.kamal .cron-secret cron-jobs/healthchecks.map; do n=$(basename "$f"); ssh garrett@5.78.220.153 "cat ~/$f" > "$D/$n.$S" && [ "$(ssh garrett@5.78.220.153 "sha256sum < ~/$f" | cut -d' ' -f1)" = "$(sha256sum < "$D/$n.$S" | cut -d' ' -f1)" ] && echo "OK $n.$S" || { echo "MISMATCH or failure on $n -- delete $D/$n.$S and run again"; break; }; done; ls -A "$D"
+
+Expect three `OK` lines. Nothing is printed but names.
 
 ## Scenario 1: Bad deploy on Hetzner (rollback)
 
 Most likely scenario. You deployed code with a bug, app is misbehaving.
 
-Recovery: re-deploy a known-good earlier commit.
+**Fastest: switch back to a container Kamal kept** (added 2026-11-23, item
+11). Kamal keeps the stopped containers of the last five deploys beside the
+running one, each tagged with its commit's full SHA — on 2026-11-23 they
+reached two weeks back. `kamal rollback` starts one without building, so it
+works even when the build or GHCR is the thing that is broken:
+
+    ssh garrett@5.78.220.153
+    cd ~/cabinet-orders
+    docker ps -a --filter label=service=cabinet-orders --format '{{.Image}}  {{.Status}}'
+    kamal rollback <the full SHA of the last good one>
+
+Then the image check reads that SHA, and `main` is unchanged: fix forward, and
+the next deploy replaces it. ⚠ Not yet rehearsed here (item 11's part D, not
+run). Time to recover: about a minute.
+
+**If the good version is older than the kept containers:** re-deploy its
+commit.
 
     ssh garrett@5.78.220.153
     cd ~/cabinet-orders
@@ -72,11 +124,42 @@ After verifying the app is healthy again:
     # Then either revert the bad commit on main and push,
     # or leave the rollback in place and investigate the bug
 
-Time to recover: 3-5 minutes (most layers cache).
+⚠ Until `git checkout main`, `HEAD` is detached and every deploy chain's first
+check refuses it. Time to recover: 3-5 minutes (most layers cache).
 
 ## Scenario 2: Server compromised or destroyed
 
 Server is gone, suspect, or unrecoverable. Build a new one.
+
+⚠ **A BOX RESTORED FROM A HETZNER BACKUP IS LIVE THE MOMENT IT BOOTS** (found
+2026-11-23, item 11). Its crontab runs, and `run-cron.sh` calls production's
+own address (`APP_URL`, line 55) with the real cron secret and pings the real
+checks; Docker starts the app and kamal-proxy. Beside a running production, a
+copy would run its jobs a second time — claims to Help Scout within 15
+minutes; at 15:00 UTC the cabinet fulfilment, which marks lines shipped in
+Shopify — and ping checks green from the wrong machine.
+
+**From a backup** (the quicker path, when a backup is good and the account is
+reachable):
+1. Hetzner console → Firewalls → Create Firewall: inbound TCP 22 (and ICMP);
+   outbound ONE rule, ICMP — any outbound rule makes every other outbound
+   connection drop. ⚠ **Apply to must be EMPTY**: on 2026-11-23 the form
+   showed the production server selected there; applied to production, this
+   firewall closes the site and cuts it off from Supabase and Shopify.
+2. The server → Backups → the backup's ••• menu → Create new Server, with that
+   firewall chosen IN the create form (no firewall offered: stop). "Rebuild"
+   from a backup instead OVERWRITES the server's disk.
+3. SSH in; check the files (`.env.kamal`, `~/.cron-secret`,
+   `~/cron-jobs/healthchecks.map`) and `git log -1`.
+4. Only once the old server is gone or stopped: remove the firewall from the
+   new one, change DNS (below), and `kamal deploy` from `main`.
+
+⚠ **Backups are deleted with their server** (Hetzner's documentation). If the
+server itself may be deleted, convert a backup to a snapshot first — a
+snapshot is kept until deleted. A test of this path needs a temporary server
+at a small hourly charge; not run yet (2026-11-23).
+
+**From scratch**, when no backup will do:
 
 ### Provision new server
 
@@ -131,9 +214,10 @@ From your laptop:
 
     scp ~/backups/cabinet-orders/.env.kamal.YYYYMMDD garrett@NEW.IP:~/cabinet-orders/.env.kamal
 
-If laptop is also gone, restore from password manager: paste the contents
-of the secure note into a new `.env.kamal` on the server. Set mode 600:
-`chmod 600 ~/cabinet-orders/.env.kamal`.
+Set mode 600: `chmod 600 ~/cabinet-orders/.env.kamal`. If the laptop is also
+gone, there is no other copy — no password manager (2026-11-23): Scenario 4's
+last paragraph. (This said to paste it from the password manager's secure
+note.)
 
 `.kamal/secrets` comes back with the clone: it is tracked in git and holds no
 values — a loader that reads `.env.kamal` (OPERATIONS §5).
@@ -164,8 +248,9 @@ cutover.)
 65); the map does not.** Copy `scripts/cron/run-cron.sh` and
 `scripts/cron/check-registry-token.sh` into `~/cron-jobs/` (`chmod +x`), and
 install `scripts/cron/crontab` (`crontab scripts/cron/crontab`). Restore
-`~/cron-jobs/healthchecks.map` from the Hetzner backup (7 days) — or, if that
-is gone, rebuild it from healthchecks.io's checks (one line per route). Then
+`~/cron-jobs/healthchecks.map` from the laptop's copy (since 2026-11-23) or
+the Hetzner backup (7 days) — or, if both are gone, rebuild it from
+healthchecks.io's checks (one line per route). Then
 check the schedule against OMS-STATE §6's table. (This once said to copy
 `run-cron.sh` "from this repo" when it was not there, and to see
 `vercel.json`, which does not exist.)
@@ -190,7 +275,24 @@ Time to recover: 1-2 hours, mostly waiting for build steps.
 
 You need to restore Supabase to a previous point in time.
 
-### Restoring from Pro tier backup
+Seven days of daily physical backups, taken about 06:36 UTC; point-in-time
+recovery OFF (both 2026-11-23). The database has no `pg_cron` and no `pg_net`
+(2026-11-23), so a copy of it acts on nothing by itself.
+
+### First: restore to a NEW project (production untouched)
+
+Database → Backups → **Restore to new project** (beta, 2026-11-23): the chosen
+backup copied into a new project — the database, its roles and auth users;
+not Storage, API keys or auth settings. The cost shows before you confirm.
+Look at the copy, take what was lost from it, or decide a full restore is
+needed; then delete the copy (while it exists it is a second full copy of the
+customer data). Not run yet: it needs a temporary project at a small hourly
+charge (2026-11-23).
+
+### Restoring from Pro tier backup — OVER production
+
+⚠ This replaces production's database: everything since the backup is lost,
+and the project is down while it runs.
 
 1. Supabase dashboard → your project → Database → Backups
 2. Choose the most recent backup taken BEFORE the data loss
@@ -201,8 +303,10 @@ You need to restore Supabase to a previous point in time.
 
 ### Point-in-time recovery (PITR)
 
-⚠ Only if PITR is enabled — unconfirmed (OPERATIONS §12). For losses you
-discovered quickly:
+⚠ **PITR is OFF** (2026-11-23), so this does not apply. Adding it is a cost
+decision — about $100 a month for seven days (Supabase, 2026-11-18) — and
+with it the daily backups stop. (This said "unconfirmed".) If it is ever
+enabled, for losses you discovered quickly:
 
 1. Supabase dashboard → Database → Point-in-time Recovery
 2. Choose a time just BEFORE the loss and follow Supabase's prompts. (The steps
@@ -214,7 +318,7 @@ discovered quickly:
 Supabase database backups do NOT include the storage buckets
 (`order-attachments`, `claim-photos`, `team-avatars`). If your data loss
 involved files, the rows that name them are restorable but the files
-themselves may not be. Known gap.
+themselves may not be. Known gap — item 14, to design (2026-11-23).
 
 ## Scenario 4: Lost laptop and all local backups
 
@@ -228,23 +332,28 @@ Worst case. Recovery uses only cloud-hosted resources.
 
 - Hetzner: server with current `.env.kamal` (assuming it's up)
 - Supabase: data + backups
-- Password manager: `.env.kamal` contents as a secure note
+- ⚠ No password manager (Garrett, 2026-11-23). This listed "`.env.kamal`
+  contents as a secure note", which never existed. The SSH key and the
+  copies of `.env.kamal`, `.cron-secret` and `healthchecks.map` were on the
+  laptop only.
 
 ### Recovery steps
 
 
 1. Get a new laptop
 2. Install Git, Git Bash, SSH client
-3. Restore SSH private key from password manager
-4. If you've lost SSH access entirely, use Hetzner's web console to add a
-   new SSH key for `garrett`, then SSH in
-5. Pull the repo to your new laptop, copy `.env.kamal` from server or
-   password manager
+3. Make a new SSH key; there is no other copy of the old one
+4. Use Hetzner's web console to add the new key for `garrett`, then SSH in
+5. Pull the repo to your new laptop; copy `.env.kamal`, `.cron-secret` and
+   `healthchecks.map` from the server into a new `~/backups/cabinet-orders/`
+   ("Keeping the copies off the box current", above)
 6. Resume operations
 
-If the password manager is also lost: rotate all secrets to new values,
-re-acquire keys from Supabase/GitHub/Shopify dashboards, rebuild
-`.env.kamal`, deploy. Sessions invalidated; webhooks briefly fail.
+If the server is also gone — and its Hetzner backups go with it: rotate all
+secrets to new values, re-acquire keys from the Supabase, GitHub, Shopify,
+Help Scout, Turnstile, Upstash and healthchecks.io dashboards and from Avis,
+rebuild `.env.kamal`, deploy. Sessions invalidated; webhooks briefly fail.
+(This said "If the password manager is also lost".)
 
 ## Verification checklist after any recovery
 
@@ -274,5 +383,8 @@ Update this file when:
 - Recovery steps change because tooling changed
 - Backup strategy changes
 - After any actual recovery, with notes on what was harder than expected
+
+And after any change to `.env.kamal` or `healthchecks.map`, re-copy them to the
+laptop ("Keeping the copies off the box current").
 
 The best disaster recovery doc is one that's been used at least once.
