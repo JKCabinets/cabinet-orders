@@ -6,8 +6,8 @@ and 4c, each deployed and checked live. Item 5's record is in
 `SESSION-HANDOFF-2026-11-03.md` §6.3 (its home since its plan); this file points
 into it rather than copying it, and records the rest. ⚠ **AMENDED through
 2026-11-23** by the 2026-11-10/23 session: §4 items 1–4 done, items 8, 9, 10
-and 12 designed, built and LIVE, item 11 done in part (§6), the catalogue
-sync's one red (§6.4).
+and 12 designed, built and LIVE, item 11 done in part, item 6's first bundle
+designed (§6), the catalogue sync's one red (§6.4).
 
 ## 0. A new session, first
 
@@ -25,13 +25,13 @@ sync's one red (§6.4).
 ## 1. Where things stand
 
 **The box** (`5.78.220.153`, `~/cabinet-orders`, `main`): `HEAD` is *"Docs:
-item 11, recovery checked in part (2026-11-23)"*, `HEAD~1` `7f87441` *"Docs:
-item 11 designed (2026-11-23)"*, `HEAD~2` `105a12c` *"Docs: item 12 live
-(2026-11-18)"*, `HEAD~3` `75c9c55` *"Item 12: the band's line rows, drawn at
-once (2026-11-18)"* (deployed), `HEAD~4` `af65791` *"Docs: item 10 live, item
-12 designed (2026-11-18)"*, `HEAD~5` `5e32f74` *"Item 10: one waiting line
-named once (2026-11-17)"* (deployed), `HEAD~6` `1d915f5` *"Docs: item 10,
-designed (2026-11-17)"*. **The next chain checks: `HEAD`'s
+item 6 bundle 1 designed (2026-11-23)"*, `HEAD~1` `c9c701b` *"Docs: item
+11, recovery checked in part (2026-11-23)"*, `HEAD~2` `7f87441` *"Docs: item
+11 designed (2026-11-23)"*, `HEAD~3` `105a12c` *"Docs: item 12 live
+(2026-11-18)"*, `HEAD~4` `75c9c55` *"Item 12: the band's line rows, drawn at
+once (2026-11-18)"* (deployed), `HEAD~5` `af65791` *"Docs: item 10 live, item
+12 designed (2026-11-18)"*, `HEAD~6` `5e32f74` *"Item 10: one waiting line
+named once (2026-11-17)"* (deployed). **The next chain checks: `HEAD`'s
 subject is that one, tree clean.** ⚠ **The running image is `75c9c55`, item
 12** (§6.9); against this docs `HEAD` the image check reads MISMATCH until the
 next deploy, by design. The 2026-11-04/06
@@ -205,7 +205,16 @@ migration probed, transcribed and proven first.
      (attachments, acknowledgments' kept files, signed receipts, claim
      photos) exists in one place. RECOVERY calls it a known gap. Its own
      item, to design.
-6. **Found this session, left for their own look:** the admin home's warning
+6. ⚠ **IN THREE BUNDLES (Garrett, 2026-11-23: "lets proceed with your
+   recommendations").** Bundle 1, what staff screens show wrong — the
+   backorders sort, the calendar's saves, the strip's claim, the projects
+   page's attention, the back-on date, `missing_mod_value` — **DESIGNED
+   2026-11-23 (§6.12)**. Bundle 2, the quiet admin and ops failures — the
+   admin Shopify page, the admin home's warning, `cron.log`'s ping ids.
+   Bundle 3, one rule everywhere — Waypoint's three tests, the vendor sorts,
+   the raw ISO dates. Recorded only: the sync's retry, the product webhooks,
+   the system map's line (Garrett's to edit).
+   **Found this session, left for their own look:** the admin home's warning
    of orders "with no total recorded — backfill via Shopify sync" names the
    wrong tool; the admin Shopify page shows nothing when a sync fails (`if
    (data.ok)`, an empty `catch`); no product create or delete webhook is
@@ -294,7 +303,7 @@ before any code (`3eab9e5`); built together, one commit each, one deploy, item
 (§6.4), the ingestion check's 0 and 0 (§6.5), item 10's design (§6.6), item
 10 as built and live (§6.7), item 12's design (§6.8), item 12 as built and
 live (§6.9), item 11's design, with its read-only part's facts (§6.10), and
-item 11 as done (§6.11).
+item 11 as done (§6.11), and item 6's first bundle's design (§6.12).
 
 ### 6.1 Item 8 — Arizona's "today". DESIGN, agreed 2026-11-10
 
@@ -850,4 +859,75 @@ and §12: the restore and point-in-time items closed or updated.
   the laptop; §11 and §12 updated.
 - **Still open from it:** a tested restore (OPERATIONS §12); a second copy off
   the laptop (a password manager, later perhaps); item 14.
+
+### 6.12 Item 6, bundle 1 — what staff screens show wrong. DESIGN, agreed 2026-11-23
+
+Garrett: *"Everything looks good"*, with one change — the back-on date reads
+MM/DD/YYYY (*"I prefer mm/dd/yyyy"*). One deploy, ten files.
+
+**Read whole:** `lib/backorders` (169 lines), `app/calendar/page.tsx` (706),
+`app/projects/ProjectsClient.tsx` (694), `lib/attention` (393),
+`lib/useOrderEnrichment` (123), `lib/dates` (122). **In part, for their
+facts:** the order route's PATCH (lines 110–1157: its refusals and its Shopify
+answer), the store's `updateOrderDetails`, `OrderModal`'s claim and strip
+(read whole for item 9), the three back-on renderings, both review-label maps
+and where `missing_mod_value` is set. **Read whole before building:**
+`OrderModal`, `OrderDetails`, the export route, `ProfileView`,
+`ProfileSummary`, the team page.
+
+1. **The backorders sort** (`lib/backorders` line 112). "Oldest first" ran
+   `Date.parse()` on `orders.date`, a display string with no year ("Nov 18"),
+   which V8 reads as 2001: from January, January's orders sort before
+   December's, and orders a year apart collide. → Sorted on `created_at`,
+   which every row carries and whose Phoenix day is the day `orders.date`
+   shows (`lib/dates`, checked 2026-10-19); ties by id. The counts, the
+   overdue and undated flags and the SKU ranking unchanged.
+2. **The calendar's saves** (`app/calendar/page.tsx`). The delivery save
+   closed the editor without reading the answer; the production save closed
+   it on a refusal too, and for a Shopify order said "Shopify sync failed"
+   when nothing had been saved. A mixed order's dates are per line, so the
+   calendar's one pair is refused ("The order's finish must be the latest
+   vendor's…", 422); a locked vendor date is refused (409); archived and
+   someone else's claimed work before either. And on a save it said "Synced to
+   Shopify" without asking — the route answers `shopify_synced` and
+   `shopify_error`. → On a refusal the editor stays open with the server's
+   sentence under Save, and no Shopify status. On a save it closes: "Synced
+   to Shopify" only on `shopify_synced: true`, "Saved — Shopify sync failed"
+   on `false`, nothing more when no Shopify write happened. What is sent is
+   unchanged (the scheduled delivery date alone); Realtime still updates the
+   page.
+3. **The strip's claim** (`OrderModal`, `GroupStrip`). It read `g.claimed_by`,
+   null on every Shopify group since 2026-08-25, so every group of a claimed
+   purchase read "unclaimed"; the strip shows only for two or more groups, so
+   always a purchase. → It takes `resolvedClaimedBy`, the owner the modal
+   resolves through the purchase — the header's answer — on every group, as
+   the projects page does.
+4. **The projects page's attention** (`ProjectsClient` lines 132 and 607). Its
+   own list, `attentionFor(g)` with no enrichment and no purchase-level
+   "Unclaimed", so its count, filter and lead missed the acknowledgment and
+   receipt reasons and unclaimed purchases that the work queue and dashboard
+   show. → `attentionForProject(project, groups, now, enrich)` with
+   `useOrderEnrichment`, the queue's and the dashboard's own call; each
+   expanded group's line `attentionFor(g, enrich(g))`. The count may rise on
+   deploy, to the dashboard's; the two joined reasons arrive a moment after
+   the page draws, as on the queue.
+5. **The back-on date** (the team page, `ProfileView`, `ProfileSummary`).
+   `new Date("2026-11-30")` is UTC midnight, 5 p.m. the 29th in Arizona: "Back
+   Nov 29". → `lib/dates`' `formatMDY`, built from the date's own parts:
+   "Back 11/30/2026", all three (Garrett: MM/DD/YYYY).
+6. **`missing_mod_value`** read "Review" on screen and "review" on the vendor
+   PDF: both copies of the labels lacked it. → One map in a new pure module,
+   `lib/reviewReasons.ts`, typed so every `ReviewReason` must have a label (a
+   new reason without one fails the typecheck); `OrderDetails` and the export
+   route import it; unknown old values keep the fallback. Label "Missing
+   modification value"; help "A modification on this line is missing its
+   depth value. Confirm it with the customer before the order is placed."
+
+**The proof, the deployed code as the control, each in both trees:** the sort
+across December and January; the real calendar page — a refusal, a save
+synced, a save whose Shopify write failed, a save with nothing to sync; the
+real modal on a claimed two-group purchase; the real projects page against
+`attentionForProject` for the same data; the three back-on renderings at
+Arizona's clock; both labels for `missing_mod_value`. The typecheck with a
+planted error in each changed file; the patch on box-shaped trees.
 
