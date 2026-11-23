@@ -7,7 +7,8 @@ and 4c, each deployed and checked live. Item 5's record is in
 into it rather than copying it, and records the rest. ⚠ **AMENDED through
 2026-11-23** by the 2026-11-10/23 session: §4 items 1–4 done, items 8, 9, 10
 and 12 designed, built and LIVE, item 11 done in part, item 6's first bundle
-designed, built and LIVE (§6), the catalogue sync's one red (§6.4).
+designed, built and LIVE and its second designed (§6), the catalogue sync's
+one red (§6.4).
 
 ## 0. A new session, first
 
@@ -25,14 +26,14 @@ designed, built and LIVE (§6), the catalogue sync's one red (§6.4).
 ## 1. Where things stand
 
 **The box** (`5.78.220.153`, `~/cabinet-orders`, `main`): `HEAD` is *"Docs:
-item 6 bundle 1 live (2026-11-23)"*, `HEAD~1` `bb297fc` *"Item 6, bundle 1:
-what staff screens show wrong (2026-11-23)"* (deployed), `HEAD~2` `1a495a7`
-*"Docs: item 6 bundle 1 designed (2026-11-23)"*, `HEAD~3` `c9c701b` *"Docs:
-item 11, recovery checked in part (2026-11-23)"*, `HEAD~4` `7f87441` *"Docs:
-item 11 designed (2026-11-23)"*, `HEAD~5` `105a12c` *"Docs: item 12 live
-(2026-11-18)"*, `HEAD~6` `75c9c55` *"Item 12: the band's line rows, drawn at
-once (2026-11-18)"* (deployed). **The next chain checks: `HEAD`'s subject is
-that one, tree clean.** ⚠ **The running image is `bb297fc`, item 6's first
+item 6 bundle 2 designed (2026-11-23)"*, `HEAD~1` *"Docs: item 6 bundle 1
+live (2026-11-23)"*, `HEAD~2` `bb297fc` *"Item 6, bundle 1: what staff
+screens show wrong (2026-11-23)"* (deployed), `HEAD~3` `1a495a7` *"Docs: item
+6 bundle 1 designed (2026-11-23)"*, `HEAD~4` `c9c701b` *"Docs: item 11,
+recovery checked in part (2026-11-23)"*, `HEAD~5` `7f87441` *"Docs: item 11
+designed (2026-11-23)"*, `HEAD~6` `105a12c` *"Docs: item 12 live
+(2026-11-18)"*. **The next chain checks: `HEAD`'s subject is that one, tree
+clean.** ⚠ **The running image is `bb297fc`, item 6's first
 bundle** (§6.13); against this docs `HEAD` the image check reads MISMATCH
 until the next deploy, by design. The 2026-11-04/06
 session's commits — `git log --oneline
@@ -212,7 +213,8 @@ migration probed, transcribed and proven first.
    page's attention, the back-on date, `missing_mod_value` — ✅ **DONE:
    designed 2026-11-23 (§6.12), built, deployed and LIVE (§6.13).** Bundle 2,
    the quiet admin and ops failures — the admin Shopify page, the admin home's
-   warning, `cron.log`'s ping ids.
+   warning, `cron.log`'s ping ids, and the calendar's delivery save (found
+   building bundle 1) — **DESIGNED 2026-11-23 (§6.14)**.
    Bundle 3, one rule everywhere — Waypoint's three tests, the vendor sorts,
    the raw ISO dates. Recorded only: the sync's retry, the product webhooks,
    the system map's line (Garrett's to edit).
@@ -272,7 +274,20 @@ migration probed, transcribed and proven first.
      notes, and the route syncs on either being present — and the calendar
      shows nothing of Shopify's answer, so a failed write there is silent.
      Bundle 1 gave the production card its true line only, as designed; the
-     delivery card never had one. A candidate for bundle 2, Garrett's call.
+     delivery card never had one. In bundle 2 (Garrett: *"I agree, In"*).
+   **Found 2026-11-23, designing bundle 2 — for later** (Garrett: *"We can
+   work on these later"*):
+   - Revenue's month and year begin at UTC midnight
+     (`app/api/admin/revenue/route.ts` lines 35–40) — 5 p.m. Arizona — so an
+     order placed the last evening of a month counts in the next, and on
+     12/31 in the next year. Bundle 3's rule.
+   - The revenue route admits any signed-in member (`requireAuth`, line 72);
+     only `/admin` reads it, and every other admin-only route requires an
+     admin. `/api/admin/health` is the other `requireAuth`, but the dashboard
+     reads health for everyone.
+   - The unpriced count includes refunded purchases, which the sums leave out.
+   - The Shopify page's "No vendor" choice is `""`, the same as "All
+     vendors": it lists every product.
 7. **The website team's answers (2026-11-09)** to the questions sent as the
    10-29 record has them — that notifications plan stands:
    - **Quote requests:** the website sends each only to the OMS's quote
@@ -312,8 +327,8 @@ before any code (`3eab9e5`); built together, one commit each, one deploy, item
 (§6.4), the ingestion check's 0 and 0 (§6.5), item 10's design (§6.6), item
 10 as built and live (§6.7), item 12's design (§6.8), item 12 as built and
 live (§6.9), item 11's design, with its read-only part's facts (§6.10), and
-item 11 as done (§6.11), item 6's first bundle's design (§6.12), and that
-bundle as built and live (§6.13).
+item 11 as done (§6.11), item 6's first bundle's design (§6.12), that
+bundle as built and live (§6.13), and the second bundle's design (§6.14).
 
 ### 6.1 Item 8 — Arizona's "today". DESIGN, agreed 2026-11-10
 
@@ -1025,3 +1040,73 @@ planted error in each changed file; the patch on box-shaped trees.
   were not exercised live; each as proven above.
 - **The harness:** `harness-2026-11-23.tar.gz` (sha256 `34ab4e13…`) carries
   items 10, 12 and this bundle's files (§0).
+
+### 6.14 Item 6, bundle 2 — the quiet admin and ops failures. DESIGN, agreed 2026-11-23
+
+Garrett: *"1) Agreed 2) Agreed 3) Yes 4) I agree, In 5) We can work on these
+later"*. One deploy: four app files, and `run-cron.sh` installed on the box by
+the chain.
+
+**Read whole:** `app/admin/shopify/page.tsx` (278 lines),
+`app/api/shopify/sync/route.ts` (87), `app/admin/page.tsx` (346),
+`app/api/admin/revenue/route.ts` (123), `scripts/cron/run-cron.sh` (161),
+`scripts/cron/check-registry-token.sh` (123), `scripts/cron/crontab` (65); the
+calendar page as bundle 1 left it. **In part, for their facts:**
+`lib/shopifyCatalogue`'s `runCatalogueSync` and its answers (lines 290–341);
+the order webhook's money (lines 426–458, 824–872); OPERATIONS §6.
+
+1. **The admin Shopify page** (`app/admin/shopify/page.tsx`). "Sync SKUs"
+   acted only on `data.ok` (line 55), under an empty `catch` (59): a refused or
+   failed sync — the 15 s read that turned the check red on 11-17 among them —
+   stopped the spinner and said nothing. A failed load (`if (data.data)`, line
+   39; an empty `catch`, 45) showed "No products synced yet — Click Sync SKUs
+   to pull products from Shopify": false, and an invitation to sync. The
+   vendor list (line 180) ran the previous render's fetch, which holds the
+   vendor chosen before: each pick listed the one before it. → A refusal reads
+   "Sync failed: " and the server's reason ("HTTP n" when it gives none), and
+   the list reloads — a sync can fail after writing part, and the "Synced"
+   time should say what is stored. No answer reads "No answer from the server
+   — the sync may still have run. Reload in a minute to see its time." A
+   failed load reads "Could not load the catalogue: " and its reason, with Try
+   again, in place of the stats and the list. The vendor list fetches the
+   vendor chosen.
+2. **The admin home's warning** (`app/admin/page.tsx` line 93). "backfill via
+   Shopify sync" names a tool that never wrote a total: the sync is the
+   product catalogue, and a purchase's total is written by the order webhook
+   on every create and update. → "⚠ N order(s) with no total recorded —
+   counted as $0 here. Shopify's next update of the order writes it." The
+   count read 0 when its query failed (`app/api/admin/revenue/route.ts` line
+   121), hiding the warning exactly when it cannot know → the failure fails
+   the route, and the panel says "Could not load revenue".
+3. **`cron.log`'s ping ids** (`run-cron.sh` line 157). A ping that could not be
+   sent was logged as its target with the last part cut — `/fail`, from a
+   failure ping, leaving the check's id. → The line names the kind, never the
+   address: `ping_failed http=… ping=success|fail` (the endpoint already names
+   the check). The chain installs the script into `~/cron-jobs` by a copy and a
+   rename, hash-checked — a run starting meanwhile reads the old file or the
+   new, never half — and the cron diff then reads CRON MATCHES. The ids
+   already logged (33 lines, 2026-11-05) are overwritten in place, each
+   `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`: the same bytes, the same length, so
+   a line a job appends meanwhile cannot be lost and the line count holds; the
+   chain prints counts, never an id. The four checks are not replaced: the ids
+   left the box only in the logs uploaded to these sessions (11-06, 11-17),
+   private, in a sandbox since reset.
+4. **The calendar's delivery save** (found building bundle 1, §4 item 6). It
+   writes to Shopify on every save of a group carrying the order's id, and
+   showed nothing of the answer. → It reads `shopify_synced` as the production
+   save does, and the delivery card gets the production card's line — "Synced
+   to Shopify", "Saved — Shopify sync failed", nothing more when no Shopify
+   write happened: one status per order, the last save's answer, on both
+   cards.
+
+**Recorded, for later:** §4 item 6, "Found 2026-11-23, designing bundle 2".
+
+**The proof, the deployed code as the control, each in both trees:** the real
+admin Shopify page — a sync answered, refused, not JSON, unanswered; a load
+answered, refused, unanswered; two vendor picks in a row; the real revenue
+panel's warning, and the real revenue route on the sandbox's PostgreSQL with
+the count's query failing; `run-cron.sh` in a stand-in home, a stand-in curl
+failing the job and its ping; the overwrite on a copy of a log with made-up
+ids while lines are appended; the real calendar's delivery card — synced,
+failed, no write. The typecheck with a planted error in each changed file; the
+patch on box-shaped trees.
