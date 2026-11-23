@@ -137,8 +137,10 @@ echo "[$TS] ${ENDPOINT} rc=${RC} response=${RESPONSE}" >> "$HOME/cron-jobs/cron.
 if [ -n "$PING_URL" ]; then
   if [ "$RC" -eq 0 ]; then
     PING_TARGET="$PING_URL"
+    PING_KIND="success"
   else
     PING_TARGET="${PING_URL}/fail"
+    PING_KIND="fail"
   fi
 
   # ⚠ STILL BEST-EFFORT -- the job's exit status is never touched by a
@@ -151,10 +153,15 @@ if [ -n "$PING_URL" ]; then
   # A transient failure (healthchecks.io briefly unreachable) is logged and
   # nothing more -- it is not worth an email. A MISCONFIGURED url is caught
   # above, where it is loud.
+  #
+  # ⚠ THE KIND, NEVER THE ADDRESS (2026-11-23, item 6 bundle 2). This logged
+  # the target with its last part cut -- which, for a /fail ping, cut "/fail"
+  # and left the check's id in cron.log (33 lines from 2026-11-05), and an id
+  # lets anyone ping its check green. The endpoint already names the check.
   PING_CODE=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "$PING_TARGET" 2>/dev/null) || PING_CODE="000"
   case "$PING_CODE" in
     2*) ;;
-    *)  echo "[$TS] ${ENDPOINT} ping_failed http=${PING_CODE} target=${PING_TARGET%/*}/…" >> "$HOME/cron-jobs/cron.log" ;;
+    *)  echo "[$TS] ${ENDPOINT} ping_failed http=${PING_CODE} ping=${PING_KIND}" >> "$HOME/cron-jobs/cron.log" ;;
   esac
 fi
 

@@ -88,9 +88,14 @@ function RevenuePanel() {
               {unpriced > 0 && (
                 /* A project ingested before the money columns existed sums as
                    zero while being a real order. Saying how many are missing
-                   beats a total that quietly omits them. */
+                   beats a total that quietly omits them.
+                   ⚠ WHAT WRITES IT (2026-11-23, item 6 bundle 2): the order
+                   webhook, on every create and update from Shopify. This said
+                   "backfill via Shopify sync" -- the product catalogue's sync,
+                   which has never written a total. */
                 <p className="text-[10px] mt-1.5" style={{ color: "#e8b56a" }}>
-                  ⚠ {unpriced} order{unpriced === 1 ? "" : "s"} with no total recorded — backfill via Shopify sync
+                  ⚠ {unpriced} order{unpriced === 1 ? "" : "s"} with no total recorded — counted as $0 here.
+                  {" "}Shopify&apos;s next update of {unpriced === 1 ? "the order" : "each order"} writes it.
                 </p>
               )}
             </div>

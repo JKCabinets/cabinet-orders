@@ -112,12 +112,18 @@ export async function GET(req: NextRequest) {
   }
 }
 
+/**
+ * ⚠ A FAILED COUNT FAILS THE ANSWER (2026-11-23, item 6 bundle 2). It returned
+ * 0, which hid the "no total recorded" warning exactly when the count could not
+ * know -- the silence this panel exists to avoid. It now throws, the GET above
+ * answers 500, and the panel says "Could not load revenue".
+ */
 async function unpricedProjects(since: string): Promise<number> {
   const { count, error } = await supabase
     .from("projects")
     .select("id", { count: "exact", head: true })
     .is("total_price", null)
     .gte("created_at", since);
-  if (error) return 0;
+  if (error) throw new Error(error.message);
   return count ?? 0;
 }

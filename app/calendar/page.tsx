@@ -147,9 +147,36 @@ export default function CalendarPage() {
     setSaveError(null);
   }
 
+  /**
+   * The Shopify line's state for one order, set by EITHER save (2026-11-23,
+   * item 6 bundle 2 -- the delivery save had none): "syncing" while it runs,
+   * then what the route answered -- "synced", "error" (saved, but the Shopify
+   * write failed), or no state when the save was refused or wrote nothing to
+   * Shopify. One per order: the last save's answer, on both cards.
+   */
+  function shopifyStarted(orderId: string) {
+    const order = orders.find(o => o.id === orderId);
+    if (order && syncsToShopify(order)) setShopifyStatus(s => ({ ...s, [orderId]: "syncing" }));
+  }
+  function shopifyAnswered(orderId: string, synced: boolean | undefined) {
+    // ⚠ WHAT SHOPIFY SAID, NOT WHAT WAS HOPED. "Synced to Shopify" was shown
+    // for any save that was not refused, without asking whether a Shopify
+    // write had happened, or landed; and "Shopify sync failed" for a refusal,
+    // when nothing had been saved at all.
+    if (synced === true) setShopifyStatus(s => ({ ...s, [orderId]: "synced" }));
+    else if (synced === false) setShopifyStatus(s => ({ ...s, [orderId]: "error" }));
+    else setShopifyStatus(s => {
+      const { [orderId]: _dropped, ...rest } = s;
+      return rest;
+    });
+  }
+
   async function saveDelivery(orderId: string) {
     setSaving(true);
     setSaveError(null);
+    // It writes to Shopify too: the route syncs on the window and the notes,
+    // which this always sends.
+    shopifyStarted(orderId);
     try {
       const res = await fetch(`/api/orders/${orderId}`, {
         method: "PATCH",
@@ -187,11 +214,17 @@ export default function CalendarPage() {
       });
       // A refusal keeps the editor open on the server's sentence (readSave).
       const answer = await readSave(res);
-      if (answer.refused !== null) { setSaveError(answer.refused); return; }
+      if (answer.refused !== null) {
+        shopifyAnswered(orderId, undefined);
+        setSaveError(answer.refused);
+        return;
+      }
+      shopifyAnswered(orderId, answer.shopifySynced);
       // The store owns the row; Realtime delivers the change. Mirroring it
       // into local state is what made this page a second source of truth.
       closeEditor();
     } catch {
+      shopifyAnswered(orderId, undefined);
       setSaveError(NO_ANSWER);
     } finally {
       setSaving(false);
@@ -201,16 +234,7 @@ export default function CalendarPage() {
   async function saveProductionDates(orderId: string) {
     setSaving(true);
     setSaveError(null);
-    const order = orders.find(o => o.id === orderId);
-    const isShopify = order ? syncsToShopify(order) : false;
-    if (isShopify) setShopifyStatus(s => ({ ...s, [orderId]: "syncing" }));
-    // No Shopify line for this order: after a refusal, or a save that wrote
-    // nothing to Shopify. It said "Shopify sync failed" for a refusal, when
-    // nothing had been saved at all.
-    const noStatus = () => setShopifyStatus(s => {
-      const { [orderId]: _dropped, ...rest } = s;
-      return rest;
-    });
+    shopifyStarted(orderId);
     try {
       const res = await fetch(`/api/orders/${orderId}`, {
         method: "PATCH",
@@ -222,20 +246,15 @@ export default function CalendarPage() {
       });
       const answer = await readSave(res);
       if (answer.refused !== null) {
-        noStatus();
+        shopifyAnswered(orderId, undefined);
         setSaveError(answer.refused);
         return;
       }
-      // ⚠ WHAT SHOPIFY SAID, NOT WHAT WAS HOPED. "Synced to Shopify" was shown
-      // for any save that was not refused, without asking whether a Shopify
-      // write had happened, or landed.
-      if (answer.shopifySynced === true) setShopifyStatus(s => ({ ...s, [orderId]: "synced" }));
-      else if (answer.shopifySynced === false) setShopifyStatus(s => ({ ...s, [orderId]: "error" }));
-      else noStatus();
+      shopifyAnswered(orderId, answer.shopifySynced);
       // Realtime carries the row back through the store, same as above.
       closeEditor();
     } catch {
-      noStatus();
+      shopifyAnswered(orderId, undefined);
       setSaveError(NO_ANSWER);
     } finally {
       setSaving(false);
@@ -453,6 +472,7 @@ export default function CalendarPage() {
                       editNotes={editNotes}
                       saving={saving}
                       saveError={saveError}
+                      shopifyStatus={shopifyStatus[o.id]}
                       selectedDateStr={selectedDateStr}
                       onEdit={() => openEditDelivery(o, selectedDateStr)}
                       onCancel={closeEditor}
@@ -611,6 +631,29 @@ export default function CalendarPage() {
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
+/**
+ * What Shopify said to this order's last save, on the production card and
+ * (since 2026-11-23, item 6 bundle 2) the delivery card -- the same words in
+ * both, from the same state.
+ */
+function ShopifyLine({ status }: { status?: "syncing" | "synced" | "error" }) {
+  return (
+    <div className="mt-1.5">
+      {status === "syncing" && <span className="text-[9px] text-violet-400">Syncing to Shopify…</span>}
+      {status === "synced" && (
+        <span className="text-[9px] text-emerald-400 flex items-center gap-1">
+          <CheckCircle2 className="w-2.5 h-2.5" />Synced to Shopify
+        </span>
+      )}
+      {/* Saved in the OMS; only the Shopify write failed. It read
+          "Shopify sync failed" for a refusal too, when nothing
+          had been saved anywhere. */}
+      {status === "error" && <span className="text-[9px] text-red-400">Saved — Shopify sync failed</span>}
+      {!status && <span className="text-[9px] text-[rgba(232,227,218,0.25)]">Shopify order</span>}
+    </div>
+  );
+}
+
 /** The server's refusal, under Save, while the editor stays open. */
 function SaveRefusal({ sentence }: { sentence: string | null }) {
   if (!sentence) return null;
@@ -683,21 +726,7 @@ function ProductionOrderCard({
                   </div>
                 )}
               </div>
-              {syncsToShopify(order) && (
-                <div className="mt-1.5">
-                  {shopifyStatus === "syncing" && <span className="text-[9px] text-violet-400">Syncing to Shopify…</span>}
-                  {shopifyStatus === "synced" && (
-                    <span className="text-[9px] text-emerald-400 flex items-center gap-1">
-                      <CheckCircle2 className="w-2.5 h-2.5" />Synced to Shopify
-                    </span>
-                  )}
-                  {/* Saved in the OMS; only the Shopify write failed. It read
-                      "Shopify sync failed" for a refusal too, when nothing
-                      had been saved anywhere. */}
-                  {shopifyStatus === "error" && <span className="text-[9px] text-red-400">Saved — Shopify sync failed</span>}
-                  {!shopifyStatus && <span className="text-[9px] text-[rgba(232,227,218,0.25)]">Shopify order</span>}
-                </div>
-              )}
+              {syncsToShopify(order) && <ShopifyLine status={shopifyStatus} />}
             </div>
             <button onClick={onEdit} className="text-[10px] text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] transition-colors ml-2 shrink-0">
               Edit
@@ -713,7 +742,7 @@ function ProductionOrderCard({
 }
 
 function DeliveryOrderCard({
-  order, editing, editDeliveryDate, editWindow, editNotes, saving, saveError, selectedDateStr,
+  order, editing, editDeliveryDate, editWindow, editNotes, saving, saveError, shopifyStatus, selectedDateStr,
   onEdit, onCancel, onSave, setEditDeliveryDate, setEditWindow, setEditNotes,
 }: {
   order: CalendarOrder;
@@ -723,6 +752,7 @@ function DeliveryOrderCard({
   editNotes: string;
   saving: boolean;
   saveError: string | null;
+  shopifyStatus?: "syncing" | "synced" | "error";
   selectedDateStr: string | null;
   onEdit: () => void;
   onCancel: () => void;
@@ -774,6 +804,9 @@ function DeliveryOrderCard({
               <p className="text-[10px] text-[rgba(232,227,218,0.50)] mt-0.5">{order.detail}</p>
               {order.delivery_window && <p className="text-[10px] text-amber-400 mt-1">{order.delivery_window}</p>}
               {order.delivery_notes && <p className="text-[10px] text-[rgba(232,227,218,0.30)] mt-1">{order.delivery_notes}</p>}
+              {/* A delivery save writes to Shopify as well (2026-11-23, item 6
+                  bundle 2): what it answered, as on the production card. */}
+              {syncsToShopify(order) && <ShopifyLine status={shopifyStatus} />}
             </div>
             <button onClick={onEdit} className="text-[10px] text-[rgba(232,227,218,0.50)] hover:text-[#e8e3da] transition-colors ml-2 shrink-0">
               Edit
