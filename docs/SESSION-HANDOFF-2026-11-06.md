@@ -6,9 +6,8 @@ and 4c, each deployed and checked live. Item 5's record is in
 `SESSION-HANDOFF-2026-11-03.md` §6.3 (its home since its plan); this file points
 into it rather than copying it, and records the rest. ⚠ **AMENDED through
 2026-11-23** by the 2026-11-10/23 session: §4 items 1–4 done, items 8, 9, 10
-and 12 designed, built and LIVE, item 11 done in part, item 6's first and
-second bundles designed, built and LIVE and its third designed (§6), the
-catalogue sync's one red (§6.4).
+and 12 designed, built and LIVE, item 11 done in part, item 6's three
+bundles designed, built and LIVE (§6), the catalogue sync's one red (§6.4).
 
 ## 0. A new session, first
 
@@ -17,24 +16,26 @@ catalogue sync's one red (§6.4).
    cd ~/cabinet-orders && git archive --format=tar.gz -o ~/repo31.tar.gz HEAD && cd ~ && sha256sum repo31.tar.gz > repo31_tar_gz.sha256
    ```
 2. **Upload** `repo31.tar.gz`, `repo31_tar_gz.sha256`, this file, and the
-   harness archive `harness-2026-11-23b.tar.gz` (sha256 `836286a5…`) with its
-   `harness-2026-11-23b_tar_gz.sha256` — it carries items 10, 12 and item 6's
-   first two bundles' files (§6.13, §6.15). Check both hashes — by VALUE: an upload
+   harness archive `harness-2026-11-23c.tar.gz` (sha256 `4cd5c85f…`) with its
+   `harness-2026-11-23c_tar_gz.sha256` — it carries items 10, 12 and item 6's
+   three bundles' files (§6.13, §6.15, §6.17). Check both hashes — by VALUE: an upload
    renames `x.tar.gz` to `x_tar.gz`, so `sha256sum -c` fails on the name (§3).
 3. **Read this file whole**, then the method (§3), before any change.
 
 ## 1. Where things stand
 
 **The box** (`5.78.220.153`, `~/cabinet-orders`, `main`): `HEAD` is *"Docs:
-item 6 bundle 3 designed (2026-11-23)"*, `HEAD~1` `ec1c8da` *"Docs: item 6
-bundle 2 live (2026-11-23)"*, `HEAD~2` `0a80482` *"Item 6, bundle 2: the
-quiet admin and ops failures (2026-11-23)"* (deployed), `HEAD~3` `3b4d058`
-*"Docs: item 6 bundle 2 designed (2026-11-23)"*, `HEAD~4` `b648f61` *"Docs:
-item 6 bundle 1 live (2026-11-23)"*, `HEAD~5` `bb297fc` *"Item 6, bundle 1:
-what staff screens show wrong (2026-11-23)"* (deployed), `HEAD~6` `1a495a7`
+item 6 bundle 3 live (2026-11-23)"*, `HEAD~1` `0e1e4b2` *"Item 6, bundle 3:
+one rule everywhere (2026-11-23)"* (deployed), `HEAD~2` `9e29196` *"Docs:
+item 6 bundle 3 designed (2026-11-23)"*, `HEAD~3` `ec1c8da` *"Docs: item 6
+bundle 2 live (2026-11-23)"*, `HEAD~4` `0a80482` *"Item 6, bundle 2: the
+quiet admin and ops failures (2026-11-23)"* (deployed), `HEAD~5` `3b4d058`
+*"Docs: item 6 bundle 2 designed (2026-11-23)"*, `HEAD~6` `b648f61` *"Docs:
+item 6 bundle 1 live (2026-11-23)"*, `HEAD~7` `bb297fc` *"Item 6, bundle 1:
+what staff screens show wrong (2026-11-23)"* (deployed), `HEAD~8` `1a495a7`
 *"Docs: item 6 bundle 1 designed (2026-11-23)"*. **The next chain
 checks: `HEAD`'s subject is that one, tree clean.** ⚠ **The running image is
-`0a80482`, item 6's second bundle** (§6.15); against this docs `HEAD` the
+`0e1e4b2`, item 6's third bundle** (§6.17); against this docs `HEAD` the
 image check reads MISMATCH until the next deploy, by design.
 `~/cron-jobs/run-cron.sh` is bundle 2's (`2c3c64c7…`), installed by its chain;
 the deploy chain's cron diff checks it. The 2026-11-04/06
@@ -193,7 +194,8 @@ migration probed, transcribed and proven first.
      12"*). ✅ **DONE** — designed 2026-11-18 (§6.8); built, deployed and LIVE
      (§6.9). ✅ **11 DONE IN PART** — designed 2026-11-23 (§6.10); A and E
      done, B and C (the test restores) declined for now, D not run (§6.11).
-     Next, as planned: item 6's findings, then item 7; 13 and 14 open.
+     Next, as planned: item 7 — item 6's three bundles are done (§4 item 6,
+     §6.17); 13 and 14 open.
    - **13. The enrichment hook hides a failed request** (Garrett, designing
      item 12). `useOrderEnrichment` returns nothing on a refused or
      failed request — silent by design (`lib/useOrderEnrichment` lines 28–31,
@@ -220,8 +222,10 @@ migration probed, transcribed and proven first.
    deployed and LIVE (§6.15).**
    Bundle 3, one rule everywhere — Waypoint's three tests, the vendor sorts,
    the raw ISO dates, and with them two dates in "Nov 17" form and revenue's
-   month at Arizona midnight — **DESIGNED 2026-11-23 (§6.16)**. Recorded only: the sync's retry, the product webhooks,
-   the system map's line (Garrett's to edit).
+   month at Arizona midnight — ✅ **DONE: designed 2026-11-23 (§6.16), built,
+   deployed and LIVE (§6.17).** Recorded only: the sync's retry, the product webhooks,
+   the system map's line (Garrett's to edit); and with bundle 3, the admin
+   pages' own vendor orders and the Shopify page's "Synced" time (§6.16).
    **Found this session, left for their own look:** the admin home's warning
    of orders "with no total recorded — backfill via Shopify sync" names the
    wrong tool; the admin Shopify page shows nothing when a sync fails (`if
@@ -284,8 +288,8 @@ migration probed, transcribed and proven first.
    - Revenue's month and year begin at UTC midnight
      (`app/api/admin/revenue/route.ts` lines 35–40) — 5 p.m. Arizona — so an
      order placed the last evening of a month counts in the next, and on
-     12/31 in the next year. In bundle 3 (Garrett: *"Yes to at midnight"*,
-     §6.16).
+     12/31 in the next year. ✅ Done in bundle 3 (Garrett: *"Yes to at
+     midnight"*, §6.16, §6.17).
    - The revenue route admits any signed-in member (`requireAuth`, line 72);
      only `/admin` reads it, and every other admin-only route requires an
      admin. `/api/admin/health` is the other `requireAuth`, but the dashboard
@@ -339,7 +343,8 @@ before any code (`3eab9e5`); built together, one commit each, one deploy, item
 live (§6.9), item 11's design, with its read-only part's facts (§6.10), and
 item 11 as done (§6.11), item 6's first bundle's design (§6.12), that
 bundle as built and live (§6.13), the second bundle's design (§6.14), that
-bundle as built and live (§6.15), and the third bundle's design (§6.16).
+bundle as built and live (§6.15), the third bundle's design (§6.16), and
+that bundle as built and live (§6.17).
 
 ### 6.1 Item 8 — Arizona's "today". DESIGN, agreed 2026-11-10
 
@@ -1276,3 +1281,96 @@ Order sections and the PDF's headings under the default language and Danish;
 each date on its real screen; the real revenue route on the sandbox's
 PostgreSQL at 8 p.m. Arizona on Nov 30. The typecheck with a planted error in
 each changed file; the patch on box-shaped trees.
+
+### 6.17 Item 6, bundle 3 — AS BUILT, deployed, LIVE
+
+- **Before the build** (Garrett, 2026-11-23): the box's pins for the 16 files
+  the bundle touches or reads — PINS MATCH at `9e29196`.
+- **Built as designed** (§6.16), nine files —
+  `patch_item6_bundle3_one_rule_2026-11-23.py`, sha256 `acbc9dbb…`:
+  1. `components/AcknowledgmentPanel.tsx`: `isWaypoint` asks
+     `isWaypointVendor` (the file types and the wrong-file sentence follow
+     it); `lib/ackStatus.ts`: `hasWaypoint` asks it too.
+  2. `components/OrderDetails.tsx` (the Full Order sections) and the export
+     route (the PDF's headings, "Unassigned" still last): `compareVendorNames`.
+  3. `formatMDY`: the backorders page's "Earliest expected", "Latest" and
+     "Exp …"; `OrderTable`'s "Starts …", "Start …", "Ship from factory …",
+     "Sched …" and the Early Push confirmation; the backorder pill's state in
+     words; the calendar's "Started …" and "Est. finish …"; the projects
+     page's milestone date and "Est. / actual".
+  4. `stageDate`: the projects page's Date column and the acknowledgment
+     panel's upload day — the Arizona day, MM/DD/YYYY.
+  5. `app/api/admin/revenue/route.ts`: the month and the year start at
+     Arizona's midnight, from `arizonaToday()`, at −07:00.
+- **Proven, 48 checks, ALL PASS** — the box (`9e29196`, bundle 2 deployed) the
+  control, each test in a clean environment (the locale only what the case
+  gives):
+  - **Waypoint, twelve names** — `isWaypointVendor`, the REAL `useAckStatus`'s
+    `hasWaypoint`, the REAL panel's file types and what it says given a PDF:
+    the new code answers as the server for all twelve — the .xlsx and "Waypoint's
+    acknowledgment is its .xlsx spreadsheet" exactly where the server checks
+    the file, a PDF received exactly where it receives one. The control
+    disagreed on five: "Select Cabinetry" (the panel Waypoint, the status
+    not), "Select" and "select" (the panel Waypoint, the server not), "Select
+    (Waypoint) Cabinetry" and "Waypoint Cabinetry West" (the status Waypoint,
+    the server not). The names lines carry — Waypoint Cabinetry, HCI
+    Cabinetry, J&K Cabinetry, JK Cabinets 2 You — identical in both trees;
+  - **the vendors' order** — the REAL `OrderDetails` and the REAL export
+    route's GET on the sandbox's PostgreSQL, under the default language and
+    Danish: the new code one order in both places under both, the screen's
+    the PDF's ("Unassigned" last). The names in use: unchanged everywhere.
+    The hard names ("hci cabinetry" beside "HCI Cabinetry", "Øster",
+    "Zeta"): unchanged under the default; under Danish the control reordered
+    both screens — "Øster" after "Zeta", "HCI" before "hci";
+  - **the dates, on their REAL screens** at Arizona's 2026-11-23, the browser
+    in Phoenix, UTC and Tokyo: every one MM/DD/YYYY — "Starts 11/30/2026",
+    "Start 11/10/2026" / "Ship from factory 12/04/2026", "Sched 12/09/2026",
+    the Early Push "…until 12/04/2026.", "Earliest expected: 12/02/2026",
+    "Latest: 12/15/2026", "Exp 12/02/2026", "Ready (expected 11/20/2026)",
+    "Backordered until 12/04/2026", "Started 11/10/2026", "Est. finish
+    11/20/2026", the projects page's milestone and "Est. / actual", its Date
+    column "11/17/2026", the panel's "Received · 11/18/2026" — the same words
+    as the control's, the date's form the only change. The two from a time
+    (a purchase at 8:30 p.m. Arizona on the 17th, an upload at 8:30 p.m. on
+    the 18th): the control read "Nov 17, 2026" and "· Nov 18" in Phoenix, and
+    "Nov 18, 2026" and "· Nov 19" in UTC and Tokyo — a day late; the new code
+    the Arizona day in all three;
+  - **the REAL revenue route on PostgreSQL**, what its test rows add, the
+    server's zone UTC and Phoenix: on an ordinary afternoon identical. At 8
+    p.m. Arizona on Nov 30 the new code's month holds November — 1,500, four
+    orders, the Nov 10 purchase and that evening's three; the control's, 500
+    — December's evening, Nov 10 gone. 11:59:59 p.m. the same; at midnight
+    Arizona, Dec 1, the new month starts empty. At 8 p.m. on Dec 31 the new
+    year holds 2026's 2,050; the control's held 50;
+  - **bundles 1 and 2's tests on these files:** the vendor PDF (byte for
+    byte), the projects page, the review labels, the order modal, the
+    calendar's 32 cases, the delivery card, the revenue route both ways —
+    identical.
+- **Typecheck:** `next typegen`, then `tsc`: both trees' error sets identical
+  (the sandbox's one `xlsx`, §3); a planted error caught in each of the nine
+  files.
+- **The patch:** `--check` writes nothing; it applies byte-identical to the
+  tested tree, re-runs ALREADY APPLIED; a broken anchor and another base each
+  MISS with nothing written; no sandbox path. The chain itself ran first on a
+  stand-in box (a copy of the control as a git repository with a bare
+  remote): nine files staged and committed; with the wrong `HEAD` it stopped,
+  nothing changed.
+- **Deployed** (Garrett, 2026-11-23): `0e1e4b2`, through the chain — the pins,
+  `next typegen`, `tsc`, nine files staged — then the cron diffs (CRON
+  MATCHES) and `kamal deploy`. Checked after: tree clean, the nine files at
+  their pins, CRON MATCHES, LIVE IMAGE IS `0e1e4b2`. (The box's `sha256sum`
+  prints the export route's name in quotes, for its brackets; it read OK.)
+- **LIVE** (Garrett, 2026-11-23): the projects page's Date column reads
+  "11/17/2026" for SHO-1079, where it read "Nov 17, 2026"; SHO-1079's modal,
+  its one HCI line: "Upload theirs, a PDF or Excel file". The rest has nothing
+  live to show it yet — SHO-1079 has no production or delivery dates, no
+  backordered line, no acknowledgment uploaded, one vendor — and revenue's
+  month turns at Arizona midnight on Nov 30: `/admin` after 5 p.m. that day
+  should still read November. Each as proven above.
+- **A note on "Select (Waypoint) Cabinetry"**, the string Shopify's additional
+  details carry: all three tests now call it not Waypoint, as the server
+  always has. No line carries it; were one to, the server would receive its
+  file unchecked — as before this bundle, now said the same way on every
+  screen.
+- **The harness:** `harness-2026-11-23c.tar.gz` (sha256 `4cd5c85f…`) carries
+  items 10, 12 and the three bundles' files (§0).
